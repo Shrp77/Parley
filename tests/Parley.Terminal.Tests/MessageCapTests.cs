@@ -34,6 +34,7 @@ namespace Parley.Terminal.Tests;
 /// should err in.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class MessageCapTests : IAsyncDisposable
 {
     private readonly SqliteConnection _connection = ParleyDatabase.OpenInMemory();

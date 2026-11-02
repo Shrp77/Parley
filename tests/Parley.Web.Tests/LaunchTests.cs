@@ -20,6 +20,7 @@ namespace Parley.Web.Tests;
 /// and opening the page, which is the argument for doing that.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class LaunchTests
 {
     [Fact]

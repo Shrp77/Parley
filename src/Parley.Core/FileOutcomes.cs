@@ -22,7 +22,7 @@ public static class FileLimits
     /// <summary>The most files on a page, whatever is asked for.</summary>
     public const int MaximumPageSize = 200;
 
-    /// <summary>The most change notices one inbox collection hands over.</summary>
+    /// <summary>The most gone notices one inbox collection hands over.</summary>
     public const int NoticesPerCollection = 200;
 
     /// <summary>The most conversations an ambiguity refusal names.</summary>
@@ -56,8 +56,11 @@ public enum FileRejection
     /// <summary>The name breaks a rule other than its extension.</summary>
     BadName,
 
-    /// <summary>Another agent placed that name, so the caller may not replace or remove it.</summary>
+    /// <summary>Another agent, or the person, placed that name, so the caller may not place over or remove it.</summary>
     NamePlacedByAnother,
+
+    /// <summary>The name holds other content already; a new version goes under a new name (SPEC.md §9.5).</summary>
+    NameHoldsOtherContent,
 
     /// <summary>No file has that name.</summary>
     NoSuchFile,
@@ -71,7 +74,11 @@ public enum FileRejection
     /// <summary>The conversation is closed.</summary>
     ConversationClosed,
 
-    /// <summary>The content is not what was expected, or changed while it was streamed.</summary>
+    /// <summary>
+    /// The content is not the one expected, or the file could not be read for the broker: held for writing by another
+    /// program, or not readable by the broker at all. Bytes changed on disk are <see cref="Tampered"/>. The refusal's
+    /// detail says which (SPEC.md §9.5).
+    /// </summary>
     Changed,
 
     /// <summary>The broker's disk has no room.</summary>
@@ -91,6 +98,12 @@ public enum FileRejection
     /// another file's name in that conversation; nothing was placed.
     /// </summary>
     SafeNameTaken,
+
+    /// <summary>
+    /// The bytes on disk are not what was placed: something other than Parley changed them, so the file is no longer
+    /// reliable, and the broker has started a sweep that sets it aside (SPEC.md §9.5).
+    /// </summary>
+    Tampered,
 }
 
 /// <summary>
@@ -101,14 +114,17 @@ public enum PlaceOutcome
     /// <summary>A new name, now in the location.</summary>
     Placed,
 
-    /// <summary>The caller's own file, now holding different content.</summary>
-    Replaced,
-
     /// <summary>The caller's own file already held exactly this content; nothing was written or counted.</summary>
     AlreadyCurrent,
 
     /// <summary>Another agent, or the person, placed that name; nothing changed.</summary>
     PlacedByAnother,
+
+    /// <summary>
+    /// The caller's own file holds other content under that name; nothing changed. A placed file is never changed, so a
+    /// new version goes under a new name (SPEC.md §9.5).
+    /// </summary>
+    HoldsOtherContent,
 
     /// <summary>The name is too long for the conversation's folder; nothing was placed.</summary>
     DoesNotFit,
@@ -143,6 +159,32 @@ public sealed record FileRefusal(
     /// <param name="rejection">Why.</param>
     /// <returns>The refusal.</returns>
     public static FileRefusal Of(FileRef file, FileRejection rejection) => new(file, rejection, null, [], 0);
+}
+
+/// <summary>
+/// What the person's placement came to.
+/// </summary>
+/// <param name="Outcome">Placed or already current; anything else was refused, and nothing was written.</param>
+/// <param name="Rejection">Why it was refused, or <see cref="FileRejection.None"/>.</param>
+/// <param name="ConversationId">The conversation.</param>
+/// <param name="Name">The name placed, which characters outside the set may have changed from the one asked for.</param>
+/// <param name="SizeBytes">How many bytes were placed.</param>
+/// <param name="Sha256">
+/// The broker's hash of them; on a refusal because the name holds other content, the hash of the file already there;
+/// otherwise <see langword="null"/> when refused.
+/// </param>
+/// <param name="Detail">The rule in words, on a refusal.</param>
+public sealed record PersonPlacement(
+    PlaceOutcome? Outcome,
+    FileRejection Rejection,
+    string ConversationId,
+    string Name,
+    long SizeBytes,
+    ContentHash? Sha256,
+    string? Detail)
+{
+    /// <summary>Gets a value indicating whether the file is in the location now, as placed or already current.</summary>
+    public bool InPlace => Rejection == FileRejection.None;
 }
 
 /// <summary>

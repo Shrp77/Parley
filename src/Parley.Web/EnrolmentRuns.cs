@@ -52,7 +52,13 @@ public sealed class EnrolmentRuns
 
         if (_runs.Count >= Kept)
         {
-            foreach (var old in _runs.Where(pair => pair.Value.Finished).Select(pair => pair.Key).Take(_runs.Count - Kept + 1))
+            // The oldest finished first, never in the dictionary's own order: that could drop the run whose page is about
+            // to ask for its result, while older ones stayed (review, lens 1 run 67).
+            foreach (var old in _runs.Where(pair => pair.Value.Finished)
+                         .OrderBy(pair => pair.Value.FinishedAt)
+                         .Select(pair => pair.Key)
+                         .Take(_runs.Count - Kept + 1)
+                         .ToList())
             {
                 _ = _runs.TryRemove(old, out _);
             }
@@ -98,6 +104,8 @@ public sealed class EnrolmentRuns
 
         public bool Finished => Outcome is not null;
 
+        public long FinishedAt { get; private set; }
+
         public void Say(string role, string activity)
         {
             lock (_gate)
@@ -119,6 +127,7 @@ public sealed class EnrolmentRuns
         {
             lock (_gate)
             {
+                FinishedAt = System.Diagnostics.Stopwatch.GetTimestamp();
                 Outcome = result;
             }
         }

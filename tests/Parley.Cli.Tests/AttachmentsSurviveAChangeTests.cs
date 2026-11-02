@@ -28,6 +28,7 @@ namespace Parley.Cli.Tests;
 /// the stream without saying so.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class AttachmentsSurviveAChangeTests : IDisposable
 {
     private readonly string _directory =

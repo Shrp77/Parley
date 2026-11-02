@@ -11,6 +11,7 @@ namespace Parley.Spec.Tests;
 /// runs — a pattern that matched nothing on one platform, and one that truncated every trigger
 /// mid-body — so the parsing gets the same treatment as the document it parses.
 /// </remarks>
+[Integration]
 public sealed class SpecDocumentTests
 {
     [Fact]

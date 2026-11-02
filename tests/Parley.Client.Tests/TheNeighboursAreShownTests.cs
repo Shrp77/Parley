@@ -21,6 +21,7 @@ namespace Parley.Client.Tests;
 /// another in the one place nobody would look for it.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class TheNeighboursAreShownTests
 {
     private static AgentRecord Agent(

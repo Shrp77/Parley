@@ -20,6 +20,7 @@ namespace Parley.Cli.Tests;
 /// output is worse than either applied whole.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeSixTests : IDisposable
 {
     private readonly string _root =

@@ -16,6 +16,7 @@ namespace Parley.Web.Tests;
 /// able to open a database (<c>GraphTests</c> walks it).
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class AskOnThePageTests
 {
     private const string Orders = "orders@test";

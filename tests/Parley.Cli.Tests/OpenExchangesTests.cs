@@ -24,6 +24,7 @@ namespace Parley.Cli.Tests;
 /// <c>waiting</c> would have said nothing about.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class OpenExchangesTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

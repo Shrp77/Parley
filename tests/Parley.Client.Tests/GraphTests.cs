@@ -28,6 +28,7 @@ namespace Parley.Client.Tests;
 /// checking for.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class GraphTests
 {
     /// <summary>What a client must never be able to reach, at any depth.</summary>

@@ -20,6 +20,7 @@ namespace Parley.Store.Tests;
 /// the fixture.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RoadmapStoreTests : IDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 6, 9, 0, 0, TimeSpan.Zero);
@@ -88,7 +89,10 @@ public sealed class RoadmapStoreTests : IDisposable
         Assert.Equal(Billing, proposal.Content.Items[0].IntendedAgent);
         Assert.Equal([1], proposal.Content.Items[1].Needs);
         Assert.Equal([2], proposal.Content.Items[2].Needs);
-        Assert.True(proposal.Size > 0);
+
+        // Every character, needs too, each written as a number with a separator: 14 + 14 + 23 + 19, and 2 for each need.
+        // A proposal of needs alone wrote a million rows while its size counted only its words (SPEC.md §16's evidence).
+        Assert.Equal(74, proposal.Size);
     }
 
     [Theory]
@@ -125,6 +129,32 @@ public sealed class RoadmapStoreTests : IDisposable
         Assert.NotNull(empty.Problem);
         Assert.NotNull(broken.Problem);
         Assert.Equal(0L, _store.Count("SELECT count(*) FROM roadmap_proposals;"));
+    }
+
+    [Fact]
+    public async Task An_item_cannot_be_meant_for_Parley()
+    {
+        // Review, lens 2 run 69: Parley is a row in agents, so an item for it was admitted and confirmed, and starting it
+        // failed at the send. Parley never receives anybody's work.
+        var refused = await Repository.ProposeAsync(
+            Orders, null, null, Content("Plan", Item("Do it", AgentName.Create("parley-facilitator@test"))), Now,
+            cancellationToken: Ct);
+
+        Assert.Contains("takes no work", refused.Problem, StringComparison.Ordinal);
+        Assert.Equal(0L, _store.Count("SELECT count(*) FROM roadmap_proposals;"));
+    }
+
+    [Fact]
+    public async Task An_item_may_be_the_persons_own()
+    {
+        // The owner's call, 2026-10-29: the person may have something to do for a roadmap, and may argue somebody else
+        // should do it. Starting such an item ticks nobody, so the person chooses.
+        var (id, problem) = await Repository.ProposeAsync(
+            Orders, null, null, Content("Plan", Item("Approve the rate card", AgentName.Create("human-user@test"))), Now,
+            cancellationToken: Ct);
+
+        Assert.Null(problem);
+        Assert.NotNull(id);
     }
 
     [Fact]
@@ -267,9 +297,9 @@ public sealed class RoadmapStoreTests : IDisposable
         var id = await ProposedAsync();
         await Repository.DeclineAsync(id, Now, cancellationToken: Ct);
 
-        Assert.Equal(1, await Repository.CountNoticesAsync(Orders, Ct));
+        Assert.Equal(1, await Repository.CountNoticesAsync(Orders, cancellationToken: Ct));
         Assert.Single(await Repository.DrainNoticesAsync(Orders, 10, Now, cancellationToken: Ct));
-        Assert.Equal(0, await Repository.CountNoticesAsync(Orders, Ct));
+        Assert.Equal(0, await Repository.CountNoticesAsync(Orders, cancellationToken: Ct));
         Assert.Empty(await Repository.DrainNoticesAsync(Orders, 10, Now, cancellationToken: Ct));
     }
 
@@ -304,7 +334,8 @@ public sealed class RoadmapStoreTests : IDisposable
             Content("Billing export", Item("Only item", Billing)),
             created.RoadmapId,
             Now,
-            cancellationToken: Ct);
+            cancellationToken: Ct,
+            expectedRevision: (await Repository.GetAsync(created.RoadmapId!.Value, Ct))!.Revision);
 
         Assert.True(revision.Done, revision.Problem);
         Assert.Equal(2, revision.Revision);
@@ -313,6 +344,144 @@ public sealed class RoadmapStoreTests : IDisposable
 
         var told = await Repository.DrainNoticesAsync(Billing, 10, Now, cancellationToken: Ct);
         Assert.Contains(told, n => n.ProposalId == two && n.Outcome == ProposalState.Superseded);
+    }
+
+    [Fact]
+    public async Task Confirming_a_new_roadmap_under_a_taken_title_leaves_a_revision_of_the_existing_one_waiting()
+    {
+        // A proposer chooses its own title, so matching the confirmed title would let one agent's proposal decide
+        // another's, with no decision by the person on it. A new roadmap revises nothing.
+        var first = await ProposedAsync("Billing export");
+        await Repository.ConfirmAsync(first, (await Repository.GetProposalAsync(first, Ct))!.Content, null, Now, cancellationToken: Ct);
+
+        var revision = await ProposedAsync("Billing export, more", Billing, target: "Billing export");
+        var rival = await ProposedAsync("Billing export");
+
+        var created = await Repository.ConfirmAsync(
+            rival, (await Repository.GetProposalAsync(rival, Ct))!.Content, null, Now, cancellationToken: Ct);
+
+        Assert.True(created.Done, created.Problem);
+        Assert.Equal(ProposalState.Waiting, (await Repository.GetProposalAsync(revision, Ct))!.State);
+    }
+
+    [Fact]
+    public async Task A_revision_supersedes_the_hints_at_its_roadmaps_title_before_the_change_and_no_other()
+    {
+        var launch = await ProposedAsync("Launch");
+        var one = await Repository.ConfirmAsync(launch, (await Repository.GetProposalAsync(launch, Ct))!.Content, null, Now, cancellationToken: Ct);
+        var billing = await ProposedAsync("Billing export");
+        await Repository.ConfirmAsync(billing, (await Repository.GetProposalAsync(billing, Ct))!.Content, null, Now, cancellationToken: Ct);
+
+        var atOne = await ProposedAsync("Launch, sooner", Billing, target: "Launch");
+        var atTwo = await ProposedAsync("Billing export, more", Billing, target: "Billing export");
+        var renaming = await ProposedAsync("Billing export", Orders, target: "Launch");
+
+        var revised = await Repository.ConfirmAsync(
+            renaming, Content("Billing export", Item("Only item", Billing)), one.RoadmapId, Now, cancellationToken: Ct, expectedRevision: (await Repository.GetAsync(one.RoadmapId!.Value, Ct))!.Revision);
+
+        Assert.True(revised.Done, revised.Problem);
+        Assert.Equal(ProposalState.Superseded, (await Repository.GetProposalAsync(atOne, Ct))!.State);
+        Assert.Equal(ProposalState.Waiting, (await Repository.GetProposalAsync(atTwo, Ct))!.State);
+    }
+
+    [Fact]
+    public async Task A_revision_supersedes_a_hint_the_surfaces_show_as_naming_it_whatever_the_case_of_its_letters()
+    {
+        // The surfaces show a proposal as aimed at a roadmap when its hint equals the title ignoring case
+        // (ProposalText.Matching, OrdinalIgnoreCase). The supersede must agree, or a proposal shown as aimed at the
+        // roadmap the person just revised is left waiting.
+        var cafe = await ProposedAsync("Café menu");
+        var one = await Repository.ConfirmAsync(cafe, (await Repository.GetProposalAsync(cafe, Ct))!.Content, null, Now, cancellationToken: Ct);
+
+        var shouting = await ProposedAsync("Menu, sooner", Billing, target: "CAFÉ MENU");
+        var reviser = await ProposedAsync("Café menu", Orders, target: "Café menu");
+
+        Assert.Equal("CAFÉ MENU", "Café menu", ignoreCase: true);
+
+        var revised = await Repository.ConfirmAsync(
+            reviser, Content("Café menu", Item("Only item", Billing)), one.RoadmapId, Now, cancellationToken: Ct, expectedRevision: (await Repository.GetAsync(one.RoadmapId!.Value, Ct))!.Revision);
+
+        Assert.True(revised.Done, revised.Problem);
+        Assert.Equal(ProposalState.Superseded, (await Repository.GetProposalAsync(shouting, Ct))!.State);
+    }
+
+    [Fact]
+    public async Task A_revision_does_not_read_every_waiting_hint_whole_to_find_the_ones_it_supersedes()
+    {
+        // A hint has no bound and an agent may make as many as it likes. Reading every waiting proposal whole inside the
+        // confirm's write held hundreds of megabytes to supersede nothing; only hints as long as the title are read now.
+        var launch = await ProposedAsync("Launch");
+        var one = await Repository.ConfirmAsync(launch, (await Repository.GetProposalAsync(launch, Ct))!.Content, null, Now, cancellationToken: Ct);
+        var reviser = await ProposedAsync("Launch", Orders, target: "Launch");
+
+        _store.Execute($$"""
+            WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 6000)
+            INSERT INTO roadmap_proposals (proposer, target_title, title, size, created_utc)
+            SELECT 'billing@test', printf('%.*c', 10000, 'x'), printf('%.*c', 10000, 'y'), 20000, '{{FacilitatorStore.Stamp}}'
+              FROM n;
+            """);
+
+        var before = GC.GetTotalAllocatedBytes(precise: true);
+        var revised = await Repository.ConfirmAsync(
+            reviser, Content("Launch", Item("Only item", Billing)), one.RoadmapId, Now, cancellationToken: Ct, expectedRevision: (await Repository.GetAsync(one.RoadmapId!.Value, Ct))!.Revision);
+        var allocated = GC.GetTotalAllocatedBytes(precise: true) - before;
+
+        Assert.True(revised.Done, revised.Problem);
+
+        // Whole, those 6,000 proposals are 240 MB of strings; their hints alone, 120 MB.
+        Assert.True(allocated < 40_000_000, $"a revision allocated {allocated:N0} bytes");
+    }
+
+    [Fact]
+    public async Task A_revision_supersedes_more_proposals_than_sqlite_takes_parameters()
+    {
+        // One agent can make tens of thousands of proposals. Passed back as one statement with an id each, they were more
+        // than SQLite's 32,766 parameters, and every revision of the roadmap failed for good.
+        var launch = await ProposedAsync("Launch");
+        var one = await Repository.ConfirmAsync(launch, (await Repository.GetProposalAsync(launch, Ct))!.Content, null, Now, cancellationToken: Ct);
+        var reviser = await ProposedAsync("Launch", Orders, target: "Launch");
+
+        _store.Execute($$"""
+            WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 33000)
+            INSERT INTO roadmap_proposals (proposer, target_title, title, size, created_utc)
+            SELECT 'billing@test', 'launch', 'Sooner', 6, '{{FacilitatorStore.Stamp}}'
+              FROM n;
+            """);
+
+        var revised = await Repository.ConfirmAsync(
+            reviser, Content("Launch", Item("Only item", Billing)), one.RoadmapId, Now, cancellationToken: Ct, expectedRevision: (await Repository.GetAsync(one.RoadmapId!.Value, Ct))!.Revision);
+
+        Assert.True(revised.Done, revised.Problem);
+        Assert.Equal(0L, _store.Count("SELECT count(*) FROM roadmap_proposals WHERE state = 'waiting';"));
+    }
+
+    [Fact]
+    public async Task A_rename_then_a_revision_decide_each_waiting_hint_once_by_the_title_before_the_revision()
+    {
+        var launch = await ProposedAsync("Launch");
+        var one = await Repository.ConfirmAsync(launch, (await Repository.GetProposalAsync(launch, Ct))!.Content, null, Now, cancellationToken: Ct);
+
+        var atOld = await ProposedAsync("Launch, sooner", Billing, target: "Launch");
+        var atNew = await ProposedAsync("Ship, sooner", Billing, target: "Ship");
+        var reviser = await ProposedAsync("Ship", Orders, target: "Launch");
+
+        // The person renames it first, then confirms a revision against it: the title before the revision is "Ship".
+        var renamed = await Repository.EditAsync(one.RoadmapId!.Value, 1, Content("Ship", Item("Only item", Billing)), Now, cancellationToken: Ct);
+        Assert.True(renamed.Done, renamed.Problem);
+
+        var revised = await Repository.ConfirmAsync(
+            reviser, Content("Ship", Item("Only item", Billing), Item("Another", Orders)), one.RoadmapId, Now, cancellationToken: Ct, expectedRevision: (await Repository.GetAsync(one.RoadmapId!.Value, Ct))!.Revision);
+        Assert.True(revised.Done, revised.Problem);
+
+        Assert.Equal(ProposalState.Superseded, (await Repository.GetProposalAsync(atNew, Ct))!.State);
+        Assert.Equal(ProposalState.Waiting, (await Repository.GetProposalAsync(atOld, Ct))!.State);
+
+        // A rename made against the revision before the confirm is refused, not applied over it.
+        var late = await Repository.EditAsync(one.RoadmapId!.Value, 2, Content("Later", Item("Only item", Billing)), Now, cancellationToken: Ct);
+        Assert.False(late.Done);
+
+        var superseded = (await Repository.ListProposalsAsync(ProposalState.Superseded, Ct)).Count;
+        Assert.Equal(1, superseded);
     }
 
     // ---- editing
@@ -510,6 +679,34 @@ public sealed class RoadmapStoreTests : IDisposable
         Assert.Equal("orders@test", (string)_store.Scalar("SELECT proposer FROM roadmaps;")!);
     }
 
+    [Fact]
+    public async Task Purging_an_items_agent_keeps_the_persons_item_and_its_conversation_name()
+    {
+        // Through the purge itself, not a raw DELETE: the purge swept every reference to the agent, the SET NULL ones
+        // too, and so deleted the person's item, freed its reserved name and dropped the needs on it.
+        var id = await ProposedAsync();
+        var created = await Repository.ConfirmAsync(id, (await Repository.GetProposalAsync(id, Ct))!.Content, null, Now, cancellationToken: Ct);
+
+        await new AgentRepository(_store.Connection).PurgeAsync(Billing, Now, cancellationToken: Ct);
+
+        var read = (await Repository.GetAsync(created.RoadmapId!.Value, Ct))!;
+        Assert.Equal(3, read.Items.Count);
+        Assert.Null(read.Items[0].IntendedAgent);
+        Assert.Equal(1L, _store.Count("SELECT count(*) FROM roadmap_item_conversations WHERE conversation_id = 'rm1-1';"));
+    }
+
+    [Fact]
+    public async Task Purging_an_items_agent_keeps_another_agents_waiting_proposal_whole()
+    {
+        var id = await ProposedAsync();
+
+        await new AgentRepository(_store.Connection).PurgeAsync(Billing, Now, cancellationToken: Ct);
+
+        var read = (await Repository.GetProposalAsync(id, Ct))!;
+        Assert.Equal(["Add CSV export", "Call it from the report", "Document the column"], read.Content.Items.Select(i => i.Text));
+        Assert.Null(read.Content.Items[0].IntendedAgent);
+    }
+
     // ---- an item's conversation is opened by the person
 
     private void Open(string conversation, string from, string to, string model = "claude-opus-5")
@@ -616,12 +813,188 @@ public sealed class RoadmapStoreTests : IDisposable
         Assert.True(started.ConversationExists);
         Assert.Equal(1, started.OpenExchanges);
         Assert.False(started.Collected);
-        Assert.Equal("Add CSV export", started.FirstSentText);
+        Assert.False(started.TextEditedSinceStarted);
 
         _store.Execute($"UPDATE exchanges SET delivered_utc = '{FacilitatorStore.Stamp}' WHERE conversation_id = 'rm1-1';");
 
         Assert.True((await Repository.GetAsync(id, Ct))!.Items[0].Facts!.Collected);
         Assert.Equal(1, (await Repository.ListAsync(Ct)).Single().StartedItems);
+    }
+
+    [Fact]
+    public async Task An_item_whose_name_an_agent_took_first_is_reserved_under_a_free_name_and_has_not_begun()
+    {
+        // The next item's name is predictable, so an agent opens rm1-4 before the person adds item 4. Must fail against
+        // reserving the agent's conversation for the item, which would read as begun with the agent's words in it.
+        var id = await RoadmapAsync();
+        Open("rm1-4", "orders@test", "billing@test");
+
+        var edit = await Repository.EditAsync(
+            id,
+            1,
+            Content("Billing export",
+                Existing(1, "Add CSV export", Billing),
+                Existing(2, "Call it from the report", Orders, 1),
+                Existing(3, "Document the column", null, 2),
+                Item("Ship it", Billing)),
+            Now,
+            cancellationToken: Ct);
+
+        Assert.True(edit.Done, edit.Problem);
+
+        var added = (await Repository.GetAsync(id, Ct))!.Items.Single(i => i.Text == "Ship it");
+
+        Assert.Equal("rm1-4-2", added.ConversationName);
+        Assert.False(added.Facts!.ConversationExists);
+        Assert.Null(await Repository.ReservationOfAsync("rm1-4", Ct));
+    }
+
+    [Fact]
+    public async Task New_items_whose_names_are_taken_get_unique_names_that_last_through_later_edits()
+    {
+        // Two derived names taken by an agent, three items added in one edit, then a reorder and another item. Must fail
+        // against two items sharing a name, or a later edit moving an item's conversation.
+        var id = await RoadmapAsync();
+        Open("rm1-4", "orders@test", "billing@test");
+        Open("rm1-5", "orders@test", "billing@test");
+
+        var edit = await Repository.EditAsync(
+            id,
+            1,
+            Content("Billing export",
+                Existing(1, "Add CSV export", Billing),
+                Existing(2, "Call it from the report", Orders, 1),
+                Existing(3, "Document the column", null, 2),
+                Item("Ship it", Billing),
+                Item("Tell them", Billing),
+                Item("Close it", Billing)),
+            Now,
+            cancellationToken: Ct);
+
+        Assert.True(edit.Done, edit.Problem);
+
+        var items = (await Repository.GetAsync(id, Ct))!.Items;
+        Assert.Equal(items.Count, items.Select(i => i.ConversationName).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal("rm1-4-2", items.Single(i => i.Text == "Ship it").ConversationName);
+        Assert.Equal("rm1-5-2", items.Single(i => i.Text == "Tell them").ConversationName);
+        Assert.Equal("rm1-6", items.Single(i => i.Text == "Close it").ConversationName);
+
+        var again = await Repository.EditAsync(
+            id,
+            2,
+            Content("Billing export",
+                Existing(1, "Add CSV export", Billing),
+                Existing(2, "Call it from the report", Orders, 1),
+                Existing(3, "Document the column", null, 2),
+                Existing(5, "Tell them", Billing),
+                Existing(4, "Ship it", Billing),
+                Existing(6, "Close it", Billing),
+                Item("Seven", Billing)),
+            Now,
+            cancellationToken: Ct);
+
+        Assert.True(again.Done, again.Problem);
+
+        var after = (await Repository.GetAsync(id, Ct))!.Items;
+        Assert.Equal("rm1-4-2", after.Single(i => i.Number == 4).ConversationName);
+        Assert.Equal("rm1-5-2", after.Single(i => i.Number == 5).ConversationName);
+        Assert.Equal("rm1-7", after.Single(i => i.Number == 7).ConversationName);
+        Assert.Equal(4, (await Repository.ReservationOfAsync("rm1-4-2", Ct))!.Value.ItemNumber);
+    }
+
+    [Fact]
+    public async Task An_item_reworded_after_its_request_was_sent_says_so_and_one_reworded_before_does_not()
+    {
+        // FR-014a, from the item's own edit record: the words sent may be the person's own and prove nothing. Item 1 is
+        // started and then reworded; item 2 is reworded and never started; item 3 is reworded, then started, and not
+        // reworded again. Must fail against a fact that ignores the edit, one that marks an item reworded before
+        // anything was sent, and one that counts any edit of an item with work as made since it started.
+        var id = await RoadmapAsync();
+
+        var earlier = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var before = await Repository.EditAsync(
+            id,
+            1,
+            Content(
+                "Billing export",
+                Existing(1, "Add CSV export", Billing),
+                Existing(2, "Call it from the report", Orders, 1),
+                Existing(3, "Document the columns", null, 2)),
+            earlier,
+            cancellationToken: Ct);
+
+        Assert.True(before.Done, before.Problem);
+
+        Open("rm1-1", "human-user@test", "billing@test");
+        Open("rm1-3", "human-user@test", "orders@test");
+
+        var later = new DateTimeOffset(2099, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var edit = await Repository.EditAsync(
+            id,
+            2,
+            Content(
+                "Billing export",
+                Existing(1, "Add CSV export with headers", Billing),
+                Existing(2, "Call it from the monthly report", Orders, 1),
+                Existing(3, "Document the columns", null, 2)),
+            later,
+            cancellationToken: Ct);
+
+        Assert.True(edit.Done, edit.Problem);
+
+        var items = (await Repository.GetAsync(id, Ct))!.Items;
+        Assert.True(items[0].Facts!.TextEditedSinceStarted);
+        Assert.False(items[1].Facts!.TextEditedSinceStarted);
+        Assert.False(items[2].Facts!.TextEditedSinceStarted);
+    }
+
+    [Fact]
+    public async Task A_revision_chosen_against_an_older_revision_is_refused_and_the_edit_made_since_stays()
+    {
+        // Found by review, round 54: a revision confirmed from a stale read replaced the items another surface had saved
+        // meanwhile, the person's own new item among them. It is now refused as an edit at a stale revision is.
+        var (first, firstProblem) = await Repository.ProposeAsync(
+            Orders, null, null,
+            new RoadmapContent("Export", [new RoadmapItemDraft(null, "One", null, []), new RoadmapItemDraft(null, "Two", null, [])]),
+            Now, cancellationToken: Ct);
+        Assert.Null(firstProblem);
+        var made = await Repository.ConfirmAsync(first!.Value, (await Repository.GetProposalAsync(first.Value, Ct))!.Content, null, Now, cancellationToken: Ct);
+        Assert.True(made.Done, made.Problem);
+
+        var (second, secondProblem) = await Repository.ProposeAsync(
+            Orders, null, "Export", new RoadmapContent("Export", [new RoadmapItemDraft(null, "Replacement", null, [])]), Now, cancellationToken: Ct);
+        Assert.Null(secondProblem);
+
+        // One surface chooses to revise at the revision it read; another saves the person's new item first.
+        var shown = (await Repository.GetAsync(made.RoadmapId!.Value, Ct))!.Revision;
+        var edited = await Repository.EditAsync(
+            made.RoadmapId.Value,
+            shown,
+            new RoadmapContent(
+                "Export",
+                [
+                    new RoadmapItemDraft(1, "One", null, []),
+                    new RoadmapItemDraft(2, "Two", null, []),
+                    new RoadmapItemDraft(null, "The person's new item", null, []),
+                ]),
+            Now,
+            cancellationToken: Ct);
+        Assert.True(edited.Done, edited.Problem);
+
+        var revised = await Repository.ConfirmAsync(
+            second!.Value,
+            (await Repository.GetProposalAsync(second.Value, Ct))!.Content,
+            made.RoadmapId.Value,
+            Now,
+            cancellationToken: Ct,
+            expectedRevision: shown);
+
+        Assert.False(revised.Done);
+        Assert.Contains("changed since you chose to revise it", revised.Problem, StringComparison.Ordinal);
+        Assert.Contains(
+            "The person's new item",
+            (await Repository.GetAsync(made.RoadmapId.Value, Ct))!.Items.Where(i => !i.Removed).Select(i => i.Text));
+        Assert.Equal(ProposalState.Waiting, (await Repository.GetProposalAsync(second.Value, Ct))!.State);
     }
 
     /// <summary>Ends the newest open exchange of a conversation on a Result from its receiver, as an agent's answer does.</summary>

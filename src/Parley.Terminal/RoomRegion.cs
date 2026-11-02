@@ -136,6 +136,7 @@ internal sealed class RoomRegion : FrameView
 
     internal RoomRegion()
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = RegionTitle;
         CanFocus = true;
         SetScheme(Colours.Region(Colours.Agents));

@@ -4,7 +4,7 @@
 // Deliberately not AgentSummary, and the two must never be merged.
 //
 // They differ by exactly what SPEC.md §10.1 withholds from an agent: the workspace directory, the
-// session reference, the adapter's configuration. AgentSummary is what a peer may see; this is
+// resume handle, the adapter's configuration. AgentSummary is what a peer may see; this is
 // what the person running the deployment may. Side by side in one project they look like
 // duplication and are the opposite -- a single shape would mean one of the two surfaces returns
 // more than its section allows, and which one would depend on who wrote the mapping.
@@ -26,7 +26,8 @@ namespace Parley.Core;
 /// </param>
 /// <param name="SessionRef">
 /// An adapter-specific handle for resuming a previous session, or <see langword="null"/> if
-/// none exists yet. Mutable: reassigned whenever the agent is spawned or resumed.
+/// none exists. No adapter sends one today, so it is always null; the column is kept for one that
+/// can resume (SPEC.md §14).
 /// </param>
 /// <param name="AdapterConfig">
 /// Whatever the named adapter needs to invoke this agent — a model identifier, an endpoint, a

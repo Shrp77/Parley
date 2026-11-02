@@ -29,6 +29,7 @@ namespace Parley.Terminal.Tests;
 /// seat book, so the sentence it asserted against could never have been said, and it could not fail.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class IdleSeatTests : IAsyncDisposable
 {
     private readonly SqliteConnection _connection;

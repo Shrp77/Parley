@@ -21,6 +21,7 @@ namespace Parley.Web.Tests;
 /// which is exactly when the fallback used to fire.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class NoJoinOnTheWebTests
 {
     [Theory]

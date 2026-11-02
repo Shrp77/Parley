@@ -18,6 +18,7 @@ namespace Parley.Terminal.Tests;
 /// terminal being dragged shut.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class WrappingTests
 {
     [Theory]

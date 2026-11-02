@@ -22,6 +22,7 @@ namespace Parley.Terminal.Tests;
 /// longer covers it. A suite that green-lights a race is worse than one that has a race.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ContentionTests
 {
     private static Shell Open() =>

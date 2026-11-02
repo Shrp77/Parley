@@ -18,6 +18,7 @@ namespace Parley.Cli.Tests;
 /// real broker process reads its own policy from its own environment and applies that, never the
 /// asker's.
 /// </remarks>
+[Integration]
 public sealed class PruneCommandTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");
@@ -224,6 +225,9 @@ public sealed class PruneCommandTests : IAsyncDisposable
 
             Assert.Equal(0, unconfigured.Removed);
             Assert.Equal(2, await MessageCount(path));
+
+            // And it says which numbers it applied (SPEC.md §9.4): the defaults, here.
+            Assert.Equal(RetentionPolicy.Default, unconfigured.Applied);
         }
 
         using (var strict = BrokerProcess.Start(
@@ -233,8 +237,10 @@ public sealed class PruneCommandTests : IAsyncDisposable
         {
             var configured = await AskAsync(strict, client => client.PruneAsync(Ct));
 
-            Assert.Equal(2, configured.Removed);
+            // Not configured.Removed: the broker's own first pass prunes under the same policy and may have taken them
+            // before this prune was asked, which is the scheduled pass honouring the settings too.
             Assert.Equal(0, await MessageCount(path));
+            Assert.Equal(new RetentionPolicy(TimeSpan.FromHours(1), TimeSpan.FromHours(1)), configured.Applied);
         }
     }
 

@@ -31,6 +31,7 @@ namespace Parley.Mcp.Tests;
 /// the process environment, which the test host runs classes in parallel against.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProjectReferenceTests : IDisposable
 {
     private readonly string _directory =

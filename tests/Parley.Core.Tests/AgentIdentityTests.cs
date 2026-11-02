@@ -10,6 +10,7 @@ namespace Parley.Core.Tests;
 /// refused rather than guessed at, and that there is one spelling. Each of them is a way the identity could
 /// quietly stop being stable, which is the only thing it is for.
 /// </remarks>
+[Unit]
 public sealed class AgentIdentityTests
 {
     [Fact]

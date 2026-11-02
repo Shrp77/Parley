@@ -11,6 +11,7 @@ namespace Parley.Web.Tests;
 /// Review gate, lens 2 run 2.5. A time the client cannot read becomes the earliest instant there is, and the page writes
 /// every time in the reader's own zone; converting that instant to a zone behind UTC is the step that could fail.
 /// </remarks>
+[Integration]
 public sealed class FilesPageEdgeTimesTests : IDisposable
 {
     private readonly FilesConsole _console = new();
@@ -32,8 +33,7 @@ public sealed class FilesPageEdgeTimesTests : IDisposable
             SizeBytes = 3,
             Sha256 = new string('a', 64),
             PlacedBy = "billing@alpha",
-            PlacedUtc = stamp,
-            ChangedUtc = stamp
+            PlacedUtc = stamp
         });
 
         using var client = _console.CreateClient();

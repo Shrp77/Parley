@@ -22,6 +22,7 @@ namespace Parley.Terminal.Tests;
 /// power SPEC.md §10.2 never grants an operator and the whole reason seating has a guard at all.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ClientSeparationTests
 {
     private static string Root()

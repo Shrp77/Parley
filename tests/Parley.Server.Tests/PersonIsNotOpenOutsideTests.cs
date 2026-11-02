@@ -12,6 +12,7 @@ namespace Parley.Server.Tests;
 /// Parley merely because their attachment is a surface and no surface is ever "started by Parley": a
 /// surface reading the flag for every row would mark the person with the agents' warning.
 /// </remarks>
+[Integration]
 public sealed class PersonIsNotOpenOutsideTests
 {
     private static readonly string Person = PersonSeat.On(ProjectName.Create("test")).Value;

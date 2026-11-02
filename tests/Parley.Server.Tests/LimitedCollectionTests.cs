@@ -18,6 +18,7 @@ namespace Parley.Server.Tests;
 /// Through the real <c>DrainInbox</c> handler, because the decision to ask again lives there.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class LimitedCollectionTests
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(5);

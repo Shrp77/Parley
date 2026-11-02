@@ -27,6 +27,7 @@ namespace Parley.Terminal.Tests;
 /// undo, which is the entire argument for the gate's "probe, do not reason".
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeFiveTests : IAsyncDisposable
 {
     private readonly string _root =

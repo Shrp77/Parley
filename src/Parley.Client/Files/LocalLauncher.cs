@@ -12,8 +12,8 @@ namespace Parley.Client.Files;
 public sealed record Launched(bool Opened, string Said);
 
 /// <summary>
-/// Opens a placed file in its registered editor, or a conversation's folder in the file browser, on the machine
-/// this surface runs on — and on no other (SPEC.md §10.2, §13).
+/// Opens a placed file to read in the application registered for it, or a conversation's folder in the file browser,
+/// on the machine this surface runs on — and on no other (SPEC.md §10.2, §13).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -22,14 +22,18 @@ public sealed record Launched(bool Opened, string Said);
 /// </para>
 /// <para>
 /// <b>Somewhere else, it launches nothing and says where the file is.</b> The broker says which machine holds the
-/// location; a surface on another machine has nothing on its own disk to open, and opening a copy would edit
-/// something that is not the shared file. A path that does not exist here is treated the same way, so a machine
+/// location; a surface on another machine has nothing on its own disk to open, and a copy would not be the shared
+/// file. A path that does not exist here is treated the same way, so a machine
 /// name that happens to match cannot launch the wrong thing.
 /// </para>
 /// <para>
 /// <b>Only <c>.md</c> and <c>.txt</c>, and only a regular file.</b> Nothing else can be placed, so this is the second
 /// lock on that door rather than the first: "open with the registered application" runs a <c>.bat</c> on Windows,
 /// and a file in the location that got there by some other route must not be one click from running.
+/// </para>
+/// <para>
+/// <b>To read, not to edit.</b> A placed file is never changed (§9.5), so it is opened as the system opens it rather
+/// than with an edit verb; bytes saved over it make every later fetch of it refused.
 /// </para>
 /// <para>
 /// A seam, like the terminal's browser opener, because a test suite that opened an editor on every run would open
@@ -47,7 +51,7 @@ public sealed class LocalLauncher(Func<string, bool, bool> open, string machine)
     /// <summary>The launcher that really opens things, on the machine this process runs on.</summary>
     public static LocalLauncher ForThisMachine { get; } = new(OpenWithTheSystem, MachineName.Current);
 
-    /// <summary>Opens a file with the application registered to edit it.</summary>
+    /// <summary>Opens a file to read, with the application registered for it.</summary>
     /// <param name="location">Where the broker says the file is.</param>
     /// <returns>Whether it was opened, and what to say.</returns>
     public Launched OpenFile(FileLocation location)
@@ -108,24 +112,12 @@ public sealed class LocalLauncher(Func<string, bool, bool> open, string machine)
         {
             if (OperatingSystem.IsWindows())
             {
-                if (!folder && TryStart(new ProcessStartInfo(path) { UseShellExecute = true, Verb = "edit" }))
-                {
-                    return true;
-                }
-
                 return TryStart(new ProcessStartInfo(path) { UseShellExecute = true });
             }
 
-            var start = OperatingSystem.IsMacOS()
-                ? new ProcessStartInfo("open") { ArgumentList = { folder ? path : "-t", } }
-                : new ProcessStartInfo("xdg-open") { ArgumentList = { path } };
-
-            if (OperatingSystem.IsMacOS() && !folder)
-            {
-                start.ArgumentList.Add(path);
-            }
-
-            return TryStart(start);
+            return TryStart(OperatingSystem.IsMacOS()
+                ? new ProcessStartInfo("open") { ArgumentList = { path } }
+                : new ProcessStartInfo("xdg-open") { ArgumentList = { path } });
         }
         catch (Exception unavailable) when (unavailable is Win32Exception or InvalidOperationException)
         {

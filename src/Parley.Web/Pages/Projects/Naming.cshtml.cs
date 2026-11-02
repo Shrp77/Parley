@@ -9,10 +9,9 @@ namespace Parley.Web.Pages.Projects;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Instructions rather than a form, and for the same reason as agent registration: the console
-/// reads the layout of SPEC.md §4.1 and does not write it. It has no route to the code that
-/// does — <c>Parley.Setup</c> is not on its graph — so a rename button here would mean adding
-/// one.
+/// Instructions rather than a form: a project is renamed only in the terminal, as it is removed only there, though
+/// the console creates one and enrols repositories through <c>Parley.Setup</c>. A rename makes a new store and leaves
+/// the old one's agents behind, which is a destructive act and belongs with the other destructive acts in one place.
 /// </para>
 /// <para>
 /// <b>This used to say the file is "written by exactly one" program, and that was already untrue

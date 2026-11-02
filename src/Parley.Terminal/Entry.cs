@@ -72,7 +72,7 @@ internal sealed class Entry
 
         if (!field.Long)
         {
-            return new Entry(new TextField { X = 1, Width = Dim.Fill(2), Text = opening });
+            return new Entry(new TextField { HotKeySpecifier = Plain.NoHotKey, X = 1, Width = Dim.Fill(2), Text = opening });
         }
 
         var paragraph = new TextView
@@ -143,7 +143,7 @@ internal sealed class Entry
 
     /// <summary>Builds a paragraph somebody reads and scrolls but cannot change.</summary>
     /// <param name="text">What it holds.</param>
-    /// <param name="takes">Offered every key first; returns whether it took it.</param>
+    /// <param name="takes">The dialog whose table is offered every key first, or null for a paragraph that never has focus.</param>
     /// <returns>The view, wrapping at its own width and showing a scrollbar once there is more than fits.</returns>
     /// <remarks>
     /// <para>
@@ -155,7 +155,7 @@ internal sealed class Entry
     /// The caller passes text that has already been made safe to draw. This view displays what it is given.
     /// </para>
     /// </remarks>
-    internal static View Reader(string text, Func<Key, bool>? takes = null)
+    internal static View Reader(string text, TableDialog? takes = null)
     {
         var box = new TextView
         {
@@ -168,16 +168,10 @@ internal sealed class Entry
         box.VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
 
         // **Offered the key first, because a focused view is.** Without this a letter a screen binds to a choice is eaten
-        // by the paragraph that has focus and never reaches the screen's own handler.
+        // by the paragraph that has focus and never reaches the screen's own table.
         if (takes is not null)
         {
-            box.KeyDown += (_, key) =>
-            {
-                if (takes(key))
-                {
-                    key.Handled = true;
-                }
-            };
+            KeyRouting.TableFirst(box, takes);
         }
 
         return box;

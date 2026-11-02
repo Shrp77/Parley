@@ -28,6 +28,7 @@ namespace Parley.Web.Tests;
 /// followed it, which reads as a broken console rather than as a link nobody finished.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class EveryActionHasADoorTests
 {
     private static string Root()

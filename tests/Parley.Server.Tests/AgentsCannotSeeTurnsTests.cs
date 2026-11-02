@@ -20,6 +20,7 @@ namespace Parley.Server.Tests;
 /// <c>permission_denials</c> fails it whatever message it lands in.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class AgentsCannotSeeTurnsTests
 {
     private static readonly string[] Forbidden = ["turn", "permission_denial", "permission_refus"];

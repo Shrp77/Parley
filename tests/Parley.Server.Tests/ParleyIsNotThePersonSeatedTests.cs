@@ -22,6 +22,7 @@ namespace Parley.Server.Tests;
 /// Parley.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ParleyIsNotThePersonSeatedTests
 {
     [Fact]

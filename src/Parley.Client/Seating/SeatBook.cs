@@ -102,10 +102,11 @@ public sealed class SeatBook : IDisposable
             }
 
             // A lost hold is a dead attachment. Handing it back would tell somebody they were seated on a stream that
-            // has ended; it is cleared and the seat taken again.
-            if (_held.TryRemove(key, out var dead))
+            // has ended; it is cleared and the seat taken again. Removed only if it is still the one read: another
+            // caller may already have cleared it and seated the person afresh, and that hold is not this one's to end.
+            if (_held.TryRemove(new KeyValuePair<string, SeatHold>(key, already)))
             {
-                dead.Dispose();
+                already.Dispose();
             }
         }
 
@@ -345,9 +346,10 @@ public sealed class SeatBook : IDisposable
                 continue;
             }
 
-            if (_held.TryRemove(key, out var gone))
+            // Only the hold this sweep judged: one put there since by a fresh seating is live.
+            if (_held.TryRemove(new KeyValuePair<string, SeatHold>(key, held)))
             {
-                gone.Dispose();
+                held.Dispose();
                 dropped++;
             }
         }

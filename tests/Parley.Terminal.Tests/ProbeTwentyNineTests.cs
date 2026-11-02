@@ -1,3 +1,4 @@
+using Terminal.Gui.Input;
 using Parley.Cli.Tests;
 using Parley.Client;
 using Parley.Configuration;
@@ -24,6 +25,7 @@ namespace Parley.Terminal.Tests;
 /// omits something leaves somebody uncertain, while one that asserts the opposite settles it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeTwentyNineTests : IAsyncDisposable
 {
     private readonly string _root =
@@ -101,9 +103,7 @@ public sealed class ProbeTwentyNineTests : IAsyncDisposable
         var asking = (ChoiceDialog)driving.Find(Adding.ConfirmTitle);
 
         driving.Row(asking.Choices, Adding.Write);
-        driving.Enter();
-
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
     }
 
     /// <summary>Puts something at the catalogue's path that cannot be written over.</summary>

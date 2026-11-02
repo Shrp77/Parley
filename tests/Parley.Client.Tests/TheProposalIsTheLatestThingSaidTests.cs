@@ -13,6 +13,7 @@ namespace Parley.Client.Tests;
 /// person accepts is the later. Taking the first would put in front of them the sentence they had just
 /// talked the agent out of, and then write it.
 /// </remarks>
+[Unit]
 public sealed class TheProposalIsTheLatestThingSaidTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

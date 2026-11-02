@@ -11,6 +11,7 @@ namespace Parley.Core.Tests;
 /// automatically is recorded as the agent's own words; a flatten that repaired anything beyond whitespace would make
 /// that the machine's words wearing the agent's name.
 /// </remarks>
+[Unit]
 public sealed class FlatteningChangesNoWordTests
 {
     [Fact]

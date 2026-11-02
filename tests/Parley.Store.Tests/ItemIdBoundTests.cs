@@ -13,6 +13,7 @@ namespace Parley.Store.Tests;
 /// number in <c>result_items</c>. A Request carries no items (§5.1), so only the Result side is storage's.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ItemIdBoundTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

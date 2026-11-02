@@ -19,6 +19,7 @@ namespace Parley.Mcp.Tests;
 /// belongs on rather than a question of which class the method was already in.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ToolSurfaceTests
 {
     private static readonly string[] Expected =

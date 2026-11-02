@@ -1,3 +1,4 @@
+using Terminal.Gui.Input;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Tests;
 using Parley.Client;
@@ -26,6 +27,7 @@ namespace Parley.Terminal.Tests;
 /// repository as its working directory, and two of them is two models editing one checkout.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class TwoProjectsTests : IAsyncDisposable
 {
     private readonly string _root =
@@ -133,9 +135,7 @@ public sealed class TwoProjectsTests : IAsyncDisposable
         // is which project the add lands in, so arriving the direct way would settle by fiat the
         // question the test is asking.
         driving.Row(shell.Projects.List, project);
-        driving.Enter();
-
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(project, shell.Place.Project?.Value);
 
@@ -152,9 +152,7 @@ public sealed class TwoProjectsTests : IAsyncDisposable
         var asking = (ChoiceDialog)driving.Find(Adding.ConfirmTitle);
 
         driving.Row(asking.Choices, Adding.Write);
-        driving.Enter();
-
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         await Walking.GoAsync(shell, Client.Views.Viewing.Projects);
     }

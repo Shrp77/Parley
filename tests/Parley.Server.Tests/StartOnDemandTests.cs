@@ -26,6 +26,7 @@ namespace Parley.Server.Tests;
 /// attaches under it. There is no registration for the broker to find.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class StartOnDemandTests
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(5);

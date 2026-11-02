@@ -34,4 +34,16 @@
     <ProjectReference Include="..\Parley.Transport\Parley.Transport.csproj" />
   </ItemGroup>
 
+  <!-- The one way a client collects and acknowledges an inbox (SPEC.md section 6), shared as source because
+       the generated transport holds no hand-written code. -->
+  <ItemGroup>
+    <Compile Include="..\InboxCollection.cs" Link="InboxCollection.cs" />
+  </ItemGroup>
+
+  <!-- The one way a client places a file (SPEC.md section 9.5): the header, a wait for the broker's go-ahead, and
+       only then the bytes. Shared as source for the same reason. -->
+  <ItemGroup>
+    <Compile Include="..\FilePlacement.cs" Link="FilePlacement.cs" />
+  </ItemGroup>
+
 </Project>

@@ -24,6 +24,7 @@ namespace Parley.Store.Tests;
 /// Placeholder agents are <c>orders</c>, <c>billing</c> and <c>inventory</c>, per CLAUDE.md.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class PurgeTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

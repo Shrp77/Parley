@@ -10,6 +10,7 @@ namespace Parley.Cli.Tests;
 /// Through the launcher's seam throughout, which records instead of launching; the refusals are checked by what was
 /// launched, which must be nothing.
 /// </remarks>
+[Integration]
 public sealed class FilesOpenCommandTests : IAsyncDisposable
 {
     private const string Billing = FileLocationFixture.Billing;

@@ -13,6 +13,7 @@ namespace Parley.Broker.Tests;
 /// landing while other servers are live and still holding the name, and a Request aimed at the gap must not
 /// surface as a fault in somebody else's session.
 /// </remarks>
+[Integration]
 public sealed class PurgedAgentTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

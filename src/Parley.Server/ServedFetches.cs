@@ -8,14 +8,14 @@ namespace Parley.Server;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>What lets a report of a fetch be believed.</b> A fetch is recorded, and change notices follow it, only once
+/// <b>What lets a report of a fetch be believed.</b> A fetch is recorded, and a gone notice follows it, only once
 /// the adapter reports it wrote and verified the content. Without this, an agent could report having fetched a
 /// file it never asked for, or a hash it never received, and the broker would record it — harmless noise, but a
 /// record saying something that did not happen, which is what this store exists not to hold.
 /// </para>
 /// <para>
-/// <b>Keyed by the content, not only by the file</b>, so two fetches of one file by one agent, with a replacement
-/// between them, are each reportable with the hash each actually streamed.
+/// <b>Keyed by the content, not only by the file</b>, so two fetches of one name by one agent, with a removal and a
+/// new placement between them, are each reportable with the hash each actually streamed.
 /// </para>
 /// <para>
 /// In memory, and forgotten when the agent's last session ends or the broker restarts. A report that arrives
@@ -29,7 +29,10 @@ public sealed class ServedFetches
     // number because a raw control character in source is invisible to a reader and to a diff.
     private const char Separator = (char)0x1F;
 
-    private readonly ConcurrentDictionary<string, byte> _served = new(StringComparer.Ordinal);
+    // How many streams of exactly that content to that agent await their report. A count, not a mark: one agent
+    // fetching one file several times at once streams it several times, and each fetch reports (review, lens 1 run
+    // 63: with a mark, every report but the first was told the fetch went unrecorded, though it was recorded).
+    private readonly ConcurrentDictionary<string, int> _served = new(StringComparer.Ordinal);
 
     /// <summary>Records that a fetch streamed its whole content, verified against the row's hash.</summary>
     /// <param name="agent">The agent it was streamed to.</param>
@@ -37,7 +40,7 @@ public sealed class ServedFetches
     /// <param name="nameKey">The file's name key.</param>
     /// <param name="sha256">The hash of what was streamed.</param>
     public void Served(AgentName agent, string conversationId, string nameKey, ContentHash sha256) =>
-        _served[Key(agent, conversationId, nameKey, sha256)] = 0;
+        _ = _served.AddOrUpdate(Key(agent, conversationId, nameKey, sha256), 1, (_, waiting) => waiting + 1);
 
     /// <summary>Takes the record of a completed fetch, if there is one.</summary>
     /// <param name="agent">The agent reporting.</param>
@@ -45,8 +48,22 @@ public sealed class ServedFetches
     /// <param name="nameKey">The file's name key.</param>
     /// <param name="sha256">The hash the agent says it wrote.</param>
     /// <returns><see langword="true"/> when exactly that content was streamed to that agent and not yet reported.</returns>
-    public bool TryConsume(AgentName agent, string conversationId, string nameKey, ContentHash sha256) =>
-        _served.TryRemove(Key(agent, conversationId, nameKey, sha256), out _);
+    public bool TryConsume(AgentName agent, string conversationId, string nameKey, ContentHash sha256)
+    {
+        var key = Key(agent, conversationId, nameKey, sha256);
+
+        while (_served.TryGetValue(key, out var waiting))
+        {
+            if (waiting <= 1
+                    ? _served.TryRemove(new KeyValuePair<string, int>(key, waiting))
+                    : _served.TryUpdate(key, waiting - 1, waiting))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>Forgets every unreported fetch of an agent whose last session has ended.</summary>
     /// <param name="agent">The agent.</param>

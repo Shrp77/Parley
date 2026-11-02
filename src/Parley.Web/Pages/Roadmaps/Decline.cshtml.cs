@@ -95,7 +95,7 @@ public sealed class DeclineModel(BrokerDirectory directory) : PageModel
 
         var read = await BrokerDirectory.ReadAsync(async () =>
             await new BrokerClient(directory.ClientFor(project))
-                .ProposalsAsync(ProposalState.Waiting, HttpContext.RequestAborted).ConfigureAwait(false))
+                .ProposalAsync(Id, HttpContext.RequestAborted).ConfigureAwait(false))
             .ConfigureAwait(false);
 
         if (!read.Reachable)
@@ -105,7 +105,7 @@ public sealed class DeclineModel(BrokerDirectory directory) : PageModel
             return;
         }
 
-        Proposal = read.Value!.FirstOrDefault(p => p.Id == Id);
+        Proposal = read.Value is { State: ProposalState.Waiting } waiting ? waiting : null;
 
         if (Proposal is null)
         {

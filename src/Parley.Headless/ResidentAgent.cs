@@ -51,7 +51,7 @@ public sealed class ResidentAgent : IAsyncDisposable
     private const int DiagnosticsLimit = 4000;
 
     private readonly Process _process;
-    private readonly Channel<JsonNode> _events;
+    private readonly Channel<RunnerEvent> _events;
     private readonly SemaphoreSlim _turnLock = new(1, 1);
     private readonly StringBuilder _diagnostics = new();
     private readonly Lock _diagnosticsLock = new();
@@ -70,7 +70,7 @@ public sealed class ResidentAgent : IAsyncDisposable
         Workspace = workspace;
         _process = process;
         _clock = clock;
-        _events = Channel.CreateUnbounded<JsonNode>(
+        _events = Channel.CreateUnbounded<RunnerEvent>(
             new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
 
         _outputPump = Task.Run(PumpOutputAsync);
@@ -79,6 +79,10 @@ public sealed class ResidentAgent : IAsyncDisposable
 
     /// <summary>Gets who this agent is, as the registry names it.</summary>
     public AgentName Name { get; }
+
+    /// <summary>The launch token this process was started with, or <see langword="null"/> for none (SPEC.md §11.7).</summary>
+    /// <remarks>Kept so a node rejoining a broker can tell it again which processes it started.</remarks>
+    public string? IssuedToken { get; private init; }
 
     /// <summary>Gets the directory the agent runs in.</summary>
     public string Workspace { get; }
@@ -193,7 +197,12 @@ public sealed class ResidentAgent : IAsyncDisposable
                 ex);
         }
 
-        return new ResidentAgent(name, workspace, process, clock);
+        return new ResidentAgent(name, workspace, process, clock)
+        {
+            IssuedToken = environment is not null && environment.TryGetValue(Parley.Core.LaunchToken.Variable, out var token)
+                ? token
+                : null,
+        };
     }
 
     /// <summary>
@@ -215,7 +224,7 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// the exchange is unharmed — still owed, still open, tried again — and the result that
     /// eventually arrives is discarded before the next turn rather than being read as its answer.
     /// Without that bookkeeping the stream desynchronises and every later turn reads the previous
-    /// turn's reply.
+    /// turn's reply. An agent that does not take its prompt within the timeout is another matter, and is ended.
     /// </para>
     /// </remarks>
     public Task<TurnOutcome> TakeTurnAsync(
@@ -255,7 +264,19 @@ public sealed class ResidentAgent : IAsyncDisposable
                 return Died(started);
             }
 
-            await DiscardAbandonedResultsAsync(cancellationToken).ConfigureAwait(false);
+            // **Nothing is said while a reply is still owed to nobody** (lens 1 run 102): the agent is working on a prompt
+            // a turn gave up on, and a prompt written now would be answered by that reply. So the turn waits for it, for
+            // as long as the turn itself may take, and ends timed out with nothing said if it does not come.
+            switch (await DiscardAbandonedResultsAsync(timeout, cancellationToken).ConfigureAwait(false))
+            {
+                case Drained.Died:
+                    return Died(started);
+                case Drained.StillOwed:
+                    return new TurnOutcome(
+                        Completed: false, IsError: false, StopReason: null,
+                        _clock.GetElapsedTime(started), CostUsd: 0, ModelTurns: 0,
+                        PermissionDenials: 0, TimedOut: true, ProcessDied: false);
+            }
 
             var message = new JsonObject
             {
@@ -268,17 +289,49 @@ public sealed class ResidentAgent : IAsyncDisposable
                 }
             };
 
+            // **The caller's cancel never interrupts the prompt half-way** (lens 1 run 129). Standard input flushes on
+            // every write, so a cancel seen by the flush, or by the write's own flush on Windows, came after the line had
+            // gone: the agent answered a prompt nobody was owed and every later turn stayed one reply behind. So the cancel
+            // is looked at before anything is said, when nothing is owed, and after the whole line is, when the reply is.
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var sending = SendAsync(message.ToJsonString());
+
             try
             {
-                await _process.StandardInput
-                    .WriteLineAsync(message.ToJsonString().AsMemory(), cancellationToken)
-                    .ConfigureAwait(false);
-
-                await _process.StandardInput.FlushAsync(cancellationToken).ConfigureAwait(false);
+                await sending.WaitAsync(timeout, CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is IOException or ObjectDisposedException)
             {
                 return Died(started);
+            }
+            catch (TimeoutException)
+            {
+                // **An agent that will not take its prompt is ended, unlike one that runs long.** It is owed no reply, so
+                // it is not busy: it has stopped reading its input, for as long as a whole turn may take. And part of the
+                // line may already be in the pipe, so whatever is written next joins it as one broken line, and no turn
+                // could be put to it again. The context a timeout keeps alive is out of reach, so the process is killed and
+                // the turn is reported as its death, which is what the node replaces on the next wake. The kill is also
+                // what ends the write, which a cancel cannot reach on every platform.
+                Kill();
+
+                try
+                {
+                    // Bounded too: another child started at the same moment can inherit the pipe and keep it open.
+                    await Quietly(sending).WaitAsync(timeout, CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (TimeoutException)
+                {
+                }
+
+                return Died(started);
+            }
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                // The caller's, while the line went: it is said, so its reply is owed to nobody, as below.
+                Interlocked.Increment(ref _abandonedResults);
+                cancellationToken.ThrowIfCancellationRequested();
             }
 
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -312,6 +365,15 @@ public sealed class ResidentAgent : IAsyncDisposable
                     Completed: false, IsError: false, StopReason: null,
                     _clock.GetElapsedTime(started), CostUsd: 0, ModelTurns: 0,
                     PermissionDenials: 0, TimedOut: true, ProcessDied: false);
+            }
+            catch (OperationCanceledException)
+            {
+                // The caller's, after the prompt was written: a node stopping while the process lives on, as a project
+                // restarted under `serve` does. The agent still answers, and that answer is owed to nobody either.
+                // Uncounted, it was read as the next turn's, and every turn after stayed one reply behind (lens 1 run 101).
+                Interlocked.Increment(ref _abandonedResults);
+
+                throw;
             }
         }
         finally
@@ -377,22 +439,50 @@ public sealed class ResidentAgent : IAsyncDisposable
         }
         catch (OperationCanceledException)
         {
-            try
-            {
-                _process.Kill(entireProcessTree: true);
-            }
-            catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException)
-            {
-                // It exited between the timeout and the kill.
-            }
+            Kill();
 
             return false;
         }
     }
 
+    /// <summary>Kills the agent's process and everything it started.</summary>
+    /// <remarks>
+    /// Never throws for a kill that failed. Both callers have something still to settle after it, a bounded wait on the
+    /// write the kill was meant to end or the shutdown's answer, and a kill that escaped would leave the write pending and
+    /// the stop of every agent after this one abandoned.
+    /// </remarks>
+    private void Kill()
+    {
+        try
+        {
+            _process.Kill(entireProcessTree: true);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException)
+        {
+            // It exited before the kill.
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or AggregateException)
+        {
+            // The system refused the kill, for the process or one it started. Nothing more can be done from here; what the
+            // caller waits on next is bounded.
+        }
+    }
+
+    /// <summary>Writes one line to the agent's standard input, whole.</summary>
+    /// <param name="line">The line.</param>
+    /// <returns>A task that completes when the line has gone.</returns>
+    /// <remarks>
+    /// Given no token on purpose: a write stopped part-way leaves part of a line in the pipe. Its caller bounds the wait.
+    /// </remarks>
+    private async Task SendAsync(string line)
+    {
+        await _process.StandardInput.WriteLineAsync(line.AsMemory(), CancellationToken.None).ConfigureAwait(false);
+        await _process.StandardInput.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Waits until no turn is in progress, then tells the agent to quit while still holding the turn, so none can begin
-    /// between the two (SPEC.md §11.1's fourth way a resident ends).
+    /// between the two (SPEC.md §11.1's third way a resident ends, the refresh).
     /// </summary>
     /// <param name="grace">How long to allow it to exit once told, before killing it.</param>
     /// <param name="cancellationToken">Cancels the wait for the turn, which leaves the agent running.</param>
@@ -452,22 +542,11 @@ public sealed class ResidentAgent : IAsyncDisposable
                     continue;
                 }
 
-                JsonNode? node;
-
-                try
+                // A runner is free to write things that are not protocol events. Skipping is right:
+                // refusing would let one stray line end an otherwise healthy agent.
+                if (RunnerEvent.Read(line) is { } evt)
                 {
-                    node = JsonNode.Parse(line);
-                }
-                catch (JsonException)
-                {
-                    // A runner is free to write things that are not protocol events. Skipping is
-                    // right: refusing would let one stray line end an otherwise healthy agent.
-                    continue;
-                }
-
-                if (node is not null)
-                {
-                    await _events.Writer.WriteAsync(node).ConfigureAwait(false);
+                    await _events.Writer.WriteAsync(evt).ConfigureAwait(false);
                 }
             }
         }
@@ -502,25 +581,44 @@ public sealed class ResidentAgent : IAsyncDisposable
         }
     }
 
-    /// <summary>Discards results owed to turns that already gave up waiting.</summary>
-    /// <param name="cancellationToken">Cancels the drain.</param>
-    /// <returns>A task that completes when the stream is back in step.</returns>
-    /// <remarks>
-    /// Bounded by a short wait rather than run to completion. An abandoned result that never
-    /// arrives — because the agent wedged rather than merely ran long — must not stop the next
-    /// turn from being attempted; the worst case is one turn reading a stale reply, which the
-    /// outcome will show as a result that answers nothing.
-    /// </remarks>
-    private async Task DiscardAbandonedResultsAsync(CancellationToken cancellationToken)
+    /// <summary>How draining the results owed to nobody ended.</summary>
+    private enum Drained
     {
-        while (Volatile.Read(ref _abandonedResults) > 0)
-        {
-            using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            budget.CancelAfter(TimeSpan.FromSeconds(5));
+        /// <summary>None is owed: the agent's next reply is the next turn's.</summary>
+        InStep,
 
-            try
+        /// <summary>One is still owed when the turn's own time ran out: the agent is still working on it.</summary>
+        StillOwed,
+
+        /// <summary>The agent's output ended: it is gone.</summary>
+        Died,
+    }
+
+    /// <summary>Discards results owed to turns that already gave up waiting.</summary>
+    /// <param name="timeout">How long the turn waiting on them may take.</param>
+    /// <param name="cancellationToken">Cancels the drain.</param>
+    /// <returns>Whether the stream is back in step, still owed a reply, or ended.</returns>
+    /// <remarks>
+    /// <b>Never given up while the agent lives.</b> The count is what keeps every later turn from reading the reply
+    /// before its own; set to zero while a reply was still coming, every turn after stayed one reply behind for good
+    /// (lens 1 run 102). An agent that has wedged rather than run long is the turn timeout's to show, turn after turn,
+    /// and the node's to restart; reading its stale replies as answers would hide it.
+    /// </remarks>
+    private async Task<Drained> DiscardAbandonedResultsAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        if (Volatile.Read(ref _abandonedResults) == 0)
+        {
+            return Drained.InStep;
+        }
+
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(timeout);
+
+        try
+        {
+            while (Volatile.Read(ref _abandonedResults) > 0)
             {
-                var evt = await _events.Reader.ReadAsync(budget.Token).ConfigureAwait(false);
+                var evt = await _events.Reader.ReadAsync(deadline.Token).ConfigureAwait(false);
 
                 Observe(evt);
 
@@ -529,62 +627,48 @@ public sealed class ResidentAgent : IAsyncDisposable
                     Interlocked.Decrement(ref _abandonedResults);
                 }
             }
-            catch (Exception ex) when (ex is OperationCanceledException or ChannelClosedException)
-            {
-                // Nothing more is coming in the time allowed. Give up on the bookkeeping rather
-                // than on the turn.
-                Volatile.Write(ref _abandonedResults, 0);
 
-                return;
-            }
+            return Drained.InStep;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return Drained.StillOwed;
+        }
+        catch (ChannelClosedException)
+        {
+            return Drained.Died;
         }
     }
 
     /// <summary>Notes anything from an event that is worth keeping.</summary>
     /// <param name="evt">The event.</param>
-    private void Observe(JsonNode evt)
+    private void Observe(RunnerEvent evt)
     {
-        if (TypeOf(evt) != "system")
-        {
-            return;
-        }
-
         // Matched on the subtype rather than the type. A runner emits several kinds of `system`
         // event -- hook notifications among them -- and only `init` carries the session.
-        if (evt["subtype"]?.GetValue<string>() is "init" &&
-            evt["session_id"]?.GetValue<string>() is { Length: > 0 } id)
+        if (evt is { Type: "system", Subtype: "init", SessionId: { Length: > 0 } id })
         {
             _sessionId = id;
         }
     }
 
-    private static string? TypeOf(JsonNode evt)
-    {
-        try
-        {
-            return evt["type"]?.GetValue<string>();
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or FormatException)
-        {
-            return null;
-        }
-    }
+    private static string? TypeOf(RunnerEvent evt) => evt.Type;
 
     /// <summary>Builds the outcome from a result event.</summary>
     /// <param name="evt">The result.</param>
     /// <param name="started">When the turn began.</param>
     /// <returns>What the turn cost.</returns>
-    private TurnOutcome Completed(JsonNode evt, long started) =>
+    private TurnOutcome Completed(RunnerEvent evt, long started) =>
         new(Completed: true,
-            IsError: Bool(evt, "is_error"),
-            StopReason: String(evt, "stop_reason") ?? String(evt, "subtype"),
+            evt.IsError,
+            StopReason: evt.StopReason ?? evt.Subtype,
             _clock.GetElapsedTime(started),
-            Number(evt, "total_cost_usd"),
-            (int)Number(evt, "num_turns"),
-            evt["permission_denials"] is JsonArray denials ? denials.Count : 0,
+            evt.CostUsd,
+            evt.ModelTurns,
+            evt.PermissionDenials,
             TimedOut: false,
             ProcessDied: false,
-            String(evt, "result"));
+            evt.Result);
 
     private TurnOutcome Died(long started) =>
         new(Completed: false, IsError: true,
@@ -592,39 +676,157 @@ public sealed class ResidentAgent : IAsyncDisposable
             _clock.GetElapsedTime(started), CostUsd: 0, ModelTurns: 0,
             PermissionDenials: 0, TimedOut: false, ProcessDied: true);
 
-    private static bool Bool(JsonNode evt, string name)
+    /// <summary>What a turn uses from one line of a runner's output, read out in full when the line arrives.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Not read through <c>StrictJson</c>.</b> That refusal exists for files: so two readers of one file cannot
+    /// disagree on a member named twice, and so a lazily built node cannot throw when somebody first indexes it, after
+    /// the parse and outside its catch. Here the pump is a line's only reader and takes every field it will ever use at
+    /// the parse, under one catch, so neither can happen. Refusing costs a reply: a result line skipped leaves its turn
+    /// to time out, its reply is counted owed to nobody and never comes, and every later turn waits on it (lens 1 run
+    /// 132). So a member named twice reads as its last copy, a member whose name is not valid text is passed over, a field
+    /// that cannot be decoded reads as absent, and only a line that is not JSON at all is skipped.
+    /// </para>
+    /// <para>
+    /// Nothing else is kept, so nothing in the line is decoded later: a lone surrogate escape in a nested object, which
+    /// the runtime throws <see cref="InvalidOperationException"/> for when it decodes the name, faulted the pump, and
+    /// every turn after read as a dead process while the process lived.
+    /// </para>
+    /// </remarks>
+    /// <param name="Type">The event's type, <c>result</c> for a turn's end.</param>
+    /// <param name="Subtype">The event's subtype.</param>
+    /// <param name="SessionId">The session an <c>init</c> event names.</param>
+    /// <param name="IsError">Whether the turn ended in error.</param>
+    /// <param name="StopReason">Why the turn stopped.</param>
+    /// <param name="CostUsd">What the turn cost.</param>
+    /// <param name="ModelTurns">How many model turns it took.</param>
+    /// <param name="PermissionDenials">How many tool calls were refused permission.</param>
+    /// <param name="Result">The reply.</param>
+    internal sealed record RunnerEvent(
+        string? Type, string? Subtype, string? SessionId, bool IsError, string? StopReason, double CostUsd,
+        int ModelTurns, int PermissionDenials, string? Result)
     {
-        try
+        /// <summary>Reads one line.</summary>
+        /// <param name="line">The line.</param>
+        /// <returns>The event, or null when the line is not a JSON object.</returns>
+        /// <remarks>
+        /// <para>
+        /// <b>Read forward, once, taking only the top-level members a turn uses and passing over everything else.</b>
+        /// A document built of the line lost a result whose refused tool call carried an input nested past its default
+        /// depth of 64, which the model writes: the turn timed out, its reply was owed and never came, and the refusal
+        /// went unflagged (lens 2 run 139). Raising that depth to the line's length kept every line but made the build's
+        /// CPU time grow with the square of the depth, on this agent's pump: 200,000 deep took fifteen seconds and a
+        /// line of a megabyte nearly two minutes (lens 1 run 135). A forward reader passing over a value costs time in
+        /// proportion to its length whatever its depth, so no depth is refused and none is slow.
+        /// </para>
+        /// <para>
+        /// A member named twice reads as its last copy, a member whose name is not valid text is passed over (each name
+        /// is decoded on its own, so one cannot spoil another: lens 1 run 133), and a field that cannot be decoded reads
+        /// as absent. Passing over a value still checks it is JSON, as does the read past the end, so a line that is not
+        /// JSON at all is skipped as before.
+        /// </para>
+        /// </remarks>
+        internal static RunnerEvent? Read(string line)
         {
-            return evt[name]?.GetValue<bool>() ?? false;
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or FormatException)
-        {
-            return false;
-        }
-    }
+            try
+            {
+                // A line cannot nest deeper than it is long, so no bound short of every line's length is needed.
+                var reader = new Utf8JsonReader(
+                    Encoding.UTF8.GetBytes(line), new JsonReaderOptions { MaxDepth = int.MaxValue });
 
-    private static string? String(JsonNode evt, string name)
-    {
-        try
-        {
-            return evt[name]?.GetValue<string>();
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or FormatException)
-        {
-            return null;
-        }
-    }
+                if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
+                {
+                    return null;
+                }
 
-    private static double Number(JsonNode evt, string name)
-    {
-        try
-        {
-            return evt[name]?.GetValue<double>() ?? 0;
+                string? type = null, subtype = null, sessionId = null, stopReason = null, result = null;
+                var isError = false;
+                double cost = 0, turns = 0;
+                var denials = 0;
+
+                while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+                {
+                    var name = Name(ref reader);
+
+                    reader.Read();
+
+                    switch (name)
+                    {
+                        case "type": type = String(ref reader); break;
+                        case "subtype": subtype = String(ref reader); break;
+                        case "session_id": sessionId = String(ref reader); break;
+                        case "is_error": isError = reader.TokenType == JsonTokenType.True; break;
+                        case "stop_reason": stopReason = String(ref reader); break;
+                        case "total_cost_usd": cost = Number(ref reader); break;
+                        case "num_turns": turns = Number(ref reader); break;
+                        case "permission_denials": denials = Count(ref reader); break;
+                        case "result": result = String(ref reader); break;
+                    }
+
+                    // Past whatever value is left; nothing for a value already read to its end.
+                    reader.Skip();
+                }
+
+                // Nothing but whitespace may follow the object.
+                if (reader.Read())
+                {
+                    return null;
+                }
+
+                return new RunnerEvent(type, subtype, sessionId, isError, stopReason, cost, (int)turns, denials, result);
+            }
+            catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException)
+            {
+                return null;
+            }
         }
-        catch (Exception ex) when (ex is InvalidOperationException or FormatException)
+
+        private static string? Name(ref Utf8JsonReader reader)
         {
-            return 0;
+            try
+            {
+                return reader.GetString();
+            }
+            catch (InvalidOperationException)
+            {
+                // A lone surrogate escape in the name: passed over, its value with it.
+                return null;
+            }
+        }
+
+        private static string? String(ref Utf8JsonReader reader)
+        {
+            try
+            {
+                return reader.TokenType == JsonTokenType.String ? reader.GetString() : null;
+            }
+            catch (InvalidOperationException)
+            {
+                // A lone surrogate escape in the value: absent, rather than the whole event lost.
+                return null;
+            }
+        }
+
+        private static double Number(ref Utf8JsonReader reader) =>
+            reader.TokenType == JsonTokenType.Number && reader.TryGetDouble(out var number) ? number : 0;
+
+        // The array's elements, each passed over; left on the array's end.
+        private static int Count(ref Utf8JsonReader reader)
+        {
+            if (reader.TokenType != JsonTokenType.StartArray)
+            {
+                return 0;
+            }
+
+            var count = 0;
+
+            while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+            {
+                count++;
+                reader.Skip();
+            }
+
+            return count;
         }
     }
 

@@ -23,6 +23,7 @@ namespace Parley.Cli.Tests;
 /// the broken one.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ForeignDatabaseTests : IDisposable
 {
     private readonly string _directory =

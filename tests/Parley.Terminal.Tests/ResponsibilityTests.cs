@@ -13,6 +13,7 @@ namespace Parley.Terminal.Tests;
 /// about whose words are whose, and when it refuses to let a line be written.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ResponsibilityTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

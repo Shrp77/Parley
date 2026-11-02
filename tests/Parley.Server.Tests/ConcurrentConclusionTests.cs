@@ -26,6 +26,7 @@ namespace Parley.Server.Tests;
 /// Repeated, because one attempt at a race proves nothing.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ConcurrentConclusionTests
 {
     private const int Attempts = 15;

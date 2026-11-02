@@ -21,6 +21,7 @@ namespace Parley.Broker.Tests;
 /// had not.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SettlingTests : IDisposable
 {
     private const string Conversation = "invoice-export";

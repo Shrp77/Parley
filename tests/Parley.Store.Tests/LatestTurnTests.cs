@@ -10,6 +10,7 @@ namespace Parley.Store.Tests;
 /// The read the operator registry makes on every refresh of a conversation, so a surface can tell an agent that stopped
 /// with a refused permission from one still working. Most recent by when it was recorded, which is when it ended.
 /// </remarks>
+[Integration]
 public sealed class LatestTurnTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@here");
@@ -49,6 +50,26 @@ public sealed class LatestTurnTests
 
         Assert.False(latest[Billing].Clean);
         Assert.Equal(0, latest[Billing].PermissionDenials);
+    }
+
+    [Fact]
+    public async Task A_turn_reported_twice_is_recorded_once_and_another_turn_still_is()
+    {
+        // Lens 1 run 119: a node sends a turn's end again when its deadline passes, and the deadline can pass after the
+        // row is written, while a rewrite holds the broker up. Recorded twice, the turn's cost was counted twice.
+        var ct = TestContext.Current.CancellationToken;
+
+        using var connection = ParleyDatabase.OpenInMemory();
+        await new AgentRepository(connection).UpsertAsync(
+            new AgentRecord(Orders, "mcp", AgentTier.Headless, null, null, null, false, AgentStatus.Active), ct);
+
+        var turns = new InvocationRepository(connection);
+
+        Assert.Equal(1, await turns.RecordAsync(Orders, 1, 0, T0, TimeSpan.FromSeconds(30), 0, true, costUsd: 0.5, cancellationToken: ct));
+        Assert.Equal(0, await turns.RecordAsync(Orders, 1, 0, T0, TimeSpan.FromSeconds(30), 0, true, costUsd: 0.5, cancellationToken: ct));
+        Assert.Equal(1, await turns.RecordAsync(Orders, 1, 0, T0.AddMinutes(1), TimeSpan.FromSeconds(30), 0, false, cancellationToken: ct));
+
+        Assert.Equal(2, Dapper.SqlMapper.ExecuteScalar<long>(connection, "SELECT COUNT(*) FROM invocations;"));
     }
 
     [Fact]

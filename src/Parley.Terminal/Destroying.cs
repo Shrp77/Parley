@@ -127,9 +127,10 @@ internal static class Destroying
 
              {row.Messages} message{(row.Messages == 1 ? string.Empty : "s")}, between {participants}.
 
-             Every participant's half goes with it, including peers who did nothing but take part.
-             That is what deleting a conversation means: one with a side removed is a record that
-             misleads whoever reads it next. It cannot be undone.
+             Every participant's half goes with it, including peers who did nothing but take part,
+             and its folder of files, with anything copied into it by hand. That is what deleting a
+             conversation means: one with a side removed is a record that misleads whoever reads it
+             next. It cannot be undone.
              """);
     }
 

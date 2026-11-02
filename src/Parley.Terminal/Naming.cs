@@ -78,6 +78,11 @@ internal static class Naming
                    + ProjectName.MaxLength.ToString(CultureInfo.InvariantCulture) + " characters";
         }
 
+        if (ProjectName.IsDeviceName(typed))
+        {
+            return $"'{typed}' is a name Windows keeps for a device";
+        }
+
         return projects.Any(p => string.Equals(p.Name.Value, typed, StringComparison.Ordinal))
             ? $"'{typed}' is already named on this machine"
             : null;

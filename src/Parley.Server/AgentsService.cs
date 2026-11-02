@@ -74,6 +74,20 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
 
         RequireTheSameProtocol(request.ProtocolVersion);
 
+        // What an attach says about itself is printed to the person (§4.1.1), and an adapter reads it from a launch
+        // environment the agent can edit, so an escape here reached `parley registry` raw (lens 2 run 135). The ownership
+        // line is held to the same rule by the adapter and by storage; these three by nothing else, so here.
+        foreach (var (field, value) in new[]
+                 {
+                     ("adapter", request.Adapter), ("workspace", request.Workspace), ("resume handle", request.SessionRef),
+                 })
+        {
+            if (!PrintableLine.IsReportable(field, value, out var unprintable))
+            {
+                throw new RpcException(new Status(StatusCode.InvalidArgument, unprintable!));
+            }
+        }
+
         // A label, not a credential (§4.1.1): one that is not an identifier is a malformed call, refused whole so a typo
         // cannot register an agent that will never be found by it.
         var identity = default(AgentIdentity);
@@ -127,14 +141,46 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
             // after a Request arrived hears about it now rather than at the next one.
             await _runtime.NudgeAsync(name, context.CancellationToken).ConfigureAwait(false);
 
-            try
+            // Two kinds of event share the one stream, and a stream takes one write at a time.
+            using var writing = new SemaphoreSlim(1, 1);
+
+            async Task WriteAsync(Wire.Event written)
+            {
+                await writing.WaitAsync(context.CancellationToken).ConfigureAwait(false);
+
+                try
+                {
+                    await responseStream.WriteAsync(written, context.CancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    _ = writing.Release();
+                }
+            }
+
+            async Task NoticesAsync()
             {
                 await foreach (var notice in attached.Notices.ReadAllAsync(context.CancellationToken)
                                    .ConfigureAwait(false))
                 {
-                    await responseStream.WriteAsync(new Wire.Event { Notice = notice }, context.CancellationToken)
+                    await WriteAsync(new Wire.Event { Notice = notice }).ConfigureAwait(false);
+                }
+            }
+
+            async Task TidyingAsync()
+            {
+                await foreach (var underway in attached.Tidying.ReadAllAsync(context.CancellationToken)
+                                   .ConfigureAwait(false))
+                {
+                    await WriteAsync(new Wire.Event { Tidying = new Wire.Tidying { Underway = underway } })
                         .ConfigureAwait(false);
                 }
+            }
+
+            try
+            {
+                // Both end together: the attachment closing completes both channels.
+                await Task.WhenAll(NoticesAsync(), TidyingAsync()).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -154,19 +200,20 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
 
         // A bare role reaches every participant registered under it (§5.5); a whole name reaches one.
         // Told apart by shape rather than guessed at.
-        IReadOnlyList<Parley.Broker.RequestOutcome> outcomes = AgentName.IsRole(request.To)
-            ? await Run(
+        var (outcomes, waited) = AgentName.IsRole(request.To)
+            ? await Send(
                 from,
                 (broker, now, ct) => broker.RequestRoleAsync(
                     from, request.To, request.ResponderModel, request.PayloadJson, now, conversation, ct),
                 context).ConfigureAwait(false)
-            : [await Run(
+            : await Send<IReadOnlyList<Parley.Broker.RequestOutcome>>(
                 from,
-                (broker, now, ct) => broker.RequestAsync(
-                    from, Name(request.To), request.ResponderModel, request.PayloadJson, now, conversation, ct),
-                context).ConfigureAwait(false)];
+                async (broker, now, ct) => [await broker.RequestAsync(
+                    from, Name(request.To), request.ResponderModel, request.PayloadJson, now, conversation, ct)
+                    .ConfigureAwait(false)],
+                context).ConfigureAwait(false);
 
-        var reply = new Wire.RequestReply();
+        var reply = new Wire.RequestReply { Waited = waited };
 
         foreach (var outcome in outcomes)
         {
@@ -188,7 +235,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
 
         var from = Caller(request.From);
 
-        var outcome = await Run(
+        var (outcome, waited) = await Send(
             from,
             (broker, now, ct) => broker.ClarifyAsync(
                 request.ExchangeId, from, request.ResponderModel, request.PayloadJson, now, ct, [.. request.Settles]),
@@ -196,7 +243,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
 
         await WakeRecipientAsync(outcome, context).ConfigureAwait(false);
 
-        return Said(outcome);
+        return Said(outcome, waited);
     }
 
     /// <inheritdoc/>
@@ -207,7 +254,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
 
         var from = Caller(request.From);
 
-        var outcome = await Run(
+        var (outcome, waited) = await Send(
             from,
             (broker, now, ct) => broker.ResultAsync(
                 request.ExchangeId, from, request.ResponderModel, request.PayloadJson, now, ct, [.. request.Settles]),
@@ -221,7 +268,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
             await WakeSilentVotersAsync(result.ConversationId, context).ConfigureAwait(false);
         }
 
-        return Said(outcome);
+        return Said(outcome, waited);
     }
 
     /// <inheritdoc/>
@@ -284,39 +331,80 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.InboxReply> DrainInbox(Wire.DrainInboxRequest request, ServerCallContext context)
+    public override async Task DrainInbox(
+        IAsyncStreamReader<Wire.DrainInboxFrame> requestStream,
+        IServerStreamWriter<Wire.InboxReply> responseStream,
+        ServerCallContext context)
     {
-        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(requestStream);
+        ArgumentNullException.ThrowIfNull(responseStream);
         ArgumentNullException.ThrowIfNull(context);
 
+        if (!await requestStream.MoveNext(context.CancellationToken).ConfigureAwait(false)
+            || requestStream.Current.FrameCase != Wire.DrainInboxFrame.FrameOneofCase.Collect)
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "A collection begins by saying what to collect."));
+        }
+
+        var request = requestStream.Current.Collect;
         var agent = Caller(request.Agent);
 
         // The single place a collection is observable, which is why the wake bound keys on it: an agent that
         // attached and has not collected has read nothing. Collected rather than run, so the bound is freed before
         // the drain reads and a message landing during it asks for its own turn.
-        var inbox = await Run(
+        var (inbox, hold) = await Run(
             agent,
-            (broker, now, ct) => broker.DrainInboxAsync(agent, now, request.Limit > 0 ? request.Limit : null, ct),
+            (broker, _, ct) => broker.CollectInboxAsync(agent, _runtime.InboxHolds, request.Limit > 0 ? request.Limit : null, ct),
             context,
             collecting: true).ConfigureAwait(false);
 
-        // A collection its caller limited frees the bound for everything, and may have left messages behind that
-        // nothing will now ask a turn for. Asked again here, once: the claim holds until the next collection, so a
-        // caller draining one at a time costs a turn per collection and never a turn per message left.
-        if (request.Limit > 0 && inbox.Messages.Count >= request.Limit)
-        {
-            var left = await _runtime.UseConnectionAsync(
-                async (connection, _, ct) => await new MessageRepository(connection).CountPendingAsync(agent, ct)
-                    .ConfigureAwait(false),
-                context.CancellationToken).ConfigureAwait(false);
+        var acknowledged = false;
 
-            if (left > 0)
+        try
+        {
+            await responseStream.WriteAsync(Reply(inbox), context.CancellationToken).ConfigureAwait(false);
+
+            // **Delivered only once the caller says it has the reply** (SPEC.md §6). A call that ends first, cancelled by
+            // its caller or lost on the way, records nothing, and the next collection hands everything over again. Once
+            // the acknowledgement has arrived it is recorded whatever the caller does next.
+            if (await requestStream.MoveNext(context.CancellationToken).ConfigureAwait(false)
+                && requestStream.Current.FrameCase == Wire.DrainInboxFrame.FrameOneofCase.Acknowledge)
             {
-                _ = await WakeAsync(agent, "a collection it limited left messages waiting", context).ConfigureAwait(false);
+                acknowledged = await Run(
+                    agent,
+                    async (broker, now, ct) =>
+                    {
+                        await broker.AcknowledgeInboxAsync(hold, now, ct).ConfigureAwait(false);
+                        return true;
+                    },
+                    context,
+                    cancellationToken: CancellationToken.None).ConfigureAwait(false);
             }
         }
+        finally
+        {
+            _runtime.InboxHolds.Release(hold);
 
-        var reply = new Wire.InboxReply();
+            // A collection that left messages behind, by its caller's limit, by the size one collection carries or by
+            // never being acknowledged, frees the bound for everything, and nothing will now ask a turn for what it left.
+            // Asked again here, once: the claim holds until the next collection, so a caller draining a little at a time
+            // costs a turn per collection and never a turn per message left. After the hold is released, so the turn it
+            // asks for can collect what it left, and whatever became of the call.
+            if (inbox.MessagesWaiting > 0 || (!acknowledged && hold.Messages.Count > 0))
+            {
+                await _runtime.NudgeAsync(agent, CancellationToken.None).ConfigureAwait(false);
+                _ = _runtime.RequestAttentionForMail(agent, "a collection left messages waiting");
+            }
+        }
+    }
+
+    private static Wire.InboxReply Reply(Parley.Broker.Inbox inbox)
+    {
+        var reply = new Wire.InboxReply
+        {
+            MessagesWaiting = inbox.MessagesWaiting,
+            ClosurePollsNotListed = inbox.ClosurePollsNotListed,
+        };
         reply.Messages.AddRange(inbox.Messages.Select(Conversions.Out));
         reply.ClosurePolls.AddRange(inbox.ClosurePolls.Select(Conversions.Out));
 
@@ -326,11 +414,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
 
         // What became of the caller's own proposals (SPEC.md section 5.7). Not a reason to wake anything either.
         reply.RoadmapNotices.AddRange(inbox.RoadmapNotices.Select(Conversions.Out));
-
-        reply.RoadmapNoticesWaiting = await _runtime.UseConnectionAsync(
-            async (connection, _, ct) => await new RoadmapRepository(connection).CountNoticesAsync(agent, ct)
-                .ConfigureAwait(false),
-            context.CancellationToken).ConfigureAwait(false);
+        reply.RoadmapNoticesWaiting = inbox.RoadmapNoticesWaiting;
 
         return reply;
     }
@@ -372,14 +456,14 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         return await _runtime.UseConnectionAsync(
             async (connection, _, ct) => new Wire.Notice
             {
-                MessagesWaiting = await new MessageRepository(connection).CountPendingAsync(agent, ct)
+                MessagesWaiting = await new MessageRepository(connection).CountPendingAsync(agent, cancellationToken: ct)
                     .ConfigureAwait(false),
                 ClosurePollsWaiting = await new ConversationRepository(connection)
                     .CountOutstandingPollsAsync(agent, ct).ConfigureAwait(false),
                 FileNoticesWaiting = await new FileNoticeRepository(connection)
                     .CountWaitingAsync(agent, cancellationToken: ct).ConfigureAwait(false),
                 RoadmapNoticesWaiting = await new RoadmapRepository(connection)
-                    .CountNoticesAsync(agent, ct).ConfigureAwait(false)
+                    .CountNoticesAsync(agent, cancellationToken: ct).ConfigureAwait(false)
             },
             context.CancellationToken).ConfigureAwait(false);
     }
@@ -416,14 +500,16 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
     /// Placing sends nothing and wakes nobody (SPEC.md §5): the Request or Result that needs the file names it, and
     /// that message does the waking.
     /// </remarks>
-    public override Task<Wire.PlaceFileReply> PlaceFile(
+    public override Task PlaceFile(
         IAsyncStreamReader<Wire.PlaceFileFrame> requestStream,
+        IServerStreamWriter<Wire.PlaceFileAnswer> responseStream,
         ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(requestStream);
+        ArgumentNullException.ThrowIfNull(responseStream);
         ArgumentNullException.ThrowIfNull(context);
 
-        return new FileWork(_runtime).PlaceAsync(requestStream, context.CancellationToken);
+        return new FileWork(_runtime).PlaceAsync(requestStream, responseStream, context.CancellationToken);
     }
 
     /// <inheritdoc/>
@@ -470,13 +556,37 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         AgentName agent,
         Func<Parley.Broker.Broker, DateTimeOffset, CancellationToken, Task<T>> work,
         ServerCallContext context,
-        bool collecting = false)
+        bool collecting = false,
+        CancellationToken? cancellationToken = null)
+    {
+        var token = cancellationToken ?? context.CancellationToken;
+
+        return await Refused(() => collecting
+            ? _runtime.CollectAsync(agent, work, token)
+            : _runtime.RunAsync(agent, work, token)).ConfigureAwait(false);
+    }
+
+    /// <summary>Runs a send, saying whether it waited on a rewrite of the store (SPEC.md §4.0, §9.1).</summary>
+    /// <typeparam name="T">What the send returns.</typeparam>
+    /// <param name="agent">Who is sending.</param>
+    /// <param name="work">The send.</param>
+    /// <param name="context">The call.</param>
+    /// <returns>What the send returned, and whether it waited.</returns>
+    private Task<(T Value, bool Waited)> Send<T>(
+        AgentName agent,
+        Func<Parley.Broker.Broker, DateTimeOffset, CancellationToken, Task<T>> work,
+        ServerCallContext context) =>
+        Refused(() => _runtime.RunNotingRewriteAsync(agent, work, context.CancellationToken));
+
+    /// <summary>Runs a call on an agent's behalf, turning what the broker refused into the status that says why.</summary>
+    /// <typeparam name="T">What the call returns.</typeparam>
+    /// <param name="run">The call.</param>
+    /// <returns>What it returned.</returns>
+    private static async Task<T> Refused<T>(Func<Task<T>> run)
     {
         try
         {
-            return collecting
-                ? await _runtime.CollectAsync(agent, work, context.CancellationToken).ConfigureAwait(false)
-                : await _runtime.RunAsync(agent, work, context.CancellationToken).ConfigureAwait(false);
+            return await run().ConfigureAwait(false);
         }
         catch (NotAttachedException exception)
         {
@@ -562,14 +672,15 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         }
     }
 
-    private static Wire.SayReply Said(Parley.Broker.SayOutcome outcome)
+    private static Wire.SayReply Said(Parley.Broker.SayOutcome outcome, bool waited)
     {
         var reply = new Wire.SayReply
         {
             Ok = outcome.Succeeded,
             Refusal = Conversions.Out(outcome.Error),
             Deduplicated = outcome.Succeeded && !outcome.Stored,
-            MessageId = outcome.Message?.Id ?? 0
+            MessageId = outcome.Message?.Id ?? 0,
+            Waited = waited
         };
 
         reply.CannotSettle.AddRange(outcome.CannotSettle.Select(c => new Wire.SettleRefusal

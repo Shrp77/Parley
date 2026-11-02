@@ -23,6 +23,7 @@ namespace Parley.Client.Tests;
 /// on every screen, and it is what a second implementation would read.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class AskShapeTests
 {
     private static readonly ProjectSettings Alpha =

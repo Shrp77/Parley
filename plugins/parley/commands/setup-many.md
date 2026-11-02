@@ -93,7 +93,7 @@ Enrolment prints this, and it is the part that has to be done in order:
 
    `node.json` sits beside the projects at the root and every project starts from it.
 2. Each repository started by the enrolment, and **registered**. Enrolment starts them itself and
-   reports which ones registered - one reported as *not known* has not failed, it simply had not
+   reports which ones registered - one reported as *not registered yet* has not failed, it simply had not
    registered by the time the command stopped waiting. A session already open in a repository
    loads a new launch entry only when it restarts, which is the likeliest reason for one that is
    not seen.

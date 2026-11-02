@@ -37,7 +37,7 @@ public sealed class MessageRepository(SqliteConnection connection)
     /// </remarks>
     private const string PendingPredicate =
         """
-        WHERE to_agent = @Agent AND delivered_utc IS NULL
+        WHERE to_agent = @Agent AND delivered_utc IS NULL AND id NOT IN @Excluding
           AND (type <> 'request'
                OR EXISTS (SELECT 1 FROM exchanges e
                            WHERE e.id = messages.exchange_id AND e.state = 'OPEN'))
@@ -179,13 +179,60 @@ public sealed class MessageRepository(SqliteConnection connection)
             id, exchangeId, type, from, to, responderModel, payloadJson, conversation, nowUtc, null));
     }
 
+    /// <summary>The oldest message waiting for a participant that is not on an exchange it owes a move on.</summary>
+    /// <param name="agent">The recipient.</param>
+    /// <param name="excluding">Messages a collection in flight holds, which no other collection hands over.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The message, or <see langword="null"/> when every waiting message is a debt.</returns>
+    /// <remarks>
+    /// Every collection carries it (SPEC.md §7.3), a limited one included, and a limit cuts <see cref="GetPendingAsync"/>
+    /// before its debts end; read here so a caller collecting a few at a time is not held behind a flood for good.
+    /// </remarks>
+    public async Task<Message?> GetOldestNotOwedAsync(
+        AgentName agent,
+        IReadOnlyCollection<long>? excluding = null,
+        CancellationToken cancellationToken = default) =>
+        (await _connection.QueryAsync<MessageRow>(
+            new CommandDefinition(
+                $"""
+                {SelectColumns}
+                {PendingPredicate}
+                  AND NOT EXISTS (SELECT 1 FROM exchanges e
+                                   WHERE e.id = messages.exchange_id
+                                     AND e.state = 'OPEN'
+                                     AND e.owed_by = @Agent)
+                ORDER BY id
+                LIMIT 1;
+                """,
+                new { Agent = agent.Value, Excluding = excluding ?? [] },
+                cancellationToken: cancellationToken)).ConfigureAwait(false)).FirstOrDefault()?.ToDomain();
+
+    /// <summary>The open exchanges a participant owes a move on.</summary>
+    /// <param name="agent">The participant.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Their identifiers.</returns>
+    /// <remarks>
+    /// So a collection can tell its debts from the rest, which <see cref="GetPendingAsync"/> orders by and does not say:
+    /// a collection keeps room for the oldest message that is not a debt (SPEC.md §7.3).
+    /// </remarks>
+    public async Task<IReadOnlySet<long>> GetOwedExchangeIdsAsync(
+        AgentName agent,
+        CancellationToken cancellationToken = default) =>
+        (await _connection.QueryAsync<long>(
+            new CommandDefinition(
+                "SELECT id FROM exchanges WHERE state = 'OPEN' AND owed_by = @Agent;",
+                new { Agent = agent.Value },
+                cancellationToken: cancellationToken)).ConfigureAwait(false)).ToHashSet();
+
     /// <summary>How many messages are waiting for a participant.</summary>
     /// <param name="agent">The participant.</param>
+    /// <param name="excluding">Messages to leave out of the count, or <see langword="null"/> for none.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>The number <see cref="GetPendingAsync"/> would hand over, unlimited.</returns>
     /// <remarks>Reads and changes nothing, so it is safe to call from something that will not act on it.</remarks>
     public async Task<int> CountPendingAsync(
         AgentName agent,
+        IReadOnlyCollection<long>? excluding = null,
         CancellationToken cancellationToken = default) =>
         await _connection.ExecuteScalarAsync<int>(
             new CommandDefinition(
@@ -193,14 +240,17 @@ public sealed class MessageRepository(SqliteConnection connection)
                 SELECT count(*) FROM messages
                 {PendingPredicate};
                 """,
-                new { Agent = agent.Value },
+                new { Agent = agent.Value, Excluding = excluding ?? [] },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
     /// <summary>Loads the messages awaiting delivery to a participant, debts first.</summary>
     /// <param name="agent">The recipient.</param>
     /// <param name="limit">The most messages to return, or <see langword="null"/> for all.</param>
+    /// <param name="excluding">Messages a collection in flight holds, which no other collection hands over.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>Pending messages, those on exchanges it owes a move on first, then by age.</returns>
+    /// <returns>
+    /// Pending messages: those on exchanges it owes a move on first, taken in turn across senders, then the rest by age.
+    /// </returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="limit"/> is not positive.</exception>
     /// <remarks>
     /// <para>
@@ -216,6 +266,7 @@ public sealed class MessageRepository(SqliteConnection connection)
     public async Task<IReadOnlyList<Message>> GetPendingAsync(
         AgentName agent,
         int? limit = null,
+        IReadOnlyCollection<long>? excluding = null,
         CancellationToken cancellationToken = default)
     {
         if (limit is { } max)
@@ -223,22 +274,38 @@ public sealed class MessageRepository(SqliteConnection connection)
             ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(max, 0);
         }
 
+        // Each sender's debts are numbered in its own order, and debts are taken by that number: every sender's first,
+        // then every sender's second. A collection is bounded (SPEC.md §10.1), so in plain age order one sender writing
+        // fast enough held every other sender's Requests out of every collection.
         var rows = await _connection.QueryAsync<MessageRow>(
             new CommandDefinition(
                 $"""
+                WITH waiting AS (
+                    SELECT id AS message_id,
+                           from_agent AS sender,
+                           CASE
+                               WHEN EXISTS (SELECT 1 FROM exchanges e
+                                             WHERE e.id = messages.exchange_id
+                                               AND e.state = 'OPEN'
+                                               AND e.owed_by = @Agent)
+                               THEN 0 ELSE 1
+                           END AS owed_rank
+                    FROM messages
+                    {PendingPredicate}),
+                taken AS (
+                    SELECT message_id,
+                           owed_rank,
+                           CASE owed_rank
+                               WHEN 0 THEN ROW_NUMBER() OVER (PARTITION BY owed_rank, sender ORDER BY message_id)
+                               ELSE 0
+                           END AS turn
+                    FROM waiting)
                 {SelectColumns}
-                {PendingPredicate}
-                ORDER BY CASE
-                             WHEN EXISTS (SELECT 1 FROM exchanges e
-                                           WHERE e.id = messages.exchange_id
-                                             AND e.state = 'OPEN'
-                                             AND e.owed_by = @Agent)
-                             THEN 0 ELSE 1
-                         END,
-                         id
+                JOIN taken ON taken.message_id = messages.id
+                ORDER BY taken.owed_rank, taken.turn, messages.id
                 LIMIT @Limit;
                 """,
-                new { Agent = agent.Value, Limit = limit ?? -1 },
+                new { Agent = agent.Value, Limit = limit ?? -1, Excluding = excluding ?? [] },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         return [.. rows.Select(r => r.ToDomain())];

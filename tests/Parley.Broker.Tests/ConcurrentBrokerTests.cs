@@ -19,6 +19,7 @@ namespace Parley.Broker.Tests;
 /// make two brokers into two universes that could not possibly collide.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ConcurrentBrokerTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

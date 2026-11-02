@@ -45,7 +45,7 @@ public sealed class NodesService : Wire.Nodes.NodesBase
     }
 
     /// <inheritdoc/>
-    public override Task<Wire.Empty> ReportLaunch(Wire.LaunchReport request, ServerCallContext context)
+    public override async Task<Wire.Empty> ReportLaunch(Wire.LaunchReport request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
@@ -54,10 +54,45 @@ public sealed class NodesService : Wire.Nodes.NodesBase
         // report, so a refusal would tell it nothing it could act on (SPEC.md §11.7).
         if (AgentName.TryCreate(request.Agent, out var agent))
         {
-            _ = _runtime.LaunchReported(Machine(request.Machine), agent, request.Token);
+            var machine = Machine(request.Machine);
+
+            // **Filed under the name the repository is registered as now** (lens 1 run 105): an agent renamed since its
+            // node launched it is still known to the node by the old name, and a token filed there after a broker
+            // restart left the renamed process open outside Parley.
+            //
+            // **And never under a name another checkout holds** (lens 2 run 111): one claiming another's name in this
+            // project, by an edited or copied launch key, would otherwise leave the agent the name belongs to open
+            // outside Parley.
+            var named = AgentIdentity.TryRead(request.Identity, out var identity)
+                ? await _runtime.NameOfAsync(identity, machine, agent, request.Workspace, context.CancellationToken)
+                    .ConfigureAwait(false)
+                : agent;
+
+            if (named is { } filed)
+            {
+                _ = _runtime.LaunchReported(machine, filed, request.Token);
+            }
         }
 
-        return Task.FromResult(new Wire.Empty());
+        return new Wire.Empty();
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Answered with whether it retired anybody rather than refused when it does not check out, as a launch report is:
+    /// the node says what it did in its own output either way (SPEC.md §14).
+    /// </remarks>
+    public override async Task<Wire.WorkspaceGoneReply> ReportWorkspaceGone(
+        Wire.WorkspaceGoneReport request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var retired = AgentName.TryCreate(request.Agent, out var agent)
+            && await _runtime.WorkspaceGoneAsync(Machine(request.Machine), agent, context.CancellationToken)
+                .ConfigureAwait(false);
+
+        return new Wire.WorkspaceGoneReply { Retired = retired };
     }
 
     /// <inheritdoc/>

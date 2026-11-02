@@ -26,6 +26,7 @@ namespace Parley.Web.Tests;
 /// A test that stopped at the directory would have passed on the build that shipped it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class NamingAPageAwayTests : IDisposable
 {
     private readonly string _folder = Path.Combine(

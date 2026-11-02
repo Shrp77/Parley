@@ -93,6 +93,29 @@ public sealed class SeatHold : IDisposable
     /// </remarks>
     public bool Lost => Volatile.Read(ref _lost) == 1;
 
+    /// <summary>Whether the broker is rewriting its store now, so what this seat sends waits until it finishes.</summary>
+    /// <remarks>
+    /// Told by the broker on the stream (SPEC.md §9.1), and false again when the stream is lost: a broker that went away
+    /// is not rewriting anything this seat will wait on.
+    /// </remarks>
+    public bool Tidying => Volatile.Read(ref _tidying) == 1;
+
+    /// <summary>Raised on the stream's thread when <see cref="Tidying"/> changes.</summary>
+    /// <remarks>A signal only; it must return quickly, because the thread reading the stream raises it.</remarks>
+    public event EventHandler? TidyingChanged;
+
+    private int _tidying;
+
+    /// <summary>Records whether the store is being rewritten, and says so when that changed.</summary>
+    /// <param name="underway">Whether it is.</param>
+    private void Tidy(bool underway)
+    {
+        if (Interlocked.Exchange(ref _tidying, underway ? 1 : 0) != (underway ? 1 : 0))
+        {
+            TidyingChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
     /// <summary>When this person was last seen doing anything in the console.</summary>
     /// <remarks>
     /// Read by the sweep in <see cref="SeatBook"/>. A browser tab left open is not a person at a
@@ -113,7 +136,7 @@ public sealed class SeatHold : IDisposable
     /// <summary>What has been handed to this person and not yet dealt with.</summary>
     /// <remarks>
     /// Newest last, the order a transcript reads in. Kept here rather than fetched per request
-    /// because a drain is not repeatable: it is what marks a message delivered, so what it
+    /// because a drain is not repeatable: once acknowledged it is what marks a message delivered, so what it
     /// returned is the only copy on the agent's own surface. A console restart loses it, and the
     /// text is still readable in the conversation the message belongs to — which is worth
     /// knowing, because the working window keeps running across the restart.
@@ -202,11 +225,15 @@ public sealed class SeatHold : IDisposable
                 await foreach (var received in _stream.ResponseStream
                     .ReadAllAsync(_cancellation.Token).ConfigureAwait(false))
                 {
-                    // Read and discarded. The stream has to be consumed or it backs up, but the
+                    // A notice is read and discarded. The stream has to be consumed or it backs up, but the
                     // count it carries is deliberately not kept: a notice says how much arrived
                     // and is never sent again to say how much left, so a cached count only ever
-                    // goes up. The broker is asked for the count directly.
-                    _ = received;
+                    // goes up. The broker is asked for the count directly. Whether the store is being rewritten
+                    // is a state the broker says again when it changes, so that one is kept.
+                    if (received.EventCase == Wire.Event.EventOneofCase.Tidying)
+                    {
+                        Tidy(received.Tidying.Underway);
+                    }
                 }
             }
             catch (OperationCanceledException)
@@ -219,6 +246,8 @@ public sealed class SeatHold : IDisposable
                 // returns, which matters more here than for a process-bound agent: nobody is
                 // going to notice a person has silently stopped being present and restart them.
             }
+
+            Tidy(false);
 
             if (!await ReattachAsync().ConfigureAwait(false))
             {

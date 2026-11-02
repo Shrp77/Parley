@@ -26,6 +26,7 @@ namespace Parley.Cli.Tests;
 /// on a clean clone for a reason that has nothing to do with the code.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class PackedToolTests
 {
     [Fact]

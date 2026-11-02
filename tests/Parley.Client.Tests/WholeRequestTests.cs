@@ -11,6 +11,7 @@ namespace Parley.Client.Tests;
 /// The terminal and the console build their Result form from <see cref="Delivered.Items"/>, and a Request declares
 /// no identifiers (SPEC.md §5.1), so the form answers it under <see cref="PayloadShape.WholeRequest"/>.
 /// </remarks>
+[Unit]
 public sealed class WholeRequestTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

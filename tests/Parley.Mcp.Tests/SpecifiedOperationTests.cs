@@ -28,6 +28,7 @@ namespace Parley.Mcp.Tests;
 /// belongs beside the adapter.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SpecifiedOperationTests
 {
     /// <summary>The prefix every agent-facing tool carries.</summary>

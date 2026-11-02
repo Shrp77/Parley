@@ -50,6 +50,7 @@ internal sealed class ConversationsRegion : FrameView
 
     internal ConversationsRegion()
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = RegionTitle;
         CanFocus = true;
         SetScheme(Colours.Region(Colours.Conversations));
@@ -192,10 +193,12 @@ internal sealed class ConversationsRegion : FrameView
     /// <remarks>
     /// The identifier alone is often a hash somebody's adapter generated, which distinguishes two
     /// rows without telling a reader which one they meant. The participants are what a person
-    /// actually remembers a conversation by.
+    /// actually remembers a conversation by. A roadmap item's conversation says which item, because
+    /// <c>rm1-3</c> alone says nothing.
     /// </remarks>
     private static string Line(ConversationSummary conversation) =>
         $"{Safe.Text(conversation.Id)}  "
+        + (conversation.Item is { } item ? $"[{Safe.Text(Parley.Client.Roadmaps.ItemWording.Belongs(item))}]  " : string.Empty)
         + $"({string.Join(", ", conversation.Participants.Select(p => Safe.Text(p.Value)))})  "
         + $"{conversation.Messages.ToString(CultureInfo.InvariantCulture)} messages  "
         + $"[{(conversation.HasOpenExchange ? Open : Settled)}]  "

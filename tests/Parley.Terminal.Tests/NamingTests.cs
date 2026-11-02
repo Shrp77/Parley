@@ -20,6 +20,7 @@ namespace Parley.Terminal.Tests;
 /// command rather than a broker.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class NamingTests : IDisposable
 {
     private readonly string _directory =

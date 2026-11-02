@@ -141,6 +141,24 @@ public static class ConsoleHost
 
         var app = builder.Build();
 
+        // **Nothing another site starts reaches a page.** A page here does things on a GET: it takes the person's seat and
+        // records their mail as delivered. An image or a link on any site the person visits would send that GET with the
+        // console's own Host, which the host check admits, and forge the delivery record (review, lens 2 run 66). The
+        // browser says who started a request; another site, or another port on this machine, is refused before any page
+        // runs. A typed address or a bookmark says `none`, the console's own pages `same-origin`.
+        app.Use(async (context, next) =>
+        {
+            if (StartedElsewhere(context))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsync(StartedElsewhereSaid, context.RequestAborted).ConfigureAwait(false);
+
+                return;
+            }
+
+            await next(context).ConfigureAwait(false);
+        });
+
         // **No other page may frame this one.** The console can purge an agent and read every transcript, and a page in
         // another tab that frames it can place its own buttons over the console's and have the person press them
         // (clickjacking). `frame-ancestors` is the current control and `X-Frame-Options` the one older browsers read.
@@ -150,10 +168,15 @@ public static class ConsoleHost
         {
             var headers = context.Response.Headers;
 
-            headers["X-Frame-Options"] = "DENY";
+            // The one page the console frames itself, a roadmap item's conversation, may be framed by the console's own
+            // pages and no other; every other page by nothing.
+            var framed = Embedded(context);
+
+            headers["X-Frame-Options"] = framed ? "SAMEORIGIN" : "DENY";
             headers["X-Content-Type-Options"] = "nosniff";
             headers["Referrer-Policy"] = "no-referrer";
-            headers["Content-Security-Policy"] = "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'";
+            headers["Content-Security-Policy"] =
+                $"frame-ancestors {(framed ? "'self'" : "'none'")}; base-uri 'none'; object-src 'none'; form-action 'self'";
 
             await next(context).ConfigureAwait(false);
         });
@@ -162,6 +185,46 @@ public static class ConsoleHost
         MapBrand(app);
 
         return app;
+    }
+
+    /// <summary>What a request another site started is told.</summary>
+    internal const string StartedElsewhereSaid =
+        "This console answers only its own pages, and an address typed or bookmarked. Open it from its own address.";
+
+    /// <summary>Whether the browser says another site started a request.</summary>
+    /// <param name="context">The request.</param>
+    /// <returns>True when <c>Sec-Fetch-Site</c> is <c>cross-site</c> or <c>same-site</c>.</returns>
+    /// <remarks>
+    /// <c>same-site</c> is refused too: on a loopback address every port is the same site, so another program's page on
+    /// this machine reads as one. A request with no such header comes from something that is not a browser, or one too
+    /// old to send it, and is left to the host check.
+    /// </remarks>
+    internal static bool StartedElsewhere(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var site = context.Request.Headers["Sec-Fetch-Site"].ToString();
+
+        return string.Equals(site, "cross-site", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(site, "same-site", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Whether a request is the console framing one of its own conversation pages.</summary>
+    /// <param name="context">The request.</param>
+    /// <returns>True for the conversation page asked for with <c>embed</c> and loaded into a frame.</returns>
+    /// <remarks>
+    /// <b>Embedded drops the console's frame, and with it the project's name.</b> An agent's message renders as live
+    /// links, so a link with <c>embed</c> opened as a page of its own would hide which project the person's act lands in.
+    /// So only the conversation page embeds, the one a roadmap's item frame loads, and only when the browser says it is
+    /// loading a frame (<c>Sec-Fetch-Dest</c>, which a page cannot set for a link the person follows).
+    /// </remarks>
+    internal static bool Embedded(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        return context.Request.Query.ContainsKey("embed")
+            && context.Request.Path.StartsWithSegments("/Conversations/Detail", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(context.Request.Headers["Sec-Fetch-Dest"], "iframe", StringComparison.Ordinal);
     }
 
     /// <summary>The brand images and the icon font, and the names they are reached by.</summary>
@@ -301,10 +364,10 @@ public static class ConsoleHost
     /// spelling nobody anticipated produces a warning that is merely unnecessary rather than a
     /// silence that is wrong.
     /// </remarks>
-    private static bool IsLoopback(string address) =>
+    internal static bool IsLoopback(string address) =>
         address.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .All(one =>
-                one.Contains("127.0.0.1", StringComparison.Ordinal)
-                || one.Contains("[::1]", StringComparison.Ordinal)
-                || one.Contains("localhost", StringComparison.OrdinalIgnoreCase));
+                Uri.TryCreate(one, UriKind.Absolute, out var uri)
+                && (string.Equals(uri.IdnHost, "localhost", StringComparison.OrdinalIgnoreCase)
+                    || (System.Net.IPAddress.TryParse(uri.IdnHost.Trim('[', ']'), out var ip) && System.Net.IPAddress.IsLoopback(ip))));
 }

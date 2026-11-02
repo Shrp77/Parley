@@ -7,11 +7,14 @@ using Parley.Core;
 namespace Parley.Store;
 
 /// <summary>
-/// A shared file as the store holds it: what every surface sees, and the modification time the reconcile compares.
+/// A shared file as the store holds it: what every surface sees, and the write time it was placed with.
 /// </summary>
 /// <param name="File">The file.</param>
 /// <param name="NameKey">The key its name is compared by.</param>
-/// <param name="ModifiedTicks">The file's last-write time when it was last reconciled.</param>
+/// <param name="ModifiedTicks">
+/// The file's last-write time once it was placed, so an agent's removal can tell the placed file from bytes put under
+/// its name by hand (SPEC.md §9.5).
+/// </param>
 public sealed record StoredFile(SharedFile File, string NameKey, long ModifiedTicks);
 
 /// <summary>
@@ -24,14 +27,13 @@ public sealed record FileResolution(StoredFile? File, FileRefusal? Refusal);
 /// <summary>
 /// What a placement came to in the store.
 /// </summary>
-/// <param name="Outcome">Placed, replaced, already current, or refused.</param>
+/// <param name="Outcome">Placed, already current, or refused.</param>
 /// <param name="File">The file as it now stands, or as it stood when the placement was refused.</param>
-/// <param name="Previous">The hash replaced, when the outcome is <see cref="PlaceOutcome.Replaced"/>.</param>
 /// <param name="CharactersLeft">How long a name the folder allows, when the outcome is <see cref="PlaceOutcome.DoesNotFit"/>.</param>
-public sealed record PlaceResult(PlaceOutcome Outcome, SharedFile? File, ContentHash? Previous, int CharactersLeft);
+public sealed record PlaceResult(PlaceOutcome Outcome, SharedFile? File, int CharactersLeft);
 
 /// <summary>
-/// The files in the file location: their folders, who placed them, and every change to them (SPEC.md §9.5).
+/// The files in the file location: their folders, who placed them, and their going (SPEC.md §9.5).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -40,14 +42,16 @@ public sealed record PlaceResult(PlaceOutcome Outcome, SharedFile? File, Content
 /// both have happened.
 /// </para>
 /// <para>
-/// <b>Every change raises its notices in the same transaction</b>, through <see cref="FileNoticeRepository"/>. A
-/// change committed without its notices would be a change nobody who fetched the file is ever told about, and
-/// there is no later moment that could notice the omission.
+/// <b>A placed file is never changed.</b> A row is inserted by a placement and deleted by a removal, a prune, its
+/// going from disk, or its conversation going; nothing rewrites its content. A new version is a new name.
+/// </para>
+/// <para>
+/// <b>Every removal raises its notices in the same transaction</b>, through <see cref="FileNoticeRepository"/>. A
+/// removal committed without them would be a file gone that nobody who fetched it is ever told about.
 /// </para>
 /// <para>
 /// <b>Who placed a file is read from the row inside the transaction that acts on it</b>, never from anything the
-/// caller says. The schema refuses rewriting it, so a replacement, an edit and a rename all update in
-/// place.
+/// caller says, and the schema refuses rewriting it.
 /// </para>
 /// </remarks>
 public sealed class SharedFileRepository(SqliteConnection connection)
@@ -56,7 +60,7 @@ public sealed class SharedFileRepository(SqliteConnection connection)
         """
         SELECT f.conversation_id AS ConversationId, c.folder AS Folder, f.name AS Name, f.name_key AS NameKey,
                f.size_bytes AS SizeBytes, f.sha256 AS Sha256, f.placed_by AS PlacedBy,
-               f.placed_utc AS PlacedUtc, f.changed_utc AS ChangedUtc, f.modified_ticks AS ModifiedTicks
+               f.placed_utc AS PlacedUtc, f.modified_ticks AS ModifiedTicks
           FROM shared_files f
           JOIN conversation_folders c ON c.conversation_id = f.conversation_id
         """;
@@ -128,40 +132,6 @@ public sealed class SharedFileRepository(SqliteConnection connection)
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         return rows.AsList();
-    }
-
-    /// <summary>The folders of every conversation a purge of an agent would delete.</summary>
-    /// <param name="agent">The agent.</param>
-    /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
-    /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>The folder names, read before the purge so the server can delete them after it.</returns>
-    /// <remarks>
-    /// The same three routes into a conversation <see cref="AgentRepository.PurgeAsync(AgentName, DateTimeOffset, SqliteTransaction?, CancellationToken)"/>
-    /// follows — a participant row, an exchange, a message — so the folders deleted are exactly the conversations
-    /// deleted. A purge that followed a narrower rule would leave folders on disk no row names.
-    /// </remarks>
-    public async Task<IReadOnlyList<string>> GetFoldersPurgingWouldDeleteAsync(
-        AgentName agent,
-        SqliteTransaction? transaction = null,
-        CancellationToken cancellationToken = default)
-    {
-        var folders = await _connection.QueryAsync<string>(
-            new CommandDefinition(
-                """
-                SELECT folder FROM conversation_folders
-                 WHERE conversation_id IN (
-                     SELECT conversation_id FROM conversation_participants WHERE agent = @Name
-                     UNION
-                     SELECT conversation_id FROM exchanges
-                      WHERE requester = @Name OR receiver = @Name OR owed_by = @Name
-                     UNION
-                     SELECT conversation_id FROM messages WHERE from_agent = @Name OR to_agent = @Name);
-                """,
-                new { Name = agent.Value },
-                transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
-
-        return folders.AsList();
     }
 
     /// <summary>Gives a conversation its folder, choosing the name the first time.</summary>
@@ -334,12 +304,12 @@ public sealed class SharedFileRepository(SqliteConnection connection)
             new FileRefusal(reference, FileRejection.AmbiguousName, null, listed, holding - listed.Count));
     }
 
-    /// <summary>Records a placement: a new file, a replacement by its placer, or nothing.</summary>
+    /// <summary>Records a placement of a new name, or answers what a name already held makes of it.</summary>
     /// <param name="conversationId">The conversation, which must exist.</param>
     /// <param name="name">The name.</param>
     /// <param name="sha256">The broker's hash of the bytes received.</param>
     /// <param name="sizeBytes">How many bytes were received.</param>
-    /// <param name="placedBy">The attached agent placing it.</param>
+    /// <param name="placedBy">The attached agent placing it, or <see langword="null"/> for the person.</param>
     /// <param name="modifiedTicks">The last-write time of the file as it will stand on disk.</param>
     /// <param name="nowUtc">The current instant.</param>
     /// <param name="takenOnDisk">Whether a folder name is taken by a directory on disk, for a conversation's first file.</param>
@@ -348,12 +318,17 @@ public sealed class SharedFileRepository(SqliteConnection connection)
     /// <returns>What the placement came to.</returns>
     /// <remarks>
     /// <para>
-    /// <b>Concurrent placements of one new name have exactly one winner</b>, and the schema decides it: the loser's
-    /// insert fails on the primary key and is answered as placed by the winner, never as an error.
+    /// <b>A name already held is never written over</b> (SPEC.md §9.5): the same content from its own placer is
+    /// already current, and anything else is refused, as another's or as holding other content. A new version is a
+    /// new name.
     /// </para>
     /// <para>
-    /// Identical content is no change at all: nothing is written, counted or raised, and the placement time is
-    /// unchanged.
+    /// <b>Concurrent placements of one new name have exactly one winner</b>, and the schema decides it: the loser's
+    /// insert fails on the primary key and is answered from the winner's row, never as an error.
+    /// </para>
+    /// <para>
+    /// A placement is counted against its agent; the person's are not, since a count exists to set a limit on what
+    /// agents place.
     /// </para>
     /// </remarks>
     public async Task<PlaceResult> PlaceAsync(
@@ -361,7 +336,7 @@ public sealed class SharedFileRepository(SqliteConnection connection)
         SharedFileName name,
         ContentHash sha256,
         long sizeBytes,
-        AgentName placedBy,
+        AgentName? placedBy,
         long modifiedTicks,
         DateTimeOffset nowUtc,
         Func<string, bool> takenOnDisk,
@@ -379,12 +354,8 @@ public sealed class SharedFileRepository(SqliteConnection connection)
 
         if (existing is not null)
         {
-            var result = await ReplaceAsync(
-                existing, sha256, sizeBytes, placedBy, modifiedTicks, nowUtc, scope.Transaction, cancellationToken)
-                .ConfigureAwait(false);
-
             scope.Complete();
-            return result;
+            return Held(existing, sha256, placedBy);
         }
 
         var folder = await EnsureFolderAsync(conversationId, takenOnDisk, nowUtc, scope.Transaction, cancellationToken)
@@ -393,7 +364,7 @@ public sealed class SharedFileRepository(SqliteConnection connection)
         if (!name.FitsIn(folder))
         {
             scope.Complete();
-            return new PlaceResult(PlaceOutcome.DoesNotFit, null, null, SharedFileName.CharactersLeftIn(folder));
+            return new PlaceResult(PlaceOutcome.DoesNotFit, null, SharedFileName.CharactersLeftIn(folder));
         }
 
         var stamp = ExchangeRow.FormatTimestamp(nowUtc);
@@ -415,7 +386,7 @@ public sealed class SharedFileRepository(SqliteConnection connection)
                         Name = name.Value,
                         Size = sizeBytes,
                         Sha256 = sha256.Value,
-                        PlacedBy = placedBy.Value,
+                        PlacedBy = placedBy?.Value,
                         When = stamp,
                         Ticks = modifiedTicks,
                     },
@@ -428,235 +399,19 @@ public sealed class SharedFileRepository(SqliteConnection connection)
             var winner = await GetAsync(conversationId, name, scope.Transaction, cancellationToken).ConfigureAwait(false)
                 ?? throw new InvalidOperationException("A placement conflicted with a row that is not there.", conflict);
 
-            var lost = await ReplaceAsync(
-                winner, sha256, sizeBytes, placedBy, modifiedTicks, nowUtc, scope.Transaction, cancellationToken)
-                .ConfigureAwait(false);
-
             scope.Complete();
-            return lost;
+            return Held(winner, sha256, placedBy);
         }
 
-        await CountPlacementAsync(placedBy, sizeBytes, nowUtc, scope.Transaction, cancellationToken).ConfigureAwait(false);
+        if (placedBy is { } agent)
+        {
+            await CountPlacementAsync(agent, sizeBytes, nowUtc, scope.Transaction, cancellationToken).ConfigureAwait(false);
+        }
 
         var placed = await GetAsync(conversationId, name, scope.Transaction, cancellationToken).ConfigureAwait(false);
 
         scope.Complete();
-        return new PlaceResult(PlaceOutcome.Placed, placed!.File, null, 0);
-    }
-
-    /// <summary>Records a file that appeared in a folder without being placed, as the person's.</summary>
-    /// <param name="conversationId">The conversation whose folder it is in.</param>
-    /// <param name="name">The name.</param>
-    /// <param name="sha256">Its hash.</param>
-    /// <param name="sizeBytes">Its size.</param>
-    /// <param name="modifiedTicks">Its last-write time.</param>
-    /// <param name="nowUtc">The current instant.</param>
-    /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
-    /// <param name="cancellationToken">Cancels the write.</param>
-    /// <returns>The file, or <see langword="null"/> when its name does not fit its folder and so it is not in the location.</returns>
-    /// <remarks>
-    /// The person's because recording it as any agent's would let that agent replace or remove something it never
-    /// placed (SPEC.md §9.5). Nothing is counted: a count exists to set a limit on what agents place.
-    /// </remarks>
-    public async Task<StoredFile?> RecordFoundAsync(
-        string conversationId,
-        SharedFileName name,
-        ContentHash sha256,
-        long sizeBytes,
-        long modifiedTicks,
-        DateTimeOffset nowUtc,
-        SqliteTransaction? transaction = null,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(conversationId);
-        ArgumentNullException.ThrowIfNull(name);
-
-        using var scope = WriteScope.Begin(_connection, transaction);
-
-        var folder = await GetFolderAsync(conversationId, scope.Transaction, cancellationToken).ConfigureAwait(false);
-
-        if (folder is null || !name.FitsIn(folder))
-        {
-            scope.Complete();
-            return null;
-        }
-
-        var stamp = ExchangeRow.FormatTimestamp(nowUtc);
-
-        await _connection.ExecuteAsync(
-            new CommandDefinition(
-                """
-                INSERT INTO shared_files
-                    (conversation_id, name_key, name, size_bytes, sha256, placed_by, placed_utc, changed_utc,
-                     modified_ticks)
-                VALUES (@Conversation, @Key, @Name, @Size, @Sha256, NULL, @When, @When, @Ticks)
-                ON CONFLICT (conversation_id, name_key) DO NOTHING;
-                """,
-                new
-                {
-                    Conversation = conversationId,
-                    name.Key,
-                    Name = name.Value,
-                    Size = sizeBytes,
-                    Sha256 = sha256.Value,
-                    When = stamp,
-                    Ticks = modifiedTicks,
-                },
-                scope.Transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
-
-        var found = await GetAsync(conversationId, name, scope.Transaction, cancellationToken).ConfigureAwait(false);
-
-        scope.Complete();
-        return found;
-    }
-
-    /// <summary>Brings a file's row into line with what is on disk.</summary>
-    /// <param name="known">The file as the store last knew it.</param>
-    /// <param name="sha256">The hash of what is on disk now.</param>
-    /// <param name="sizeBytes">Its size now.</param>
-    /// <param name="modifiedTicks">Its last-write time now.</param>
-    /// <param name="nowUtc">The current instant.</param>
-    /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
-    /// <param name="cancellationToken">Cancels the write.</param>
-    /// <returns><see langword="true"/> when the content had changed, and notices were raised.</returns>
-    /// <remarks>
-    /// Change is decided by hash, not by the time or the event that prompted the look: an editor writes several
-    /// times per save and a placement moves its own bytes into place, and every one of those must come to at most
-    /// one change and one set of notices.
-    /// </remarks>
-    public async Task<bool> ReconcileAsync(
-        StoredFile known,
-        ContentHash sha256,
-        long sizeBytes,
-        long modifiedTicks,
-        DateTimeOffset nowUtc,
-        SqliteTransaction? transaction = null,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(known);
-
-        using var scope = WriteScope.Begin(_connection, transaction);
-
-        var current = await GetAsync(known.File.ConversationId, known.File.Name, scope.Transaction, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (current is null)
-        {
-            scope.Complete();
-            return false;
-        }
-
-        if (current.File.Sha256 == sha256)
-        {
-            await _connection.ExecuteAsync(
-                new CommandDefinition(
-                    """
-                    UPDATE shared_files SET modified_ticks = @Ticks
-                     WHERE conversation_id = @Conversation AND name_key = @Key;
-                    """,
-                    new { Ticks = modifiedTicks, Conversation = current.File.ConversationId, Key = current.NameKey },
-                    scope.Transaction,
-                    cancellationToken: cancellationToken)).ConfigureAwait(false);
-
-            scope.Complete();
-            return false;
-        }
-
-        await WriteContentAsync(current, sha256, sizeBytes, modifiedTicks, nowUtc, scope.Transaction, cancellationToken)
-            .ConfigureAwait(false);
-
-        scope.Complete();
-        return true;
-    }
-
-    /// <summary>Records a file renamed in its folder, keeping who placed it and when.</summary>
-    /// <param name="known">The file under its old name.</param>
-    /// <param name="newName">Its new name.</param>
-    /// <param name="modifiedTicks">Its last-write time.</param>
-    /// <param name="nowUtc">The current instant.</param>
-    /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
-    /// <param name="cancellationToken">Cancels the write.</param>
-    /// <returns>The file under its new name, or <see langword="null"/> when the new name does not fit its folder.</returns>
-    /// <remarks>
-    /// <para>
-    /// <b>An update in place, never a delete and an insert</b>, so the placer and the placement time stay exactly as
-    /// they were. Agents that fetched the file under its old name are told that name is gone (SPEC.md §9.5).
-    /// </para>
-    /// <para>
-    /// A rename over a name already in the folder replaced that file on disk, so that row goes, with its own
-    /// "gone" notices, before this one takes its name.
-    /// </para>
-    /// </remarks>
-    public async Task<StoredFile?> RenameAsync(
-        StoredFile known,
-        SharedFileName newName,
-        long modifiedTicks,
-        DateTimeOffset nowUtc,
-        SqliteTransaction? transaction = null,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(known);
-        ArgumentNullException.ThrowIfNull(newName);
-
-        using var scope = WriteScope.Begin(_connection, transaction);
-
-        // Read again inside the transaction. Two looks at one rename — at the name it left and the name it took — can each
-        // decide it is a rename; the second must find it already done rather than take the renamed row for a file the
-        // rename displaced and delete it.
-        if (await GetAsync(known.File.ConversationId, known.File.Name, scope.Transaction, cancellationToken).ConfigureAwait(false) is null)
-        {
-            var already = await GetAsync(known.File.ConversationId, newName, scope.Transaction, cancellationToken).ConfigureAwait(false);
-
-            scope.Complete();
-            return already;
-        }
-
-        var file = known.File;
-
-        if (!newName.FitsIn(file.Folder))
-        {
-            await DeleteAsync(known, nowUtc, scope.Transaction, cancellationToken).ConfigureAwait(false);
-            scope.Complete();
-            return null;
-        }
-
-        if (!string.Equals(newName.Key, known.NameKey, StringComparison.Ordinal))
-        {
-            var displaced = await GetAsync(file.ConversationId, newName, scope.Transaction, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (displaced is not null)
-            {
-                await DeleteAsync(displaced, nowUtc, scope.Transaction, cancellationToken).ConfigureAwait(false);
-            }
-
-            await _notices.RaiseGoneAsync(
-                file.ConversationId, known.NameKey, file.Name.Value, nowUtc, forgetFetches: true,
-                scope.Transaction, cancellationToken).ConfigureAwait(false);
-        }
-
-        await _connection.ExecuteAsync(
-            new CommandDefinition(
-                """
-                UPDATE shared_files SET name = @Name, name_key = @NewKey, modified_ticks = @Ticks
-                 WHERE conversation_id = @Conversation AND name_key = @OldKey;
-                """,
-                new
-                {
-                    Name = newName.Value,
-                    NewKey = newName.Key,
-                    Ticks = modifiedTicks,
-                    Conversation = file.ConversationId,
-                    OldKey = known.NameKey,
-                },
-                scope.Transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
-
-        var renamed = await GetAsync(file.ConversationId, newName, scope.Transaction, cancellationToken).ConfigureAwait(false);
-
-        scope.Complete();
-        return renamed;
+        return new PlaceResult(PlaceOutcome.Placed, placed!.File, 0);
     }
 
     /// <summary>Removes one file, as its placer or as the person.</summary>
@@ -670,8 +425,9 @@ public sealed class SharedFileRepository(SqliteConnection connection)
     /// asked to remove a file it did not place; <see cref="FileRejection.NoSuchFile"/> when it had already gone.
     /// </returns>
     /// <remarks>
-    /// The placer is read again inside this transaction, from the row, rather than trusted from the resolution the
-    /// caller holds: a placement could have landed between the two.
+    /// The row is read again inside this transaction rather than trusted from the resolution the caller holds: the file
+    /// resolved may have gone and another been placed under its name since, and removing that one would delete a file
+    /// nobody named. So the file removed is the one resolved, by its hash and placement time, or none.
     /// </remarks>
     public async Task<FileRejection> RemoveAsync(
         StoredFile file,
@@ -687,7 +443,7 @@ public sealed class SharedFileRepository(SqliteConnection connection)
         var current = await GetAsync(file.File.ConversationId, file.File.Name, scope.Transaction, cancellationToken)
             .ConfigureAwait(false);
 
-        if (current is null)
+        if (current is null || current.File.Sha256 != file.File.Sha256 || current.File.PlacedUtc != file.File.PlacedUtc)
         {
             scope.Complete();
             return FileRejection.NoSuchFile;
@@ -703,6 +459,90 @@ public sealed class SharedFileRepository(SqliteConnection connection)
 
         scope.Complete();
         return FileRejection.None;
+    }
+
+    /// <summary>Records a placed file gone that was found missing from disk.</summary>
+    /// <param name="file">The file, as resolved.</param>
+    /// <param name="nowUtc">The current instant.</param>
+    /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns><see langword="true"/> when it was recorded gone; <see langword="false"/> when it had gone already.</returns>
+    /// <remarks>
+    /// As <see cref="RemoveAsync"/> does for the person, and its placer is told too (SPEC.md §9.5): nothing but Parley
+    /// removes a placed file, so one missing was taken by something else, and its placer is the one that can place it
+    /// again.
+    /// </remarks>
+    public async Task<bool> RemoveMissingAsync(
+        StoredFile file,
+        DateTimeOffset nowUtc,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+
+        using var scope = WriteScope.Begin(_connection, transaction);
+
+        var current = await GetAsync(file.File.ConversationId, file.File.Name, scope.Transaction, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (current is null || current.File.Sha256 != file.File.Sha256 || current.File.PlacedUtc != file.File.PlacedUtc)
+        {
+            scope.Complete();
+            return false;
+        }
+
+        await DeleteAsync(current, nowUtc, scope.Transaction, cancellationToken, tellPlacer: true).ConfigureAwait(false);
+
+        scope.Complete();
+        return true;
+    }
+
+    /// <summary>Removes a placed file whose bytes on disk were found not to hash to what was placed.</summary>
+    /// <param name="file">The file, as the sweep resolved it.</param>
+    /// <param name="found">The hash of the bytes found.</param>
+    /// <param name="foundBytes">Their size.</param>
+    /// <param name="nowUtc">The current instant.</param>
+    /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns><see langword="true"/> when it went; <see langword="false"/> when it had gone already.</returns>
+    /// <remarks>
+    /// Read again inside the transaction for the reason <see cref="RemoveAsync"/> is: the name may hold another
+    /// placement since the sweep looked. Its fetchers and its placer are told it was tampered with (SPEC.md §9.5).
+    /// </remarks>
+    public async Task<bool> RemoveTamperedAsync(
+        StoredFile file,
+        ContentHash found,
+        long foundBytes,
+        DateTimeOffset nowUtc,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+
+        using var scope = WriteScope.Begin(_connection, transaction);
+
+        var current = await GetAsync(file.File.ConversationId, file.File.Name, scope.Transaction, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (current is null || current.File.Sha256 != file.File.Sha256 || current.File.PlacedUtc != file.File.PlacedUtc)
+        {
+            scope.Complete();
+            return false;
+        }
+
+        await _notices.RaiseTamperedAsync(
+            current.File.ConversationId, current.NameKey, current.File.Name.Value, current.File.Sha256,
+            current.File.PlacedBy, found, foundBytes, nowUtc, scope.Transaction, cancellationToken).ConfigureAwait(false);
+
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "DELETE FROM shared_files WHERE conversation_id = @Conversation AND name_key = @Key;",
+                new { Conversation = current.File.ConversationId, Key = current.NameKey },
+                scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        scope.Complete();
+        return true;
     }
 
     /// <summary>Removes every file in the location, keeping every conversation's folder name.</summary>
@@ -839,79 +679,55 @@ public sealed class SharedFileRepository(SqliteConnection connection)
             r.Agent, r.Placements, r.Bytes, ExchangeRow.ParseTimestamp(r.LastUtc)))];
     }
 
-    private async Task<PlaceResult> ReplaceAsync(
-        StoredFile existing,
-        ContentHash sha256,
-        long sizeBytes,
-        AgentName placedBy,
+    /// <summary>Records the write time a placed file has on disk once its bytes are in place.</summary>
+    /// <param name="placed">The file, as its placement recorded it.</param>
+    /// <param name="modifiedTicks">Its last-write time on disk.</param>
+    /// <param name="transaction">The placement's transaction, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <remarks>
+    /// Known only after the move, which happens after the row is written; an agent's removal compares it with the
+    /// disk, so bytes put under the name by hand are never deleted by an agent (SPEC.md §9.5).
+    /// </remarks>
+    /// <returns>When it has been recorded.</returns>
+    public Task RecordPlacedTimeAsync(
+        StoredFile placed,
         long modifiedTicks,
-        DateTimeOffset nowUtc,
-        SqliteTransaction transaction,
-        CancellationToken cancellationToken)
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
     {
-        if (existing.File.PlacedBy != placedBy)
-        {
-            return new PlaceResult(PlaceOutcome.PlacedByAnother, existing.File, null, 0);
-        }
+        ArgumentNullException.ThrowIfNull(placed);
 
-        if (existing.File.Sha256 == sha256)
-        {
-            return new PlaceResult(PlaceOutcome.AlreadyCurrent, existing.File, null, 0);
-        }
-
-        await WriteContentAsync(existing, sha256, sizeBytes, modifiedTicks, nowUtc, transaction, cancellationToken)
-            .ConfigureAwait(false);
-
-        await CountPlacementAsync(placedBy, sizeBytes, nowUtc, transaction, cancellationToken).ConfigureAwait(false);
-
-        var replaced = await GetAsync(existing.File.ConversationId, existing.File.Name, transaction, cancellationToken)
-            .ConfigureAwait(false);
-
-        return new PlaceResult(PlaceOutcome.Replaced, replaced!.File, existing.File.Sha256, 0);
-    }
-
-    private async Task WriteContentAsync(
-        StoredFile file,
-        ContentHash sha256,
-        long sizeBytes,
-        long modifiedTicks,
-        DateTimeOffset nowUtc,
-        SqliteTransaction transaction,
-        CancellationToken cancellationToken)
-    {
-        await _connection.ExecuteAsync(
+        return _connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                UPDATE shared_files
-                   SET sha256 = @Sha256, size_bytes = @Size, changed_utc = @When, modified_ticks = @Ticks
+                UPDATE shared_files SET modified_ticks = @Ticks
                  WHERE conversation_id = @Conversation AND name_key = @Key;
                 """,
-                new
-                {
-                    Sha256 = sha256.Value,
-                    Size = sizeBytes,
-                    When = ExchangeRow.FormatTimestamp(nowUtc),
-                    Ticks = modifiedTicks,
-                    Conversation = file.File.ConversationId,
-                    Key = file.NameKey,
-                },
+                new { Ticks = modifiedTicks, Conversation = placed.File.ConversationId, Key = placed.NameKey },
                 transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
-
-        await _notices.RaiseChangedAsync(
-            file.File.ConversationId, file.NameKey, file.File.Name.Value, sha256, sizeBytes, nowUtc,
-            transaction, cancellationToken).ConfigureAwait(false);
+                cancellationToken: cancellationToken));
     }
+
+    // What a placement of a name already held comes to: never a write over it (SPEC.md §9.5).
+    private static PlaceResult Held(StoredFile existing, ContentHash sha256, AgentName? placedBy) =>
+        existing.File.PlacedBy != placedBy
+            ? new PlaceResult(PlaceOutcome.PlacedByAnother, existing.File, 0)
+            : existing.File.Sha256 == sha256
+                ? new PlaceResult(PlaceOutcome.AlreadyCurrent, existing.File, 0)
+                : new PlaceResult(PlaceOutcome.HoldsOtherContent, existing.File, 0);
 
     private async Task DeleteAsync(
         StoredFile file,
         DateTimeOffset nowUtc,
         SqliteTransaction transaction,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool tellPlacer = false)
     {
         await _notices.RaiseGoneAsync(
             file.File.ConversationId, file.NameKey, file.File.Name.Value, nowUtc, forgetFetches: true,
-            transaction, cancellationToken).ConfigureAwait(false);
+            transaction, cancellationToken,
+            tellPlacer ? file.File.PlacedBy : null,
+            tellPlacer ? file.File.Sha256 : null).ConfigureAwait(false);
 
         await _connection.ExecuteAsync(
             new CommandDefinition(
@@ -985,7 +801,6 @@ public sealed class SharedFileRepository(SqliteConnection connection)
 
         public string PlacedUtc { get; init; } = "";
 
-        public string ChangedUtc { get; init; } = "";
 
         public long ModifiedTicks { get; init; }
 
@@ -998,8 +813,7 @@ public sealed class SharedFileRepository(SqliteConnection connection)
                     SizeBytes,
                     ContentHash.Parse(Sha256),
                     PlacedBy is null ? null : AgentName.Create(PlacedBy),
-                    ExchangeRow.ParseTimestamp(PlacedUtc),
-                    ExchangeRow.ParseTimestamp(ChangedUtc)),
+                    ExchangeRow.ParseTimestamp(PlacedUtc)),
                 NameKey,
                 ModifiedTicks);
     }

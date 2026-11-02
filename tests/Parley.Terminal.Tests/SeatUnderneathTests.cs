@@ -26,6 +26,7 @@ namespace Parley.Terminal.Tests;
 /// afternoon, and the sweep exists precisely because they will be.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SeatUnderneathTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

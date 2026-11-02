@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Microsoft.Data.Sqlite;
 
 namespace Parley.Store;
@@ -88,8 +89,8 @@ public static class ParleyDatabase
     /// <exception cref="ArgumentException"><paramref name="path"/> is null or empty.</exception>
     /// <exception cref="SqliteException">The database could not be opened or migrated.</exception>
     /// <remarks>
-    /// Intended to be called once during broker start-up. Migration is idempotent, so calling
-    /// it on an already-current database costs one pragma read.
+    /// For tests and new stores. It takes no copy first, so the broker does not use it: it opens with <see cref="Open"/>,
+    /// copies with <see cref="BackUpBeforeMigrating"/> under the store's lock, then migrates (SPEC.md §9.2).
     /// </remarks>
     public static SqliteConnection OpenAndMigrate(string path)
     {
@@ -104,6 +105,194 @@ public static class ParleyDatabase
         {
             connection.Dispose();
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Copies a store that is about to be migrated to a file beside it, and says where.
+    /// </summary>
+    /// <param name="connection">An open connection to the store, not yet migrated.</param>
+    /// <param name="path">The store's file.</param>
+    /// <param name="nowUtc">The instant, which names the copy so an earlier one is never overwritten.</param>
+    /// <returns>The copy's path, or <see langword="null"/> when nothing is to be migrated or the store is new.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="connection"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">The copy could not be made; the store is then not migrated.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>A live store holds work in flight and is upgraded in place</b> (SPEC.md §9.2), so the store as the previous
+    /// build left it is kept for the span between that build stopping and the new one serving, when an upgrade or the
+    /// start after it could still go wrong. The copy is SQLite's online backup, taken under the store's lock before the
+    /// first migration's transaction. A store with no schema yet is new and has nothing to keep.
+    /// </para>
+    /// <para>
+    /// <b>Kept only until the upgraded store is served</b>, when <c>serve</c> deletes every copy of the store: it holds
+    /// every conversation's text, which destroy, purge and retention exist to remove. Restricted to the owner on Unix as
+    /// the store is, and a copy that fails part way is deleted rather than left looking like one that could be restored.
+    /// </para>
+    /// </remarks>
+    public static string? BackUpBeforeMigrating(SqliteConnection connection, string path, DateTimeOffset nowUtc)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentException.ThrowIfNullOrEmpty(path);
+
+        var version = SchemaMigrator.GetUserVersion(connection);
+
+        if (version == 0 || version >= SchemaMigrator.LatestVersion)
+        {
+            return null;
+        }
+
+        var named = string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"{path}{Parley.Core.StoreFiles.BeforeSchema}{SchemaMigrator.LatestVersion}-{nowUtc.UtcDateTime:yyyyMMdd'T'HHmmss'Z'}");
+        var copy = named;
+
+        // Two starts in one second (a failed migration retried) would otherwise write over the first copy.
+        for (var again = 2; File.Exists(copy); again++)
+        {
+            copy = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{named}-{again}");
+        }
+
+        try
+        {
+            // Made owner-only before SQLite opens it, so no other account can hold it open from the moment SQLite would
+            // have created it until RestrictPermissions narrowed it (lens 2 run 93). SQLite takes an empty file as an empty
+            // database.
+            if (!OperatingSystem.IsWindows())
+            {
+                using var _ = new FileStream(
+                    copy,
+                    new FileStreamOptions
+                    {
+                        Mode = FileMode.CreateNew,
+                        Access = FileAccess.Write,
+                        UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
+                    });
+            }
+
+            using var target = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = copy,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Pooling = false,
+            }.ToString());
+
+            target.Open();
+            RestrictPermissions(copy);
+            connection.BackupDatabase(target);
+        }
+        catch (Exception failed) when (failed is SqliteException or IOException or UnauthorizedAccessException)
+        {
+            try
+            {
+                File.Delete(copy);
+            }
+            catch (Exception left) when (left is IOException or UnauthorizedAccessException)
+            {
+                // Named in the message below; a person can remove it.
+            }
+
+            throw new InvalidOperationException(
+                $"The store at '{path}' is at schema {version} and was not upgraded to {SchemaMigrator.LatestVersion}, because "
+                + $"it could not first be copied to '{copy}': {failed.Message}",
+                failed);
+        }
+
+        return copy;
+    }
+
+    /// <summary>Rewrites the store, then copies the write-ahead log into it and empties it, so deleted text is in neither.</summary>
+    /// <param name="connection">An open connection to the store, outside any transaction.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>Called after destroy, purge and a retention pass that removed anything</b> (lens 2 run 97). An overwrite lands
+    /// in the log first; the store keeps the old page, and the log the frames that wrote the text, until a checkpoint,
+    /// which SQLite runs by itself only after about a thousand pages. On a quiet project that is days, and a copy of the
+    /// store taken right after a person removed something gave it back. A checkpoint another connection holds back
+    /// finishes later, as SQLite's own would; the broker has one.
+    /// </para>
+    /// <para>
+    /// <b>A rewrite, not only a checkpoint</b> (lens 2 run 116): secure deletion zeroes a row where it lives now, and a
+    /// page split had left an older copy of it in the page's free gap, about one message in a few thousand. The rewrite
+    /// costs time and free space in proportion to the store, as the upgrade's does (docs/operating.md): the acts that
+    /// call it are a person's, or a retention pass that removed something, at most hourly. While it runs, whoever is
+    /// attached is told that what they send waits for it (<see cref="ObserveTidying"/>).
+    /// </para>
+    /// </remarks>
+    internal static void Flush(SqliteConnection connection)
+    {
+        var told = Tidiers.TryGetValue(connection, out var tell) ? tell : null;
+        told?.Invoke(true);
+
+        try
+        {
+            Tidy(connection);
+        }
+        finally
+        {
+            told?.Invoke(false);
+        }
+    }
+
+    /// <summary>Tells an observer when the store behind a connection starts and finishes rewriting itself.</summary>
+    /// <param name="connection">The connection the rewrites run on.</param>
+    /// <param name="tidying">Called with <see langword="true"/> before a rewrite and <see langword="false"/> after it.</param>
+    /// <remarks>
+    /// The broker's one connection serves every operation, so a rewrite holds everything else up for as long as it runs,
+    /// which on a large store is seconds (lens 1 run 115). The broker tells whoever is attached that what they send waits
+    /// and goes through when it finishes, rather than leaving them to read silence as a failure. Kept beside the
+    /// connection rather than passed through every repository, so the store knows nothing of who is told. One observer
+    /// per connection: a second replaces the first, and the broker that owns the connection is the only caller.
+    /// </remarks>
+    public static void ObserveTidying(SqliteConnection connection, Action<bool> tidying)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(tidying);
+
+        Tidiers.AddOrUpdate(connection, tidying);
+    }
+
+    /// <summary>Who is told of each connection's rewrites.</summary>
+    private static readonly ConditionalWeakTable<SqliteConnection, Action<bool>> Tidiers = new();
+
+    /// <summary>Rewrites the store and empties the log, or as much of that as can run.</summary>
+    /// <param name="connection">The store.</param>
+    private static void Tidy(SqliteConnection connection)
+    {
+        // **The removal stands without it** (SPEC.md §9.1): a disk without room for the rewrite's copy, or a statement
+        // still reading, must not turn a destroy the store has committed into an error the person reads as not done.
+        // Then at least the log is emptied if it can be, and the next act that rewrites clears what this one left.
+        if (!TryTidy(connection, rewrite: true))
+        {
+            _ = TryTidy(connection, rewrite: false);
+        }
+    }
+
+    /// <summary>Rewrites the store and empties the log, or only empties the log, saying whether it ran rather than failing.</summary>
+    /// <param name="connection">The store.</param>
+    /// <param name="rewrite">Whether to rewrite the store first.</param>
+    /// <returns>Whether it ran.</returns>
+    private static bool TryTidy(SqliteConnection connection, bool rewrite)
+    {
+        using var command = connection.CreateCommand();
+        if (rewrite)
+        {
+            command.CommandText = SchemaMigrator.Wipe;
+        }
+        else
+        {
+            command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+        }
+
+        try
+        {
+            command.ExecuteNonQuery();
+
+            return true;
+        }
+        catch (SqliteException)
+        {
+            return false;
         }
     }
 

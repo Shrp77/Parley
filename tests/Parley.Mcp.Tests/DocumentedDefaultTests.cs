@@ -24,6 +24,7 @@ namespace Parley.Mcp.Tests;
 /// and a phrase that no longer appears at all fails just as loudly.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class DocumentedDefaultTests
 {
     [Fact]
@@ -32,7 +33,7 @@ public sealed class DocumentedDefaultTests
         Assert.False(ExchangePolicy.Default.BoundsClarifications);
 
         Assert.Contains(
-            "Depth is not capped unless a deployment caps it",
+            "**Depth is not capped.**",
             RepositoryFile.Read("SPEC.md"),
             StringComparison.Ordinal);
     }

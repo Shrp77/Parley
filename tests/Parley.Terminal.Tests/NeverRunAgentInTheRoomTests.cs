@@ -10,6 +10,7 @@ namespace Parley.Terminal.Tests;
 /// The owner's report of 2026-10-09: the row showed a box and could not be selected. Pressed rather than called, because
 /// Space was offered by the surface only on a participant, so on this row the key did nothing and was named nowhere.
 /// </remarks>
+[Integration]
 public sealed class NeverRunAgentInTheRoomTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

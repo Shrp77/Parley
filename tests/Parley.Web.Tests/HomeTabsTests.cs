@@ -4,6 +4,7 @@ using Wire = Parley.Transport;
 namespace Parley.Web.Tests;
 
 /// <summary>That the home page has a Projects tab with the create form and an Agents tab listing each project's agents.</summary>
+[Integration]
 public sealed class HomeTabsTests
 {
     [Fact]

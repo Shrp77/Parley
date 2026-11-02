@@ -22,6 +22,7 @@ namespace Parley.Terminal.Tests;
 /// would still say it was reading, and one that treated a dead broker as no settings would show an empty list.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ConfigurationViewTests
 {
     private static BrokerDirectory Directory() =>
@@ -46,8 +47,7 @@ public sealed class ConfigurationViewTests
         Assert.Contains(
             project.Items, item => item.Label.Contains(Shell.ConfigurationTitle, StringComparison.Ordinal));
 
-        driving.Press(Shell.ConfigurationKey);
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Shell.ConfigurationKey, () => shell.Settled);
 
         Assert.Equal(Viewing.Configuration, shell.Place.Viewing);
         Assert.True(shell.Configuration.Visible);

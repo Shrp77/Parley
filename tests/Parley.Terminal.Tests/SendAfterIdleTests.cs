@@ -18,6 +18,7 @@ namespace Parley.Terminal.Tests;
 /// into one blamed the project.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SendAfterIdleTests
 {
     [Fact]

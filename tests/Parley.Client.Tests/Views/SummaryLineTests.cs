@@ -18,6 +18,7 @@ namespace Parley.Client.Tests.Views;
 /// unknown number of agents, and rendering that as none says something the console does not know.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class SummaryLineTests
 {
     [Fact]

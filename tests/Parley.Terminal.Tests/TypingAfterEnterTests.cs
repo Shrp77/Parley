@@ -11,6 +11,7 @@ namespace Parley.Terminal.Tests;
 /// out in the payload of an answer and was then cleared from the box. Held here by putting work ahead of the send, as
 /// the queue does in use.
 /// </remarks>
+[Integration]
 public sealed class TypingAfterEnterTests
 {
     private const string Next = " -- and then I was going to say something else";

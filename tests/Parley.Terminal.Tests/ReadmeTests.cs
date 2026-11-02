@@ -20,6 +20,7 @@ namespace Parley.Terminal.Tests;
 /// would put a green check on a paragraph nobody verified.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ReadmeTests
 {
     private static string Readme()

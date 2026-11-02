@@ -35,6 +35,7 @@ namespace Parley.Terminal.Tests;
 /// both the fixed case and the broken one.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class QuittingTests
 {
     private static BrokerDirectory Directory() =>
@@ -143,8 +144,7 @@ public sealed class QuittingTests
 
         for (var press = 0; press < 5; press++)
         {
-            driving.Press(Key.Esc);
-            await shell.Settled;
+            await driving.PressThenSettleAsync(Key.Esc, () => shell.Settled);
         }
 
         Assert.Equal(Viewing.Projects, shell.Place.Viewing);

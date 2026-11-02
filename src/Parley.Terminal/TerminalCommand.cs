@@ -33,18 +33,50 @@ namespace Parley.Terminal;
 public static class TerminalCommand
 {
     /// <summary>Runs the terminal surface until the person leaves it.</summary>
-    /// <param name="manifestPath">Where this machine's project manifest is.</param>
+    /// <param name="manifestPath">This machine's deployment root, where its projects and manifest live.</param>
     /// <param name="fallbackEndpoint">A broker to offer when the manifest names none.</param>
     /// <param name="cancellationToken">Stops the surface.</param>
     /// <returns>The process exit code.</returns>
-    public static async Task<int> RunAsync(
+    public static Task<int> RunAsync(
         string? manifestPath,
         string? fallbackEndpoint,
+        CancellationToken cancellationToken = default) =>
+        RunAsync(manifestPath, fallbackEndpoint, Console.Error, CommandTables.BuildEvery, () => Interactive, cancellationToken);
+
+    /// <summary>Runs the terminal surface, with what it checks before the console handed in.</summary>
+    /// <param name="manifestPath">This machine's deployment root, where its projects and manifest live.</param>
+    /// <param name="fallbackEndpoint">A broker to offer when the manifest names none.</param>
+    /// <param name="error">Where a refusal is said.</param>
+    /// <param name="tables">Builds every command table.</param>
+    /// <param name="interactive">Whether there is a terminal to draw on: the first thing that asks the console anything.</param>
+    /// <param name="cancellationToken">Stops the surface.</param>
+    /// <returns>The process exit code.</returns>
+    /// <remarks>
+    /// A seam so a unit test can hold the order: a clashing table exits before <paramref name="interactive"/> is asked,
+    /// so the console has not been touched.
+    /// </remarks>
+    internal static async Task<int> RunAsync(
+        string? manifestPath,
+        string? fallbackEndpoint,
+        TextWriter error,
+        Func<object> tables,
+        Func<bool> interactive,
         CancellationToken cancellationToken = default)
     {
-        if (!Interactive)
+        ArgumentNullException.ThrowIfNull(error);
+        ArgumentNullException.ThrowIfNull(interactive);
+
+        // **Every command table, before the toolkit takes the console.** A clash refused from the surface's own
+        // constructor came after `Init` had cleared the screen, as an unhandled exception and its stack trace; here it is
+        // the clash, said plainly, and an exit code, with a console nothing has touched yet.
+        if (CommandTables.Refused(error, tables) is { } refused)
         {
-            await Console.Error.WriteLineAsync(Redirected).ConfigureAwait(false);
+            return refused;
+        }
+
+        if (!interactive())
+        {
+            await error.WriteLineAsync(Redirected).ConfigureAwait(false);
 
             return 1;
         }
@@ -96,7 +128,7 @@ public static class TerminalCommand
             null, Environment.GetEnvironmentVariable, manifestPath).Value;
 
         return await DriveAsync(
-            app, directory, seats, manifestPath, InstalledEntry.Installed(), catalogue, AddressBook.Beside(manifestPath),
+            app, directory, seats, manifestPath, InstalledEntry.Installed(), catalogue, AddressBook.In(manifestPath),
             cancellationToken)
             .ConfigureAwait(false);
     }
@@ -105,7 +137,7 @@ public static class TerminalCommand
     /// <param name="app">The application to build the surface in.</param>
     /// <param name="directory">The projects, and the clients that reach them.</param>
     /// <param name="seats">Where a person's seat is held, for as long as they hold one.</param>
-    /// <param name="manifestPath">The manifest, for the screens that write to it.</param>
+    /// <param name="manifestPath">The deployment root, for the screens that write to it.</param>
     /// <param name="installed">
     /// What this machine's supervisor runs, or null for none or unknown. Passed rather than read
     /// here, for the reason the application is: a test drives this on a machine that has an entry,
@@ -138,8 +170,8 @@ public static class TerminalCommand
 
         using var shell = Build(directory, seats, manifestPath, installed, cataloguePath, addressingPath);
 
-        // Dialogs opened from the work queue go to the thread that draws (`Prompting.Marshal` says why). Only here: a driven
-        // test never pumps the loop, so it keeps the inline default.
+        // Dialogs opened, and the box read or written, from the work queue go to the thread that draws
+        // (`Prompting.Marshal` says why). Only here: a driven test never pumps the loop, so it keeps the inline default.
         Prompting.Marshal = app.Invoke;
 
         // **Started, not awaited, so the screen is on before the brokers have answered.** Waiting would draw
@@ -173,7 +205,7 @@ public static class TerminalCommand
     /// <summary>Builds the surface without running it.</summary>
     /// <param name="directory">The projects, and the clients that reach them.</param>
     /// <param name="seats">Where a person's seat is held.</param>
-    /// <param name="manifestPath">The manifest, for the screens that write to it.</param>
+    /// <param name="manifestPath">The deployment root, for the screens that write to it.</param>
     /// <param name="installed">What this machine's supervisor runs, or null.</param>
     /// <param name="cataloguePath">This machine's node catalogue, or null to take it from the manifest.</param>
     /// <param name="addressingPath">Where who-each-line-goes-to is kept, or null for this run only.</param>

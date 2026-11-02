@@ -74,6 +74,17 @@ internal static class PersonSeats
         return await counting.ConfigureAwait(false);
     }
 
+    /// <summary>What a page says while a project's broker rewrites its store.</summary>
+    /// <param name="project">The project.</param>
+    /// <returns>The sentence.</returns>
+    /// <remarks>
+    /// <b>So a wait reads as a wait</b> (owner's decision, lens 1 run 115): a rewrite of a large store holds every call
+    /// for seconds, and a page or a send that hung with nothing said would read as a broker that stopped answering.
+    /// </remarks>
+    internal static string TidyingSays(string project) =>
+        $"Parley is rewriting the store of {project} to clear removed text. Anything sent waits and goes through when it "
+        + "finishes.";
+
     /// <summary>The query parameter a page's own timed reload carries, so the render can tell it from a person.</summary>
     internal const string Reloaded = "reloaded";
 

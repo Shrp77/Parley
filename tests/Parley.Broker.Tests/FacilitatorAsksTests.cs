@@ -22,6 +22,7 @@ namespace Parley.Broker.Tests;
 /// <c>OwnershipQuestionRepository.DueAsync</c>.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FacilitatorAsksTests : IDisposable
 {
     private static readonly DateTimeOffset T0 = new(2026, 9, 28, 12, 0, 0, TimeSpan.Zero);
@@ -127,7 +128,10 @@ public sealed class FacilitatorAsksTests : IDisposable
         Assert.Equal("1. Orders and their totals. 2. Not tax, which billing owns.", answer.Line);
         Assert.False(answer.Blocked);
 
-        // Read once: a second read finds nothing new.
+        // Read once: a second read finds nothing new, only the same answer while nothing has decided it (lens 1 run 91),
+        // and nothing once something has.
+        Assert.Equal(answer.Question, Assert.Single(await _facilitator.ReadBackAsync(_parley, T0, Ct)).Question);
+        Assert.True(await new OwnershipQuestionRepository(_connection).WaitAsync(answer.Question, "held", cancellationToken: Ct));
         Assert.Empty(await _facilitator.ReadBackAsync(_parley, T0, Ct));
     }
 

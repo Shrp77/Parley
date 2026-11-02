@@ -21,6 +21,7 @@ namespace Parley.Cli.Tests;
 /// blank, or eight repositories enrolled and the ninth silently skipped.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class EnrollmentPlanTests
 {
     private const string Workspace = "/srv/checkouts/orders";
@@ -33,6 +34,15 @@ public sealed class EnrollmentPlanTests
 
     private static IReadOnlyList<string> Validate(params EnrollmentEntry[] entries) =>
         EnrollmentPlan.Validate(entries, _ => true);
+
+    [Fact]
+    public void An_owns_line_naming_an_environment_variable_is_refused_before_anything_is_written()
+    {
+        // Lens 3 run 112: on `parley enroll` this is the only guard between the line and PARLEY_OWNS in .mcp.json.
+        var problem = Assert.Single(Validate(new EnrollmentEntry(Workspace, "orders", "Invoicing. ${GITHUB_TOKEN}", false)));
+
+        Assert.Contains("launch configuration", problem, StringComparison.Ordinal);
+    }
 
     [Fact]
     public void A_well_formed_owns_line_passes()

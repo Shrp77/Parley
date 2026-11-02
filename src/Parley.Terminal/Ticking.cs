@@ -51,7 +51,7 @@ internal readonly record struct Tickable(string Label, string Note, bool Ticked,
 /// does not move the columns under the reader.
 /// </para>
 /// </remarks>
-internal sealed class TickDialog : Dialog
+internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog>
 {
     /// <summary>How many rows a page shows.</summary>
     internal const int PageSize = 10;
@@ -81,6 +81,7 @@ internal sealed class TickDialog : Dialog
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     internal TickDialog(string title, string description, IReadOnlyList<Tickable> items)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         ArgumentNullException.ThrowIfNull(items);
         ArgumentNullException.ThrowIfNull(description);
 
@@ -134,6 +135,7 @@ internal sealed class TickDialog : Dialog
 
         _rows = new ListView
         {
+            HotKeySpecifier = Plain.NoHotKey,
             X = 1,
             Y = Pos.Bottom(heading),
             Width = Dim.Fill(2),
@@ -143,13 +145,7 @@ internal sealed class TickDialog : Dialog
             Height = Dim.Fill(2),
         };
 
-        _rows.KeyDown += (_, key) =>
-        {
-            if (Handle(key))
-            {
-                key.Handled = true;
-            }
-        };
+        KeyRouting.TableFirst(_rows, this);
 
         _count = new Plain
         {
@@ -163,9 +159,7 @@ internal sealed class TickDialog : Dialog
             X = 1,
             Y = Pos.AnchorEnd(1),
             Width = Dim.Fill(2),
-            Text = Pages > 1
-                ? "Space: tick   Alt+a: all   Alt+n: none   PgUp/PgDn: page   Enter: go   Esc: cancel"
-                : "Space: tick   Alt+a: all   Alt+n: none   Enter: go   Esc: cancel",
+            Text = KeysLine(paged: Pages > 1),
         };
 
         ShowPage(0, 0);
@@ -236,16 +230,6 @@ internal sealed class TickDialog : Dialog
         ShowPage(_page, _rows.SelectedItem ?? 0);
     }
 
-    /// <inheritdoc/>
-    protected override bool OnKeyDown(Key key)
-    {
-        ArgumentNullException.ThrowIfNull(key);
-
-        // Reached when the list does not have focus. When it does, the list's own handler above has already
-        // taken the key, and it does not arrive here.
-        return Handle(key) || base.OnKeyDown(key);
-    }
-
     private static int Room(View? view) => view?.App?.Screen.Height ?? int.MaxValue;
 
     private static int Content(View? view) =>
@@ -283,83 +267,104 @@ internal sealed class TickDialog : Dialog
         return line.TrimEnd();
     }
 
-    /// <summary>Does what a key means here.</summary>
-    /// <param name="key">The key.</param>
-    /// <returns>Whether it meant anything; a key that did not is left to the list, which moves the cursor.</returns>
-    private bool Handle(Key key)
+    /// <summary>The row of the page the cursor is on.</summary>
+    private int At => _rows.SelectedItem ?? 0;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// What a key does here, as the line along the bottom says. The arrows down and up carry on past the end of a page
+    /// only at its edge, so one key still walks the whole list; anywhere else they are not live and the list moves its
+    /// cursor, which is why the list's own binding of them is passed. Alt plus a letter, like every action on this
+    /// surface, so a plain character is never an action and the list's own type-to-find is left alone.
+    /// </para>
+    /// <para>
+    /// The list is offered the table's answer first, so the page keys and the arrows it binds are passed: a command
+    /// claims each, and the arrows reach the list whenever theirs is not live.
+    /// </para>
+    /// </remarks>
+    static CommandManager<TickDialog> IKeyTable<TickDialog>.BuildTable() => new([new(KeyContext.TickDialog, [])], Commands, Reserved);
+
+    /// <summary>What a key does here.</summary>
+    private static IReadOnlyList<KeyCommand<TickDialog>> Commands =>
+    [
+        new(KeyContext.TickDialog, default, CancelName, KeyCommand.Doing<TickDialog>(dialog => dialog.Done?.Invoke(dialog, null)), KeyCommand.Always, Chord: Key.Esc),
+        new(KeyContext.TickDialog, default, GoName, KeyCommand.Doing<TickDialog>(dialog => dialog.Done?.Invoke(dialog, dialog._items)), KeyCommand.Always, Chord: Key.Enter),
+        new(KeyContext.TickDialog, default, TickName, KeyCommand.Doing<TickDialog>(dialog => dialog.Toggle((dialog._page * PageSize) + dialog.At)), KeyCommand.Always, Chord: Key.Space),
+        new(KeyContext.TickDialog, default, NextName, KeyCommand.Doing<TickDialog>(dialog => dialog.Turn(+1, dialog.At)), KeyCommand.Always, Chord: Key.PageDown),
+        new(KeyContext.TickDialog, default, NextName, KeyCommand.Doing<TickDialog>(dialog => dialog.Turn(+1, dialog.At)), KeyCommand.Always, Chord: Key.CursorRight),
+        new(KeyContext.TickDialog, default, PreviousName, KeyCommand.Doing<TickDialog>(dialog => dialog.Turn(-1, dialog.At)), KeyCommand.Always, Chord: Key.PageUp),
+        new(KeyContext.TickDialog, default, PreviousName, KeyCommand.Doing<TickDialog>(dialog => dialog.Turn(-1, dialog.At)), KeyCommand.Always, Chord: Key.CursorLeft),
+        new(
+            KeyContext.TickDialog,
+            default,
+            "On to the next page",
+            KeyCommand.Doing<TickDialog>(dialog => dialog.ShowPage(dialog._page + 1, 0)),
+            dialog => dialog.At == dialog._drawn.Count - 1 && dialog._page < dialog.Pages - 1,
+            Chord: Key.CursorDown),
+        new(
+            KeyContext.TickDialog,
+            default,
+            "Back to the previous page",
+            KeyCommand.Doing<TickDialog>(dialog => dialog.ShowPage(dialog._page - 1, PageSize - 1)),
+            dialog => dialog.At == 0 && dialog._page > 0,
+            Chord: Key.CursorUp),
+        new(KeyContext.TickDialog, 'a', AllName, KeyCommand.Doing<TickDialog>(dialog => dialog.SetAll(true)), KeyCommand.Always),
+        new(KeyContext.TickDialog, 'n', NoneName, KeyCommand.Doing<TickDialog>(dialog => dialog.SetAll(false)), KeyCommand.Always),
+    ];
+
+    /// <summary>What the list takes when no command here does.</summary>
+    private static IReadOnlyList<ReservedKey> Reserved =>
+    [
+        .. ReservedKey.Moving(KeyContext.TickDialog),
+        .. ReservedKey.TakenBy(
+            KeyContext.TickDialog,
+            () => new ListView { HotKeySpecifier = Plain.NoHotKey },
+            "the rows",
+            Key.PageDown,
+            Key.PageUp,
+            Key.CursorDown,
+            Key.CursorUp),
+    ];
+
+    /// <summary>The line along the bottom: each key and what it does, every key read from the table.</summary>
+    /// <param name="paged">Whether there is more than one page to turn.</param>
+    /// <returns>The line.</returns>
+    /// <remarks>Read from the table so a key moved there cannot leave this line naming the old one.</remarks>
+    internal static string KeysLine(bool paged)
     {
-        var at = _rows.SelectedItem ?? 0;
+        string Says(string name, string what) => KeyCommand.Stroke(Commands, name) + ": " + what;
 
-        if (key == Key.Esc)
-        {
-            Done?.Invoke(this, null);
-
-            return true;
-        }
-
-        if (key == Key.Enter)
-        {
-            Done?.Invoke(this, _items);
-
-            return true;
-        }
-
-        if (key == Key.Space)
-        {
-            Toggle((_page * PageSize) + at);
-
-            return true;
-        }
-
-        if (key == Key.PageDown || key == Key.CursorRight)
-        {
-            return Turn(+1, at);
-        }
-
-        if (key == Key.PageUp || key == Key.CursorLeft)
-        {
-            return Turn(-1, at);
-        }
-
-        // Carrying on past the end of a page, so one key still walks the whole list.
-        if (key == Key.CursorDown && at == _drawn.Count - 1 && _page < Pages - 1)
-        {
-            ShowPage(_page + 1, 0);
-
-            return true;
-        }
-
-        if (key == Key.CursorUp && at == 0 && _page > 0)
-        {
-            ShowPage(_page - 1, PageSize - 1);
-
-            return true;
-        }
-
-        // Alt plus a letter, like every action on this surface, so a plain character is never an action and the
-        // list's own type-to-find is left alone.
-        if (Shell.Typed(key, 'a'))
-        {
-            SetAll(true);
-
-            return true;
-        }
-
-        if (Shell.Typed(key, 'n'))
-        {
-            SetAll(false);
-
-            return true;
-        }
-
-        return false;
+        return string.Join("   ", (IEnumerable<string>)
+        [
+            Says(TickName, "tick"),
+            Says(AllName, "all"),
+            Says(NoneName, "none"),
+            .. paged ? [KeyCommand.Stroke(Commands, PreviousName) + "/" + Says(NextName, "page")] : Array.Empty<string>(),
+            Says(GoName, "go"),
+            Says(CancelName, "cancel"),
+        ]);
     }
+
+    private const string CancelName = "Cancel";
+
+    private const string GoName = "Go";
+
+    private const string TickName = "Tick";
+
+    private const string NextName = "Next page";
+
+    private const string PreviousName = "Previous page";
+
+    private const string AllName = "All";
+
+    private const string NoneName = "None";
 
     /// <summary>Turns a page, keeping the cursor on the same row of the page where it can.</summary>
     /// <param name="by">Which way.</param>
     /// <param name="at">The row the cursor is on.</param>
-    /// <returns>Always <see langword="true"/>: at the first or last page the key is still this dialog's.</returns>
-    private bool Turn(int by, int at)
+    /// <remarks>At the first or last page nothing moves, and the key is still this dialog's.</remarks>
+    private void Turn(int by, int at)
     {
         var to = Math.Clamp(_page + by, 0, Pages - 1);
 
@@ -367,8 +372,6 @@ internal sealed class TickDialog : Dialog
         {
             ShowPage(to, at);
         }
-
-        return true;
     }
 
     /// <summary>Puts a page on screen.</summary>

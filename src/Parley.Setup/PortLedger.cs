@@ -142,7 +142,7 @@ internal static class PortLedger
 
             using var reader = new StreamReader(stream);
 
-            return Recorded(JsonNode.Parse(reader.ReadToEnd()) as JsonObject);
+            return Recorded(StrictJson.Parse(reader.ReadToEnd()) as JsonObject);
         }
         catch (Exception exception)
             when (exception is IOException or UnauthorizedAccessException or JsonException)
@@ -353,7 +353,7 @@ internal static class PortLedger
 
         try
         {
-            return JsonNode.Parse(reader.ReadToEnd()) as JsonObject ?? [];
+            return StrictJson.Parse(reader.ReadToEnd()) as JsonObject ?? [];
         }
         catch (JsonException)
         {

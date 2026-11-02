@@ -18,8 +18,8 @@ namespace Parley.Store;
 /// What was still waiting after this agent's most recent turn, if that turn changed nothing --
 /// and null if it made progress or has never run. A trigger that does not expire needs this.
 /// An owed exchange clears itself on §14's schedule whether or not the agent cooperates, but an
-/// uncollected message does not: §9.4's floor holds it against retention precisely so nothing
-/// is lost, so an agent that is started and does not collect is a candidate again on the next
+/// uncollected message does not: §9.4's floor holds it against the idle rule until the age cap,
+/// so an agent that is started and does not collect is a candidate again on the next
 /// pass, and every pass after that, each one a real session on somebody's account. Reported
 /// rather than filtered on, like liveness, because whether to spend again on an agent that
 /// spent and achieved nothing is the supervisor's judgement.
@@ -84,8 +84,8 @@ public sealed class InvocationRepository(SqliteConnection connection)
     /// </para>
     /// <para>
     /// A retired agent is excluded by the status filter for the same reason §14 refuses to route
-    /// to one: retirement is a person's judgement that the agent will not come back, and a
-    /// process started against it would overrule that.
+    /// to one: retirement says the agent is not to be routed to (a person's judgement, or its node's finding that the
+    /// workspace is gone), and a process started against it would overrule that.
     /// </para>
     /// <para>
     /// Liveness is deliberately not among them — see <see cref="InvocationCandidate"/>. It is
@@ -225,7 +225,7 @@ public sealed class InvocationRepository(SqliteConnection connection)
     /// <param name="modelTurns">How many model turns went into it.</param>
     /// <param name="permissionDenials">How many tool calls were refused for want of permission.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
-    /// <returns>Rows written.</returns>
+    /// <returns>Rows written: none when this turn is already recorded.</returns>
     /// <remarks>
     /// <para>
     /// Every turn is recorded, including the ones that failed and the ones that achieved nothing.
@@ -236,6 +236,11 @@ public sealed class InvocationRepository(SqliteConnection connection)
     /// <para>
     /// <paramref name="exitCode"/> is the turn's verdict — zero for a clean finish — since a
     /// resident agent has no process exit to report.
+    /// </para>
+    /// <para>
+    /// <b>Once per turn</b> (lens 1 run 119): a node sends a turn's end again when its deadline passes, and a deadline can
+    /// pass after the row is written, while the broker is held up by a rewrite of its store. A turn is one agent's from
+    /// one start, so a second report of it writes nothing and its cost is not counted twice.
     /// </para>
     /// </remarks>
     public async Task<int> RecordAsync(
@@ -257,8 +262,9 @@ public sealed class InvocationRepository(SqliteConnection connection)
             INSERT INTO invocations
                 (agent, waiting_before, waiting_after, started_utc, elapsed_ms, exit_code, timed_out,
                  cost_usd, model_turns, permission_denials)
-            VALUES (@Agent, @Before, @After, @Started, @Elapsed, @Exit, @TimedOut,
-                    @Cost, @Turns, @Denials);
+            SELECT @Agent, @Before, @After, @Started, @Elapsed, @Exit, @TimedOut,
+                   @Cost, @Turns, @Denials
+             WHERE NOT EXISTS (SELECT 1 FROM invocations WHERE agent = @Agent AND started_utc = @Started);
             """;
 
         command.Parameters.AddWithValue("@Agent", agent.Value);

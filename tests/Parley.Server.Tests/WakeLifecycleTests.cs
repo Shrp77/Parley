@@ -13,6 +13,7 @@ namespace Parley.Server.Tests;
 /// up describing something that is no longer true — which does not lose a message, but does spend
 /// or withhold a turn, and this feature is about turns.
 /// </remarks>
+[Integration]
 public sealed class WakeLifecycleTests
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(5);

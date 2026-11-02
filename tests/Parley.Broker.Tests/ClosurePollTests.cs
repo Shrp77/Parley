@@ -19,6 +19,7 @@ namespace Parley.Broker.Tests;
 /// finished and told nothing about who else is in the conversation, how many there are, or how anyone answered.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ClosurePollTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

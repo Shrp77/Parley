@@ -21,6 +21,7 @@ namespace Parley.Terminal.Tests;
 /// Read off the laid-out screen, because the defect is in a layout and nothing short of one shows it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class TailingWhileWritingTests
 {
     private const string Conversation = "release-notes";

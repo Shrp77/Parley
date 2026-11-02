@@ -16,6 +16,7 @@ namespace Parley.Cli.Tests;
 /// answering" until the next logon — and the first person to create one from the form said, in
 /// so many words, that creating a project means wanting its broker running now.
 /// </remarks>
+[Integration]
 public sealed class ManifestWatchTests : IDisposable
 {
     private readonly string _directory =

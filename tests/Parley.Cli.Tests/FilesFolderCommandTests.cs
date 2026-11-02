@@ -6,6 +6,7 @@ namespace Parley.Cli.Tests;
 /// <c>parley files folder</c>: a conversation's folder, or the whole location, opened in the file browser on the machine
 /// that holds it (SPEC.md §10.2).
 /// </summary>
+[Integration]
 public sealed class FilesFolderCommandTests : IAsyncDisposable
 {
     private const string Billing = FileLocationFixture.Billing;

@@ -30,6 +30,7 @@ namespace Parley.Terminal.Tests;
 /// idea one layer down.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class NonInteractiveTests
 {
     [Fact]

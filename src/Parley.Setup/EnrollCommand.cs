@@ -204,7 +204,9 @@ public static class EnrollCommand
     {
         ArgumentNullException.ThrowIfNull(root);
 
-        return Directory.Exists(root) ? Discover(root) : [];
+        // Never looked into when it, or a link along it, leads off this machine: the lookup alone would offer the
+        // person's sign-in there (OffMachineLinks).
+        return !OffMachineLinks.LeadsOffThisMachine(root) && Directory.Exists(root) ? Discover(root) : [];
     }
 
     /// <summary>Configures, catalogues and starts repositories a surface has already chosen.</summary>
@@ -273,9 +275,12 @@ public static class EnrollCommand
         {
             // A directory is a repository when git says so. Anything else under a folder of
             // checkouts is a build output, a scratch clone or somebody's notes, and enrolling it
-            // would put a name on the roster that no agent will ever answer to.
-            if (!Directory.Exists(Path.Combine(directory, ".git"))
-                && !File.Exists(Path.Combine(directory, ".git")))
+            // would put a name on the roster that no agent will ever answer to. A child, or its .git or
+            // .mcp.json, that is a link off this machine is passed over unread (OffMachineLinks).
+            if (OffMachineLinks.LeadsOffThisMachine(Path.Combine(directory, ".git"))
+                || OffMachineLinks.LeadsOffThisMachine(Path.Combine(directory, ".mcp.json"))
+                || (!Directory.Exists(Path.Combine(directory, ".git"))
+                    && !File.Exists(Path.Combine(directory, ".git"))))
             {
                 continue;
             }
@@ -422,7 +427,7 @@ public static class EnrollCommand
             }
 
             return File.Exists(path)
-                ? LaunchEntries.Read(JsonNode.Parse(File.ReadAllText(path))?["mcpServers"] as JsonObject)
+                ? LaunchEntries.Read(StrictJson.Parse(StrictJson.ReadFile(path))?["mcpServers"] as JsonObject)
                 : [];
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException
@@ -745,9 +750,19 @@ public static class EnrollCommand
         // startable. The single-repository path was given this and the bulk one was not.
         using var nodeHeld = await Enrolment.HoldAsync(nodePath, cancellationToken).ConfigureAwait(false);
 
-        var node = nodeHeld is null
-            ? ReadNode(nodePath)
-            : ReadNodeText(await Enrolment.ReadHeldAsync(nodeHeld, cancellationToken).ConfigureAwait(false));
+        JsonObject? node;
+
+        try
+        {
+            node = nodeHeld is null
+                ? ReadNode(nodePath)
+                : ReadNodeText(await Enrolment.ReadHeldAsync(nodeHeld, cancellationToken).ConfigureAwait(false));
+        }
+        catch (InvalidDataException)
+        {
+            // Too large to read, which is unreadable like any other.
+            node = null;
+        }
 
         if (node is null)
         {
@@ -861,14 +876,35 @@ public static class EnrollCommand
                 else
                 {
                     // `plan` writes nothing, so both files are read plainly here. Holding them would
-                    // be a lock taken to describe a file and released before anything acted on it.
+                    // be a lock taken to describe a file and released before anything acted on it. Walked
+                    // first, as every read of a repository's files is (lens 2 run 126).
+                    if (OffMachineLinks.LeadsOffThisMachine(launchPath))
+                    {
+                        throw new InvalidDataException(
+                            $"{launchPath} leads to another machine, and Parley does not look up a path there");
+                    }
+
+                    // The instructions file is decided as the write decides it: a link is left alone with the
+                    // write's note and the plan carries on, read only as far as the write reads a declined one. It
+                    // refused the whole plan, a preview saying something other than what happens.
+                    var declined = Enrolment.InstructionsDeclined(instructionsPath);
+
                     plan = Decide(
                         File.Exists(launchPath)
-                            ? await File.ReadAllTextAsync(launchPath, cancellationToken).ConfigureAwait(false)
+                            ? await StrictJson.ReadFileAsync(launchPath, cancellationToken).ConfigureAwait(false)
                             : null,
-                        File.Exists(instructionsPath)
-                            ? await File.ReadAllTextAsync(instructionsPath, cancellationToken).ConfigureAwait(false)
-                            : null);
+                        declined is not null
+                            ? await Enrolment.DeclinedTextAsync(declined, instructionsPath, cancellationToken)
+                                .ConfigureAwait(false)
+                            // Prose of any length, so not bounded as the JSON beside it is (lens 3 run 147).
+                            : !OffMachineLinks.LeadsOffThisMachine(instructionsPath) && File.Exists(instructionsPath)
+                                ? await File.ReadAllTextAsync(instructionsPath, cancellationToken).ConfigureAwait(false)
+                                : null);
+
+                    if (declined is not null && plan.Instructions is not null)
+                    {
+                        said = [declined];
+                    }
                 }
             }
             catch (Exception ex) when (ex is JsonException or InvalidDataException)
@@ -876,8 +912,9 @@ public static class EnrollCommand
                 // Refused rather than merged into. Everything this cannot merge is somebody's
                 // own file in a shape it does not understand, and the failure of the alternative
                 // is silent: the entries it could not read are simply not in what gets written.
+                // Only the launch configuration refuses: the instructions file is declined with a note, in both modes.
                 await error.WriteLineAsync(
-                    $"{entry.Agent}: {launchPath} cannot be merged into — {ex.Message}.\n" +
+                    $"{entry.Agent}: {launchPath} cannot be merged into — {OneSentence(ex.Message)}\n" +
                     "Fix or move it first; enrolling would replace what is there.").ConfigureAwait(false);
 
                 // Say where it stopped. Validation is hoisted ahead of every write so that a set is never
@@ -1087,7 +1124,7 @@ public static class EnrollCommand
 
         try
         {
-            return JsonNode.Parse(text)?.AsObject() ?? [];
+            return StrictJson.Parse(text)?.AsObject() ?? [];
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
@@ -1114,7 +1151,7 @@ public static class EnrollCommand
 
         try
         {
-            return JsonNode.Parse(File.ReadAllText(path))?.AsObject() ?? [];
+            return StrictJson.Parse(StrictJson.ReadFile(path))?.AsObject() ?? [];
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException)
         {
@@ -1130,7 +1167,9 @@ public static class EnrollCommand
     /// its agent may never read — which is the failure the peers frame exists to prevent, wearing
     /// a different hat.
     /// </remarks>
-    private static string InstructionsFile(string workspace)
+    /// <param name="workspace">The repository.</param>
+    /// <returns>The file the peers frame goes into.</returns>
+    public static string InstructionsFile(string workspace)
     {
         foreach (var name in (string[])["CLAUDE.md", "AGENTS.md"])
         {
@@ -1144,4 +1183,8 @@ public static class EnrollCommand
 
         return Path.Combine(workspace, "CLAUDE.md");
     }
+
+    // A refusal's reason as one sentence. Some reasons end in a period and some do not, and a period added to every
+    // one printed two after half of them.
+    private static string OneSentence(string reason) => reason.TrimEnd().TrimEnd('.') + ".";
 }

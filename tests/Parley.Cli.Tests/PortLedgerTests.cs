@@ -25,6 +25,7 @@ namespace Parley.Cli.Tests;
 /// reason.</b>
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class PortLedgerTests : IDisposable
 {
     private readonly string _root =

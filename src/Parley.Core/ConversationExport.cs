@@ -12,6 +12,9 @@
 /// For an exchange closed as <see cref="ExchangeOutcome.Settled"/>, the exchange whose Request settled it (SPEC.md §5.6);
 /// otherwise <see langword="null"/>.
 /// </param>
+/// <param name="RequestGroup">
+/// For one member of a Request to a role, the group every member shares (SPEC.md §5.5); otherwise <see langword="null"/>.
+/// </param>
 /// <remarks>
 /// State and outcome are read rather than inferred from the messages present, and the difference is
 /// the whole reason this exists. A person opens a conversation because something went wrong, and a
@@ -24,7 +27,8 @@ public sealed record ExchangeSnapshot(
     DateTimeOffset OpenedUtc,
     DateTimeOffset? ClosedUtc,
     ExchangeOutcome? Outcome = null,
-    long? SettledBy = null);
+    long? SettledBy = null,
+    string? RequestGroup = null);
 
 /// <summary>
 /// Everything one conversation holds: its messages, and where each exchange stands.

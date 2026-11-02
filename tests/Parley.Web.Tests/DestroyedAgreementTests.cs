@@ -20,6 +20,7 @@ namespace Parley.Web.Tests;
 /// by looking at the thing described.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class DestroyedAgreementTests
 {
     private static string Root()

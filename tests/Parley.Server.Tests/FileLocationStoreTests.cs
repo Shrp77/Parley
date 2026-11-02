@@ -10,7 +10,7 @@ namespace Parley.Server.Tests;
 /// <remarks>
 /// <para>
 /// <b>The holds are what these are mostly about</b>, because a hold that released too early delivers a mixed file
-/// and one that never released makes a file impossible to replace. Each is checked by ordering — what has and has
+/// and one that never released makes a file impossible to remove. Each is checked by ordering — what has and has
 /// not completed at a moment — rather than by timing, so a slow machine cannot turn a pass into a flake.
 /// </para>
 /// <para>
@@ -18,6 +18,7 @@ namespace Parley.Server.Tests;
 /// fake.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FileLocationStoreTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "parley-location-" + Guid.NewGuid().ToString("N"));
@@ -96,7 +97,7 @@ public sealed class FileLocationStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task A_replacement_waits_for_a_download_in_progress_and_the_download_reads_what_it_started_on()
+    public async Task A_removal_waits_for_a_download_in_progress_and_the_download_reads_what_it_started_on()
     {
         await Write("pricing", Notes, "net of tax");
 
@@ -114,10 +115,10 @@ public sealed class FileLocationStoreTests : IDisposable
 
         using (await change.WaitAsync(TimeSpan.FromSeconds(10), Ct))
         {
-            await Write("pricing", Notes, "gross of tax");
+            _location.Delete("pricing", Notes);
         }
 
-        Assert.Equal("gross of tax", await File.ReadAllTextAsync(_location.FilePath("pricing", Notes), Ct));
+        Assert.False(File.Exists(_location.FilePath("pricing", Notes)));
     }
 
     [Fact]
@@ -243,6 +244,96 @@ public sealed class FileLocationStoreTests : IDisposable
 
         Assert.True(_location.DeleteFolder("pricing"));
         Assert.False(Directory.Exists(_location.FolderPath("pricing")));
+    }
+
+    [Fact]
+    public async Task A_first_download_waits_out_a_hold_over_everything()
+    {
+        // A destroy, purge or prune holds the whole location, but a file never read before had no gate for that hold to
+        // enter: its first download was let in, streamed a file the hold was about to delete, and kept the folder from
+        // going. Found by review, round 20.
+        await Write("pricing", Notes, "a");
+
+        var everything = await _location.ChangeEverythingAsync(Ct);
+        Task<FileLocationStore.ReadHold> reading;
+
+        try
+        {
+            reading = _location.HoldForReadingAsync("pricing", Notes, Ct);
+
+            await Task.Delay(50, Ct);
+            Assert.False(reading.IsCompleted, "a first download was let in under a hold over everything");
+        }
+        finally
+        {
+            everything.Dispose();
+        }
+
+        await using var hold = await reading.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+    }
+
+    [Fact]
+    public async Task A_change_cancelled_while_it_waits_lets_downloads_in_again()
+    {
+        // A change waiting for a download holds new downloads back; one given up must stop holding them, though the
+        // download it waited for is still going.
+        await Write("pricing", Notes, "a");
+
+        await using var reading = await _location.HoldForReadingAsync("pricing", Notes, Ct);
+
+        using (var cancel = CancellationTokenSource.CreateLinkedTokenSource(Ct))
+        {
+            var changing = _location.ChangeAsync("pricing", Notes, cancel.Token);
+            await Task.Delay(50, Ct);
+            await cancel.CancelAsync();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => changing);
+        }
+
+        await using var fresh = await _location.HoldForReadingAsync("pricing", Notes, Ct).WaitAsync(TimeSpan.FromSeconds(5), Ct);
+    }
+
+    [Fact]
+    public async Task A_hold_over_everything_cancelled_while_it_waits_lets_downloads_in_again()
+    {
+        await Write("pricing", Notes, "a");
+
+        await using var first = await _location.HoldForReadingAsync("pricing", Notes, Ct);
+        using var cancel = new CancellationTokenSource();
+        var everything = _location.ChangeEverythingAsync(cancel.Token);
+        await Task.Delay(50, Ct);
+        await cancel.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => everything);
+
+        await using var later = await _location.HoldForReadingAsync("pricing", Notes, Ct).WaitAsync(TimeSpan.FromSeconds(5), Ct);
+    }
+
+    [Fact]
+    public async Task A_change_to_a_name_never_read_does_not_wait_out_a_hold_over_everything()
+    {
+        // A change that waited out a destroy waited, with every other agent's, behind any download the destroy waited
+        // on. One to a name never read lands before or after the destroy's transaction, so it need not.
+        await Write("pricing", Notes, "a");
+
+        using var everything = await _location.ChangeEverythingAsync(Ct);
+
+        using var change = await _location.ChangeAsync("pricing", SharedFileName.Create("other.md"), Ct)
+            .WaitAsync(TimeSpan.FromSeconds(5), Ct);
+    }
+
+    [Fact]
+    public async Task A_commit_never_moves_over_a_file()
+    {
+        // A placed file is never changed (SPEC.md §9.5): a commit writes only a name nothing holds, so a file put under
+        // the name by hand while the placement arrived is refused and kept.
+        await File.WriteAllTextAsync(Path.Combine(Directory.CreateDirectory(_location.FolderPath("pricing")).FullName, Notes.Value), "the person's own", Ct);
+
+        await using var staged = _location.Stage();
+        await staged.WriteAsync("the agent's"u8.ToArray(), Ct);
+        await staged.FinishAsync(Ct);
+
+        var refused = Assert.Throws<Grpc.Core.RpcException>(() => staged.CommitTo("pricing", Notes));
+        Assert.Equal(Grpc.Core.StatusCode.Aborted, refused.StatusCode);
+        Assert.Equal("the person's own", await File.ReadAllTextAsync(_location.FilePath("pricing", Notes), Ct));
     }
 
     private async Task Write(string folder, SharedFileName name, string content)

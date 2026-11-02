@@ -6,7 +6,8 @@ disable-model-invocation: true
 # Set this repository up as a Parley agent
 
 Parley lets an agent in this repository request work of an agent in another repository, or
-something it knows, and receive the result, without either seeing or editing the other's files.
+something it knows, and receive the result. Parley gives neither a way to see or edit the other's
+files; what each can touch on disk is up to its own client's permissions.
 Getting there takes three things: the tools on PATH, this repository enrolled in a project, and a
 note telling this agent that a peer exists. `parley enroll` does the middle one. Nothing here is
 written by hand.
@@ -55,14 +56,15 @@ is usually missing is a project:
 parley project list
 ```
 
-If it names none, have the user name one on the first screen of:
+If it names none, have the user name one on the first screen of the terminal:
 
 ```
 parley
 ```
 
-That is the only place a project is created - there is no command-line verb for it, so do not
-offer one. The broker starts the project within seconds. If a broker is running, show the user who
+or in the web console at <http://127.0.0.1:5280>, on the projects list. On Linux and macOS the
+install leaves the terminal out by default, so the web console is the one there. Those are the
+only places a project is created - there is no command-line verb for it, so do not offer one. The broker starts the project within seconds. If a broker is running, show the user who
 is already registered before they go on:
 
 ```
@@ -108,9 +110,10 @@ is not what the user wants - it should name the domain this repository owns, suc
 `billing` or `inventory`, not the directory, the framework or the model - put the intended
 `PARLEY_AGENT` into the repository's `.mcp.json` before enrolling, and enroll will take it. If the
 repository is already enrolled under the wrong name, change `PARLEY_AGENT` in its `.mcp.json`,
-restart, and retire the old name from the terminal. Two repositories must never share a name:
-identity is the one thing Parley makes unforgeable, and it does that by taking the name from the
-launch environment, which is worth nothing if two servers claim the same name.
+close the session and open the repository again: the agent keeps its identity (`parleyAgentId`)
+and everything it was party to, and takes the new name. Two repositories must never share a name:
+who is speaking is the one thing Parley makes unforgeable, and it does that by taking the name from
+the launch environment, which is worth nothing if two servers claim the same name.
 
 **The `owns` line is not written by enrolling, and not by you.** Once the agent attaches, Parley
 asks it what it owns and what it does not, and the answer is the line. With the project's Auto

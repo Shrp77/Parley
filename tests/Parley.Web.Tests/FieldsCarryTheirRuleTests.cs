@@ -21,6 +21,7 @@ namespace Parley.Web.Tests;
 /// three versions of itself.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FieldsCarryTheirRuleTests
 {
     [Fact]

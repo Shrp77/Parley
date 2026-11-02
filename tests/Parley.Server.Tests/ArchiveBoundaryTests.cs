@@ -17,6 +17,7 @@ namespace Parley.Server.Tests;
 /// something agents can observe and work around.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ArchiveBoundaryTests
 {
     private static async Task<(AttachedClient Orders, AttachedClient Billing)> TwoAsync(LoopbackBroker broker, CancellationToken token) =>

@@ -20,6 +20,7 @@ namespace Parley.Cli.Tests;
 /// neither accepted nor held, never visited again, and "Parley is deciding" on both surfaces for ever. A git pull is
 /// enough to produce any of the three.
 /// </remarks>
+[Integration]
 public sealed class OneBadLaunchConfigurationTests : IAsyncDisposable
 {
     private const string Project = "alpha";

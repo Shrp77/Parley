@@ -63,7 +63,9 @@ public static class RepositoryProjects
 
         var launch = Path.Combine(directory.FullName, ".mcp.json");
 
-        if (!File.Exists(launch))
+        // Walked before it is read (lens 2 run 126): every command typed in a repository reads its launch configuration,
+        // and one an agent replaced by a link to a share made Windows sign in to that host as the person.
+        if (Parley.Configuration.OffMachineLinks.LeadsOffThisMachine(launch) || !File.Exists(launch))
         {
             return [];
         }
@@ -72,9 +74,9 @@ public static class RepositoryProjects
 
         try
         {
-            root = JsonNode.Parse(
-                File.ReadAllText(launch),
-                documentOptions: new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
+            root = Parley.Configuration.StrictJson.Parse(
+                Parley.Configuration.StrictJson.ReadFile(launch),
+                new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
         }
         catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException or JsonException)
         {

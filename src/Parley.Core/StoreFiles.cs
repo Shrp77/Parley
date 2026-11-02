@@ -52,10 +52,28 @@ public static class StoreFiles
     /// Where placements in progress are written before they are moved into the location.
     /// </summary>
     /// <remarks>
-    /// Beside the location and never inside it: the folder a person opens and the
-    /// watcher watches then never holds a half-uploaded file, and on the same disk a finished upload still
-    /// moves into place in one step. Emptied when a broker starts, because nothing survives a broker that
-    /// could have finished writing it.
+    /// Beside the location and never inside it: the folder a person opens then never holds a half-uploaded file,
+    /// and on the same disk a finished upload still moves into place in one step. Emptied when a broker starts,
+    /// because nothing survives a broker that could have finished writing it.
     /// </remarks>
     public const string FilesIncoming = ".files-incoming";
+
+    /// <summary>
+    /// Where a sweep moves placed files whose bytes on disk no longer match what was placed (SPEC.md §9.5).
+    /// </summary>
+    /// <remarks>
+    /// Beside the location and never inside it, so nothing Parley lists, serves or sweeps reaches a tampered file, and
+    /// kept for the person, who decides what becomes of it. Deleted only with the store.
+    /// </remarks>
+    public const string FilesQuarantine = ".files-quarantine";
+
+    /// <summary>
+    /// Begins the name of a copy of the store taken before it was migrated, followed by the schema reached and the time.
+    /// </summary>
+    /// <remarks>
+    /// A prefix, because each start that upgrades takes its own copy, and one that fails leaves its copy for the next.
+    /// Serving the upgraded store deletes every one, and so does destroying the project: each holds the text of every
+    /// conversation up to its upgrade, and a destroy that left them would not be what it says it is.
+    /// </remarks>
+    public const string BeforeSchema = ".before-schema-";
 }

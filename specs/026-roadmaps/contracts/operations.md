@@ -6,7 +6,7 @@ Which operation lives on which service, which surfaces bind it, and the guard th
 
 | Operation | Takes | Returns | Notes |
 |---|---|---|---|
-| `ProposeRoadmap` | title, ordered items (text, optional intended agent, optional earlier items it needs), optional conversation it comes from, optional title of a roadmap it proposes to revise (a hint; the person resolves it) | proposal id, or a refusal with the reason | The proposer is the attached caller; no operation takes a sender. Refused for the person and the facilitator. An empty list is refused. No length bound. |
+| `ProposeRoadmap` | title, ordered items (text, optional intended agent, optional earlier items it needs), optional conversation it comes from (one the caller took part in), optional title of a roadmap it proposes to revise (a hint; the person resolves it) | proposal id, or a refusal with the reason | The proposer is the attached caller; no operation takes a sender. Refused for the person and the facilitator. An empty list is refused, and so is a conversation the caller took no part in, with one sentence whether or not it exists. No length bound. |
 | (inbox) | | roadmap notices alongside file notices | Drained, counted in `Waiting`, wakes nothing. |
 
 **The template the tool carries** (its description and the standing instructions; guidance, not a check):
@@ -33,39 +33,41 @@ The MCP adapter gains one tool, `parley_propose_roadmap`. Its description says w
 | Operation | Kind | Takes | Returns |
 |---|---|---|---|
 | `Roadmaps` | read | none | summaries: id, title, revision, item count, counts by derived-input facts the broker holds (live items, started items) |
-| `Roadmap` | read | roadmap id | items in order with text, intended agent, needs, reserved conversation id, removed ones marked, and each live item's **facts** (data-model.md): conversation exists, open exchanges, collected, counts of closed exchanges that ended complete or with no Result, whether the latest ended blocked, the blocker, who closed it, destroyed, text first sent |
-| `Proposals` | read | optional state filter | proposals with their items, proposer, source conversation, target roadmap, size |
-| `ConfirmProposal` | write | proposal id, final content, target (new, or a roadmap) | the roadmap and its revision; provenance (`proposed` or `edited`) is computed by the broker; any other waiting proposal whose title hint matches the roadmap confirmed becomes `superseded`; the content is validated first (FR-009a) |
+| `Roadmap` | read | roadmap id | items in order with text, intended agent, needs, reserved conversation id, removed ones marked, and each live item's **facts** (data-model.md): conversation exists, open exchanges, collected, counts of closed exchanges that ended complete and of the person's requests closed with no Result, how many agents' latest answer on the person's requests was blocked, the blocker one of those named, who closed it, destroyed, whether its text was edited after its first request was sent |
+| `Proposals` | read | optional state filter; headings only | proposals with their items, proposer, source conversation, target roadmap, size; as headings, the newest 200, each title and title hint cut to 200 characters with its item count and no items |
+| `ProposalCount` | read | optional state filter | how many proposals are in that state, reading none of them |
+| `Proposal` | read | proposal id | that proposal whole, in whatever state, or nothing |
+| `ConfirmProposal` | write | proposal id, final content, target (new, or a roadmap and the revision of it the person was shown) | the roadmap and its revision; a revision is refused if that revision is not current, as an edit is; provenance (`proposed` or `edited`) is computed by the broker; on a revision, any other waiting proposal whose title hint names the revised roadmap (its title before the change) becomes `superseded`; a new roadmap supersedes nothing; the content is validated first (FR-009a) |
 | `DeclineProposal` | write | proposal id | writes the notice for the proposer |
 | `EditRoadmap` | write | roadmap id, expected revision, final content | the new revision. Refused if the expected revision is not current (two surfaces editing). Origin becomes `edited`. |
 
-State is not an operation. The broker returns facts; `ItemStates.Of(roadmap, edges, registry)` in `Parley.Client` derives states, so a view costs `Roadmap`, `DescribeWaiting` and `DescribeRegistry` and never an export per item.
+State is not an operation. The broker returns facts; `ItemStates.Of(roadmap, waiting, me)` in `Parley.Client` derives states from the roadmap's facts and the wait-for graph, so a view costs `Roadmap`, `DescribeWaiting` and `DescribeRegistry` and never an export per item.
 
 Existing reads gain a field, not an operation: `ListConversations` returns the item reference on `ConversationSummary`; `Export` names item and roadmap in its header.
 
 ## Starting an item
 
-No operation. The client reads the item's reserved conversation id from `Roadmap` and sends through `SeatVoice.RequestAsync(agent, ask, conversationId)` on the person's seat. The broker's storage guard accepts the first message into a reserved conversation only from the person.
+No operation. The client reads the item's reserved conversation id from `Roadmap` and sends through `SeatVoice.RequestAsync(agent, ask, conversationId)` on the person's seat. The broker refuses an agent a reserved conversation's name at assignment, by request or by file, and its storage guard accepts the first message into a reserved conversation only from the person.
 
 ## Surfaces (every operator operation on both, per FR-028)
 
 | Operation | Terminal | Web UI |
 |---|---|---|
-| `Roadmaps`, `Roadmap` | roadmaps list and a roadmap view | project page entry, roadmap page | `parley roadmaps`, `parley roadmap show <id>` |
-| `Proposals`, `ConfirmProposal`, `DeclineProposal` | proposal review dialog (edit, confirm, decline) | review page with edit form | `parley roadmap proposals`, `parley roadmap confirm <id> [--file <edited>]`, `parley roadmap decline <id>` |
-| `EditRoadmap` | edit dialog | edit page | `parley roadmap edit <id> --file <f>` |
+| `Roadmaps`, `Roadmap` | roadmaps list and a roadmap view | project page entry, roadmap page |
+| `Proposals`, `ProposalCount`, `Proposal`, `ConfirmProposal`, `DeclineProposal` | proposal review dialog (edit, confirm, decline) | review page with edit form |
+| `EditRoadmap` | edit dialog | edit page |
 
-`parley roadmap ... --project <p>` follows the existing selection rules.
+The command line adds no verb (FR-028).
 
 ## Guards that must be extended or added
 
 | Guard | Change |
 |---|---|
 | `ContractSeparationTests` | the agent contract still holds one method per its rule; `ProposeRoadmap` is added to the declared list, no operator method leaks, and the two interfaces still share no method names |
-| `SurfaceBoundaryTests` | the declared public surface of `Broker` gains `ProposeRoadmap`; of `OperatorConsole` gains the six operator operations; operations naming a roadmap also name the person |
+| `SurfaceBoundaryTests` | the declared public surface of `Broker` gains `ProposeRoadmap`; of `OperatorConsole` gains the eight operator operations; operations naming a roadmap also name the person |
 | `AgentsCannotChangeARoadmapTests` | new, reflection over the generated `Agents` client, in the pattern of `AgentsCannotSetTheirOwnLineTests` |
 | `DriftTests` | every `BrokerClient` operation bound by both surfaces; `contracts/operations.md` of this feature names them all |
-| `SurfaceTests` | `EditRoadmap` and `DeclineProposal` each in exactly one file per surface, carrying their door |
+| `SurfaceTests` | `EditRoadmap` and `DeclineProposal` each in exactly one terminal file, carrying their door; on the web each is its own page, held by `EveryActionHasADoorTests` |
 | `EveryActionHasADoorTests` (web) | each new page action is linked and described on a GET before it is performed on a POST |
 | `PluginTests` | unchanged: the command line adds no verb, so the skill and the tool's source stay equal |
 | `GraphTests` | unchanged and must stay green: nothing here may give Client, Web, Terminal or Setup a route to a store |

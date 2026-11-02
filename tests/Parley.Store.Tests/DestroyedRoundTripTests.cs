@@ -19,6 +19,7 @@ namespace Parley.Store.Tests;
 /// can be compared with the thing it describes; this one cannot.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class DestroyedRoundTripTests : IDisposable
 {
     private readonly SqliteConnection _connection;

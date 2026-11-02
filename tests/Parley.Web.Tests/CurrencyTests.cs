@@ -17,6 +17,7 @@ namespace Parley.Web.Tests;
 /// trusted to be stale, which a page that says nothing cannot.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class CurrencyTests
 {
     private static string Page(string relative) => File.ReadAllText(RepositoryPath(relative));

@@ -20,6 +20,7 @@ namespace Parley.Broker.Tests;
 /// <c>parley:facilitator</c>.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class APersonsWordsAreNeverParleysTests : IDisposable
 {
     private static readonly DateTimeOffset T0 = new(2026, 9, 28, 12, 0, 0, TimeSpan.Zero);

@@ -23,6 +23,7 @@ namespace Parley.Cli.Tests;
 /// other command is somebody else's.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class StrangerKeyTests
 {
     private static EnrollmentEntry Entry() =>

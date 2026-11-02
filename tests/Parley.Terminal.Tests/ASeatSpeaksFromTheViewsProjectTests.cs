@@ -28,6 +28,7 @@ namespace Parley.Terminal.Tests;
 /// told somebody they were seated nowhere while two Results waited for the name whose seat they held.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ASeatSpeaksFromTheViewsProjectTests
 {
     [Fact]
@@ -76,6 +77,13 @@ public sealed class ASeatSpeaksFromTheViewsProjectTests
         // sentences it could have produced are the not-connected one and the no-project one.
         Assert.NotEqual(Shell.NotConnected, seated.Shell.Said);
         Assert.NotEqual(Shell.SeatWithoutProject, seated.Shell.Said);
+
+        // **And it reached the seat** (lens 3 run 120): a tick that returned early also leaves the hold and the sentence
+        // as they were, so the asserts above pass against the wrong accessor. A tick past the idle time drops the hold,
+        // which only one that reached the seat can do.
+        seated.Shell.Tick(DateTimeOffset.UtcNow + Parley.Client.Seating.SeatBook.IdleAfter + TimeSpan.FromMinutes(5));
+
+        Assert.Null(seated.Shell.Held);
     }
 
     [Fact]

@@ -26,6 +26,7 @@ namespace Parley.Terminal.Tests;
 /// refusals for agents somebody deliberately retired reads as a fault.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class TellingEverybodyTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

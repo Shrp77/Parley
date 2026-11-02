@@ -24,6 +24,7 @@ namespace Parley.Cli.Tests;
 /// somebody edits it. One word could not carry both and the one it carried was the wrong one.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ReachabilityIsTwoFactsTests : IDisposable
 {
     private readonly string _root =

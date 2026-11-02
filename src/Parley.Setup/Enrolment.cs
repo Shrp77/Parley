@@ -101,7 +101,7 @@ public static class Enrolment
                     notes is null
                         ? await DeclinedTextAsync(declined, instructionsPath, cancellationToken)
                             .ConfigureAwait(false)
-                        : await ReadHeldAsync(notes, cancellationToken).ConfigureAwait(false));
+                        : await ReadHeldProseAsync(notes, cancellationToken).ConfigureAwait(false));
 
                 if (plan.LaunchConfiguration is { } launch)
                 {
@@ -191,18 +191,21 @@ public static class Enrolment
     /// the read is safe where the write is not — and without it the plan would report a *create* for
     /// a file that plainly exists, which reads as a fault in the tool rather than as a link refused.
     /// </remarks>
-    private static async Task<string?> DeclinedTextAsync(
+    internal static async Task<string?> DeclinedTextAsync(
         string? declined,
         string path,
         CancellationToken cancellationToken)
     {
-        if (declined is null || !File.Exists(path))
+        // Walked before it is read (lens 2 run 126): a repository can ship its instructions file as a link, and the plan's
+        // read of a declined one followed a link to a share, signing in to that host as the person.
+        if (declined is null || OffMachineLinks.LeadsOffThisMachine(path) || !File.Exists(path))
         {
             return null;
         }
 
         try
         {
+            // Prose, so read whole as ReadHeldProseAsync reads a held one.
             return await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -246,18 +249,45 @@ public static class Enrolment
     /// into what the person reads. Internal rather than private because the readers are in
     /// <c>EnrollCommand</c>, and a second implementation is how two rules come to differ.
     /// </para>
+    /// <para>
+    /// <b>A link whose target cannot be read is still a link.</b> Its own permissions can hide the target, and then reading
+    /// it gives nothing rather than failing; taking that as "no link" let a write go through it (review, lens 2 run 72).
+    /// So a reparse point is a link whatever its target reads as, and so is a path whose attributes cannot be read.
+    /// </para>
     /// </remarks>
     internal static string? Linked(string path)
     {
+        FileAttributes attributes;
+
         try
         {
-            return new FileInfo(path).LinkTarget;
+            attributes = File.GetAttributes(path);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception missing) when (missing is FileNotFoundException or DirectoryNotFoundException)
         {
             return null;
         }
+        catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+        {
+            return UnreadableTarget;
+        }
+
+        if ((attributes & FileAttributes.ReparsePoint) == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            return new FileInfo(path).LinkTarget ?? UnreadableTarget;
+        }
+        catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+        {
+            return UnreadableTarget;
+        }
     }
+
+    private const string UnreadableTarget = "a target that cannot be read";
 
     /// <summary>Takes the launch configuration for the length of a read-modify-write.</summary>
     /// <param name="path">The launch configuration.</param>
@@ -300,9 +330,7 @@ public static class Enrolment
         // meant, and this cannot tell the two apart; the person can.
         if (Linked(path) is { } target)
         {
-            throw new InvalidDataException(
-                $"{path} is a link to {Quoting.Flat(target)}, so writing it would write somewhere "
-                + "outside this repository. Replace the link with a file, or remove it");
+            throw new InvalidDataException(LinkRefusal(path, target));
         }
 
         for (var attempt = 0; ; attempt++)
@@ -319,17 +347,51 @@ public static class Enrolment
         }
     }
 
-    /// <summary>Reads a held file from the start.</summary>
+    /// <summary>Reads a held JSON file from the start; <see cref="ReadHeldProseAsync"/> reads an instructions file.</summary>
     /// <param name="stream">The handle.</param>
     /// <param name="cancellationToken">Stops the read.</param>
     /// <returns>Its text.</returns>
+    /// <exception cref="InvalidDataException">The file is larger than <see cref="StrictJson.MostBytes"/>.</exception>
+    /// <remarks>
+    /// Bounded for the reason <see cref="StrictJson.MostBytes"/> gives, and refused as everything else here this cannot
+    /// act on is. The broker reads a repository's launch configuration this way when an ownership line is accepted.
+    /// </remarks>
     internal static async Task<string> ReadHeldAsync(FileStream stream, CancellationToken cancellationToken)
+    {
+        stream.Position = 0;
+
+        return await Bounded(StrictJson.ReadAsync(stream, cancellationToken), stream.Name).ConfigureAwait(false);
+    }
+
+    /// <summary>Reads a held instructions file from the start, whole.</summary>
+    /// <param name="stream">The handle.</param>
+    /// <param name="cancellationToken">Stops the read.</param>
+    /// <returns>Its text.</returns>
+    /// <remarks>
+    /// Not bounded as <see cref="ReadHeldAsync"/> is. The bound is for JSON files nobody writes long, and an
+    /// instructions file is somebody's prose, of any length: bounded, a long one stopped the enrolment it is merely
+    /// appended to (lens 3 run 147).
+    /// </remarks>
+    private static async Task<string> ReadHeldProseAsync(FileStream stream, CancellationToken cancellationToken)
     {
         stream.Position = 0;
 
         using var reader = new StreamReader(stream, leaveOpen: true);
 
         return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    // A file refused for its size, as the InvalidDataException every caller here already reports.
+    private static async Task<string> Bounded(Task<string> read, string path)
+    {
+        try
+        {
+            return await read.ConfigureAwait(false);
+        }
+        catch (System.Text.Json.JsonException tooLarge)
+        {
+            throw new InvalidDataException($"{path} cannot be read: {tooLarge.Message}", tooLarge);
+        }
     }
 
     /// <summary>Takes the standing instructions for the length of a read-modify-write.</summary>
@@ -362,9 +424,26 @@ public static class Enrolment
         }
         catch (InvalidDataException linked)
         {
-            return (null, $"{path}: left alone, {linked.Message}");
+            return (null, Declining(path, linked.Message));
         }
     }
+
+    /// <summary>Why the standing instructions would be left alone, said without holding them.</summary>
+    /// <param name="path">Where they live.</param>
+    /// <returns>The note a write gives for them, or null when a write would hold them and write them.</returns>
+    /// <remarks>
+    /// For the plan, which holds nothing and must say what the write would do: it refused the whole plan for an
+    /// instructions file the write leaves alone and carries on past. The same test as
+    /// <see cref="HoldAsync"/>'s and the same words as <see cref="HoldInstructionsAsync"/>'s, so the two cannot differ.
+    /// </remarks>
+    internal static string? InstructionsDeclined(string path) =>
+        File.Exists(path) && Linked(path) is { } target ? Declining(path, LinkRefusal(path, target)) : null;
+
+    private static string LinkRefusal(string path, string target) =>
+        $"{path} is a link to {Quoting.Flat(target)}, so writing it would write somewhere "
+        + "outside this repository. Replace the link with a file, or remove it";
+
+    private static string Declining(string path, string why) => $"{path}: left alone, {why}";
 
     /// <summary>Whether a held file starts with a byte-order mark.</summary>
     /// <param name="stream">The handle.</param>
@@ -601,9 +680,11 @@ public static class Enrolment
 
         try
         {
-            return File.Exists(path) ? File.ReadAllText(path) : null;
+            // Walked before it is read, as every launch configuration is (lens 2 run 126).
+            return !OffMachineLinks.LeadsOffThisMachine(path) && File.Exists(path) ? StrictJson.ReadFile(path) : null;
         }
-        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        catch (Exception failure)
+            when (failure is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
         {
             return null;
         }
@@ -759,7 +840,7 @@ public static class Enrolment
                         notes is null
                             ? await DeclinedTextAsync(declined, instructionsPath, cancellationToken)
                                 .ConfigureAwait(false)
-                            : await ReadHeldAsync(notes, cancellationToken).ConfigureAwait(false),
+                            : await ReadHeldProseAsync(notes, cancellationToken).ConfigureAwait(false),
                         agents.ContainsKey(key),
                         project,
                         EndpointsOf(manifestPath),
@@ -901,14 +982,15 @@ public static class Enrolment
                 using var holding = held;
 
                 var text = held is null
-                    ? await File.ReadAllTextAsync(launchPath, cancellationToken).ConfigureAwait(false)
+                    ? await Bounded(StrictJson.ReadFileAsync(launchPath, cancellationToken), launchPath)
+                        .ConfigureAwait(false)
                     : await ReadHeldAsync(held, cancellationToken).ConfigureAwait(false);
 
                 JsonNode? parsed;
 
                 try
                 {
-                    parsed = JsonNode.Parse(text);
+                    parsed = StrictJson.Parse(text);
                 }
                 catch (System.Text.Json.JsonException)
                 {
@@ -1123,7 +1205,7 @@ public static class Enrolment
         }
 
         return ParseCatalogue(
-            await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false), path);
+            await Bounded(StrictJson.ReadFileAsync(path, cancellationToken), path).ConfigureAwait(false), path);
     }
 
     /// <summary>Reads a catalogue's text, refusing shapes that writing over would destroy.</summary>
@@ -1144,7 +1226,7 @@ public static class Enrolment
 
         try
         {
-            if (JsonNode.Parse(text) is JsonObject catalogue)
+            if (StrictJson.Parse(text) is JsonObject catalogue)
             {
                 return catalogue;
             }

@@ -7,9 +7,11 @@ namespace Parley.Store.Tests;
 /// That a store which is not the shape this build expects is noticed, which its schema number cannot do.
 /// </summary>
 /// <remarks>
-/// <b>A store with a missing table must not read as fine while every number says it is.</b> The schema is edited in place before the first release and stays at 1, so a store made by an earlier build
-/// reads as current. Each of these fails against comparing the numbers.
+/// <b>A store with a missing table must not read as fine while every number says it is.</b> A store's number records
+/// the migrations it was given, not what it holds, so a store changed by hand reads as current. Each of these fails
+/// against comparing the numbers.
 /// </remarks>
+[Integration]
 public sealed class StoreShapeTests
 {
     [Fact]
@@ -23,12 +25,12 @@ public sealed class StoreShapeTests
     [Fact]
     public void A_missing_table_is_named()
     {
-        // Must fail against checking the schema number: the number is still 1.
+        // Must fail against checking the schema number: the number is still current.
         using var connection = ParleyDatabase.OpenInMemory();
 
         connection.Execute("DROP TABLE roadmap_notices;");
 
-        Assert.Equal(1, SchemaMigrator.GetUserVersion(connection));
+        Assert.Equal(SchemaMigrator.LatestVersion, SchemaMigrator.GetUserVersion(connection));
         Assert.Contains("missing table roadmap_notices", StoreShape.Problems(connection));
     }
 

@@ -22,6 +22,7 @@ namespace Parley.Cli.Tests;
 /// ended, and the port is asked whether anything still holds it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ChildLifetimeTests
 {
     [Fact]

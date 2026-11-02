@@ -12,6 +12,7 @@ namespace Parley.Server.Tests;
 /// Before, they answered different ways: a raw storage constraint for retire and purge, a node asked to start
 /// somebody no node can, and a reinstate that silently changed nothing.
 /// </remarks>
+[Integration]
 public sealed class PersonNameIsReservedTests
 {
     private const string Person = "human-user@test";

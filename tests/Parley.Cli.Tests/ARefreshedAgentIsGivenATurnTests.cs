@@ -16,6 +16,7 @@ namespace Parley.Cli.Tests;
 /// claimed until a drain, so the mail sits uncollected with nothing to ask again. Driven with a stub agent that records
 /// every turn it is given and takes two seconds to exit.
 /// </remarks>
+[Integration]
 public sealed class ARefreshedAgentIsGivenATurnTests : IDisposable
 {
     private readonly string _workspace = Directory.CreateTempSubdirectory("parley-refresh-turn").FullName;

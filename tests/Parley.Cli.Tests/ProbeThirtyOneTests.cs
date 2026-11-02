@@ -25,6 +25,7 @@ namespace Parley.Cli.Tests;
 /// code's or the callers'.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeThirtyOneTests : IDisposable
 {
     private readonly string _root =

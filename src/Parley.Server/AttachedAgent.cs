@@ -29,6 +29,8 @@ public sealed class AttachedAgent : IAsyncDisposable
     private readonly BrokerRuntime _runtime;
     private readonly Channel<Wire.Notice> _notices;
 
+    private readonly Channel<bool> _tidying = TidyingQueue();
+
     private int _closed;
 
     internal AttachedAgent(
@@ -36,13 +38,13 @@ public sealed class AttachedAgent : IAsyncDisposable
         AgentName name,
         Parley.Broker.Broker broker,
         Parley.Broker.StartResult started,
-        bool startedByParley = false)
+        string? launchToken = null)
     {
         _runtime = runtime;
         Name = name;
         Broker = broker;
         Started = started;
-        StartedByParley = startedByParley;
+        LaunchToken = launchToken;
 
         // One slot, newest wins. See the remarks: a notice supersedes its predecessor entirely,
         // so a backlog of them carries no information a single current one does not.
@@ -58,9 +60,20 @@ public sealed class AttachedAgent : IAsyncDisposable
     /// <summary>Gets the agent this stream belongs to.</summary>
     public AgentName Name { get; }
 
+    /// <summary>The launch token this attachment presented, or <see langword="null"/> for none.</summary>
+    public string? LaunchToken { get; }
+
     /// <summary>Whether this is a process a node started, by the token it presented (SPEC.md §11.7).</summary>
-    /// <remarks>False is "open outside Parley": no node can give it a turn.</remarks>
-    public bool StartedByParley { get; }
+    /// <remarks>
+    /// <para>False is "open outside Parley": no node can give it a turn.</para>
+    /// <para>
+    /// <b>Read against the token the node last reported, not settled at attach</b> (lens 1 run 104). A token spent on its
+    /// first attach left the same process, reconnecting after a dropped stream or a broker restart, open outside Parley
+    /// for good: never woken, and refused a person's start. A token is good until the node starts the agent again with a
+    /// new one, so a process that outlived that launch still reads as outside.
+    /// </para>
+    /// </remarks>
+    public bool StartedByParley => _runtime.IsCurrentLaunch(Name, LaunchToken);
 
     /// <summary>Gets what the attach sequence of SPEC.md §14 did.</summary>
     public Parley.Broker.StartResult Started { get; }
@@ -90,7 +103,30 @@ public sealed class AttachedAgent : IAsyncDisposable
     /// comes back, and it reconciles them at startup rather than racing to tidy up on the way
     /// out.
     /// </remarks>
-    internal void Close() => _ = _notices.Writer.TryComplete();
+    internal void Close()
+    {
+        _ = _notices.Writer.TryComplete();
+        _ = _tidying.Writer.TryComplete();
+    }
+
+    /// <summary>Gets whether the store is being rewritten, each time that changes.</summary>
+    /// <value>Completes when the attachment closes.</value>
+    internal ChannelReader<bool> Tidying => _tidying.Reader;
+
+    /// <summary>Queues whether the store is being rewritten, discarding a change the reader has not taken.</summary>
+    /// <param name="underway">Whether a rewrite has started or finished.</param>
+    internal void Tidy(bool underway) => _ = _tidying.Writer.TryWrite(underway);
+
+    /// <summary>Makes the queue of rewrites starting and finishing that one session's stream reads.</summary>
+    /// <returns>The queue.</returns>
+    /// <remarks>
+    /// <b>Two slots, newest wins.</b> A rewrite says it started and then that it finished, one rewrite at a time under
+    /// the gate, so the two newest always hold the latest start, and its finish once there is one. One slot let the
+    /// finish overwrite a start the stream had not yet written, and a surface told only that a rewrite finished never
+    /// said one was running.
+    /// </remarks>
+    internal static Channel<bool> TidyingQueue() => Channel.CreateBounded<bool>(
+        new BoundedChannelOptions(2) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
 
     /// <summary>Ends the stream and tells the registry the agent has gone.</summary>
     /// <returns>A task that completes when the registry has been told.</returns>

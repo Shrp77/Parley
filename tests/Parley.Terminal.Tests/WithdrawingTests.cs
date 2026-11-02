@@ -1,3 +1,4 @@
+using Terminal.Gui.Input;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Tests;
 using Parley.Client;
@@ -30,6 +31,7 @@ namespace Parley.Terminal.Tests;
 /// broker that refuses: every one must leave the registry and both files exactly as they were.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WithdrawingTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");
@@ -214,9 +216,7 @@ public sealed class WithdrawingTests : IAsyncDisposable
 
         driving.Row(choosing.Choices, Withdrawing.Purge);
         driving.Enter();
-        driving.Escape();
-
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Esc, () => shell.Settled);
 
         Assert.Equal(Withdrawing.Kept, shell.Said);
         await AssertStillThereAsync();
@@ -249,8 +249,7 @@ public sealed class WithdrawingTests : IAsyncDisposable
 
         Assert.Equal(Withdrawing.Keep, accepting.Chosen);
 
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(Withdrawing.Kept, shell.Said);
         await AssertStillThereAsync();

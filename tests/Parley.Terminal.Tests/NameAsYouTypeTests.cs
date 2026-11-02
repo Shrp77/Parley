@@ -21,6 +21,7 @@ namespace Parley.Terminal.Tests;
 /// correcting cannot fix.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class NameAsYouTypeTests
 {
     // **`Order Book` was `orderbook` and is `order-book` now**, which is the one thing about
@@ -200,6 +201,14 @@ public sealed class NameAsYouTypeTests
             missing.Count == 0,
             $"at {width}x{height}, {missing.Count} words of the name field's label are off "
             + $"screen: {string.Join(" ", missing.Take(12))}");
+    }
+
+    [Fact]
+    public void A_device_name_is_refused_at_the_field_rather_than_after_the_description()
+    {
+        // Review, lens 3 run 70: the rule lives in ProjectCommand, and the field said nothing until four answers later.
+        Assert.Contains("keeps for a device", Naming.NameProblem("con", []), StringComparison.Ordinal);
+        Assert.Null(Naming.NameProblem("console", []));
     }
 
     private static BrokerDirectory Directory() =>

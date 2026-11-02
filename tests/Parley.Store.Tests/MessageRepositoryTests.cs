@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Parley.Store.Tests;
 
+[Integration]
 public sealed class MessageRepositoryTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");
@@ -205,7 +206,7 @@ public sealed class MessageRepositoryTests : IDisposable
     [InlineData(-1)]
     public async Task A_non_positive_drain_limit_is_rejected(int limit)
     {
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => _messages.GetPendingAsync(Billing, limit, Token));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => _messages.GetPendingAsync(Billing, limit, cancellationToken: Token));
     }
 
     [Fact]

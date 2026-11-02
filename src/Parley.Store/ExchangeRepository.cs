@@ -240,6 +240,11 @@ public sealed class ExchangeRepository(SqliteConnection connection)
     /// A destroyed conversation's identifier is never assignable. §14 keeps it taken so a new line of
     /// work cannot appear under the name of one somebody already holds an export of.
     /// </para>
+    /// <para>
+    /// A name reserved for a roadmap item is never assignable to an agent while no conversation holds it (§5.0, §5.7):
+    /// the person opens an item's conversation. Placing a file comes through here too and writes no message, so the
+    /// storage rule that refuses an agent's message there until the person has opened an exchange would never see it.
+    /// </para>
     /// </remarks>
     public async Task<ConversationAssignment> AssignConversationAsync(
         AgentName sender,
@@ -281,6 +286,16 @@ public sealed class ExchangeRepository(SqliteConnection connection)
                     cancellationToken: cancellationToken)).ConfigureAwait(false) > 0;
 
             if (destroyed || held.Count > 0)
+            {
+                return new ConversationAssignment(null, false, OpenOutcome.NotAssignable(held));
+            }
+
+            if (!senderIsPerson && await _connection.ExecuteScalarAsync<long>(
+                    new CommandDefinition(
+                        "SELECT count(*) FROM roadmap_item_conversations WHERE conversation_id = @Id;",
+                        new { Id = named },
+                        transaction,
+                        cancellationToken: cancellationToken)).ConfigureAwait(false) > 0)
             {
                 return new ConversationAssignment(null, false, OpenOutcome.NotAssignable(held));
             }
@@ -575,7 +590,7 @@ public sealed class ExchangeRepository(SqliteConnection connection)
             new CommandDefinition(
                 """
                 SELECT id AS Id, state AS State, opened_utc AS OpenedUtc, closed_utc AS ClosedUtc,
-                       outcome AS Outcome, settled_by AS SettledBy
+                       outcome AS Outcome, settled_by AS SettledBy, request_group AS RequestGroup
                   FROM exchanges
                  WHERE conversation_id = @Conversation
                  ORDER BY id;
@@ -589,7 +604,31 @@ public sealed class ExchangeRepository(SqliteConnection connection)
             ExchangeRow.ParseTimestamp(r.OpenedUtc),
             r.ClosedUtc is null ? null : ExchangeRow.ParseTimestamp(r.ClosedUtc),
             OutcomeTokens.ParseExchange(r.Outcome),
-            r.SettledBy))];
+            r.SettledBy,
+            r.RequestGroup))];
+    }
+
+    /// <summary>Where the Request to a role an exchange belongs to stands (SPEC.md §5.5).</summary>
+    /// <param name="exchangeId">One member's exchange.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>How many members it has and how many a Result closed, or null when the exchange is no role's member.</returns>
+    /// <remarks>Answered is read from how each member closed, so retention pruning a Result's words keeps it counted.</remarks>
+    public async Task<RoleRequestProgress?> GetRoleProgressAsync(long exchangeId, CancellationToken cancellationToken = default)
+    {
+        var row = await _connection.QuerySingleOrDefaultAsync<ProgressRow>(
+            new CommandDefinition(
+                """
+                SELECT COUNT(*) AS Asked,
+                       COUNT(CASE WHEN member.outcome IN ('complete', 'blocked') THEN 1 END) AS Answered
+                  FROM exchanges AS this
+                  JOIN exchanges AS member ON member.request_group = this.request_group
+                 WHERE this.id = @Exchange AND this.request_group IS NOT NULL
+                HAVING COUNT(*) > 0;
+                """,
+                new { Exchange = exchangeId },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return row is null ? null : new RoleRequestProgress((int)row.Asked, (int)row.Answered);
     }
 
     /// <summary>
@@ -660,5 +699,14 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         public string? Outcome { get; init; }
 
         public long? SettledBy { get; init; }
+
+        public string? RequestGroup { get; init; }
+    }
+
+    private sealed class ProgressRow
+    {
+        public long Asked { get; init; }
+
+        public long Answered { get; init; }
     }
 }

@@ -78,9 +78,13 @@ public sealed class OperatorCommands
                 // retired. Presence is what the connections say right now, and nothing about it
                 // gates routing: an agent that is `startable` is simply one nobody has open,
                 // which is where most agents are most of the time.
+                //
+                // The adapter and the workspace are what the agent reported on attach, from a launch environment it can
+                // edit, so they are printed inert: an escape there moved the person's cursor and wrote their clipboard
+                // (lens 2 run 135). Attach refuses one now; a store written before that still holds what it held.
                 $"{agent.Name,-20} {Lower(agent.Status),-9} {Lower(agent.Presence),-10} " +
-                $"{Lower(agent.Tier),-9} {agent.Adapter,-12} " +
-                $"{agent.Workspace}")).ConfigureAwait(false);
+                $"{Lower(agent.Tier),-9} {Inert.Line(agent.Adapter),-12} " +
+                $"{Inert.Line(agent.Workspace)}")).ConfigureAwait(false);
 
             // The statement its peers route by, on its own line because it is prose rather than
             // a column. Its absence is printed rather than skipped: the field is optional and
@@ -101,7 +105,7 @@ public sealed class OperatorCommands
             }
 
             await _output.WriteLineAsync(
-                $"  owns: {(agent.Owns is { Length: > 0 } owns ? owns : $"(unset — set {DeploymentEnvironment.OwnsVariable} where that agent's server is launched)")}"
+                $"  owns: {(agent.Owns is { Length: > 0 } owns ? Inert.Line(owns) :$"(unset — set {DeploymentEnvironment.OwnsVariable} where that agent's server is launched)")}"
                 + Parley.Client.Rendering.Roster.PendingMark(agent))
                 .ConfigureAwait(false);
         }

@@ -19,6 +19,7 @@ namespace Parley.Client.Tests;
 /// identifier and never by anything inside somebody's words.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class AskingWhatAnAgentOwnsTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

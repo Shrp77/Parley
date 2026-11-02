@@ -102,58 +102,108 @@ internal static class Prompting
     /// <summary>Opens a dialog and returns the session it is running in.</summary>
     /// <param name="app">The application to open it in.</param>
     /// <param name="dialog">The dialog.</param>
-    /// <returns>The session, to be ended when the dialog is done with, or null if it refused to open.</returns>
-    internal static SessionToken? Open(IApplication app, View dialog)
+    /// <returns>
+    /// The session, to be ended when the dialog is done with, or null if it refused to open or the loop did not reach it
+    /// in time (<see cref="OnTheLoop"/>), when it never opens.
+    /// </returns>
+    /// <remarks>
+    /// Takes a <see cref="TableDialog"/>, so only a dialog whose keys are its table's can be opened, by type; the test
+    /// that holds every key handler to its table reads the same types.
+    /// </remarks>
+    internal static SessionToken? Open(IApplication app, TableDialog dialog)
     {
         ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(dialog);
 
         // **On the thread that draws, when there is a loop.** Most dialogs are opened after a read, from the work
         // queue's thread-pool thread, while the loop is drawing; the toolkit's draw is not safe to enter twice at
-        // once (it throws out of its line canvas). Invoke runs inline
-        // when this is already the loop's thread, so the waiting below only ever waits for the loop to get to it. The harness
-        // never sets this, because it never pumps a loop: work posted to one would not run.
-        if (Marshal is { } onTheLoop)
+        // once (it throws out of its line canvas).
+        SessionToken? opened = null;
+
+        OnTheLoop(() => opened = OpenHere(app, dialog));
+
+        return opened;
+    }
+
+    /// <summary>Runs something on the thread that draws when there is a loop, and where it is called when not.</summary>
+    /// <param name="act">What to run.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>Done when this returns, or never.</b> Waits up to five seconds for the loop to start it, so a loop that has
+    /// ended cannot hold a pool thread for ever; one that has not started it by then never will, and one that has is
+    /// waited for to the end. Work that ran late, after its caller had gone on, was the defect each time: a dialog that
+    /// opened after its caller took it as not opened could never be closed, and an item's words filled after the caller
+    /// looked were sent as a command (ADialogTheLoopReachesLateNeverOpensTests, AnItemsWordsStayWordsWhenTheLoopIsLateTests).
+    /// </para>
+    /// <para>
+    /// Invoke runs inline when this is already the loop's thread, so the waiting only ever waits for the loop to get to
+    /// it. A driven test leaves <see cref="Marshal"/> unset, because it never pumps a loop and work posted to one would
+    /// not run; only a collection that runs alone stands a loop in.
+    /// </para>
+    /// </remarks>
+    internal static void OnTheLoop(Action act)
+    {
+        ArgumentNullException.ThrowIfNull(act);
+
+        if (Marshal is not { } onTheLoop)
         {
-            SessionToken? opened = null;
-            using var done = new ManualResetEventSlim();
+            act();
 
-            onTheLoop(() =>
-            {
-                try
-                {
-                    opened = OpenHere(app, dialog);
-                }
-                finally
-                {
-                    done.Set();
-                }
-            });
-
-            // Bounded, so a loop that has already ended cannot hold a pool thread for ever.
-            _ = done.Wait(TimeSpan.FromSeconds(5));
-
-            return opened;
+            return;
         }
 
-        return OpenHere(app, dialog);
+        using var done = new ManualResetEventSlim();
+        var state = Waiting;
+
+        onTheLoop(() =>
+        {
+            if (Interlocked.CompareExchange(ref state, Running, Waiting) != Waiting)
+            {
+                return;
+            }
+
+            try
+            {
+                act();
+            }
+            finally
+            {
+                done.Set();
+            }
+        });
+
+        if (done.Wait(TimeSpan.FromSeconds(5))
+            || Interlocked.CompareExchange(ref state, GivenUp, Waiting) == Waiting)
+        {
+            return;
+        }
+
+        // The loop began it as the wait ran out: it is finishing now, on the loop.
+        done.Wait();
     }
+
+    private const int Waiting = 0;
+
+    private const int Running = 1;
+
+    private const int GivenUp = 2;
 
     /// <summary>Runs something on the thread the toolkit draws on, or null to run it where it is called.</summary>
     /// <remarks>
-    /// Set once, by the program, to the loop's own <c>Invoke</c>; never by a test. Static because every dialog goes through
-    /// <see cref="Open"/> and a seam threaded through all of them would be a parameter on each.
+    /// Set once, by the program, to the loop's own <c>Invoke</c>; by a test only in a collection that runs alone
+    /// (<c>OwnsTheMarshal</c>). Static because every dialog goes through <see cref="Open"/> and every write to the
+    /// box through <see cref="OnTheLoop"/>, and a seam threaded through all of them would be a parameter on each.
     /// </remarks>
     internal static Action<Action>? Marshal { get; set; }
 
-    private static SessionToken? OpenHere(IApplication app, View dialog)
+    private static SessionToken? OpenHere(IApplication app, TableDialog dialog)
     {
 
         // A dialog does not rename the terminal. The toolkit writes a modal runnable's title to the terminal's own,
         // which would replace the build the shell names there.
         dialog.Border.Settings &= ~BorderSettings.TerminalTitle;
 
-        var token = app.Begin((IRunnable)dialog);
+        var token = app.Begin(dialog);
 
         app.LayoutAndDraw(true);
 
@@ -176,7 +226,7 @@ internal static class Prompting
 }
 
 /// <summary>A dialog asking for one line of text, checked as it is typed.</summary>
-internal sealed class TextDialog : Dialog
+internal sealed class TextDialog : TableDialog<TextDialog>, IKeyTable<TextDialog>
 {
     private readonly Func<string, string?>? _problem;
     private readonly Func<string, string>? _correct;
@@ -196,6 +246,7 @@ internal sealed class TextDialog : Dialog
         Func<string, string>? correct = null,
         string? corrected = null)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         _problem = problem;
         _correct = correct;
         _corrected = corrected ?? string.Empty;
@@ -232,6 +283,7 @@ internal sealed class TextDialog : Dialog
         // tall the dialog ends up.
         _field = new TextField
         {
+            HotKeySpecifier = Plain.NoHotKey,
             X = 1,
             Y = Pos.AnchorEnd(4),
             Width = Dim.Fill(2),
@@ -241,9 +293,9 @@ internal sealed class TextDialog : Dialog
             Text = correct is not null ? correct(proposal) : proposal,
         };
         _why = new Plain { X = 1, Y = Pos.AnchorEnd(3), Width = Dim.Fill(2), Text = string.Empty };
-        _ok = new Button { Title = Prompting.Confirm, X = 1, Y = Pos.AnchorEnd(2), IsDefault = true };
+        _ok = new PlainButton { Title = Prompting.Confirm, X = 1, Y = Pos.AnchorEnd(2), IsDefault = true };
 
-        var cancel = new Button
+        var cancel = new PlainButton
         {
             Title = Prompting.Cancel,
             X = Pos.Right(_ok) + 1,
@@ -285,19 +337,18 @@ internal sealed class TextDialog : Dialog
     internal void Finish(bool taken) => Done?.Invoke(this, taken && !Wrong ? _field.Text : null);
 
     /// <inheritdoc/>
-    protected override bool OnKeyDown(Key key)
-    {
-        ArgumentNullException.ThrowIfNull(key);
-
-        if (key == Key.Esc)
-        {
-            Finish(taken: false);
-
-            return true;
-        }
-
-        return base.OnKeyDown(key);
-    }
+    /// <remarks>Escape cancels, as everywhere; the field and the buttons take their own keys first.</remarks>
+    static CommandManager<TextDialog> IKeyTable<TextDialog>.BuildTable() => new(
+        [new(KeyContext.TextDialog, [])],
+        [
+            new(KeyContext.TextDialog, default, Prompting.Cancel, KeyCommand.Doing<TextDialog>(dialog => dialog.Finish(taken: false)), KeyCommand.Always, Chord: Key.Esc),
+        ],
+        [
+            .. ReservedKey.Pressing(KeyContext.TextDialog, "OK, the default button"),
+            .. ReservedKey.Moving(KeyContext.TextDialog),
+            .. ReservedKey.TakenBy(KeyContext.TextDialog, () => new TextField { HotKeySpecifier = Plain.NoHotKey }, "the field"),
+            .. ReservedKey.Typing(KeyContext.TextDialog, "the field"),
+        ]);
 
     /// <summary>Re-checks what has been typed and enables or refuses the button.</summary>
     private void Check()
@@ -342,13 +393,14 @@ internal sealed class TextDialog : Dialog
 }
 
 /// <summary>A dialog offering a choice, with the safe answer first.</summary>
-internal sealed class ChoiceDialog : Dialog
+internal sealed class ChoiceDialog : TableDialog<ChoiceDialog>, IKeyTable<ChoiceDialog>
 {
     private readonly ListView _choices;
     private readonly string _described;
 
     internal ChoiceDialog(string title, string description, IReadOnlyList<string> choices)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         ArgumentNullException.ThrowIfNull(choices);
 
         Title = title;
@@ -388,6 +440,7 @@ internal sealed class ChoiceDialog : Dialog
 
         _choices = new ListView
         {
+            HotKeySpecifier = Plain.NoHotKey,
             X = 1,
             Y = Pos.Bottom(said),
             Width = Dim.Fill(2),
@@ -451,19 +504,17 @@ internal sealed class ChoiceDialog : Dialog
     internal ListView Choices => _choices;
 
     /// <inheritdoc/>
-    protected override bool OnKeyDown(Key key)
-    {
-        ArgumentNullException.ThrowIfNull(key);
-
-        if (key == Key.Esc)
-        {
-            Done?.Invoke(this, null);
-
-            return true;
-        }
-
-        return base.OnKeyDown(key);
-    }
+    /// <remarks>Escape declines to choose, as everywhere; the list takes its own keys first, and Enter on it is the choice.</remarks>
+    static CommandManager<ChoiceDialog> IKeyTable<ChoiceDialog>.BuildTable() => new(
+        [new(KeyContext.ChoiceDialog, [])],
+        [
+            new(KeyContext.ChoiceDialog, default, Prompting.Cancel, KeyCommand.Doing<ChoiceDialog>(dialog => dialog.Done?.Invoke(dialog, null)), KeyCommand.Always, Chord: Key.Esc),
+        ],
+        [
+            new(KeyContext.ChoiceDialog, Key.Enter, "choose the row"),
+            .. ReservedKey.Moving(KeyContext.ChoiceDialog),
+            .. ReservedKey.TakenBy(KeyContext.ChoiceDialog, () => new ListView { HotKeySpecifier = Plain.NoHotKey, KeystrokeNavigator = null }, "the choices"),
+        ]);
 }
 
 /// <summary>One field of a form, and what is wrong with what is in it.</summary>
@@ -511,7 +562,7 @@ internal sealed record FormField(
 /// problem and hides the rest, so a form with two mistakes takes two attempts to learn about both.
 /// </para>
 /// </remarks>
-internal sealed class FormDialog : Dialog
+internal sealed class FormDialog : TableDialog<FormDialog>, IKeyTable<FormDialog>
 {
     /// <summary>How many rows a long field may grow to before it scrolls instead.</summary>
     /// <remarks>
@@ -546,6 +597,7 @@ internal sealed class FormDialog : Dialog
 
     internal FormDialog(string title, IReadOnlyList<FormField> fields)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         ArgumentNullException.ThrowIfNull(fields);
 
         _fields = fields;
@@ -585,8 +637,8 @@ internal sealed class FormDialog : Dialog
             Add(asked, entry.View, why);
         }
 
-        _ok = new Button { Title = Prompting.Confirm, X = 1, IsDefault = true };
-        _cancel = new Button { Title = Prompting.Cancel, X = Pos.Right(_ok) + 1 };
+        _ok = new PlainButton { Title = Prompting.Confirm, X = 1, IsDefault = true };
+        _cancel = new PlainButton { Title = Prompting.Cancel, X = Pos.Right(_ok) + 1 };
 
         _ok.Accepting += (_, args) => { args.Handled = true; Finish(taken: true); };
         _cancel.Accepting += (_, args) => { args.Handled = true; Finish(taken: false); };
@@ -791,19 +843,22 @@ internal sealed class FormDialog : Dialog
         Done?.Invoke(this, taken && _ok.Enabled ? Values : null);
 
     /// <inheritdoc/>
-    protected override bool OnKeyDown(Key key)
-    {
-        ArgumentNullException.ThrowIfNull(key);
-
-        if (key == Key.Esc)
-        {
-            Finish(taken: false);
-
-            return true;
-        }
-
-        return base.OnKeyDown(key);
-    }
+    /// <remarks>
+    /// Escape cancels, as everywhere; the fields and the buttons take their own keys first. A field is a line or, for a
+    /// long answer, a paragraph that wraps; both are read.
+    /// </remarks>
+    static CommandManager<FormDialog> IKeyTable<FormDialog>.BuildTable() => new(
+        [new(KeyContext.FormDialog, [])],
+        [
+            new(KeyContext.FormDialog, default, Prompting.Cancel, KeyCommand.Doing<FormDialog>(dialog => dialog.Finish(taken: false)), KeyCommand.Always, Chord: Key.Esc),
+        ],
+        [
+            .. ReservedKey.Pressing(KeyContext.FormDialog, "OK, the default button, or a line in a long field"),
+            .. ReservedKey.Moving(KeyContext.FormDialog),
+            .. ReservedKey.TakenBy(KeyContext.FormDialog, () => new TextField { HotKeySpecifier = Plain.NoHotKey }, "a field"),
+            .. ReservedKey.TakenBy(KeyContext.FormDialog, () => Entry.Speaking().View, "a long field"),
+            .. ReservedKey.Typing(KeyContext.FormDialog, "a field"),
+        ]);
 
     /// <summary>Re-checks every field and enables or refuses the button.</summary>
     private void Check()

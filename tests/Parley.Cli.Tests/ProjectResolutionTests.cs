@@ -21,6 +21,7 @@ namespace Parley.Cli.Tests;
 /// asked for nothing.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class ProjectResolutionTests
 {
     private static readonly Func<string, string?> NoVariables = _ => null;

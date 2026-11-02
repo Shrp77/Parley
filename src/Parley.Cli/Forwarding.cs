@@ -38,10 +38,20 @@ public static class Forwarding
     /// untrue: the command exists and this machine has not been given the half that runs it. That
     /// distinction is the whole difference between a person installing one package and a person
     /// concluding the documentation is wrong.
+    /// <para>
+    /// Named as the install scripts install it, never as a package to fetch: nothing is published, so a bare
+    /// <c>dotnet tool install</c> would fail, or install whatever somebody else published under that name (review, lens
+    /// 3 run 72).
+    /// </para>
     /// </remarks>
     public static string NotInstalled(string command, string tool, string package) =>
-        $"{command} is provided by {tool}, which is not installed. "
-        + $"Install it with: dotnet tool install --global {package}";
+        $"{command} is provided by {tool}, which is not installed. " + InstallHint(tool);
+
+    /// <summary>How a person installs one of Parley's tools onto a machine that has the others.</summary>
+    /// <param name="tool">The tool's command name.</param>
+    /// <returns>The sentence, naming both install scripts.</returns>
+    public static string InstallHint(string tool) =>
+        $"Install it from your Parley checkout with: .\\install.ps1 -Only {tool} (Windows), or ./install.sh --only {tool}.";
 
     /// <summary>
     /// Runs another tool with the arguments given and returns what it returned.

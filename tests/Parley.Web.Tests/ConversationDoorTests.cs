@@ -27,6 +27,7 @@ namespace Parley.Web.Tests;
 /// assertion those mistakes led to, and it is the one worth having.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ConversationDoorTests
 {
     private static string Root()

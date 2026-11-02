@@ -85,12 +85,24 @@ internal static class Adding
             return "Name a repository directory on this machine.";
         }
 
+        var git = Path.Combine(workspace, ".git");
+
+        // Before any lookup, as on the web console's Enrol page: the lookup itself is what reaches another machine.
+        if (OffMachineLinks.LeadsOffThisMachine(workspace) || OffMachineLinks.LeadsOffThisMachine(git))
+        {
+            return LocalPath.OffThisMachine;
+        }
+
+        // Said at the field, as the enrolment plan will say it: only this machine's own disks.
+        if (LocalStorage.Problem(workspace) is { } notLocal)
+        {
+            return notLocal;
+        }
+
         if (!Directory.Exists(workspace))
         {
             return $"There is no directory at {workspace}.";
         }
-
-        var git = Path.Combine(workspace, ".git");
 
         return Directory.Exists(git) || File.Exists(git)
             ? null
@@ -122,7 +134,7 @@ internal static class Adding
     /// </para>
     /// </remarks>
     internal static string? OwnsProblem(string owns) =>
-        OwnershipStatement.IsValid((owns ?? string.Empty).Trim(), out var error) ? null : error;
+        OwnershipStatement.IsLaunchable((owns ?? string.Empty).Trim(), out var error) ? null : error;
 
     /// <summary>What would be written, in the order it would be written.</summary>
     /// <param name="workspace">The repository.</param>
@@ -568,10 +580,10 @@ internal sealed record Catalogue(string? ManifestPath, string? Given = null)
             return named;
         }
 
-        if (ManifestPath is { Length: > 0 } manifest
-            && Path.GetDirectoryName(Path.GetFullPath(manifest)) is { Length: > 0 } directory)
+        // In the root itself, never its parent: the manifest path is the root (`ProjectResolution.BesideTheManifest`).
+        if (ManifestPath is { Length: > 0 } manifest)
         {
-            return Path.Combine(directory, NodeCatalogue.DefaultFileName);
+            return Path.Combine(Path.GetFullPath(manifest), NodeCatalogue.DefaultFileName);
         }
 
         return NodeCatalogue.DefaultFileName;

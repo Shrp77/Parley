@@ -1,5 +1,7 @@
 # Implementation Plan: Roadmaps, and every agent in the Room
 
+> The store rule below was replaced on 2026-10-24: live stores are kept. Schema 1 is frozen as this feature left it, and every later schema change is a migration (CLAUDE.md, SPEC.md §9.2). Migration 002 (0.44.0, in this feature's PR) rebuilt `roadmap_proposals` with `AUTOINCREMENT`, so a proposal id is never given again, and made the reserved-conversation trigger ask of exchanges rather than messages, because retention removes messages.
+
 **Branch**: `019-layout` | **Date**: 2026-10-06 | **Spec**: [spec.md](spec.md)
 **Input**: Feature specification from `specs/026-roadmaps/spec.md`
 
@@ -14,7 +16,7 @@ The design leans on what is already here rather than adding mechanism (see `rese
 - Starting an item uses `SeatVoice.RequestAsync` unchanged. **No new "start" operation exists**; the broker only has to recognise the reserved conversation.
 - Agents never *read* a roadmap. What reaches an agent is a request carrying one item's text, which already carries the message cap. This keeps Principle II and IV intact.
 
-Version target: **0.42.0, protocol 0.9, schema 1 (edited in place)**. Nothing is released and the owner's rule is no compatibility.
+Version target: **0.43.0, protocol 0.9, schema 1** (shipped as 0.44.3, schema 2: see the note at the top). The wire changes freely; the store is kept (the note at the top).
 
 ## Technical Context
 
@@ -96,7 +98,7 @@ tests/Parley.Broker.Tests            # SurfaceBoundaryTests declared list; confi
 tests/Parley.Core.Tests              # ContractSeparationTests; naming
 tests/Parley.Server.Tests            # AgentsCannotChangeARoadmapTests; end to end over a socket
 tests/Parley.Client.Tests            # ItemStates table of cases; RoomRoster
-tests/Parley.Terminal.Tests          # driven views; DriftTests bindings; SurfaceTests door for edit/decline
+tests/Parley.Terminal.Tests          # driven views; DriftTests bindings; SurfaceTests door for edit/decline (web: EveryActionHasADoorTests)
 tests/Parley.Web.Tests               # pages, no store on the graph
 ```
 

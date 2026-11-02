@@ -24,6 +24,7 @@ namespace Parley.Cli.Tests;
 /// success. Nothing else holds a copy of that file.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class EnrollCommandTests : IDisposable
 {
     private readonly string _root =

@@ -13,8 +13,10 @@ namespace Parley.Terminal;
 /// <remarks>
 /// <para>
 /// <b>A list the person chooses from, built on the one choice dialog every door here already uses</b>, so it scrolls,
-/// sizes its description and puts the safe answer first like every other. Choosing a file offers opening it and
-/// removing it; the list also offers the folder and removing every file. The two that delete go through their own
+/// sizes its description and puts the safe answer first like every other. Choosing a file offers opening it to read
+/// and removing it; the list also offers placing a file (<see cref="FilesPlacing"/>), the folder, the problems sweeps
+/// found (<see cref="FilesProblems"/>) and removing every file. A file copied into the folder by hand is not in Parley,
+/// has no row, and goes at the next sweep. The two that delete go through their own
 /// files, <see cref="FilesRemoving"/> and <see cref="FilesPruning"/>, which are the only places the terminal calls
 /// them — the rule <c>SurfaceTests</c> holds every operator operation here to.
 /// </para>
@@ -96,7 +98,7 @@ internal static class Files
     /// <param name="conversation">The conversation, or <see langword="null"/>.</param>
     /// <param name="files">The files.</param>
     /// <param name="placements">The placement counts.</param>
-    /// <param name="notListed">Files in the folders whose names break the rules, and so have no row.</param>
+    /// <param name="notListed">Files in the folders that nothing placed, and so have no row.</param>
     /// <returns>The description, safe to draw.</returns>
     internal static string Describe(
         string project,
@@ -143,7 +145,7 @@ internal static class Files
         return Safe.Lines(string.Join('\n', lines));
     }
 
-    /// <summary>One file's row: conversation and name, size, short hash, placer and when it last changed.</summary>
+    /// <summary>One file's row: conversation and name, size, short hash, placer and when it was placed.</summary>
     /// <param name="file">The file.</param>
     /// <returns>The row, safe to draw.</returns>
     /// <remarks>
@@ -154,7 +156,7 @@ internal static class Files
         "  " + Safe.Text(string.Create(
             CultureInfo.InvariantCulture,
             $"{file.ConversationId}/{file.Name.Value}  {Size(file.SizeBytes)}  {file.Sha256.Short}  " +
-            $"{file.PlacedBy?.Value ?? "the person"}  {LocalTime.Write(file.ChangedUtc)}"));
+            $"{file.PlacedBy?.Value ?? "the person"}  {LocalTime.Write(file.PlacedUtc)}"));
 
     /// <summary>A size in the units a person reads.</summary>
     /// <param name="bytes">The size.</param>
@@ -180,7 +182,7 @@ internal static class Files
         int notListed)
     {
         var rows = files.Select(Row).ToList();
-        var choices = new List<string> { Close, OpenFolder };
+        var choices = new List<string> { Close, FilesPlacing.Choice, OpenFolder, FilesProblems.Choice };
 
         if (files.Count > 0)
         {
@@ -202,6 +204,18 @@ internal static class Files
 
             if (chosen is null || chosen == Close)
             {
+                return;
+            }
+
+            if (chosen == FilesPlacing.Choice)
+            {
+                _ = FilesPlacing.OpenAsync(app, client, conversation, queue, done);
+                return;
+            }
+
+            if (chosen == FilesProblems.Choice)
+            {
+                _ = FilesProblems.OpenAsync(app, client, includeDismissed: false, queue, done);
                 return;
             }
 

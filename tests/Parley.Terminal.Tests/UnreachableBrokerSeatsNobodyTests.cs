@@ -23,6 +23,7 @@ namespace Parley.Terminal.Tests;
 /// Probed by pointing at a port with nothing behind it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class UnreachableBrokerSeatsNobodyTests
 {
     /// <summary>A loopback port with nothing listening, so the dial is refused rather than slow.</summary>

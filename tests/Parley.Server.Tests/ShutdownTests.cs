@@ -23,6 +23,7 @@ namespace Parley.Server.Tests;
 /// half, because a killed broker is one that did not get to finish whatever it was writing.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ShutdownTests
 {
     [Fact]

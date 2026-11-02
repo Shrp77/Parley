@@ -19,6 +19,7 @@ namespace Parley.Broker.Tests;
 /// trusted.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class EnvelopeDeliveryTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

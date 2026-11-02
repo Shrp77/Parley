@@ -14,6 +14,7 @@ namespace Parley.Client.Tests.Views;
 /// in one week; navigation is the same kind of thing, and the second implementation would have got
 /// the empty cases subtly different.
 /// </remarks>
+[Unit]
 public sealed class NavigationTests
 {
     private static ProjectName Alpha => ProjectName.Create("alpha");

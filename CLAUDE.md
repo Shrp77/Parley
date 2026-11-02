@@ -10,16 +10,16 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.42.86, protocol 0.8 (feature 026 moves it to 0.9),
-  schema 1. Nothing has been released, so there is **no compatibility to keep**: change the wire,
-  enums and schema 1 in place, and nuke and rebuild. From the first release every schema change is
-  a migration.
-- Branch `019-layout` carries features 019–025, built and unmerged. One combined review gate
-  covers them; `REVIEW-LEDGER.md` has the count. Owed: 025's walk and live check, and the rest of
-  the gate.
-- `specs/026-roadmaps/` is in progress (protocol 0.9). Spec, plan and
-  contracts are written; `tasks.md` and the rest of the code are owed, and `ProtocolVersion.Current`
-  moves to 0.9 with it. `.specify/feature.json` points at it.
+- Version 0.48.9, protocol 0.9, schema 4. Nothing has been released, but **live stores hold work
+  in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
+  `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
+  upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
+  -Hidden`, never `-Reset`. `-Force` ends the broker and every `parley-mcp`, so every tool on a
+  machine is one build: **the wire, enums and protocol still change freely**, with no
+  compatibility caveats.
+- Features 019–026 are merged; the last is `specs/026-roadmaps/`. Feature 027, session-owned delivery, is
+  next and not committed yet; its plan predates the rule above and must move its schema change into
+  migration 005 (003 holds file problems, 004 when an agent was first asked what it owns and first refreshed).
 - A person speaks to an agent only with a Request. An agent's row menu in the terminal has one
   ownership entry, *What this agent is responsible for* (`Alt+n`).
 - Design work runs through Spec Kit: `/speckit-specify`, `/speckit-plan`, `/speckit-tasks`
@@ -44,7 +44,11 @@ src/Parley.Transport     gRPC contract generated from proto/parley.proto. No han
 src/Parley.Server        The broker process (§4): the only thing that opens the database.
 src/Parley.Configuration The project manifest (§4.1) and the node catalogue: where they live
                          and what they hold. Read by both Parley.Cli and Parley.Mcp. Written
-                         only through Parley.Setup's ProjectCommand.
+                         only through Parley.Setup's ProjectCommand. Also where a path may
+                         be looked up: OffMachineLinks (no link off this machine) and
+                         LocalStorage (only this machine's own disks), and where a JSON
+                         file somebody else wrote is parsed: StrictJson, which refuses a
+                         member named twice and text that is not valid Unicode.
 src/Parley.Setup         What a person does to a machine: enrolling a repository, naming
                          projects, resolving per-machine paths, the autostart entry. Shared
                          by `parley` and `parley-terminal`, which run the same commands in
@@ -67,6 +71,8 @@ src/Parley.WebUi         `parley-web-ui`: only a way to start ConsoleHost. `serv
 src/Parley.Cli           `parley`: the broker's tool and the command line.
 src/Parley.Headless      The node: starts and supervises agents (ResidentAgent, InvocationCommand).
 src/Parley.Mcp           `parley-mcp`, the agent's adapter.
+src/FilePlacement.cs     Source files linked into several projects (Parley.Client, Parley.Mcp
+src/InboxCollection.cs   and tests), not a project: the transport holds no hand-written code.
 tests/                   One project per source project; notes below.
 plugins/parley           The Claude Code integration. .claude-plugin/marketplace.json is
                          its catalogue.
@@ -95,7 +101,9 @@ in §10.2 (`force_conclude` is not `conclude`) is too thin alone.
 **Surfaces.** Every operator operation is available on the CLI, the terminal and the web UI,
 and `DriftTests` asserts both screens bind every `BrokerClient` operation. Everything a person
 does to a deployment is the terminal's, except that a project is also created in the web console;
-a project is removed or renamed only in the terminal. The command line keeps `serve`, `up`, `autostart`,
+a project is removed or renamed only in the terminal. Renaming is two steps, removing it and naming the new one, which
+leave the conversations in the old store and every enrolled repository naming the old project until it is enrolled again.
+The command line keeps `serve`, `up`, `autostart`,
 `use`, `project list`, `enroll`, `registry`, `open`, `waiting`, `files`, `web-ui` and `terminal`
 (the last two start their own tools); every other operator verb exits 64 and names the terminal.
 
@@ -107,6 +115,12 @@ a project is removed or renamed only in the terminal. The command line keeps `se
 - `EveryActionHasADoorTests` fails when an action is performed and unlinked, linked and not
   performed, or done on a POST and described on no GET.
 - The web UI answers only loopback host names and the host it binds (DNS rebinding defence).
+- No page can be framed, except the conversation page the console's own roadmap page frames (`embed` and
+  `Sec-Fetch-Dest: iframe`, same origin only; `ConsoleHost.Embedded`). Embedding hides the project's name, so no
+  other page embeds.
+- A POST-only `[BindProperty]` is `[FromForm]`, and an `OnPost` parameter names its source (`[FromQuery]` only on
+  purpose, as Files' Open). Forms post back to their own page and an agent's message renders as live links, so a
+  field a form left out would otherwise come from the link. `FormBindingTests` holds it.
 - A repository may be enrolled in several projects. Its launch key in `.mcp.json` is `parley`
   (always read) or `parley-<project>`; `LaunchKey` in Parley.Configuration is the one
   implementation. An agent's identity is `parleyAgentId` in `.mcp.json`, and the per-machine
@@ -148,8 +162,13 @@ a project is removed or renamed only in the terminal. The command line keeps `se
 
 ```
 dotnet build
-dotnet test
+pwsh scripts/test.ps1                 # unit tests, seconds
+pwsh scripts/test.ps1 -Category All  # everything, ~25 minutes
 ```
+
+Every test class is `[Unit]` or `[Integration]` (`tests/TestCategories.cs`). Pushes run the unit
+tests; the `nightly` workflow runs everything, and on a pull request before it merges. Every run is
+recorded in the git-ignored `.test-metrics/`.
 
 Tests run on Microsoft.Testing.Platform, selected in `global.json` under `"test"` beside
 `"sdk"`. A green build is the whole lint gate: warnings are errors, documentation is
@@ -216,33 +235,12 @@ once the parent's own floor catches up (`dotnet nuget why`).
 
 ## Review gate
 
-Two parts: a mechanical floor that runs as tests, and three judgement lenses that do not.
-
-**The floor.** `tests/Parley.Spec.Tests` checks SPEC.md: section references resolve, no table
-is ragged, no operation name spans the §10.1/§10.2 boundary, §8's rules are numbered
-contiguously and all appear in its enforcement table, `proto/parley.proto` agrees with the
-document, and every schema fragment executes against SQLite in the order written. Do not
-hand-verify a constraint and move on; add the case. Triggers contain semicolons, so they are
-matched to `END;`, and `The_document_contains_a_schema` guards against an extraction that
-silently matches nothing.
-
-**The lenses**, each finding nothing above low:
-
-1. Correctness and concurrency
-2. Security and data integrity
-3. API surface and maintainability
-
-The gate is **three consecutive runs per lens with no finding above low**; a finding above
-low resets that lens to zero. All three must reach three. Each run must probe something the
-previous runs did not, because re-reading the same code is one run repeated. After fixing
-findings, re-run the same lens before rotating. Probe, do not reason: write the malicious case
-and watch it be admitted.
-
-- Run the lenses after the last edit, not alongside it.
-- The running count lives in untracked `REVIEW-LEDGER.md`. Log clean runs too, with what they
-  probed. Record real findings below the bar as *low, recorded not acted on*.
-- Verify CI ran against `HEAD`: `gh pr checks --watch` can return the previous run. Compare
-  the run's commit with `git rev-parse HEAD`.
+A pull request merges after three clean runs of each of three lenses (correctness and concurrency, security and data
+integrity, API surface and maintainability) on the same shipped code, with the full test run (the `nightly` workflow, which the `full-tests` label starts on a pull request) green on the commit that merges; a commit
+that changes only tests, CI, docs or plugin prose keeps the counts. The rules live in
+[`review/`](review/README.md), one file for how the gate runs and one per lens, each with what counts as medium, how to
+probe, and what the owner has settled. Read the gate's file and the lens's file before a pass; a lens file, not this
+one, is where a new review rule goes.
 
 ## Answering as an agent
 
@@ -326,7 +324,8 @@ implementation detail, and needs to be argued.
 - **Nothing times out.** An exchange that stops moving is flagged to the person. A
   conversation ends by consensus of the participants asked, or by a person.
 - **Credentials are references, never values.** `env:`, `keychain:`, `file:`. The broker
-  resolves them at invocation and never persists or logs them.
+  resolves them at invocation and never persists or logs them. **Not built yet**: nothing takes a
+  credential today (SPEC §12); this is the rule for when something does.
 - **No network bind; tunnel only.** All three gRPC services share one port, so a reachable
   port is the control plane (`Export`, `Purge`, `Start`) with no authentication
   on the wire (§16). Brokers bind loopback. The supported remote path is an SSH port-forward
@@ -361,16 +360,77 @@ Decided and built. The reasoning is in `SPEC.md`, the feature's `research.md` an
 - **Turns.** The node reports each turn's start and end (`Nodes.ReportTurn`). Running turns
   live in the broker's memory, not a table. An older node reads as *unknown*, never *stopped*.
   A permission-refused stop is flagged at once.
-- **Terminal keys.** Every action is Alt plus a letter and menus open with F10, so a plain
-  character is never an action. A focused view is offered a key before the surface's own
-  handler, so Enter is taken on the box itself. Enter sends; Shift+Enter, Ctrl+Enter or
-  backslash then Enter make a line break. A conversation is tailed only for a reader at its
-  end. `NoTwoActionsShareAKeyTests` and `KeysNeedAModifierTests` hold the key rules.
+- **Terminal keys.** Every action is Alt plus a letter, or a declared chord, and menus open with
+  F10. A plain character is never an action: no command or key the surface takes may be a
+  printable character pressed without Alt or Ctrl, except Space, and Space only where nothing
+  types. Named keys may act unmodified where a place says so (Enter, Escape, the function keys,
+  the page and arrow keys in a list of ticks). A focused view is offered a key
+  before the surface's own handler, so Enter is taken on the box itself. Enter sends; Shift+Enter,
+  Ctrl+Enter or backslash then Enter make a line break. A conversation is tailed only for a reader
+  at its end. Every key is declared in one table per type (`CommandManager<T>`, built by the type's
+  `IKeyTable<T>.BuildTable` and listed once in `CommandTables`): the surface's in `ShellCommands.cs`,
+  each dialog's in the dialog, every dialog a place of its own, read-only ones included. A table holds
+  commands (named on screen, with the place they are live in and a condition for whether they are live
+  now), the keys views take first (a list's cursor keys, the box's editing keys, a list's own Enter) and
+  the keys the surface takes with no label (`KeyHandler<T>`: Tab, Ctrl+Q, F8, F10, a pane's Enter, the
+  completion list's arrows). Dispatch, the status line, the menus and a button label that names a key read
+  only it; button labels are `Name (Key)`. No key handler is written by hand: every dialog derives from
+  `TableDialog<T>`, whose sealed `OnKeyDown` only asks its table, and `Shell.OnKeyDown` is a fixed body
+  that does the same. The only key-event subscriptions are in `KeyRouting.cs`. A table refuses to build
+  when a command shares a key with another claim in a place, its layers included, or is unreachable,
+  plain or has both a letter and a chord; the tool builds every table (`CommandTables.BuildEvery`) before
+  it takes the console, so a refusal is a plain message saying which kind and exit 70.
+  `CommandTableTests` holds the check. `KeysTakenBeforeTheTableTests` (both unit) holds the rest by
+  reflection: every view opened as a session builds a table, is listed and derives from
+  `TableDialog<T>` (the surface aside); the only key handler overrides are the dialog base's and the
+  surface's, and each calls only what it names; no toolkit hook a command reaches (`OnAccepting`,
+  `OnActivating`, `OnHandlingHotKey`, `OnCommandNotBound` and the like) is overridden unless the
+  test's `OverridesOfCommands` names it with a reason (none does), and the probe counts such an
+  override as answering; the only key-event subscriptions are `KeyRouting`'s four; nothing, anywhere,
+  reaches the application's keyboard or bindings, a shortcut's `BindKeyToApplication`, a static
+  toolkit member over key bindings (`ListView.DefaultKeyBindings`, `View.ViewKeyBindings`,
+  `Application.SetDefaultKeyBinding`) or a static toolkit key (`PopoverMenu.DefaultKey`), or hands out
+  hot keys (`AssignHotKeys`); no view the terminal makes reads a hot key from its title: a toolkit
+  view that reads one by default is made with `HotKeySpecifier = Plain.NoHotKey` set in its
+  initialiser (`new ListView { HotKeySpecifier = Plain.NoHotKey, ... }`) or is `PlainButton` or
+  `Plain`, which set it when made, and `HotKeySpecifier` is set to nothing else, so a title or text
+  set on one later binds nothing, and every view the probe builds has no hot key. The toolkit's own
+  `TextView` context menu (Shift+F10 or a right click in the box) is outside this: the toolkit makes
+  it, as a `PopoverMenu` whose items read hot keys from their titles (`_Select all`, `_Delete All`),
+  and it is older than the check, a recorded gap rather than something the check holds. And a key or hot-key binding, a
+  command, a key set on a toolkit view, or a handler for accepting, activating or a hot key is added
+  only while a pressed pane or dialog is built: in its constructor (field initialisers included) or
+  a non-virtual method of the same type that only that construction calls, never in a lambda, an
+  override such as `EndInit`, a method the surface calls such as a pane's `Show`, or the surface;
+  and there unconditionally: no branch, loop or `catch` may skip, repeat or choose it, nor a call to
+  a construction method that binds. One call is excepted by name, the toolkit's `MenuItem` constructor in `MenuBarView.Views`, and
+  each line it makes is checked: no key, no hot-key binding in it or inside it, and no key binding
+  but those a toolkit line made with no key carries. It also presses every pane, as a real `Shell`
+  builds and wires it and after each pane's `Show` with a row, and every dialog in memory after
+  `BeginInit` and `EndInit`, built through every constructor, private ones included, in every shape
+  its own arguments can take (each flag both ways, every value of a choice, null and a value for
+  what may be null; an argument's contents are not varied, which is why construction may not
+  branch), every list given rows, with every named
+  key and its chords, Alt and Ctrl with each letter, and plain letters, digits and a few marks: a
+  key taken must be claimed in its place; one a command names must be handed to the table first or
+  be listed in the test's `TakenAsNamed`; and a plain character taken by a view that does not type
+  fails whatever claims it. Tab is not pressed, and a key a view binds, as a key or a hot key, is
+  read from its bindings rather than pressed. `NoTwoActionsShareAKeyTests`
+  and `KeysNeedAModifierTests` hold the drawn surface to it.
 - **Dialogs open on the thread that draws.** The work queue runs on the thread pool and most dialogs open after a read,
-  so `Prompting.Open` hands the open to the loop (`Prompting.Marshal`, set only by `TerminalCommand`). Never open one
-  from the pool directly. The harness never pumps a loop and leaves `Marshal` unset, so a driven test must not press a
-  key that starts queued work that opens a view and then draw on its own thread in the same breath: call the handler
-  and `await shell.Settled`.
+  so `Prompting.Open` hands the open to the loop (`Prompting.Marshal`, set by `TerminalCommand`). Never open one
+  from the pool directly. What the loop has not started within five seconds is given up, never done late (a late
+  dialog could not be closed). Work off the loop reads the box with `Line.WrittenOnTheLoop` and changes it with
+  `Line.Rewrite`, read and written in one turn, because the toolkit's text view throws when it is read or changed
+  while the loop draws it or takes a key, and a key typed between a read and a write is lost. The harness never pumps
+  a loop and leaves `Marshal` unset (only the `OwnsTheMarshal` collection sets it, alone), so a driven test must not
+  press a key that starts queued work that opens a view and then draw on its own thread in the same breath: call the
+  handler and `await shell.Settled`.
+- **A read can land after the person has moved on.** Enter and Escape read a project off the work queue, so
+  `SelectAsync` draws only while its project is still in view, and never clears an open conversation. A conversation's
+  id is unique only within a project, so the follow loop compares the project too (`Transcript.OpenIn`). The
+  terminal's box belongs to one project and conversation (`_lineFor`). Anything new that draws from a read checks the
+  same.
 - **Hold screens to what is drawn, not what is held in memory.** Read the laid-out screen or
   `Driver.Contents`, not a field, and press a key rather than calling its seam.
 - **Anything drawing somebody else's text** (a payload, a broker detail, a path, a log line)

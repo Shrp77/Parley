@@ -26,7 +26,8 @@ else if (Model.Roadmap is { } roadmap && Model.Standing is { } standing)
         <p>Agents on this roadmap: @string.Join(", ", Model.Agents.Select(a => a.Value)).</p>
     }
 
-    @* The same grid as the conversations. The item to do next starts open, because it is the one a person came to act on. *@
+    @* The same grid as the conversations. The item to do next starts open, because it is the one a person came to act on;
+       one reached from its conversation starts open instead, so the way back lands where the person left. *@
     <div class="grid items-grid roadmap-items" role="table" aria-label="Items">
         <div class="grid-head" role="row">
             <span role="columnheader">#</span>
@@ -35,7 +36,7 @@ else if (Model.Roadmap is { } roadmap && Model.Standing is { } standing)
         </div>
         @foreach (var state in standing.Items)
         {
-            <details class="grid-row@(state.IsNext ? " next" : null)" role="row" open="@(state.IsNext ? "open" : null)">
+            <details class="grid-row@(state.IsNext ? " next" : null)" role="row" id="item-@state.Item.Number" open="@(Model.Opens(state) ? "open" : null)">
                 <summary>
                     <span class="num"><span class="chev icon" aria-hidden="true">chevron_right</span> @state.Item.Number</span>
                     @* The row opens the item, and with it its conversation. *@
@@ -80,5 +81,5 @@ else if (Model.Roadmap is { } roadmap && Model.Standing is { } standing)
         })();
     </script>
 
-    <p><small>Starting an item sends nothing. It opens the conversation <code>@(standing.Items.Count > 0 ? "rm" + roadmap.Number + "-<item>" : "")</code> with the item's words ready; you press Send.</small></p>
+    <p><small>Starting an item sends nothing. It opens the item's own conversation with the item's words ready; you press Send.</small></p>
 }

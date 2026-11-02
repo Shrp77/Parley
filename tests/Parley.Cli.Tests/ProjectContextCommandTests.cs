@@ -13,6 +13,7 @@ namespace Parley.Cli.Tests;
 /// address it could not reach — which is how the test sees which project was chosen, beside the line on standard error
 /// saying which and why. A machine naming two projects, because that is where the choice exists at all.
 /// </remarks>
+[Integration]
 public sealed class ProjectContextCommandTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "parley-use-" + Guid.NewGuid().ToString("N"));

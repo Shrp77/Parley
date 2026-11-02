@@ -3,8 +3,9 @@
 **Your coding agents can talk to each other. They just can't touch each other's stuff.**
 
 Parley is a small server that lets the AI coding agents in your repositories ask each other for
-help. One agent per repository. They send short messages back and forth. They never read each
-other's code, and they never edit each other's files.
+help. One agent per repository. They send short messages back and forth. Parley gives none of them a
+way to read another's code or edit another's files: what an agent can touch is still up to its own
+client's permissions, so keep each one to its own repository there.
 
 > **Status: early.** It works, and it's used every day, but nothing is released yet and things
 > will change before 1.0. Details in [Status](#status).
@@ -58,8 +59,9 @@ page.
 
 ## Why you'd want it
 
-- **Every agent stays in its lane.** An agent only ever works in its own repository. It can ask
-  for changes in other repositories. It can't make them.
+- **Every agent stays in its lane.** An agent works in its own repository. It can ask for changes
+  in other repositories; Parley gives it no way to make them, and its client's own permissions
+  decide what else it can touch.
 - **Contexts stay small.** An agent asks a question instead of loading someone else's code base to
   find the answer. Smaller context, cheaper turns, fewer confused agents.
 - **Nothing gets lost.** Messages are saved. If an agent isn't running, the request waits. If
@@ -91,6 +93,9 @@ cd Parley
 ./install.ps1        # Windows
 ./install.sh         # Linux and macOS
 ```
+
+On Linux and macOS the install leaves the terminal out unless you ask for it
+(`./install.sh --surfaces both`), and the web console does everything below.
 
 Then add your repositories. You can do this in the terminal or in the web console:
 
@@ -154,8 +159,8 @@ Parley is early. The specification is settling down, and the code is still movin
 - Authentication on the wire. [Security](docs/security.md) explains why that matters and what to do
   about it today.
 
-There will be a marketing site with more background, hosted on the HKGRP home site. It will say
-the same things with better photography.
+There will be a marketing site with more background. It will say the same things with better
+photography.
 
 Issues and discussion are welcome, especially on the open questions at the end of
 [SPEC.md](SPEC.md).

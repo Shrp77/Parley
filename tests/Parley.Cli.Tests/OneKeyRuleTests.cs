@@ -32,6 +32,7 @@ namespace Parley.Cli.Tests;
 /// kind broken by a helper whose <i>name</i> merely contained the word.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class OneKeyRuleTests
 {
     /// <summary>Where the literal may appear, and what it is doing there.</summary>

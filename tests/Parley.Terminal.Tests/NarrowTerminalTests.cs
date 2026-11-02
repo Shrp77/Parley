@@ -21,6 +21,7 @@ namespace Parley.Terminal.Tests;
 /// list of facts, at the same widths, against the thing that draws them today.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class NarrowTerminalTests
 {
     /// <summary>Narrow enough that a header could not have fitted, and plausible: a split pane.</summary>

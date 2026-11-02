@@ -22,6 +22,7 @@ namespace Parley.Cli.Tests;
 /// a process by hand.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class NodeCatalogueWatchTests : IDisposable
 {
     private readonly string _directory =

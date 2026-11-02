@@ -21,6 +21,7 @@ namespace Parley.Server.Tests;
 /// evidence that the protocol records anything.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class OwnershipOverTheWireTests
 {
     private static Wire.OpenRequest Raw(string from, string to, string payload, string conversation) =>

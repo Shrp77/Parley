@@ -18,6 +18,7 @@ namespace Parley.Client.Tests;
 /// that survivable is naming the command Tab would have completed before Enter is pressed.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class CommandTableTests
 {
     [Fact]

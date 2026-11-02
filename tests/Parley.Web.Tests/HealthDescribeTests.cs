@@ -12,6 +12,7 @@ namespace Parley.Web.Tests;
 /// every surface and pinned by none. The sentence is the part a person acts on, so each kind is held to saying who is
 /// waiting on whom, and a vote flag to naming no exchange.
 /// </remarks>
+[Unit]
 public sealed class HealthDescribeTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

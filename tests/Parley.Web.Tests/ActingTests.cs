@@ -13,6 +13,7 @@ namespace Parley.Web.Tests;
 /// only acceptable behaviour is to say what will be lost and wait. An operator who meant retire
 /// and clicked purge has to have been told.
 /// </remarks>
+[Integration]
 public sealed class ActingTests : IClassFixture<WebApplicationFactory<Program>>
 {
     private readonly WebApplicationFactory<Program> _console;

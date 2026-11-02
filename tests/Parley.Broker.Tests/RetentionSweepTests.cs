@@ -19,6 +19,7 @@ namespace Parley.Broker.Tests;
 /// its own cadence, and that a policy which cannot do its job is refused where the broker is built.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RetentionSweepTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");
@@ -112,16 +113,16 @@ public sealed class RetentionSweepTests : IDisposable
         await broker.DrainInboxAsync(Billing, T0.AddMinutes(1), cancellationToken: Ct);
         await Close("pricing", T0.AddMinutes(2));
 
-        var first = await broker.TickAsync(T0.AddMinutes(10), Ct);
+        var first = await broker.TickAsync(T0.AddDays(4), Ct);
 
         // The Request stays with them: a notice collected with nothing to say what it closed means nothing (§9.4).
         Assert.Equal(0, first.Retention.Removed);
         Assert.Equal(3, first.Retention.HeldByFloor);
 
-        await broker.DrainInboxAsync(Orders, T0.AddMinutes(11), cancellationToken: Ct);
-        await broker.DrainInboxAsync(Billing, T0.AddMinutes(11), cancellationToken: Ct);
+        await broker.DrainInboxAsync(Orders, T0.AddDays(4).AddMinutes(1), cancellationToken: Ct);
+        await broker.DrainInboxAsync(Billing, T0.AddDays(4).AddMinutes(1), cancellationToken: Ct);
 
-        Assert.Equal(3, (await broker.TickAsync(T0.AddMinutes(20), Ct)).Retention.Removed);
+        Assert.Equal(3, (await broker.TickAsync(T0.AddDays(4).AddMinutes(10), Ct)).Retention.Removed);
     }
 
     [Fact]
@@ -134,15 +135,14 @@ public sealed class RetentionSweepTests : IDisposable
 
         await SettledExchange(broker, "pricing");
 
-        Assert.Equal(0, (await broker.TickAsync(T0.AddMinutes(10), Ct)).Retention.Removed);
+        // A pass a minute before the conversation's idle period ends, which removes nothing and starts the hour.
+        Assert.Equal(0, (await broker.TickAsync(T0.AddDays(3).AddMinutes(1), Ct)).Retention.Removed);
 
-        // Closing short-circuits the idle period, so everything in the conversation falls due at once.
-        await Close("pricing", T0.AddMinutes(11));
-
-        Assert.Equal(0, (await broker.TickAsync(T0.AddMinutes(12), Ct)).Retention.Removed);
+        // Due now, and left until the hour has passed.
+        Assert.Equal(0, (await broker.TickAsync(T0.AddDays(3).AddMinutes(12), Ct)).Retention.Removed);
         Assert.Equal(2, await MessageCount());
 
-        Assert.Equal(2, (await broker.TickAsync(T0.AddMinutes(70), Ct)).Retention.Removed);
+        Assert.Equal(2, (await broker.TickAsync(T0.AddDays(3).AddMinutes(70), Ct)).Retention.Removed);
     }
 
     [Fact]
@@ -168,11 +168,10 @@ public sealed class RetentionSweepTests : IDisposable
 
         await SettledExchange(broker, "pricing");
 
-        Assert.Equal(0, (await broker.TickAsync(T0.AddMinutes(10), Ct)).Retention.Removed);
+        Assert.Equal(0, (await broker.TickAsync(T0.AddDays(3).AddMinutes(1), Ct)).Retention.Removed);
 
-        await Close("pricing", T0.AddMinutes(11));
-
-        Assert.Equal(2, (await broker.TickAsync(T0.AddMinutes(12), Ct)).Retention.Removed);
+        // A minute later, well inside the hour, and due.
+        Assert.Equal(2, (await broker.TickAsync(T0.AddDays(3).AddMinutes(2), Ct)).Retention.Removed);
     }
 
     [Fact]
@@ -184,14 +183,14 @@ public sealed class RetentionSweepTests : IDisposable
         await broker.StartAsync(Orders, T0, Ct);
 
         await SettledExchange(broker, "pricing");
-        await Close("pricing", T0.AddMinutes(4));
 
-        Assert.Equal(2, (await broker.TickAsync(T0.AddHours(1), Ct)).Retention.Removed);
+        Assert.Equal(2, (await broker.TickAsync(T0.AddDays(3).AddMinutes(4), Ct)).Retention.Removed);
 
-        await SettledExchange(broker, "second", T0.AddMinutes(5));
-        await Close("second", T0.AddMinutes(9));
+        // Written after that tick but stamped before it, as a clock set back writes, and already quiet for the idle
+        // period at a tick earlier than the last.
+        await SettledExchange(broker, "second", T0.AddHours(-1));
 
-        Assert.Equal(2, (await broker.TickAsync(T0.AddMinutes(10), Ct)).Retention.Removed);
+        Assert.Equal(2, (await broker.TickAsync(T0.AddDays(3).AddMinutes(3), Ct)).Retention.Removed);
     }
 
     // ---- configuration ----

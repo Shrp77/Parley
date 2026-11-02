@@ -12,6 +12,7 @@ namespace Parley.Store.Tests;
 /// Constraints that make a specification claim unbreakable rather than merely documented.
 /// Each test corresponds to a rule that application code could otherwise route around.
 /// </summary>
+[Integration]
 public sealed class SchemaIntegrityTests : IDisposable
 {
     private const string OrdersBilling = "billing@test\u001Forders@test";

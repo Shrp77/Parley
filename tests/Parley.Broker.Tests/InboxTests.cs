@@ -13,6 +13,7 @@ namespace Parley.Broker.Tests;
 /// up; after it, somebody has it. §6 flags the two on different thresholds, and this is the only place the
 /// transition happens.
 /// </remarks>
+[Integration]
 public sealed class InboxTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

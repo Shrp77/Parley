@@ -30,6 +30,7 @@ namespace Parley.Client.Tests;
 /// the one marked <c>TakeAsync</c>.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class LostSeatTests
 {
     private static readonly ProjectSettings Alpha =

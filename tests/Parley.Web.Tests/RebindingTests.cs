@@ -27,6 +27,7 @@ namespace Parley.Web.Tests;
 /// The broker here records every call and answers none, so "nothing was asked of it" is an observation, not a guess.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RebindingTests
 {
     private const string Start = "/Projects/Act?project=alpha&action=start&subject=orders@test";

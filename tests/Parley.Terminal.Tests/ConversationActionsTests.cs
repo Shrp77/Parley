@@ -1,4 +1,5 @@
-﻿using Grpc.Net.Client;
+﻿using Terminal.Gui.Input;
+using Grpc.Net.Client;
 using Parley.Client;
 using Parley.Client.Views;
 using Parley.Core;
@@ -23,6 +24,7 @@ namespace Parley.Terminal.Tests;
 /// about description and deliberate act, not about ceremony.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ConversationActionsTests
 {
     private static BrokerDirectory Directory() =>
@@ -152,8 +154,7 @@ public sealed class ConversationActionsTests
 
         // Keep is first, so Enter without moving is the harmless answer.
         driving.Row(choosing.Choices, Destroying.Keep);
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(Destroying.Kept, shell.Said);
     }
@@ -229,9 +230,7 @@ public sealed class ConversationActionsTests
         var consequence = (ChoiceDialog)driving.Find(Destroying.ConsequenceTitle);
 
         driving.Row(consequence.Choices, Destroying.Keep);
-        driving.Enter();
-
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(Destroying.Kept, shell.Said);
         Assert.False(driving.Has(Destroying.TypeItBack));

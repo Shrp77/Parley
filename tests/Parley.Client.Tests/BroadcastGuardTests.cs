@@ -23,6 +23,7 @@ namespace Parley.Client.Tests;
 /// name is work owed to somebody who has left.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class BroadcastGuardTests
 {
     private static readonly ProjectSettings Alpha =

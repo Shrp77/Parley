@@ -9,7 +9,7 @@ namespace Parley.Client.Seating;
 /// <remarks>
 /// <para>
 /// Held rather than re-read, because there is nothing to re-read it from: a collection takes what is
-/// waiting exactly once. This is the surface keeping what a running adapter would keep in a model's context.
+/// waiting at least once, as every collection does (SPEC.md §6). This is the surface keeping what a running adapter would keep in a model's context.
 /// </para>
 /// <para>
 /// <b>The §13 envelope is deliberately not kept.</b> The broker builds it so an adapter delivering another

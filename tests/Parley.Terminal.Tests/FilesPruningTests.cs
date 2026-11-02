@@ -1,3 +1,4 @@
+using Terminal.Gui.Input;
 using Parley.Cli.Tests;
 using Xunit;
 
@@ -7,6 +8,7 @@ namespace Parley.Terminal.Tests;
 /// Removing every file from the terminal: described, kept by default, and done only with the project's name typed
 /// back.
 /// </summary>
+[Integration]
 public sealed class FilesPruningTests : IAsyncDisposable
 {
     private readonly FileLocationFixture _files = new();
@@ -39,8 +41,7 @@ public sealed class FilesPruningTests : IAsyncDisposable
         Assert.Contains("2 file(s), 24 B", pruning.Described, StringComparison.Ordinal);
         Assert.Equal("Keep them", pruning.Chosen);
 
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal("Nothing was removed.", shell.Said);
 

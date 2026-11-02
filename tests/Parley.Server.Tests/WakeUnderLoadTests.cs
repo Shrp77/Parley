@@ -13,6 +13,7 @@ namespace Parley.Server.Tests;
 /// invariants the feature rests on — no message is lost, and no recipient is woken more than its own
 /// reading justifies.
 /// </remarks>
+[Integration]
 public sealed class WakeUnderLoadTests
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(5);

@@ -6,6 +6,7 @@ namespace Parley.Core.Tests;
 /// That the person reads here or away and nothing else, the facilitator reads running, and no agent reads either of the
 /// person's words (SPEC.md §14).
 /// </summary>
+[Unit]
 public sealed class PersonPresenceTests
 {
     private static readonly AgentName Person = PersonSeat.On(ProjectName.Create("alpha"));

@@ -245,6 +245,7 @@ public sealed class BrokerLink : IAsyncDisposable
                 await foreach (var received in _stream.ResponseStream
                     .ReadAllAsync(_cancellation.Token).ConfigureAwait(false))
                 {
+                    // A rewrite of the store is read and left: a send's reply says whether it waited on one.
                     if (received.EventCase == Wire.Event.EventOneofCase.Notice)
                     {
                         Waiting = received.Notice;

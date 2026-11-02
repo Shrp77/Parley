@@ -21,6 +21,7 @@ namespace Parley.Cli.Tests;
 /// depends on how many times it has run is one nobody can check.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeTwoTests : IDisposable
 {
     private readonly string _root =

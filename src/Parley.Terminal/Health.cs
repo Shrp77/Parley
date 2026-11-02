@@ -4,7 +4,6 @@ using Parley.Client.Rendering;
 using Parley.Core;
 using Terminal.Gui.App;
 using Terminal.Gui.ViewBase;
-using Terminal.Gui.Views;
 
 namespace Parley.Terminal;
 
@@ -24,12 +23,13 @@ namespace Parley.Terminal;
 /// every row is indented, and everything drawn goes through <see cref="Safe.Text"/>.
 /// </para>
 /// </remarks>
-internal sealed class Health : Dialog
+internal sealed class Health : TableDialog<Health>, IKeyTable<Health>
 {
     private readonly ObservableCollection<string> _lines = [];
 
-    private Health(string project, IReadOnlyList<string> lines)
+    internal Health(string project, IReadOnlyList<string> lines)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = "Health of " + Safe.Text(project);
         Width = Dim.Percent(90);
         Height = Dim.Percent(80);
@@ -48,6 +48,20 @@ internal sealed class Health : Dialog
 
     /// <summary>Every line this dialog shows.</summary>
     internal IReadOnlyList<string> Shown => _lines;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// No command of its own: read-only, so there is nothing to do but read and leave. Escape leaves through the toolkit,
+    /// which ends the session on top when no view in it takes the key, as it does for <see cref="Saying"/>. The lines take
+    /// their own keys first.
+    /// </remarks>
+    static CommandManager<Health> IKeyTable<Health>.BuildTable() => new(
+        [new(KeyContext.HealthDialog, [])],
+        [],
+        [
+            .. ReservedKey.Moving(KeyContext.HealthDialog),
+            .. ReservedKey.TakenBy(KeyContext.HealthDialog, () => Lists.Filling(), "the lines"),
+        ]);
 
     /// <summary>Turns the five reports into lines, headings at column zero and nothing else.</summary>
     /// <param name="flags">Open work that needs the person.</param>

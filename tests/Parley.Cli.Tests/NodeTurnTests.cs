@@ -18,6 +18,7 @@ namespace Parley.Cli.Tests;
 /// looks like the first from one line up, and treating them the same drops the question exactly
 /// the way the missing turn command dropped the last one.
 /// </remarks>
+[Integration]
 public sealed class NodeTurnTests : IDisposable
 {
     private readonly string _workspace =

@@ -25,6 +25,7 @@ namespace Parley.Terminal.Tests;
 /// appears to have come from the surface itself.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class ColourTests
 {
     [Theory]
@@ -102,6 +103,16 @@ public sealed class ColourTests
         Assert.Equal(
             ProjectsRegion.NotAnswering,
             ProjectsRegion.Describe(new ProjectHealth(null, "connection refused")));
+    }
+
+    [Fact]
+    public void An_endpoint_that_cannot_be_dialled_is_not_called_a_broker_not_answering()
+    {
+        // Review, lens 1 run 57: the two need different repairs, starting a broker against correcting project.json.
+        Assert.Equal(
+            ProjectsRegion.Undiallable,
+            ProjectsRegion.Describe(new ProjectHealth(
+                null, "This project's endpoint cannot be reached as written: Invalid URI: The URI scheme is not valid.")));
     }
 
     [Fact]

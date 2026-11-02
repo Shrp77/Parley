@@ -24,6 +24,7 @@ namespace Parley.Terminal.Tests;
 /// and in the menu like every other action here.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class MessageLineGrowsTests
 {
     /// <summary>A screen the size of somebody's terminal rather than the harness's default.</summary>
@@ -216,20 +217,21 @@ public sealed class MessageLineGrowsTests
     }
 
     [Fact]
-    public void A_regions_own_letter_still_wins()
+    public void No_place_has_a_letter_of_the_message_lines_own()
     {
-        // The message's keys are global and are taken after a region's, so a pane that grows an
-        // action bound to the same letter keeps it. Checked on the projects view, where `b` opens
-        // the console -- and would be shadowed by a global if the order were the other way round.
+        // The message line is live on every pane, so no pane may bind its letters: there is no order of search for a
+        // pane's letter to win by, and a pane that took one would make the line name a key that runs something else.
+        // The command table refuses that when the surface is built; this reads the table the surface was built with.
         using var driving = Driving.Open(Columns, Tall);
         using var directory = Directory();
         using var shell = new Shell(directory);
 
         driving.Show(shell);
 
-        shell.Report("something happened");
-
-        var letters = shell.Actions().Select(action => action.Key).ToList();
+        var letters = shell.CommandTable.Commands
+            .Where(command => command.Context is not KeyContext.MessageLine)
+            .Select(command => char.ToLowerInvariant(command.Key))
+            .ToList();
 
         Assert.DoesNotContain(Shell.ClearKey, letters);
         Assert.DoesNotContain(Shell.WholeKey, letters);

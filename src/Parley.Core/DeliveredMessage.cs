@@ -17,6 +17,10 @@ namespace Parley.Core;
 /// Beside a person's Request the agent had asked back about: what the person has said to it in that conversation since
 /// it last spoke on the exchange, oldest first, at most <see cref="Settling.MostSince"/> (SPEC.md §5.6). Null otherwise.
 /// </param>
+/// <param name="RoleRequest">
+/// On a Result answering one member of a Request to a role, delivered to the agent that sent it: how many the Request
+/// reached and how many have answered so far (SPEC.md §5.5). Null on every other message.
+/// </param>
 /// <remarks>
 /// <para>
 /// The pairing exists so that an adapter cannot deliver a participant's words without the framing
@@ -35,4 +39,14 @@ public sealed record DeliveredMessage(
     string Envelope,
     IReadOnlyList<SettleableQuestion>? Settleable = null,
     int SettleableLeftOut = 0,
-    IReadOnlyList<AnswerSince>? Since = null);
+    IReadOnlyList<AnswerSince>? Since = null,
+    RoleRequestProgress? RoleRequest = null);
+
+/// <summary>Where a Request to a role stands: how many agents it reached and how many have answered (SPEC.md §5.5).</summary>
+/// <param name="Asked">The members the Request opened an exchange with.</param>
+/// <param name="Answered">The members whose exchange a Result closed, complete or blocked.</param>
+/// <remarks>
+/// Counted from how each member's exchange closed, never from the messages present, so retention pruning a Result's
+/// words does not take it out of the count. Whether the work needs every answer is the requester's to decide.
+/// </remarks>
+public sealed record RoleRequestProgress(int Asked, int Answered);

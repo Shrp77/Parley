@@ -10,6 +10,7 @@ namespace Parley.Cli.Tests;
 /// <c>--log</c>. The log must not be held open for writing, or the second could not open it, and the
 /// one line that would explain stranded agents would go to a console nobody could see.
 /// </remarks>
+[Integration]
 public sealed class SharedLogTests : IDisposable
 {
     private readonly string _directory =

@@ -21,6 +21,7 @@ namespace Parley.Store.Tests;
 /// environment variable, which is the path a typo travels.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ClarifyCapBoundsTests : IDisposable
 {
     private const string Stamp = "2026-01-01T00:00:00.0000000+00:00";

@@ -15,6 +15,7 @@ namespace Parley.Server.Tests;
 /// protocol is not evidence the protocol records anything — and because this project may not open a store.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class TurnReportingTests
 {
     private const string Here = "m1";
@@ -129,6 +130,42 @@ public sealed class TurnReportingTests
         await node.Nodes.ReportTurnAsync(Ended(Here, Agent, T0), cancellationToken: Ct);
 
         Assert.Equal(Stamp(T0.AddMinutes(5)), (await RowAsync(broker, Agent)).TurnRunningSinceUtc);
+    }
+
+    [Fact]
+    public async Task A_start_heard_after_its_own_end_leaves_nothing_running()
+    {
+        // Found by review, lens 1 run 62: a start report that missed its deadline on the node can still be handled after
+        // its end, and the agent read as working until its next report.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var agent = await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
+
+        await node.Nodes.ReportTurnAsync(Ended(Here, Agent, T0), cancellationToken: Ct);
+        await node.Nodes.ReportTurnAsync(Started(Here, Agent, T0), cancellationToken: Ct);
+
+        Assert.Empty((await RowAsync(broker, Agent)).TurnRunningSinceUtc);
+
+        // A later turn still reads as running.
+        await node.Nodes.ReportTurnAsync(Started(Here, Agent, T0.AddMinutes(5)), cancellationToken: Ct);
+
+        Assert.Equal(Stamp(T0.AddMinutes(5)), (await RowAsync(broker, Agent)).TurnRunningSinceUtc);
+    }
+
+    [Fact]
+    public async Task A_turn_begun_by_a_clock_that_stepped_back_still_reads_as_running()
+    {
+        // Review, lens 1 run 63 and lens 2 run 67: a start no later than the last end was dropped, so a node whose clock
+        // stepped back, or an agent moved to a node whose clock is behind, read idle while it worked.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var agent = await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
+
+        await node.Nodes.ReportTurnAsync(Started(Here, Agent, T0.AddMinutes(10)), cancellationToken: Ct);
+        await node.Nodes.ReportTurnAsync(Ended(Here, Agent, T0.AddMinutes(10)), cancellationToken: Ct);
+        await node.Nodes.ReportTurnAsync(Started(Here, Agent, T0.AddMinutes(1)), cancellationToken: Ct);
+
+        Assert.Equal(Stamp(T0.AddMinutes(1)), (await RowAsync(broker, Agent)).TurnRunningSinceUtc);
     }
 
     [Fact]

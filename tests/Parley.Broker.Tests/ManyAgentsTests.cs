@@ -13,6 +13,7 @@ namespace Parley.Broker.Tests;
 /// every agent's work would have one session's arrival act on colleagues' work, with the damage scaling with how
 /// many were working and invisible to all of them.
 /// </remarks>
+[Integration]
 public sealed class ManyAgentsTests : IDisposable
 {
     private const int Repositories = 22;
@@ -92,11 +93,11 @@ public sealed class ManyAgentsTests : IDisposable
 
         foreach (var agent in Agents)
         {
-            waiting += await _messages.CountPendingAsync(agent, Ct);
+            waiting += await _messages.CountPendingAsync(agent, cancellationToken: Ct);
         }
 
         // Exactly the one piece of work repo-6 was carrying. Twenty other lines of work untouched.
         Assert.Equal(1, waiting);
-        Assert.Equal(1, await _messages.CountPendingAsync(Agents[5], Ct));
+        Assert.Equal(1, await _messages.CountPendingAsync(Agents[5], cancellationToken: Ct));
     }
 }

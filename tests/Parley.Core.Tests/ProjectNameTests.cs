@@ -10,6 +10,7 @@ namespace Parley.Core.Tests;
 /// has learned one rule does not meet a second that differs in a detail they discover by being
 /// refused. These cases exist to keep the two from drifting apart quietly.
 /// </remarks>
+[Unit]
 public sealed class ProjectNameTests
 {
     [Theory]

@@ -34,6 +34,7 @@ namespace Parley.Terminal.Tests;
 /// covered one would say nothing about the other three.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RefillRaceTests
 {
     /// <summary>How many draws each region is hammered for.</summary>
@@ -48,6 +49,50 @@ public sealed class RefillRaceTests
 
     /// <summary>The second one.</summary>
     private static ProjectName Beta { get; } = ProjectName.Create("beta");
+
+    [Fact]
+    public async Task A_refresh_beside_a_project_whose_endpoint_cannot_be_dialled_draws_every_project()
+    {
+        // Round 62: the survey made each project's client outside its guard, and making a client for an endpoint gRPC
+        // cannot dial threw, so one such project drew no project at all and nothing was said.
+        using var driving = Driving.Open(width: 120, height: 30);
+        using var directory = new BrokerDirectory(
+            [
+                new ProjectSettings(Alpha, string.Empty, "http://127.0.0.1:1", null),
+                new ProjectSettings(Beta, string.Empty, "localhost:5301", null),
+            ],
+            GrpcChannel.ForAddress);
+        using var shell = new Shell(directory) { MailEvery = null, FollowEvery = null };
+
+        driving.Show(shell);
+        await shell.RefreshAsync(TestContext.Current.CancellationToken);
+        await shell.Settled;
+        driving.App.LayoutAndDraw(true);
+
+        var screen = driving.Text();
+
+        Assert.Contains(Alpha.Value, screen, StringComparison.Ordinal);
+        Assert.Contains(Beta.Value, screen, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_status_line_is_one_row_whatever_its_text()
+    {
+        // Found by review, round 51, from a Linux CI failure of the test below: the status line's text is set from pool
+        // threads, and a label sized to its text reads a cached size the setter clears, so a draw meeting a write threw
+        // "Nullable object must have a value" in DimAuto.Calculate. One write in about 580,000 hit it, too rare to hold
+        // here by racing; a fixed height takes the label out of that path, so this holds the height.
+        using var directory = new BrokerDirectory(
+            [new ProjectSettings(Alpha, string.Empty, "http://127.0.0.1:1", null)],
+            _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
+        using var shell = new Shell(directory);
+
+        var status = (View)typeof(Shell)
+            .GetField("_status", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(shell)!;
+
+        Assert.Equal(Dim.Absolute(1), status.Height);
+    }
 
     [Fact]
     public async Task Changing_view_from_many_threads_while_drawing_does_not_throw()

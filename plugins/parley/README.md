@@ -12,17 +12,20 @@
 |---|---|
 | `/parley:setup` | Configures this repository as a Parley agent: checks the tools are installed, enrolls this repository with `parley enroll`, and sends you to restart - which is when the tools appear, and therefore before `/parley:write-peers` can read anything |
 | `/parley:setup-many` | Configures several repositories in one pass: finds the git repositories under a directory, offers them to tick, then configures, catalogues and starts the ones chosen. Leaves the roster to `/parley:write-peers` |
+| `/parley:status` | Reports whether Parley is working here: the server bound, this agent registered, and the Peers section matching the live roster |
 | `/parley:write-peers` | Writes or refreshes the `## Peers` block in this repository's standing instructions, from the live roster |
-| `/parley:files-list` | Shows the files agents have placed in the project: sizes, hashes, and who placed each |
+| `/parley:files-list` | Shows the files placed in the project: sizes, hashes, and who placed each |
+| `/parley:files-place` | Places a `.md` or `.txt` file from this machine in a conversation, as you |
 | `/parley:files-remove` | Removes named files, whoever placed them, after showing what goes and asking you |
 | `/parley:files-prune` | Removes every file in the project, behind the project's name typed back |
-| `/parley:files-open` | Opens a placed file in its editor, on the broker's machine |
+| `/parley:files-open` | Opens a placed file to read, on the broker's machine |
 | `/parley:files-folder` | Opens a conversation's files folder, or the whole file location |
+| `/parley:files-problems` | Lists what Parley's checks of the file location found, and dismisses one when you ask |
 | `parley-operator` skill | The `parley` command-line tool - the operations that are deliberately not tools |
-| `parley_waiting` hook | Tells an attended session when mail is waiting — on session start, on every prompt, after every batch of tool calls, and rather than letting the session go idle carrying it — and when a file it fetched has changed or gone |
+| `parley_waiting` hook | Tells an attended session when mail is waiting — on session start, on every prompt, after every batch of tool calls, and rather than letting the session go idle carrying it — and when a file it fetched has gone, or one it fetched or placed went missing or was tampered with |
 
-The five `files-` commands can only be typed by a person: each is marked so that a model cannot invoke it, because
-they act on every agent's files at once.
+The seven `files-` commands can only be typed by a person: each is marked so that a model cannot invoke it, because
+they act on every agent's files at once, or place a file as the person.
 
 ## Why there is a hook
 
@@ -102,8 +105,9 @@ is survivable for a mail check, and not for a program writing configuration into
 repositories at once.
 
 Enrolment never writes an `owns` line. It carries forward whatever a repository already says it
-owns. The line comes from asking the agent what it is responsible for and discussing the answer to
-agreement; nobody is asked to compose or affirm a line during enrolment.
+owns. The line comes from asking the agent what it is responsible for; with Auto Accept on (the default)
+its answer becomes the line, and with it off the person accepts it. Nobody is asked to compose or
+affirm a line during enrolment.
 
 ## What it deliberately does not ship
 

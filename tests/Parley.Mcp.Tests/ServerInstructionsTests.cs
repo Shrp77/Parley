@@ -20,6 +20,7 @@ namespace Parley.Mcp.Tests;
 /// server that never put it in the response, which is precisely the state this was in.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ServerInstructionsTests : IDisposable
 {
     private readonly string _directory =

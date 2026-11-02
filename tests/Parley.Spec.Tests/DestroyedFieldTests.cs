@@ -17,6 +17,7 @@ namespace Parley.Spec.Tests;
 /// other produces either a value nobody knows how to interpret or a promise nobody can receive.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class DestroyedFieldTests
 {
     private static string Root()

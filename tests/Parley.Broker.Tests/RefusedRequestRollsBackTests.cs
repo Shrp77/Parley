@@ -23,6 +23,7 @@ namespace Parley.Broker.Tests;
 /// next Request is admitted.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RefusedRequestRollsBackTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

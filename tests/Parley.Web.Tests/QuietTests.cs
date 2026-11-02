@@ -21,6 +21,7 @@ namespace Parley.Web.Tests;
 /// while they are two processes and obvious the moment they are not.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class QuietTests
 {
     /// <summary>The category the flood came from.</summary>

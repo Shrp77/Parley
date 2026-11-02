@@ -22,6 +22,7 @@ namespace Parley.Server.Tests;
 /// half-admitted.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class AskOverTheWireTests
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(5);

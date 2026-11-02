@@ -212,7 +212,7 @@ public static class ProjectManifest
 
         var clashing = found
             .Where(p => !string.IsNullOrEmpty(p.Endpoint))
-            .GroupBy(p => p.Endpoint, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(p => Broker(p.Endpoint), StringComparer.Ordinal)
             .Where(g => g.Count() > 1)
             .SelectMany(g => g)
             .ToHashSet();
@@ -278,7 +278,7 @@ public static class ProjectManifest
         ArgumentNullException.ThrowIfNull(projects);
 
         var problems = new List<string>();
-        var endpoints = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var endpoints = new Dictionary<string, string>(StringComparer.Ordinal);
 
         foreach (var project in projects)
         {
@@ -287,7 +287,7 @@ public static class ProjectManifest
                 continue;
             }
 
-            if (endpoints.TryGetValue(project.Endpoint, out var first))
+            if (endpoints.TryGetValue(Broker(project.Endpoint), out var first))
             {
                 problems.Add(
                     $"'{project.Name}' and '{first}' share an endpoint ('{project.Endpoint}'): "
@@ -295,11 +295,56 @@ public static class ProjectManifest
             }
             else
             {
-                endpoints[project.Endpoint] = project.Name.Value;
+                endpoints[Broker(project.Endpoint)] = project.Name.Value;
             }
         }
 
         return problems;
+    }
+
+    /// <summary>The broker an endpoint names, so two spellings of one are one.</summary>
+    /// <param name="endpoint">The endpoint as written.</param>
+    /// <returns>The host and port, with every name for this machine one host (loopback, the unspecified addresses, and
+    /// either as an IPv4-mapped IPv6 address); the text, case set aside, when it is no address.</returns>
+    /// <remarks>
+    /// A trailing slash, <c>localhost</c> or <c>127.000.000.001</c> name the same broker as <c>http://127.0.0.1:19100</c>,
+    /// and a comparison of the text let each serve a second project: its agents joined the first's roster and store, and
+    /// its pages acted there. The scheme is left out, since one port holds one broker whatever is said to reach it.
+    /// </remarks>
+    internal static string Broker(string endpoint)
+    {
+        ArgumentNullException.ThrowIfNull(endpoint);
+
+        // As written first, as gRPC reads it: "http:\\127.0.0.1:p" is an http address to 127.0.0.1 though it holds no
+        // "://". Only what is no http address as written is read as a bare host and port.
+        var trimmed = endpoint.Trim();
+
+        if (!(Uri.TryCreate(trimmed, UriKind.Absolute, out var address)
+                && address.Scheme is "http" or "https"
+                && address.IdnHost.Length > 0)
+            && !Uri.TryCreate("http://" + trimmed, UriKind.Absolute, out address))
+        {
+            return trimmed.ToUpperInvariant();
+        }
+
+        if (address.Port < 0)
+        {
+            return trimmed.ToUpperInvariant();
+        }
+
+        // Every name for this machine is one host: localhost (with or without its trailing dot), every loopback
+        // address, and the unspecified ones, which a connection on this machine reaches through loopback.
+        var host = address.IdnHost.TrimStart('[').TrimEnd(']').TrimEnd('.');
+        var loopback = string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
+            || (System.Net.IPAddress.TryParse(host, out var ip)
+                && (ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4() : ip) is var plain
+                && (System.Net.IPAddress.IsLoopback(plain)
+                    || plain.Equals(System.Net.IPAddress.Any)
+                    || plain.Equals(System.Net.IPAddress.IPv6Any)));
+
+        return string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"{(loopback ? "loopback" : host.ToUpperInvariant())}:{address.Port}");
     }
 
     /// <summary>

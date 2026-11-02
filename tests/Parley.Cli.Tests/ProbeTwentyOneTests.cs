@@ -19,6 +19,7 @@ namespace Parley.Cli.Tests;
 /// editor, and what this asks is whether their work is still there afterwards.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeTwentyOneTests : IDisposable
 {
     private readonly string _root =

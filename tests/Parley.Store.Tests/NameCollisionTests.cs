@@ -20,6 +20,7 @@ namespace Parley.Store.Tests;
 /// reads.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class NameCollisionTests : IDisposable
 {
     private static readonly AgentName Docs = AgentName.Create("docs@test");

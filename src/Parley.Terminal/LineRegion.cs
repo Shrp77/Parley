@@ -1,5 +1,4 @@
 using Parley.Client.Seating;
-using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
@@ -91,6 +90,7 @@ internal sealed class LineRegion : FrameView
 
     internal LineRegion()
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = RegionTitle;
         CanFocus = true;
         SetScheme(Colours.Region(Colours.Conversations));
@@ -125,36 +125,13 @@ internal sealed class LineRegion : FrameView
         // what it names is what Enter does.
         _field.Changed += () => Typing?.Invoke(this, EventArgs.Empty);
 
-        // **Enter is taken on the box, because that is where it lands.**
+        // **Enter is taken on the box, because that is where it lands** (KeyRouting.Box says why there).
         //
-        // A focused view is offered a key before the surface's own handler is, so what reaches the shell is
-        // only what this box declined: Tab arrives there because this box does not bind it, and Enter never
-        // arrives at all because it does. An arm in the shell for Enter is an arm that never runs, so a test
-        // must press the key itself: the `Accept()` seam raises the same event from the other side.
-        //
-        // `KeyDown` rather than `Accepting`, because this box adds a line on Enter and that is a binding
-        // rather than an accept: the key has to be taken before the binding runs.
-        _field.View.KeyDown += (_, key) =>
+        // What reaches the shell is only what this box declined: Tab arrives there because this box does not bind
+        // it, and Enter never arrives at all because it does. A test must press the key itself: the `Accept()` seam
+        // raises the same event from the other side.
+        KeyRouting.Box(_field.View, () => _breaking, Break, () =>
         {
-            // **Shift+Enter is a line break, and so is Ctrl+Enter.** Taken
-            // here rather than left to the shell's action, because a focused view is offered a key first and the field's
-            // own Enter binding would otherwise read either chord as Enter.
-            if (key == Key.Enter.WithShift || key == Key.Enter.WithCtrl)
-            {
-                key.Handled = true;
-                Break();
-
-                return;
-            }
-
-            // The break itself, which is the field's own Enter: let it through rather than reading it as a send.
-            if (key != Key.Enter || _breaking)
-            {
-                return;
-            }
-
-            key.Handled = true;
-
             // **A trailing backslash makes it a line break instead**, which is the spelling that works in
             // every terminal. A chord is what a person reaches for, and several terminals deliver Ctrl+Enter,
             // Shift+Enter and a bare Enter as the same bytes — so the chord is offered beside it and this is
@@ -167,7 +144,7 @@ internal sealed class LineRegion : FrameView
             }
 
             Sending?.Invoke(this, EventArgs.Empty);
-        };
+        });
 
         Add(_preview);
         Add(_list);
@@ -227,22 +204,72 @@ internal sealed class LineRegion : FrameView
 
     /// <summary>What is written but not sent. Named to avoid hiding the toolkit's own Text.</summary>
     /// <remarks>
+    /// <para>
     /// Read from the field rather than held beside it, so there is one copy of what somebody typed. Two would
     /// eventually disagree, and the one that is wrong would be the one that got sent.
+    /// </para>
+    /// <para>
+    /// <b>For the loop's own thread</b>, which key handlers and dialogs run on. Work off the loop reads with
+    /// <see cref="WrittenOnTheLoop"/> and changes it with <see cref="Rewrite"/>, because the toolkit's text view throws
+    /// when it is read or changed while the loop draws it or takes a key (TheBoxIsWrittenOnTheLoopTests). The setter
+    /// still goes through the loop, so a write from anywhere else is safe.
+    /// </para>
     /// </remarks>
     internal string Written
     {
         get => _field.Text;
 
-        set
-        {
-            _field.Text = value;
+        set => Prompting.OnTheLoop(() => Write(value));
+    }
 
-            // **And the cursor goes to the end of it.** Setting the text leaves the cursor where it was, so a
-            // completion that grew `@ord` into `@orders@test` would leave the next thing typed inside the
-            // name, and the chip would no longer be written the way it was recorded.
-            _field.MoveEnd();
-        }
+    /// <summary>What is written, read on the thread that draws.</summary>
+    /// <returns>The box's text, or empty if the loop did not reach the read within the wait.</returns>
+    /// <remarks>
+    /// For work off the loop. Reading the text walks the toolkit's text model, which the loop changes as the person types,
+    /// so a read from the pool threw <c>Collection was modified</c> into the message line. Empty after the wait gives up,
+    /// so do not decide anything that cannot be undone on an empty answer.
+    /// </remarks>
+    internal string WrittenOnTheLoop()
+    {
+        var written = string.Empty;
+
+        Prompting.OnTheLoop(() => written = _field.Text);
+
+        return written;
+    }
+
+    /// <summary>Changes what is written, reading and writing it in one turn of the loop.</summary>
+    /// <param name="change">The new text from the text as it stands.</param>
+    /// <remarks>
+    /// For work off the loop. A read on the pool and a write on the loop would lose any key the person typed between the
+    /// two, because the loop takes input before it runs what was handed to it. Writes only when the text changes: a
+    /// driven test has no loop, so the write runs on the pool against the test's own draws (RefillRaceTests), and a box
+    /// already empty is the common case there.
+    /// </remarks>
+    internal void Rewrite(Func<string, string> change)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+
+        Prompting.OnTheLoop(() =>
+        {
+            var now = _field.Text;
+            var next = change(now);
+
+            if (!string.Equals(now, next, StringComparison.Ordinal))
+            {
+                Write(next);
+            }
+        });
+    }
+
+    private void Write(string value)
+    {
+        _field.Text = value;
+
+        // **And the cursor goes to the end of it.** Setting the text leaves the cursor where it was, so a
+        // completion that grew `@ord` into `@orders@test` would leave the next thing typed inside the
+        // name, and the chip would no longer be written the way it was recorded.
+        _field.MoveEnd();
     }
 
     /// <summary>Whether the box has focus, so a printable key is somebody writing rather than an action.</summary>
@@ -363,8 +390,15 @@ internal sealed class LineRegion : FrameView
     /// because it is about what is written now and stops being true on the next keystroke, while the message line
     /// holds a record of what happened and is cleared only deliberately.
     /// </para>
+    /// <para>
+    /// <b>On the thread that draws.</b> Shown after a read, from the work queue, and measuring the region reads the
+    /// box's text, which threw while the person typed (TheBoxIsWrittenOnTheLoopTests).
+    /// </para>
     /// </remarks>
-    internal void Show(Draft? draft, bool seated, string? note = null)
+    internal void Show(Draft? draft, bool seated, string? note = null) =>
+        Prompting.OnTheLoop(() => ShowHere(draft, seated, note));
+
+    private void ShowHere(Draft? draft, bool seated, string? note)
     {
         var lines = new List<string>();
 

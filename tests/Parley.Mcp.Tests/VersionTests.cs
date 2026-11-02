@@ -11,6 +11,7 @@ namespace Parley.Mcp.Tests;
 /// only with <c>PARLEY_AGENT</c> set, so it exited 78 having printed its complaint to standard error, and the
 /// installer's check read the empty standard output as a match. Found while verifying a real installation.
 /// </remarks>
+[Integration]
 public sealed class VersionTests
 {
     [Fact]

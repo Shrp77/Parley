@@ -24,6 +24,7 @@ namespace Parley.Client.Tests;
 /// says nothing about another's; and that the idle window drops the stream while keeping the seat known.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SeatTests
 {
     private static readonly ProjectSettings Alpha =

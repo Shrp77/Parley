@@ -13,6 +13,7 @@ namespace Parley.Terminal.Tests;
 /// Read from the drawn screen rather than from <c>Reading.Lines</c>: a line the derivation produced and the region
 /// never drew is exactly what the client tests cannot see.
 /// </remarks>
+[Integration]
 public sealed class AskOnScreenTests
 {
     private static BrokerDirectory Directory() =>

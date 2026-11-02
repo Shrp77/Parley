@@ -26,6 +26,7 @@ namespace Parley.Cli.Tests;
 /// refuses a second open whoever makes it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SecondServeTests : IDisposable
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(30);

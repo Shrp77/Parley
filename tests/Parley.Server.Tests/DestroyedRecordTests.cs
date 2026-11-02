@@ -20,6 +20,7 @@ namespace Parley.Server.Tests;
 /// helped.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class DestroyedRecordTests
 {
     private static async Task<LoopbackBroker> WithConversationAsync(CancellationToken token)

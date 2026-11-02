@@ -14,6 +14,7 @@ namespace Parley.Web.Tests;
 /// the revision the form was opened at.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RoadmapEditTests
 {
     private static Uri EditUri() =>
@@ -115,6 +116,108 @@ public sealed class RoadmapEditTests
         Assert.Contains("Add CSV export, with headers", page, StringComparison.Ordinal);
         Assert.Contains("Add a JSON export", page, StringComparison.Ordinal);
         Assert.DoesNotContain("Call it from the report", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Removing_an_item_whose_work_is_open_is_described_and_saved_only_on_a_second_submit()
+    {
+        // T053: the request stays open and its agent is not told, which deleting a line does not say. Must fail against
+        // saving on the first submit, and against a page that warns and then never lets the person go ahead.
+        using var console = Confirmed();
+        var started = console.Broker.Details[1].Items[1];
+        started.Facts = new Wire.ItemFacts { ConversationExists = true, OpenExchanges = 1 };
+        started.Facts.OpenExchangeIds.Add(7);
+        using var client = console.CreateClient();
+        const string Kept = "title: Billing export\n1. Add CSV export | for: billing@test | item: 1";
+
+        var first = await SaveAsync(client, Kept);
+
+        Assert.Empty(console.Broker.Edited);
+        Assert.Contains("This removes an item whose work is still open: item 2, &quot;Call it from the report&quot;, in rm1-2.", first, StringComparison.Ordinal);
+        Assert.Contains("name=\"ConfirmRemoval\" value=\"true\"", first, StringComparison.Ordinal);
+        Assert.Contains("1. Add CSV export | for: billing@test | item: 1", first, StringComparison.Ordinal);
+
+        var response = await PostAsync(
+            client,
+            EditUri(),
+            new Dictionary<string, string> { ["Text"] = Kept, ["Revision"] = "1", ["ConfirmRemoval"] = "true", ["Removing"] = "2" });
+        var second = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        Assert.Single(console.Broker.Edited);
+        Assert.Contains("Saved", second, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Going_ahead_covers_only_the_items_described_and_an_open_item_removed_after_is_described_again()
+    {
+        // The second submit is the person agreeing to what the page said. Text changed after the warning to remove a
+        // different open item was never described, so it must be described before anything is saved. Must fail against
+        // a ConfirmRemoval that saves whatever the box holds.
+        using var console = Confirmed();
+
+        foreach (var item in console.Broker.Details[1].Items)
+        {
+            item.Facts = new Wire.ItemFacts { ConversationExists = true, OpenExchanges = 1 };
+        }
+
+        using var client = console.CreateClient();
+
+        var first = await SaveAsync(client, "title: Billing export\n1. Add CSV export | for: billing@test | item: 1");
+
+        Assert.Contains("item 2,", first, StringComparison.Ordinal);
+
+        var response = await PostAsync(
+            client,
+            EditUri(),
+            new Dictionary<string, string>
+            {
+                ["Text"] = "title: Billing export\n1. Call it from the report | for: orders@test | item: 2",
+                ["Revision"] = "1",
+                ["ConfirmRemoval"] = "true",
+                ["Removing"] = "2",
+            });
+        var second = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(console.Broker.Edited);
+        Assert.Contains("item 1, &quot;Add CSV export&quot;, in rm1-1", second, StringComparison.Ordinal);
+
+        // What the page described travels with the form, so going ahead is agreement to exactly that.
+        Assert.Contains("name=\"Removing\" value=\"2\"", first, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_link_that_carries_the_go_ahead_does_not_skip_the_description()
+    {
+        // The form posts back to its own address, so a link's `ConfirmRemoval=true&Removing=2` would bind when the form
+        // carries neither. Must fail against binding the go-ahead from the query, which saved the removal of open work
+        // with nothing described.
+        using var console = Confirmed();
+        var started = console.Broker.Details[1].Items[1];
+        started.Facts = new Wire.ItemFacts { ConversationExists = true, OpenExchanges = 1 };
+        using var client = console.CreateClient();
+
+        var forged = new Uri($"/Roadmaps/Edit?project={RoadmapConsole.Project}&id=1&ConfirmRemoval=true&Removing=2", UriKind.Relative);
+        var response = await PostAsync(
+            client,
+            forged,
+            new Dictionary<string, string> { ["Text"] = "title: Billing export\n1. Add CSV export | for: billing@test | item: 1", ["Revision"] = "1" });
+        var page = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(console.Broker.Edited);
+        Assert.Contains("still open", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Removing_an_item_that_has_not_started_is_saved_at_once()
+    {
+        // The warning is for work in flight only; a person removing an idea nobody took up is not asked twice.
+        using var console = Confirmed();
+        using var client = console.CreateClient();
+
+        var body = await SaveAsync(client, "title: Billing export\n1. Add CSV export | for: billing@test | item: 1");
+
+        Assert.Single(console.Broker.Edited);
+        Assert.DoesNotContain("ConfirmRemoval", body, StringComparison.Ordinal);
     }
 
     [Fact]

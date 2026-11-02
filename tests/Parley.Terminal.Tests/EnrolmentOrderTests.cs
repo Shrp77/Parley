@@ -18,6 +18,7 @@ namespace Parley.Terminal.Tests;
 /// that looks like the broker refusing rather than like the surface asking too early.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class EnrolmentOrderTests
 {
     [Fact]

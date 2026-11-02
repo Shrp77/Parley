@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
 using Terminal.Gui.App;
 using Terminal.Gui.ViewBase;
-using Terminal.Gui.Views;
 
 namespace Parley.Terminal;
 
@@ -25,15 +24,16 @@ namespace Parley.Terminal;
 /// breaks inserted here the surface's own rather than something a payload chose.
 /// </para>
 /// </remarks>
-internal sealed class Saying : Dialog
+internal sealed class Saying : TableDialog<Saying>, IKeyTable<Saying>
 {
     /// <summary>What the dialog is called.</summary>
     internal const string Heading = "The whole message";
 
     private readonly ObservableCollection<string> _lines = [];
 
-    private Saying(string said, int width)
+    internal Saying(string said, int width)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = Heading;
         Width = Dim.Percent(90);
         Height = Dim.Percent(80);
@@ -52,6 +52,19 @@ internal sealed class Saying : Dialog
 
     /// <summary>Every line this dialog shows.</summary>
     internal IReadOnlyList<string> Shown => _lines;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// No command of its own: read-only, so there is nothing to do but read and leave. Escape leaves through the toolkit,
+    /// which ends the session on top when no view in it takes the key. The lines take their own keys first.
+    /// </remarks>
+    static CommandManager<Saying> IKeyTable<Saying>.BuildTable() => new(
+        [new(KeyContext.SayingDialog, [])],
+        [],
+        [
+            .. ReservedKey.Moving(KeyContext.SayingDialog),
+            .. ReservedKey.TakenBy(KeyContext.SayingDialog, () => Lists.Filling(), "the lines"),
+        ]);
 
     /// <summary>Shows a message whole.</summary>
     /// <param name="app">The application.</param>

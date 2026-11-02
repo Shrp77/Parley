@@ -17,6 +17,7 @@ namespace Parley.Cli.Tests;
 /// `parley-terminal` is one line, and the guard around it is what these hold.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class BareCommandTests
 {
     [Fact]

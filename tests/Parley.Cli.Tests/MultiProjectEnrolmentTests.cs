@@ -28,6 +28,7 @@ namespace Parley.Cli.Tests;
 /// worked and quietly changed the first", which only an assertion about what was left alone can catch.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class MultiProjectEnrolmentTests
 {
     private const string Workspace = "/srv/checkouts/inventory";

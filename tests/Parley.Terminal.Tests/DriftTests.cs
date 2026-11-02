@@ -10,6 +10,7 @@ namespace Parley.Terminal.Tests;
 /// one surface gaining a capability the other lacks, which this check does: every surface offers every operator
 /// operation, and an operation no surface calls is a method kept alive by its own test.
 /// </remarks>
+[Integration]
 public sealed class DriftTests
 {
     private static string Root()

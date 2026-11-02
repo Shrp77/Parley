@@ -60,7 +60,7 @@ public sealed record ProjectSummary(
             $"{Conversations ?? 0} conversation{(Conversations == 1 ? string.Empty : "s")}";
         var archived = Archived > 0 ? $" ({Archived} archived)" : string.Empty;
 
-        var proposed = Roadmaps.ProposalCount.Says(Proposals);
+        var proposed = Roadmaps.WaitingProposals.Says(Proposals);
 
         return $"{agents}{running} · {conversations}{archived}" + (proposed.Length > 0 ? $" · {proposed}" : string.Empty);
     }

@@ -270,6 +270,20 @@ public interface IParleyBrokerClient
     Task<bool> StartAsync(
         AgentName agent, string because, CancellationToken cancellationToken = default);
 
+    /// <summary>Place a file as the person, into a conversation that exists (SPEC.md §10.2 <c>place_persons_file</c>).</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="name">The name to place it under; characters outside the set become <c>_</c> (§9.5).</param>
+    /// <param name="content">The bytes, read to their end.</param>
+    /// <param name="cancellationToken">Cancels the call; nothing is left behind.</param>
+    /// <returns>What the placement came to.</returns>
+    /// <remarks>
+    /// The person's, because no agent places as anybody but itself. A file in the location enters only by placement:
+    /// one copied into a folder by hand is never listed, so this is how the person hands an agent a file. A placed
+    /// file is never changed, so a new version goes under a new name.
+    /// </remarks>
+    Task<PersonPlacement> PlacePersonsFileAsync(
+        string conversationId, string name, Stream content, CancellationToken cancellationToken = default);
+
     /// <summary>List a page of the file location (SPEC.md §9.5).</summary>
     /// <param name="conversationId">One conversation's files, or <see langword="null"/> for every one.</param>
     /// <param name="pageSize">Files per page; zero or less for the broker's default. The broker bounds it.</param>
@@ -320,6 +334,24 @@ public interface IParleyBrokerClient
         string? name = null,
         CancellationToken cancellationToken = default);
 
+    /// <summary>List what sweeps of the file location found and could not leave as it was.</summary>
+    /// <param name="includeDismissed">Whether to include the problems the person dismissed.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The problems, those waiting first, and where the quarantine directory is.</returns>
+    /// <remarks>
+    /// The person's alone (SPEC.md §9.5): a file moved to quarantine and an entry a sweep could not read, move or delete are nobody's
+    /// message. A surface shows how many are waiting wherever the person is, and draws each path as somebody else's text,
+    /// because what was put on disk by something other than Parley was never checked.
+    /// </remarks>
+    Task<FileProblemsReport> ListFileProblemsAsync(bool includeDismissed = false, CancellationToken cancellationToken = default);
+
+    /// <summary>Dismiss a problem the person has seen.</summary>
+    /// <param name="id">The problem.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns><see langword="true"/> when a waiting problem was dismissed.</returns>
+    /// <remarks>Deletes nothing on disk: a quarantined file stays for the person to look at or delete.</remarks>
+    Task<bool> DismissFileProblemAsync(long id, CancellationToken cancellationToken = default);
+
     /// <summary>List the project's roadmaps.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>One summary per roadmap.</returns>
@@ -342,24 +374,54 @@ public interface IParleyBrokerClient
 
     /// <summary>Read the proposals agents have made.</summary>
     /// <param name="state">Which to read; waiting ones by default, and <see langword="null"/> for every state.</param>
+    /// <param name="headings">
+    /// Whether to read headings only: each title cut to <see cref="RoadmapProposal.HeadingLength"/>, its item count, and
+    /// no items.
+    /// </param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The proposals, newest first.</returns>
+    /// <remarks>
+    /// Headings are what a count, a list or a refresh reads: roadmap text has no bound, so whole proposals are as large as
+    /// an agent makes them, and a heading is small whatever it wrote. <see cref="ProposalAsync"/> reads one whole.
+    /// </remarks>
     Task<IReadOnlyList<RoadmapProposal>> ProposalsAsync(
-        ProposalState? state = ProposalState.Waiting, CancellationToken cancellationToken = default);
+        ProposalState? state = ProposalState.Waiting, bool headings = false, CancellationToken cancellationToken = default);
+
+    /// <summary>Count the proposals agents have made.</summary>
+    /// <param name="state">Which to count; waiting ones by default, and <see langword="null"/> for every state.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>How many there are.</returns>
+    /// <remarks>
+    /// Reads no proposal, because nothing bounds how many an agent makes and a count is read on every refresh. A list of
+    /// headings carries the newest <see cref="RoadmapProposal.HeadingLimit"/>; this says how many there are in all.
+    /// </remarks>
+    Task<int> ProposalCountAsync(ProposalState? state = ProposalState.Waiting, CancellationToken cancellationToken = default);
+
+    /// <summary>Read one proposal whole, in whatever state it is.</summary>
+    /// <param name="id">The proposal.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The proposal, or <see langword="null"/> when there is none by that identifier.</returns>
+    Task<RoadmapProposal?> ProposalAsync(long id, CancellationToken cancellationToken = default);
 
     /// <summary>Turn a proposal into a roadmap, or a revision of one.</summary>
     /// <param name="id">The proposal.</param>
     /// <param name="content">The person's final content, which may be the proposal's own.</param>
     /// <param name="targetRoadmap">The roadmap it revises, or <see langword="null"/> for a new one.</param>
+    /// <param name="targetRevision">The revision of that roadmap the person was shown; required with a target.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>What it came to, with a sentence when it was refused.</returns>
     /// <remarks>
     /// Validates the whole content (<see cref="RoadmapRules"/>), and records whether it was confirmed as proposed
     /// or edited by comparing it with the stored proposal — never from a flag the caller passes, which would be
-    /// right only as often as somebody remembered to set it.
+    /// right only as often as somebody remembered to set it. A revision is refused when the roadmap has moved past the
+    /// revision shown, as an edit is, so a revision never replaces items another surface saved meanwhile.
     /// </remarks>
     Task<RoadmapChange> ConfirmProposalAsync(
-        long id, RoadmapContent content, long? targetRoadmap, CancellationToken cancellationToken = default);
+        long id,
+        RoadmapContent content,
+        long? targetRoadmap,
+        int? targetRevision,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Decline a waiting proposal.</summary>
     /// <param name="id">The proposal.</param>

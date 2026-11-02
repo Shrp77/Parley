@@ -169,10 +169,57 @@ public static class Reading
             {
                 lines.Add(new TranscriptLine(Pad(SettledLine(settled)), LineKind.Annotation, null, id));
             }
+
+            if (RoleRequest(message, export) is { } role)
+            {
+                lines.Add(new TranscriptLine(Pad(role), LineKind.Annotation, null, id));
+            }
         }
 
         return lines;
     }
+
+    /// <summary>Where a Request to a role stands, beneath the first of its Requests in the conversation (SPEC.md §5.5).</summary>
+    /// <param name="message">A message in the conversation.</param>
+    /// <param name="export">The conversation.</param>
+    /// <returns>The sentence, or <see langword="null"/> for any message but the first Request of a Request to a role.</returns>
+    /// <remarks>
+    /// Counted from how each member's exchange closed, not from the messages present, so a Result whose words retention
+    /// pruned still counts as an answer. Said once per Request, beneath its first member, since every member's Request
+    /// carries the same words.
+    /// </remarks>
+    public static string? RoleRequest(Message message, ConversationExport export)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        ArgumentNullException.ThrowIfNull(export);
+
+        if (message.Type != MessageType.Request
+            || export.Exchanges.FirstOrDefault(e => e.ExchangeId == message.ExchangeId)?.RequestGroup is not { } group)
+        {
+            return null;
+        }
+
+        var members = export.Exchanges.Where(e => e.RequestGroup == group).Select(e => e.ExchangeId).ToHashSet();
+        var first = export.Messages.FirstOrDefault(m => m.Type == MessageType.Request && members.Contains(m.ExchangeId));
+
+        if (first?.Id != message.Id)
+        {
+            return null;
+        }
+
+        var answered = export.Exchanges.Count(e => members.Contains(e.ExchangeId)
+                                                    && e.Outcome is ExchangeOutcome.Complete or ExchangeOutcome.Blocked);
+
+        return RoleRequestLine(message.To.Role, members.Count, answered);
+    }
+
+    /// <summary>A Request to a role's standing, as one sentence.</summary>
+    /// <param name="role">The role it went to.</param>
+    /// <param name="asked">How many agents it reached.</param>
+    /// <param name="answered">How many have answered.</param>
+    /// <returns>The sentence.</returns>
+    public static string RoleRequestLine(string role, int asked, int answered) =>
+        $"Sent to every agent in role {role} ({asked}): {answered} of {asked} answered.";
 
     /// <summary>What a reply settled, as one sentence beneath it.</summary>
     /// <param name="settled">The start of each question settled.</param>
@@ -332,9 +379,10 @@ public static class Reading
             return [];
         }
 
-        return text.Replace("\r\n", "\n", StringComparison.Ordinal)
-                   .Replace("\r", "\n", StringComparison.Ordinal)
-                   .Split('\n');
+        // Every break .NET itself breaks at (CR, LF, CRLF, NEL, form feed, U+2028, U+2029), never only CR and LF: a surface
+        // drawing these rows breaks them that way again, and text after a break this missed began a row with no indent,
+        // where only a header may stand (review, lens 2 run 81).
+        return text.ReplaceLineEndings("\n").Split('\n');
     }
 
     /// <summary>Lays a JSON document out over lines, or returns it unchanged.</summary>

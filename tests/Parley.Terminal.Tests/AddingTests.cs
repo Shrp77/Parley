@@ -1,4 +1,5 @@
-﻿using Microsoft.Data.Sqlite;
+﻿using Terminal.Gui.Input;
+using Microsoft.Data.Sqlite;
 using Parley.Cli.Tests;
 using Parley.Client.Views;
 using Parley.Client;
@@ -27,6 +28,7 @@ namespace Parley.Terminal.Tests;
 /// written on refusal, and that is checked by comparing what is on disk before and after.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class AddingTests : IAsyncDisposable
 {
     private readonly string _root =
@@ -235,9 +237,7 @@ public sealed class AddingTests : IAsyncDisposable
         Assert.DoesNotContain(Workspace, asking.Described, StringComparison.Ordinal);
 
         driving.Row(asking.Choices, Adding.Write);
-        driving.Enter();
-
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.True(
             File.Exists(Path.Combine(elsewhere, ".mcp.json")),
@@ -342,8 +342,7 @@ public sealed class AddingTests : IAsyncDisposable
 
         Assert.Equal(Adding.NotNow, asking.Chosen);
 
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(Adding.NothingWritten, shell.Said);
         Assert.False(File.Exists(LaunchFile), "a declined add wrote the launch configuration");
@@ -453,8 +452,6 @@ public sealed class AddingTests : IAsyncDisposable
         var asking = (ChoiceDialog)driving.Find(Adding.ConfirmTitle);
 
         driving.Row(asking.Choices, Adding.Write);
-        driving.Enter();
-
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
     }
 }

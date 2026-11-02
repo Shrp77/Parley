@@ -11,6 +11,7 @@ namespace Parley.Core.Tests;
 /// <c>human-users</c> or <c>human-user-bot</c> as the person, and refusing those to an agent would be a surprise;
 /// admitting a lookalike as the person at a surface would be worse. Both directions are asserted.
 /// </remarks>
+[Unit]
 public sealed class PersonSeatTests
 {
     private static readonly ProjectName Alpha = ProjectName.Create("alpha");

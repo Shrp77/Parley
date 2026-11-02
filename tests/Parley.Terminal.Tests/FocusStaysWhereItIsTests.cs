@@ -15,6 +15,7 @@ namespace Parley.Terminal.Tests;
 /// mid-word.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FocusStaysWhereItIsTests
 {
     [Fact]

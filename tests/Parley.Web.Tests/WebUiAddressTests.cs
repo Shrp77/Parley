@@ -15,6 +15,7 @@ namespace Parley.Web.Tests;
 /// from ever being two answers again. They were, once, and the visible failure was a browser
 /// opening a port nothing listened on while the surface reported success.
 /// </remarks>
+[Integration]
 public sealed class WebUiAddressTests
 {
     [Fact]

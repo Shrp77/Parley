@@ -19,6 +19,7 @@ namespace Parley.Cli.Tests;
 /// not own is recognised as somebody else's rather than merged into.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class LaunchKeyTests
 {
     [Fact]

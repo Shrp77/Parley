@@ -11,6 +11,7 @@ namespace Parley.Cli.Tests;
 /// single project. There is no store parameter: every entry serves the manifest, and
 /// a machine that names nothing is waiting for its first project.
 /// </remarks>
+[Integration]
 public sealed class InstallScriptManifestTests
 {
     public static TheoryData<string> BothScripts => ["install.ps1", "install.sh"];

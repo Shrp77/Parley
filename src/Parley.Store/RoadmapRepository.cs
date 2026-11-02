@@ -13,7 +13,8 @@ namespace Parley.Store;
 /// <b>A proposal is stored apart from messages and is not a roadmap.</b> Nothing here opens an exchange or writes a
 /// message, so a proposal can appear in no transcript, and nothing becomes a roadmap until
 /// <see cref="ConfirmAsync"/> is called with a person's final content. No agent-facing operation reaches any method
-/// here except <see cref="ProposeAsync"/> and <see cref="DrainNoticesAsync"/> (principle 2.12).
+/// here except <see cref="ProposeAsync"/>, <see cref="PeekNoticesAsync"/> and <see cref="MarkNoticesDeliveredAsync"/>
+/// (principle 2.12).
 /// </para>
 /// <para>
 /// <b>Where an item stands is never written here.</b> <see cref="GetAsync"/> reads what the store holds about each
@@ -85,7 +86,22 @@ public sealed class RoadmapRepository(SqliteConnection connection)
             return (null, unknown);
         }
 
-        var size = (long)content.Title.Length + (targetTitle?.Length ?? 0) + content.Items.Sum(i => i.Text.Length);
+        // **A proposal comes only from a conversation its proposer took part in.** The person is shown where it came
+        // from, and a surface opens it from that conversation as the discussion it came out of, so a source the
+        // proposer was never in would put its plan in another conversation under a false provenance. One sentence for
+        // a conversation it is not in and one that does not exist, so a refusal never says which exist (SPEC.md §10.1).
+        if (sourceConversation is not null
+            && !await new ConversationRepository(_connection)
+                .IsParticipantAsync(sourceConversation, proposer, scope.Transaction, cancellationToken).ConfigureAwait(false))
+        {
+            return (null, "A proposal can only name a conversation you took part in. Leave the conversation out, or name one of yours.");
+        }
+
+        // Every character of it, each need as its digits and a separator: a proposal of needs alone wrote a million
+        // rows while its size read as its handful of words, and the size is the evidence a bound is chosen from
+        // (SPEC.md §16).
+        var size = (long)content.Title.Length + (targetTitle?.Length ?? 0)
+            + content.Items.Sum(i => (long)i.Text.Length + i.Needs.Sum(need => (long)Digits(need) + 1));
 
         var id = await _connection.ExecuteScalarAsync<long>(
             new CommandDefinition(
@@ -173,6 +189,68 @@ public sealed class RoadmapRepository(SqliteConnection connection)
         return proposals;
     }
 
+    /// <summary>Counts the proposals in a state, or all of them.</summary>
+    /// <param name="state">The state, or <see langword="null"/> for every one.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>How many there are.</returns>
+    /// <remarks>A count reads no proposal at all, so it costs the same however many an agent made.</remarks>
+    public async Task<int> CountProposalsAsync(ProposalState? state, CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteScalarAsync<int>(
+            new CommandDefinition(
+                "SELECT COUNT(*) FROM roadmap_proposals WHERE @State IS NULL OR state = @State;",
+                new { State = state is null ? null : ProposalStateText(state.Value) },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+    /// <summary>Reads the headings of the newest proposals in a state, or of all of them, and none of their items.</summary>
+    /// <param name="state">The state, or <see langword="null"/> for every one.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>
+    /// At most <see cref="RoadmapProposal.HeadingLimit"/> proposals, newest first, each titled to
+    /// <see cref="RoadmapProposal.HeadingLength"/> with its item count.
+    /// </returns>
+    /// <remarks>
+    /// The item text is never read and the number of rows is bounded, so a list costs the same whatever an agent wrote
+    /// and however often it proposed (SPEC.md §10.2 <c>proposals</c>). <see cref="CountProposalsAsync"/> says how many
+    /// there are in all.
+    /// </remarks>
+    public async Task<IReadOnlyList<RoadmapProposal>> ListProposalHeadingsAsync(
+        ProposalState? state, CancellationToken cancellationToken = default)
+    {
+        var rows = await _connection.QueryAsync<ProposalHeadingRow>(
+            new CommandDefinition(
+                """
+                SELECT p.id AS Id, p.proposer AS Proposer, p.source_conversation AS SourceConversation,
+                       substr(p.target_title, 1, @Length) AS TargetTitle, substr(p.title, 1, @Length) AS Title,
+                       p.size AS Size, p.state AS State, p.created_utc AS CreatedUtc, p.decided_utc AS DecidedUtc,
+                       (SELECT COUNT(*) FROM roadmap_proposal_items i WHERE i.proposal_id = p.id) AS Items
+                  FROM roadmap_proposals p
+                 WHERE @State IS NULL OR p.state = @State
+                 ORDER BY p.id DESC
+                 LIMIT @Limit;
+                """,
+                new
+                {
+                    State = state is null ? null : ProposalStateText(state.Value),
+                    Length = RoadmapProposal.HeadingLength,
+                    Limit = RoadmapProposal.HeadingLimit,
+                },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return [.. rows.Select(row => new RoadmapProposal(
+            row.Id,
+            AgentName.Create(row.Proposer),
+            row.SourceConversation,
+            row.TargetTitle,
+            new RoadmapContent(row.Title, []),
+            row.Size,
+            ParseState(row.State),
+            ExchangeRow.ParseTimestamp(row.CreatedUtc),
+            row.DecidedUtc is null ? null : ExchangeRow.ParseTimestamp(row.DecidedUtc))
+        {
+            ItemCount = (int)row.Items,
+        })];
+    }
+
     /// <summary>Reads one proposal.</summary>
     /// <param name="id">The proposal.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
@@ -187,6 +265,10 @@ public sealed class RoadmapRepository(SqliteConnection connection)
     /// <param name="nowUtc">The current instant.</param>
     /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
+    /// <param name="expectedRevision">
+    /// For a revision, the revision of the roadmap the person was shown: required with a target, and refused when the
+    /// roadmap is no longer at it, as an edit is.
+    /// </param>
     /// <returns>What it came to.</returns>
     /// <remarks>
     /// <para>
@@ -206,7 +288,8 @@ public sealed class RoadmapRepository(SqliteConnection connection)
         long? targetRoadmap,
         DateTimeOffset nowUtc,
         SqliteTransaction? transaction = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int? expectedRevision = null)
     {
         ArgumentNullException.ThrowIfNull(final);
 
@@ -235,7 +318,10 @@ public sealed class RoadmapRepository(SqliteConnection connection)
         long roadmapId;
         int revision;
         RoadmapOrigin origin;
-        string roadmapTitle;
+
+        // The title a waiting proposal's hint must name to be superseded: the revised roadmap's, as it stood before this
+        // change. A new roadmap revises nothing, so it supersedes nothing (SPEC.md §5.7).
+        string? revisedTitle = null;
 
         if (targetRoadmap is null)
         {
@@ -280,7 +366,6 @@ public sealed class RoadmapRepository(SqliteConnection connection)
             }
 
             revision = 1;
-            roadmapTitle = final.Title;
         }
         else
         {
@@ -296,8 +381,28 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                 return Refused("There is no such roadmap to revise.");
             }
 
+            // As an edit is: a revision chosen against one revision never replaces items saved since.
+            if (expectedRevision is not { } expected)
+            {
+                return Refused("A revision must name the revision of the roadmap it was chosen against, so nothing was confirmed.");
+            }
+
+            if (existing.Revision != expected)
+            {
+                return Refused(
+                    $"The roadmap has changed since you chose to revise it: it is at revision {existing.Revision} and " +
+                    $"you were shown revision {expected}. Open the proposal again to choose.");
+            }
+
             origin = RoadmapOrigin.Edited;
             roadmapId = targetRoadmap.Value;
+
+            revisedTitle = await _connection.ExecuteScalarAsync<string>(
+                new CommandDefinition(
+                    "SELECT title FROM roadmaps WHERE id = @Id;",
+                    new { Id = roadmapId },
+                    scope.Transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
 
             var written = await WriteContentAsync(
                 roadmapId, (int)existing.Number, (int)existing.Revision, final, origin, now, scope.Transaction,
@@ -309,30 +414,52 @@ public sealed class RoadmapRepository(SqliteConnection connection)
             }
 
             revision = (int)existing.Revision + 1;
-            roadmapTitle = final.Title;
         }
 
         await DecideAsync(proposal, ProposalState.Confirmed, now, scope.Transaction, cancellationToken)
             .ConfigureAwait(false);
 
-        // Any other proposal that hints at the roadmap now confirmed is out of date. Matched on the title hint
-        // and nothing else, because nothing else is known: an agent never reads a roadmap (SPEC.md §5.7).
-        var rivals = (await _connection.QueryAsync<ProposalRow>(
+        // Any other proposal that hints at the roadmap just revised is out of date. Matched on the title hint and nothing
+        // else, because nothing else is known: an agent never reads a roadmap (SPEC.md §5.7). Not the confirmed title,
+        // which a proposer chooses: that would let one agent's proposal decide another's aimed at a different roadmap.
+        // Compared here, not in SQL: SQLite's lower() folds ASCII only, and the surfaces show a hint as naming a roadmap
+        // with this same comparison (ProposalText.Matching), so the two agree on which proposals a revision decides.
+        // Narrowed in SQL first, to hints as long as the title and to their ids: a hint has no bound, and reading every
+        // waiting proposal whole inside this write held hundreds of megabytes to supersede nothing. A match ignoring case
+        // is always the same length, so the narrowing loses none.
+        var matching = revisedTitle is null ? [] : (await _connection.QueryAsync<IdAndHint>(
             new CommandDefinition(
                 """
-                SELECT id AS Id, proposer AS Proposer, source_conversation AS SourceConversation,
-                       target_title AS TargetTitle, title AS Title, size AS Size, state AS State,
-                       created_utc AS CreatedUtc, decided_utc AS DecidedUtc
+                SELECT id AS Id, target_title AS Hint
                   FROM roadmap_proposals
                  WHERE state = 'waiting' AND id <> @Id AND target_title IS NOT NULL
-                   AND lower(target_title) = lower(@Title);
+                   AND length(target_title) = length(@Title);
                 """,
-                new { Id = id, Title = roadmapTitle },
+                new { Id = id, Title = revisedTitle },
                 scope.Transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false)).ToList();
+                cancellationToken: cancellationToken)).ConfigureAwait(false))
+            .Where(row => string.Equals(row.Hint, revisedTitle, StringComparison.OrdinalIgnoreCase))
+            .Select(row => row.Id)
+            .ToList();
 
-        foreach (var rival in rivals)
+        // Read one at a time as each is decided, not with every id in one statement: an agent can make more proposals
+        // than SQLite takes parameters, and the revision would then fail for good. One row at a time also holds one
+        // proposal, whatever each one's size.
+        foreach (var match in matching)
         {
+            var rival = await _connection.QuerySingleAsync<ProposalRow>(
+                new CommandDefinition(
+                    """
+                    SELECT id AS Id, proposer AS Proposer, source_conversation AS SourceConversation,
+                           target_title AS TargetTitle, title AS Title, size AS Size, state AS State,
+                           created_utc AS CreatedUtc, decided_utc AS DecidedUtc
+                      FROM roadmap_proposals
+                     WHERE id = @Id;
+                    """,
+                    new { Id = match },
+                    scope.Transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+
             var other = await ToProposalAsync(rival, scope.Transaction, cancellationToken).ConfigureAwait(false);
 
             await DecideAsync(other, ProposalState.Superseded, now, scope.Transaction, cancellationToken)
@@ -489,7 +616,7 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                 """
                 SELECT i.id AS Id, i.number AS Number, i.position AS Position, i.text AS Text,
                        i.intended_agent AS IntendedAgent, i.removed_rev AS RemovedRev,
-                       c.conversation_id AS Conversation
+                       c.conversation_id AS Conversation, i.edited_utc AS EditedUtc
                   FROM roadmap_items i
                   LEFT JOIN roadmap_item_conversations c ON c.item_id = i.id
                  WHERE i.roadmap_id = @Id
@@ -518,7 +645,7 @@ public sealed class RoadmapRepository(SqliteConnection connection)
         {
             var name = item.Conversation ?? ItemConversation.Name((int)row.Number, (int)item.Number);
             var facts = item.RemovedRev is null
-                ? await FactsAsync(name, cancellationToken).ConfigureAwait(false)
+                ? await FactsAsync(name, item.EditedUtc, cancellationToken).ConfigureAwait(false)
                 : null;
 
             result.Add(new RoadmapItem(
@@ -576,70 +703,89 @@ public sealed class RoadmapRepository(SqliteConnection connection)
             : (row.RoadmapId, (int)row.RoadmapNumber, row.Title, (int)row.ItemNumber, row.Removed != 0);
     }
 
-    /// <summary>Collects what became of an agent's proposals, marking each delivered.</summary>
-    /// <param name="agent">The agent draining its inbox.</param>
+    /// <summary>Reads what became of an agent's proposals, marking nothing.</summary>
+    /// <param name="agent">The agent collecting its inbox.</param>
     /// <param name="limit">The most to return.</param>
-    /// <param name="nowUtc">The current instant.</param>
-    /// <param name="transaction">The transaction the drain runs in, or <see langword="null"/>.</param>
+    /// <param name="excluding">Notices a collection in flight holds, which no other collection hands over.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>The notices, oldest first.</returns>
-    /// <remarks>Never wakes anybody: a notice is collected when the agent next looks, as a file's change notice is.</remarks>
-    public async Task<IReadOnlyList<RoadmapNotice>> DrainNoticesAsync(
+    /// <returns>The notices, oldest first, with the keys <see cref="MarkNoticesDeliveredAsync"/> takes.</returns>
+    /// <remarks>
+    /// Never wakes anybody: a notice is collected when the agent next looks, as a file's gone notice is. Marked apart
+    /// from the read because a collection is recorded only once the agent acknowledges it (SPEC.md §6).
+    /// </remarks>
+    public async Task<(IReadOnlyList<RoadmapNotice> Notices, IReadOnlyList<string> Keys)> PeekNoticesAsync(
         AgentName agent,
         int limit,
-        DateTimeOffset nowUtc,
-        SqliteTransaction? transaction = null,
+        IReadOnlyCollection<string>? excluding = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
 
-        using var scope = WriteScope.Begin(_connection, transaction);
-
         var rows = (await _connection.QueryAsync<NoticeRow>(
             new CommandDefinition(
-                """
-                SELECT id AS Id, proposal_id AS ProposalId, title AS Title, outcome AS Outcome,
+                $"""
+                SELECT {NoticeKey} AS Key, proposal_id AS ProposalId, title AS Title, outcome AS Outcome,
                        created_utc AS CreatedUtc
                   FROM roadmap_notices
-                 WHERE agent = @Agent AND delivered_utc IS NULL
+                 WHERE agent = @Agent AND delivered_utc IS NULL AND {NoticeKey} NOT IN @Held
                  ORDER BY id
                  LIMIT @Limit;
                 """,
-                new { Agent = agent.Value, Limit = limit },
-                scope.Transaction,
+                new { Agent = agent.Value, Limit = limit, Held = excluding ?? [] },
                 cancellationToken: cancellationToken)).ConfigureAwait(false)).ToList();
 
-        foreach (var row in rows)
+        return (
+            [
+                .. rows.Select(r => new RoadmapNotice(
+                    r.ProposalId,
+                    r.Title,
+                    ParseState(r.Outcome),
+                    ExchangeRow.ParseTimestamp(r.CreatedUtc))),
+            ],
+            [.. rows.Select(r => r.Key)]);
+    }
+
+    /// <summary>Records notices an agent has acknowledged collecting.</summary>
+    /// <param name="keys">The keys <see cref="PeekNoticesAsync"/> returned.</param>
+    /// <param name="nowUtc">The current instant.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>A task that completes when they are marked.</returns>
+    /// <remarks>
+    /// By key, never by id alone: an id is reused once its row is deleted (a purge deletes an agent's notices), so a
+    /// collection acknowledged late would otherwise mark another agent's notice delivered unread.
+    /// </remarks>
+    public async Task MarkNoticesDeliveredAsync(
+        IReadOnlyCollection<string> keys,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(keys);
+
+        if (keys.Count == 0)
         {
-            await _connection.ExecuteAsync(
-                new CommandDefinition(
-                    "UPDATE roadmap_notices SET delivered_utc = @When WHERE id = @Id;",
-                    new { Id = row.Id, When = ExchangeRow.FormatTimestamp(nowUtc) },
-                    scope.Transaction,
-                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return;
         }
 
-        scope.Complete();
-
-        return
-        [
-            .. rows.Select(r => new RoadmapNotice(
-                r.ProposalId,
-                r.Title,
-                ParseState(r.Outcome),
-                ExchangeRow.ParseTimestamp(r.CreatedUtc))),
-        ];
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                $"UPDATE roadmap_notices SET delivered_utc = @When WHERE {NoticeKey} IN @Keys AND delivered_utc IS NULL;",
+                new { Keys = keys, When = ExchangeRow.FormatTimestamp(nowUtc) },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
     /// <summary>Counts the notices waiting for an agent, marking nothing.</summary>
     /// <param name="agent">The agent.</param>
+    /// <param name="excluding">Notices to leave out of the count, or <see langword="null"/> for none.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>How many are undelivered.</returns>
-    public async Task<int> CountNoticesAsync(AgentName agent, CancellationToken cancellationToken = default) =>
+    public async Task<int> CountNoticesAsync(
+        AgentName agent,
+        IReadOnlyCollection<string>? excluding = null,
+        CancellationToken cancellationToken = default) =>
         await _connection.ExecuteScalarAsync<int>(
             new CommandDefinition(
-                "SELECT COUNT(*) FROM roadmap_notices WHERE agent = @Agent AND delivered_utc IS NULL;",
-                new { Agent = agent.Value },
+                $"SELECT COUNT(*) FROM roadmap_notices WHERE agent = @Agent AND delivered_utc IS NULL AND {NoticeKey} NOT IN @Held;",
+                new { Agent = agent.Value, Held = excluding ?? [] },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
     // ---- writing a roadmap's content
@@ -766,7 +912,12 @@ public sealed class RoadmapRepository(SqliteConnection connection)
             await _connection.ExecuteAsync(
                 new CommandDefinition(
                     "INSERT INTO roadmap_item_conversations (item_id, conversation_id) VALUES (@Id, @Name);",
-                    new { Id = ids[at], Name = ItemConversation.Name(roadmapNumber, next) },
+                    new
+                    {
+                        Id = ids[at],
+                        Name = await FreeItemNameAsync(ItemConversation.Name(roadmapNumber, next), transaction, cancellationToken)
+                            .ConfigureAwait(false),
+                    },
                     transaction,
                     cancellationToken: cancellationToken)).ConfigureAwait(false);
         }
@@ -808,6 +959,14 @@ public sealed class RoadmapRepository(SqliteConnection connection)
 
         foreach (var agent in content.Items.Select(i => i.IntendedAgent).Where(a => a is not null).Distinct())
         {
+            // Parley never receives anybody's work, so no item is for it. The person may be: an item can be theirs to do,
+            // and starting it opens its conversation with nobody ticked, for them to choose (the owner's call, 2026-10-29).
+            if (agent!.Value.Role == Facilitation.Role)
+            {
+                return $"{agent.Value} is Parley, which takes no work, so an item cannot be meant for it. Name the agent "
+                    + "that will do it, the person, or nobody.";
+            }
+
             var known = await _connection.ExecuteScalarAsync<int>(
                 new CommandDefinition(
                     "SELECT COUNT(*) FROM agents WHERE name = @Name AND status <> 'retired';",
@@ -868,13 +1027,17 @@ public sealed class RoadmapRepository(SqliteConnection connection)
             new CommandDefinition(
                 """
                 INSERT INTO roadmap_notices (agent, proposal_id, title, outcome, created_utc)
-                VALUES (@Agent, @Id, @Title, @Outcome, @Now);
+                VALUES (@Agent, @Id, substr(@Title, 1, @Length), @Outcome, @Now);
                 """,
                 new
                 {
                     Agent = proposal.Proposer.Value,
                     proposal.Id,
                     proposal.Content.Title,
+
+                    // Cut as a heading is, by characters: the title has no bound, and fifty whole ones drained at once
+                    // exceeded what a reply may carry, so the collection failed after marking everything in it delivered.
+                    Length = RoadmapProposal.HeadingLength,
                     Outcome = ProposalStateText(state),
                     Now = now,
                 },
@@ -946,8 +1109,47 @@ public sealed class RoadmapRepository(SqliteConnection connection)
             row.DecidedUtc is null ? null : ExchangeRow.ParseTimestamp(row.DecidedUtc));
     }
 
+    /// <summary>The name an item's conversation is reserved under: the derived one, or the first free one after it.</summary>
+    /// <param name="derived">The name derived from the roadmap and item numbers.</param>
+    /// <param name="transaction">The transaction the reservation is written in.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>A name no conversation, destroyed conversation or reservation holds.</returns>
+    /// <remarks>
+    /// <b>A name already in use is never reserved.</b> The derived name is predictable, so an agent can open a conversation
+    /// under it before the item exists; reserving that name would make the agent's conversation the item's, already begun
+    /// with the agent's words in it (SPEC.md §5.7). The item takes the next free name instead, and is recognised by its
+    /// reservation as every item is.
+    /// </remarks>
+    private async Task<string> FreeItemNameAsync(string derived, SqliteTransaction? transaction, CancellationToken cancellationToken)
+    {
+        for (var suffix = 1; ; suffix++)
+        {
+            var name = suffix == 1 ? derived : string.Create(CultureInfo.InvariantCulture, $"{derived}-{suffix}");
+
+            var taken = await _connection.ExecuteScalarAsync<long>(
+                new CommandDefinition(
+                    """
+                    SELECT (SELECT COUNT(*) FROM conversations WHERE id = @Name)
+                         + (SELECT COUNT(*) FROM destroyed_conversations WHERE id = @Name)
+                         + (SELECT COUNT(*) FROM roadmap_item_conversations WHERE conversation_id = @Name);
+                    """,
+                    new { Name = name },
+                    transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+            if (taken == 0)
+            {
+                return name;
+            }
+        }
+    }
+
     /// <summary>What the store holds about one reserved conversation, as facts.</summary>
-    private async Task<ItemFacts> FactsAsync(string conversation, CancellationToken cancellationToken)
+    /// <remarks>
+    /// Whether the item was reworded since it began is read from the item's own edit time against the first request's,
+    /// never by comparing words: the person may change the item's words before sending them.
+    /// </remarks>
+    private async Task<ItemFacts> FactsAsync(string conversation, string? editedUtc, CancellationToken cancellationToken)
     {
         var row = await _connection.QuerySingleAsync<FactsRow>(
             new CommandDefinition(
@@ -959,21 +1161,51 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                            AND delivered_utc IS NULL)                                                   AS Uncollected,
                        (SELECT COUNT(*) FROM exchanges WHERE conversation_id = @C
                            AND outcome IN ('complete', 'settled'))                                      AS Complete,
-                       -- One when the latest closed exchange is the blocked one, otherwise zero.
+                       -- How many agents' latest answered exchange on the person's request here ended blocked. Latest is
+                       -- the one that closed last, since the agent, not the person, chooses which it answers first.
+                       -- Answered is any Result: done, answered and acknowledged all roll up to complete (SPEC.md §5.3),
+                       -- so an agent that was blocked and then answered the person is no longer blocked; a request the
+                       -- person closed first is no answer and decides nothing. Per agent, not for the whole conversation:
+                       -- an item sent to two whose first ended blocked read done once the second completed. The person's
+                       -- requests only: the item is what the person asked, and an agent's own question to another that
+                       -- ended blocked, worked around, is not the item blocked.
                        (SELECT COUNT(*) FROM exchanges e WHERE e.conversation_id = @C
                            AND e.outcome = 'blocked'
-                           AND e.id = (SELECT MAX(l.id) FROM exchanges l
-                                        WHERE l.conversation_id = @C AND l.state = 'CLOSED'))           AS Blocked,
-                       (SELECT COUNT(*) FROM exchanges WHERE conversation_id = @C
-                           AND outcome = 'closed')                                                      AS Closed,
-                       (SELECT ri.blocker FROM result_items ri JOIN messages m ON m.id = ri.message_id
-                         WHERE m.conversation_id = @C AND ri.blocker IS NOT NULL
-                         ORDER BY m.id DESC LIMIT 1)                                                    AS Blocker,
+                           AND e.requester IN (SELECT name FROM agents WHERE adapter = @Seat)
+                           AND e.id = (SELECT l.id FROM exchanges l
+                                        WHERE l.conversation_id = @C AND l.state = 'CLOSED'
+                                          AND l.receiver = e.receiver AND l.requester = e.requester
+                                          AND l.outcome IN ('complete', 'blocked')
+                                        ORDER BY l.closed_utc DESC, l.id DESC LIMIT 1))   AS Blocked,
+                       -- The person's requests closed before their agent answered. Like Blocked, only the person's: the
+                       -- item is what the person asked, and an agent's own notice to a peer, open when the conversation
+                       -- closed, made a done item closed for good.
+                       (SELECT COUNT(*) FROM exchanges WHERE conversation_id = @C AND outcome = 'closed'
+                           AND requester IN (SELECT name FROM agents WHERE adapter = @Seat))            AS Closed,
+                       -- The blocker of an exchange the count above counts: the newest one that is some agent's latest
+                       -- answered one on the person's request and ended blocked. Taken from the conversation's
+                       -- newest blocked result, it named an agent since asked again and done, and the person was sent to
+                       -- the wrong one. Joined through the result items' exchange, never their message: retention deletes
+                       -- messages and keeps exchanges and result items, and a join through the message lost the blocker
+                       -- while the count above still counted it.
+                       (SELECT ri.blocker FROM result_items ri
+                          JOIN exchanges e ON e.id = ri.exchange_id
+                         WHERE e.conversation_id = @C AND e.outcome = 'blocked' AND ri.blocker IS NOT NULL
+                           AND e.requester IN (SELECT name FROM agents WHERE adapter = @Seat)
+                           AND e.id = (SELECT l.id FROM exchanges l
+                                        WHERE l.conversation_id = @C AND l.state = 'CLOSED'
+                                          AND l.receiver = e.receiver AND l.requester = e.requester
+                                          AND l.outcome IN ('complete', 'blocked')
+                                        ORDER BY l.closed_utc DESC, l.id DESC LIMIT 1)
+                         ORDER BY ri.message_id DESC LIMIT 1)                                           AS Blocker,
                        (SELECT closed_by FROM conversations WHERE id = @C)                              AS ClosedBy,
-                       (SELECT json_extract(payload_json, '$.ask') FROM messages
-                         WHERE conversation_id = @C AND type = 'request' ORDER BY id LIMIT 1)           AS FirstSent;
+                       -- Non-zero when the item's text was edited after a request had been sent into its conversation. Read
+                       -- from the exchanges a request opens, which retention keeps, not from the messages it deletes.
+                       (SELECT COUNT(*) FROM exchanges WHERE conversation_id = @C
+                           AND @Edited IS NOT NULL AND julianday(opened_utc) < julianday(@Edited)
+                         LIMIT 1)                                                                       AS EditedSince;
                 """,
-                new { C = conversation },
+                new { C = conversation, Edited = editedUtc, Seat = PersonSeat.Adapter },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         var open = (await _connection.QueryAsync<long>(
@@ -992,7 +1224,7 @@ public sealed class RoadmapRepository(SqliteConnection connection)
             row.Blocker,
             row.ClosedBy,
             row.Destroyed > 0,
-            row.FirstSent,
+            row.EditedSince > 0,
             open);
     }
 
@@ -1026,6 +1258,30 @@ public sealed class RoadmapRepository(SqliteConnection connection)
         long Id, string Proposer, string? SourceConversation, string? TargetTitle, string Title, long Size,
         string State, string CreatedUtc, string? DecidedUtc);
 
+    // A class with setters, as FactsRow is, because computed columns carry no declared type for a record to match.
+    private sealed class ProposalHeadingRow
+    {
+        public long Id { get; set; }
+
+        public string Proposer { get; set; } = string.Empty;
+
+        public string? SourceConversation { get; set; }
+
+        public string? TargetTitle { get; set; }
+
+        public string Title { get; set; } = string.Empty;
+
+        public long Size { get; set; }
+
+        public string State { get; set; } = string.Empty;
+
+        public string CreatedUtc { get; set; } = string.Empty;
+
+        public string? DecidedUtc { get; set; }
+
+        public long Items { get; set; }
+    }
+
     // SQLite hands every integer back as 64 bits, and Dapper matches a constructor by exact type, so every
     // integer in a row type is a long and is narrowed where it is used.
     private sealed record ProposalItemRow(long Position, string Text, string? IntendedAgent);
@@ -1033,9 +1289,14 @@ public sealed class RoadmapRepository(SqliteConnection connection)
     private sealed record RoadmapRow(long Id, long Number, string Title, string Origin, string? Proposer, long Revision);
 
     private sealed record ItemRow(
-        long Id, long Number, long Position, string Text, string? IntendedAgent, long? RemovedRev, string? Conversation);
+        long Id, long Number, long Position, string Text, string? IntendedAgent, long? RemovedRev, string? Conversation,
+        string? EditedUtc);
 
     private sealed record NumberAndRevision(long Number, long Revision);
+
+    private sealed record IdAndHint(long Id, string Hint);
+
+    private static int Digits(int number) => number.ToString(CultureInfo.InvariantCulture).Length;
 
     private sealed record LiveItem(long Id, long Number, string Text);
 
@@ -1062,7 +1323,25 @@ public sealed class RoadmapRepository(SqliteConnection connection)
 
     private sealed record ReservationRow(long RoadmapId, long RoadmapNumber, string Title, long ItemNumber, long Removed);
 
-    private sealed record NoticeRow(long Id, long ProposalId, string Title, string Outcome, string CreatedUtc);
+    // A roadmap notice as a collection holds it: its id with what no reuse of the id repeats, since a proposal's id
+    // never is (migration 002).
+    private const string NoticeKey =
+        "(id || char(31) || agent || char(31) || proposal_id || char(31) || outcome || char(31) || created_utc)";
+
+    // A class with setters, as FactsRow is: an expression column carries no type for Dapper to match a constructor
+    // against when the read returns nothing.
+    private sealed class NoticeRow
+    {
+        public string Key { get; set; } = string.Empty;
+
+        public long ProposalId { get; set; }
+
+        public string Title { get; set; } = string.Empty;
+
+        public string Outcome { get; set; } = string.Empty;
+
+        public string CreatedUtc { get; set; } = string.Empty;
+    }
 
     // A class with setters rather than a record: the subselects here return NULL for a conversation that has
     // none of something, and a NULL column carries no type for Dapper to match a constructor against.
@@ -1086,6 +1365,6 @@ public sealed class RoadmapRepository(SqliteConnection connection)
 
         public string? ClosedBy { get; set; }
 
-        public string? FirstSent { get; set; }
+        public long EditedSince { get; set; }
     }
 }

@@ -16,6 +16,7 @@ namespace Parley.Terminal.Tests;
 /// the filter and every test read what the filter produced.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RoomRosterOnScreenTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@here");

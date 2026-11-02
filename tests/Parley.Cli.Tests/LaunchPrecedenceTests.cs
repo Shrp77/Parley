@@ -17,6 +17,7 @@ namespace Parley.Cli.Tests;
 /// implementation detail and the situation is what somebody debugging is looking at.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class LaunchPrecedenceTests
 {
     private static JsonObject Servers(string json) =>

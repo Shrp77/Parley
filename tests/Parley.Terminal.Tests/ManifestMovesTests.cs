@@ -25,6 +25,7 @@ namespace Parley.Terminal.Tests;
 /// exactly the state a person opened this to get out of.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ManifestMovesTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

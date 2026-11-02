@@ -24,6 +24,7 @@ namespace Parley.Terminal.Tests;
 /// take the name for one project as permission to destroy another.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ShiftingGroundTests : IAsyncDisposable
 {
     private readonly string _root =

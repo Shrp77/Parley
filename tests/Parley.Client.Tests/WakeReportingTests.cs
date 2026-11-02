@@ -21,6 +21,7 @@ namespace Parley.Client.Tests;
 /// Two implementations of a report about the same send would disagree about what was sent.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class WakeReportingTests
 {
     private static AgentName Orders => AgentName.Create("orders@test");

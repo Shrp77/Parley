@@ -20,6 +20,7 @@ namespace Parley.Server.Tests;
 /// records anything.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RoadmapOverTheWireTests
 {
     private const string Person = "human-user@test";
@@ -60,6 +61,43 @@ public sealed class RoadmapOverTheWireTests
         Assert.True(change.Done, change.Problem);
 
         return change.RoadmapId;
+    }
+
+    [Fact]
+    public async Task A_revision_names_the_revision_it_was_chosen_against_and_is_refused_once_that_has_moved()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var orders = await AttachedClient.AttachAsync(broker, "orders@test", cancellationToken: Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, "billing@test", cancellationToken: Ct);
+        var operators = broker.ConnectAsOperator();
+
+        var roadmap = await ConfirmedAsync(broker, await ProposeAsync(orders));
+        var revision = await ProposeAsync(orders);
+
+        // No revision named: refused, whatever the roadmap is at.
+        var unnamed = await operators.ConfirmProposalAsync(
+            new Wire.ConfirmProposalRequest { Id = revision, Content = Plan(), TargetRoadmap = roadmap }, cancellationToken: Ct);
+        Assert.False(unnamed.Done);
+        Assert.Contains("must name the revision", unnamed.Problem, StringComparison.Ordinal);
+
+        // Edited on another surface since revision 1 was shown: refused, and the edit stays.
+        var edited = await operators.EditRoadmapAsync(
+            new Wire.EditRoadmapRequest { Id = roadmap, Revision = 1, Content = Plan("Billing export, edited") }, cancellationToken: Ct);
+        Assert.True(edited.Done, edited.Problem);
+
+        var stale = await operators.ConfirmProposalAsync(
+            new Wire.ConfirmProposalRequest { Id = revision, Content = Plan(), TargetRoadmap = roadmap, TargetRevision = 1 },
+            cancellationToken: Ct);
+        Assert.False(stale.Done);
+        Assert.Equal(
+            "Billing export, edited",
+            (await operators.RoadmapAsync(new Wire.RoadmapRequest { Id = roadmap }, cancellationToken: Ct)).Roadmap!.Title);
+
+        // At the revision it now is: done.
+        var current = await operators.ConfirmProposalAsync(
+            new Wire.ConfirmProposalRequest { Id = revision, Content = Plan(), TargetRoadmap = roadmap, TargetRevision = edited.Revision },
+            cancellationToken: Ct);
+        Assert.True(current.Done, current.Problem);
     }
 
     [Fact]
@@ -110,6 +148,30 @@ public sealed class RoadmapOverTheWireTests
 
         Assert.Empty((await billing.Client.DrainInboxAsync(
             new Wire.DrainInboxRequest { Agent = billing.Name }, cancellationToken: Ct)).RoadmapNotices);
+    }
+
+    [Fact]
+    public async Task An_agent_cannot_open_an_items_conversation_by_placing_a_file_in_it()
+    {
+        // A file opens a conversation and writes no message, so the reserved-conversation trigger never sees it. Must fail
+        // against admitting the placement, which left the item reading as begun with only the agent in its conversation.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var orders = await AttachedClient.AttachAsync(broker, "orders@test", cancellationToken: Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, "billing@test", cancellationToken: Ct);
+
+        var roadmap = await ConfirmedAsync(broker, await ProposeAsync(orders));
+
+        var placed = await FileWire.PlaceAsync(orders.Client, orders.Name, "notes.md", "# notes"u8.ToArray(), "rm1-1", Ct);
+
+        Assert.NotEqual(Wire.PlaceOutcome.Placed, placed.Outcome);
+        Assert.Equal(Wire.FileRejection.ConversationNotAssignable, placed.Rejection);
+
+        // What the agent reads must be true: it holds no requests, so it is not told it does.
+        Assert.DoesNotContain("hold requests", placed.Detail, StringComparison.Ordinal);
+        Assert.Contains("Leave conversation_id out", placed.Detail, StringComparison.Ordinal);
+
+        var detail = await broker.ConnectAsOperator().RoadmapAsync(new Wire.RoadmapRequest { Id = roadmap }, cancellationToken: Ct);
+        Assert.False(detail.Roadmap.Items.Single(i => i.Number == 1).Facts.ConversationExists);
     }
 
     [Fact]
@@ -314,5 +376,38 @@ public sealed class RoadmapOverTheWireTests
         Assert.Equal(2, first.Revision);
         Assert.False(second.Done);
         Assert.Contains("revision 2", second.Problem, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_agent_saying_it_is_finished_with_an_items_conversation_is_told_only_the_person_closes_it()
+    {
+        // SPEC.md section 5.7: a closed conversation never reopens and an item has only the one.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var orders = await AttachedClient.AttachAsync(broker, "orders@test", cancellationToken: Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, "billing@test", cancellationToken: Ct);
+        await using var seat = await AttachedClient.AttachAsync(
+            broker, Person, cancellationToken: Ct, adapter: Parley.Core.PersonSeat.Adapter);
+
+        _ = await ConfirmedAsync(broker, await ProposeAsync(orders));
+
+        var started = Assert.Single((await seat.Client.RequestAsync(
+            new Wire.OpenRequest
+            {
+                From = Person,
+                To = billing.Name,
+                ResponderModel = "claude-opus-5",
+                PayloadJson = """{"ask":"Add CSV export"}""",
+                ConversationId = "rm1-1",
+            },
+            cancellationToken: Ct)).Outcomes);
+        Assert.True(started.Ok, started.Rejection.ToString());
+
+        var said = await billing.Client.ConcludeAsync(
+            new Wire.ConcludeRequest { From = billing.Name, ConversationId = "rm1-1", Vote = Wire.Vote.Done },
+            cancellationToken: Ct);
+
+        Assert.False(said.Ok);
+        Assert.Equal(Wire.ClosureError.PersonCloses, said.Refusal);
+        Assert.False(said.Concluded);
     }
 }

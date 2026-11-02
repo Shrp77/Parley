@@ -20,6 +20,7 @@ namespace Parley.Web.Tests;
 /// "no raw output on a message payload", which is greppable.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RenderingTests : IClassFixture<WebApplicationFactory<Program>>
 {
     private readonly WebApplicationFactory<Program> _console;

@@ -11,6 +11,7 @@ namespace Parley.Core.Tests;
 /// retention is the one setting whose mistakes cannot be undone. These pin that the names and
 /// the parsing are shared, which is the whole reason it is not in either host.
 /// </remarks>
+[Unit]
 public sealed class RetentionPolicyTests
 {
     private static Func<string, string?> Environment(params (string Name, string Value)[] set) =>
@@ -108,6 +109,7 @@ public sealed class RetentionPolicyTests
     [InlineData("-4")]
     [InlineData("2.5")]
     [InlineData("72 hours")]
+    [InlineData("2147483647")]
     public void An_unreadable_value_is_refused_rather_than_ignored(string configured)
     {
         // Falling back silently would leave an operator with a log being pruned on numbers they

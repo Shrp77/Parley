@@ -27,6 +27,7 @@ namespace Parley.Cli.Tests;
 /// is the sequence and not the arithmetic.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class EnrolmentRegistersTests : IAsyncDisposable
 {
     private readonly SqliteConnection _connection;
@@ -115,7 +116,26 @@ public sealed class EnrolmentRegistersTests : IAsyncDisposable
         await Task.Delay(TimeSpan.FromSeconds(1), token);
         await before.DisposeAsync();
 
-        await using var after = await NodeStub.JoinAsync(_broker.Address, ["orders"], token);
+        // The broker hears the first stream close a moment after it is dropped, and refuses a second node for the
+        // machine until it has (one node per machine, SPEC.md §4), as it would refuse a node that came back too
+        // quickly; the stand-in node retries as a real one does (CI, Linux, 0.47.40).
+        NodeStub? joined = null;
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+
+        while (joined is null)
+        {
+            try
+            {
+                joined = await NodeStub.JoinAsync(_broker.Address, ["orders"], token);
+            }
+            catch (Grpc.Core.RpcException refused) when (refused.StatusCode == Grpc.Core.StatusCode.AlreadyExists
+                                                         && DateTimeOffset.UtcNow < deadline)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(50), token);
+            }
+        }
+
+        await using var after = joined;
 
         var command = await after.NextAsync(TimeSpan.FromSeconds(10));
 

@@ -21,6 +21,7 @@ namespace Parley.Broker.Tests;
 /// abandoned work read as ended by somebody else.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ResponderIdentityTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

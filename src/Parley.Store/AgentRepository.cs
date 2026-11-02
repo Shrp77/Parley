@@ -296,7 +296,7 @@ public sealed class AgentRepository(SqliteConnection connection)
                 scope.Transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        foreach (var table in (await ReferencesToAgentsAsync(scope.Transaction, cancellationToken, includeCascading: true)
+        foreach (var table in (await ReferencesToAgentsAsync(scope.Transaction, cancellationToken, includeActioned: true)
             .ConfigureAwait(false)).GroupBy(reference => reference.TableName))
         {
             // Interpolated because a table or column name cannot be a parameter; both come from this connection's own
@@ -367,7 +367,7 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// Lists what one agent may learn about the others, per SPEC.md §10.1's <c>agents()</c>.
     /// </summary>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>Every registered agent except those an operator has retired.</returns>
+    /// <returns>Every registered agent except those retired.</returns>
     /// <remarks>
     /// <para>
     /// Projects rather than filters, and the columns it does not select are the reason it exists
@@ -418,7 +418,7 @@ public sealed class AgentRepository(SqliteConnection connection)
     }
 
     /// <summary>
-    /// Reports whether an operator has retired an agent.
+    /// Reports whether an agent is retired.
     /// </summary>
     /// <param name="agent">The agent.</param>
     /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
@@ -971,7 +971,7 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// after is the one where it did not get to run anything.
     /// </para>
     /// <para>
-    /// It does not touch <c>status</c>. Retirement is a person's judgement and a broker
+    /// It does not touch <c>status</c>. Retirement is a person's judgement (or a node's finding) and a broker
     /// restarting is not evidence about it.
     /// </para>
     /// </remarks>
@@ -1156,6 +1156,23 @@ public sealed class AgentRepository(SqliteConnection connection)
         SqliteTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
+        var outcome = await RemoveAsync(name, nowUtc, transaction, cancellationToken).ConfigureAwait(false);
+
+        // Once committed: within a caller's transaction there is nothing in the file yet to flush.
+        if (transaction is null)
+        {
+            ParleyDatabase.Flush(_connection);
+        }
+
+        return outcome;
+    }
+
+    private async Task<PurgeOutcome> RemoveAsync(
+        AgentName name,
+        DateTimeOffset nowUtc,
+        SqliteTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
         using var scope = WriteScope.Begin(_connection, transaction);
 
         var registered = await _connection.ExecuteScalarAsync<long>(
@@ -1209,6 +1226,25 @@ public sealed class AgentRepository(SqliteConnection connection)
                 OR conversation_id IN (SELECT id FROM doomed_conversations);
             """).ConfigureAwait(false);
 
+        // **Recorded as destroyed, as a destroy records one** (SPEC.md §14: destroy is this argument applied to one
+        // conversation), before anything is deleted so the counts are still there. Without it a roadmap item whose
+        // conversation went read as never started and was offered as next, and the name was free to open again.
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                INSERT INTO destroyed_conversations (id, destroyed_utc, messages, participants)
+                SELECT d.id, @When,
+                       (SELECT count(*) FROM messages WHERE conversation_id = d.id),
+                       COALESCE((SELECT group_concat(agent, ', ')
+                                   FROM (SELECT agent FROM conversation_participants
+                                          WHERE conversation_id = d.id ORDER BY agent)), '')
+                  FROM doomed_conversations AS d
+                 WHERE d.id IN (SELECT id FROM conversations);
+                """,
+                new { When = ExchangeRow.FormatTimestamp(nowUtc) },
+                scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
         var toll = new Dictionary<string, int>(StringComparer.Ordinal);
 
         // The conversation-shaped part, which no generic scan could work out: these rows do not
@@ -1229,6 +1265,12 @@ public sealed class AgentRepository(SqliteConnection connection)
              WHERE exchange_id IN (SELECT id FROM doomed_exchanges)
                 OR conversation_id IN (SELECT id FROM doomed_conversations);
             """).ConfigureAwait(false);
+
+        // Named rather than left to the cascade from conversations, as a destroy names them: a doomed conversation can
+        // hold another agent's ownership question, one possibly waiting for the person's review (SPEC.md §14).
+        await RazeAsync("ownership_questions",
+            "DELETE FROM ownership_questions WHERE conversation_id IN (SELECT id FROM doomed_conversations);")
+            .ConfigureAwait(false);
 
         await RazeAsync("exchanges",
             "DELETE FROM exchanges WHERE id IN (SELECT id FROM doomed_exchanges);")
@@ -1270,8 +1312,9 @@ public sealed class AgentRepository(SqliteConnection connection)
         // key and surfaces as an unhandled exception where an operator expected an answer. Asking
         // the database which columns point at it cannot drift.
         //
-        // Cascading references are excluded because the schema has already said those rows belong
-        // to the agent; they go when its row does, without being named here.
+        // References with an action of their own are excluded because the schema has already said what becomes of
+        // them: a cascading row belongs to the agent and goes when its row does; a SET NULL row is somebody else's and
+        // keeps itself, naming nobody.
         foreach (var reference in await ReferencesToAgentsAsync(scope.Transaction, cancellationToken)
             .ConfigureAwait(false))
         {
@@ -1338,18 +1381,24 @@ public sealed class AgentRepository(SqliteConnection connection)
         PurgeAsync(name, DateTimeOffset.UtcNow, transaction, cancellationToken);
 
     /// <summary>
-    /// Asks the schema which columns reference <c>agents(name)</c> without cascading.
+    /// Asks the schema which columns reference <c>agents(name)</c> with no action of their own on delete.
     /// </summary>
     /// <param name="transaction">The transaction the scan runs in.</param>
     /// <param name="cancellationToken">Cancels the query.</param>
-    /// <param name="includeCascading">
-    /// Whether to list the references that cascade a delete too. Purge leaves those to the delete; a rename moves them.
+    /// <param name="includeActioned">
+    /// Whether to list the references whose <c>ON DELETE</c> action deals with them too, <c>CASCADE</c> and
+    /// <c>SET NULL</c>. Purge leaves those to the delete; a rename moves them.
     /// </param>
     /// <returns>Every reference asked for, ordered by table then column.</returns>
+    /// <remarks>
+    /// <b>A <c>SET NULL</c> reference keeps its row.</b> A roadmap item, or an item in another agent's proposal, says
+    /// which agent it is meant for and is the person's, not the agent's. Swept with the rest, a purge deleted the
+    /// person's items, freed their reserved conversation names, and confirmed proposals with steps missing.
+    /// </remarks>
     private async Task<IReadOnlyList<AgentReference>> ReferencesToAgentsAsync(
         SqliteTransaction transaction,
         CancellationToken cancellationToken,
-        bool includeCascading = false) =>
+        bool includeActioned = false) =>
         (await _connection.QueryAsync<AgentReference>(
             new CommandDefinition(
                 """
@@ -1358,10 +1407,10 @@ public sealed class AgentRepository(SqliteConnection connection)
                   JOIN pragma_foreign_key_list(m.name) AS f
                  WHERE m.type = 'table'
                    AND f."table" = 'agents'
-                   AND (@IncludeCascading = 1 OR f."on_delete" <> 'CASCADE')
+                   AND (@IncludeActioned = 1 OR f."on_delete" NOT IN ('CASCADE', 'SET NULL'))
                  ORDER BY m.name, f."from";
                 """,
-                new { IncludeCascading = includeCascading ? 1 : 0 },
+                new { IncludeActioned = includeActioned ? 1 : 0 },
                 transaction: transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false)).ToList();
 

@@ -7,8 +7,8 @@ namespace Parley.Core;
 /// <para>
 /// Reading configuration is not this project's usual business for a domain type, and this is
 /// deliberate rather than an exception made quietly. §9.4 says the policy is a property of the
-/// file rather than of any one process, and two binaries apply it: the agents' servers on every
-/// tick, and the operator's <c>prune</c>. If each parsed its own variables, a deployment could
+/// file rather than of any one process, and two passes apply it: the broker's hourly retention
+/// pass, and a person's <c>prune</c>. If each parsed its own variables, a deployment could
 /// have them disagree about which numbers were in force while both reported success — and
 /// retention is the one setting whose mistakes are unrecoverable, because what it removes is
 /// gone.
@@ -36,8 +36,9 @@ public static class RetentionPolicyEnvironment
     /// <returns>The policy this deployment states.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="read"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
-    /// A variable carries something that is not a positive whole number of hours, or the two
-    /// together describe a policy that cannot be applied.
+    /// A variable carries something that is not a positive whole number of hours, or more hours
+    /// than a retention period can hold, or the two together describe a policy that cannot be
+    /// applied.
     /// </exception>
     /// <remarks>
     /// <para>
@@ -84,7 +85,8 @@ public static class RetentionPolicyEnvironment
     /// <param name="fallback">What to use when it is unset or blank.</param>
     /// <returns>The configured duration.</returns>
     /// <exception cref="InvalidOperationException">
-    /// The value is not a positive whole number of hours.
+    /// The value is not a positive whole number of hours, or is more hours than a retention period
+    /// can hold.
     /// </exception>
     private static TimeSpan Hours(Func<string, string?> read, string name, TimeSpan fallback)
     {
@@ -99,6 +101,13 @@ public static class RetentionPolicyEnvironment
         {
             throw new InvalidOperationException(
                 $"{name} is '{configured}', which is not a positive whole number of hours.");
+        }
+
+        // Refused here, naming the variable, rather than overflowing TimeSpan with a message that names neither.
+        if (hours > TimeSpan.MaxValue.TotalHours / 2)
+        {
+            throw new InvalidOperationException(
+                $"{name} is '{configured}', which is more hours than a retention period can hold.");
         }
 
         return TimeSpan.FromHours(hours);

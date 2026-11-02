@@ -27,6 +27,7 @@ namespace Parley.Cli.Tests;
 /// malicious case, never by reading the code.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class EnrolmentTests : IDisposable
 {
     private readonly string _root =

@@ -31,6 +31,7 @@ namespace Parley.Web.Tests;
 /// said, by the name §12.3 gives the person, and that nothing marks the person present.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class AwayFromTheSeatTests
 {
     private static readonly Uri InboxUri = new("/Inbox", UriKind.Relative);

@@ -349,6 +349,7 @@ internal static class Conversions
     {
         Parley.Broker.ClosureError.None => Wire.ClosureError.None,
         Parley.Broker.ClosureError.NotAParticipant => Wire.ClosureError.NotAParticipant,
+        Parley.Broker.ClosureError.PersonCloses => Wire.ClosureError.PersonCloses,
         _ => throw new ArgumentOutOfRangeException(nameof(error), error, "Not a defined error.")
     };
 
@@ -435,6 +436,11 @@ internal static class Conversions
             SentUtc = Stamp(a.SentUtc),
             Envelope = a.Envelope
         }));
+
+        if (delivered.RoleRequest is { } role)
+        {
+            wire.RoleRequest = new Wire.RoleRequestProgress { Asked = role.Asked, Answered = role.Answered };
+        }
 
         return wire;
     }
@@ -560,6 +566,8 @@ internal static class Conversions
         FileRejection.NotFetched => Wire.FileRejection.NotFetched,
         FileRejection.TooManyNames => Wire.FileRejection.TooManyNames,
         FileRejection.SafeNameTaken => Wire.FileRejection.SafeNameTaken,
+        FileRejection.NameHoldsOtherContent => Wire.FileRejection.NameHoldsOtherContent,
+        FileRejection.Tampered => Wire.FileRejection.Tampered,
         _ => throw new ArgumentOutOfRangeException(nameof(rejection), rejection, "Not a defined file rejection.")
     };
 
@@ -570,10 +578,10 @@ internal static class Conversions
     public static Wire.PlaceOutcome Out(PlaceOutcome outcome) => outcome switch
     {
         PlaceOutcome.Placed => Wire.PlaceOutcome.Placed,
-        PlaceOutcome.Replaced => Wire.PlaceOutcome.Replaced,
         PlaceOutcome.AlreadyCurrent => Wire.PlaceOutcome.AlreadyCurrent,
         PlaceOutcome.PlacedByAnother => Wire.PlaceOutcome.PlacedByAnother,
         PlaceOutcome.DoesNotFit => Wire.PlaceOutcome.DoesNotFit,
+        PlaceOutcome.HoldsOtherContent => Wire.PlaceOutcome.HoldsOtherContent,
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Not a defined place outcome.")
     };
 
@@ -593,7 +601,6 @@ internal static class Conversions
             Sha256 = file.Sha256.Value,
             PlacedBy = file.PlacedBy?.Value ?? string.Empty,
             PlacedUtc = Stamp(file.PlacedUtc),
-            ChangedUtc = Stamp(file.ChangedUtc),
             Folder = file.Folder
         };
     }
@@ -640,7 +647,7 @@ internal static class Conversions
         return reply;
     }
 
-    /// <summary>Converts a change notice for the wire.</summary>
+    /// <summary>Converts a gone notice for the wire.</summary>
     /// <param name="notice">The notice.</param>
     /// <returns>The wire notice.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="notice"/> is null.</exception>
@@ -653,10 +660,30 @@ internal static class Conversions
             ConversationId = notice.ConversationId,
             Name = notice.Name,
             Sha256Had = notice.Had.Value,
-            Sha256Now = notice.Now?.Value ?? string.Empty,
-            SizeBytes = notice.SizeBytes ?? 0,
-            ChangedUtc = Stamp(notice.ChangedUtc),
-            Gone = notice.Gone
+            GoneUtc = Stamp(notice.GoneUtc),
+            Sha256Found = notice.Found?.Value ?? string.Empty,
+        };
+    }
+
+    /// <summary>Converts a problem with the file location for the wire.</summary>
+    /// <param name="problem">The problem.</param>
+    /// <returns>The wire view.</returns>
+    public static Wire.FileProblemView Out(FileProblem problem)
+    {
+        ArgumentNullException.ThrowIfNull(problem);
+
+        return new Wire.FileProblemView
+        {
+            Id = problem.Id,
+            Kind = problem.Kind == FileProblemKind.Quarantined ? Wire.FileProblemKind.Quarantined : Wire.FileProblemKind.Locked,
+            ConversationId = problem.ConversationId ?? string.Empty,
+            Path = problem.Path,
+            Sha256Placed = problem.PlacedSha256?.Value ?? string.Empty,
+            Sha256Found = problem.FoundSha256?.Value ?? string.Empty,
+            MovedTo = problem.MovedTo ?? string.Empty,
+            Detail = problem.Detail,
+            RaisedUtc = Stamp(problem.RaisedUtc),
+            DismissedUtc = problem.DismissedUtc is { } dismissed ? Stamp(dismissed) : string.Empty,
         };
     }
 
@@ -819,6 +846,7 @@ internal static class Conversions
             State = Out(proposal.State),
             CreatedUtc = Stamp(proposal.CreatedUtc),
             DecidedUtc = Stamp(proposal.DecidedUtc),
+            ItemCount = proposal.ItemCount ?? proposal.Content.Items.Count,
         };
     }
 
@@ -858,7 +886,7 @@ internal static class Conversions
             Blocker = facts.Blocker ?? string.Empty,
             ClosedBy = facts.ClosedBy ?? string.Empty,
             Destroyed = facts.Destroyed,
-            FirstSentText = facts.FirstSentText ?? string.Empty,
+            TextEditedSinceStarted = facts.TextEditedSinceStarted,
         };
 
         wire.OpenExchangeIds.AddRange(facts.OpenIds);

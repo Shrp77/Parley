@@ -27,6 +27,7 @@ namespace Parley.Cli.Tests;
 /// may have no console at all.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class NoChildWindowTests
 {
     /// <summary>Each source that starts a process the broker is the parent of.</summary>

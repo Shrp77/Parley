@@ -25,6 +25,7 @@ namespace Parley.Terminal.Tests;
 /// one.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class HarnessTests
 {
     [Fact]

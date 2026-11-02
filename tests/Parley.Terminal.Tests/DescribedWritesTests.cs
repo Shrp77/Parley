@@ -26,6 +26,7 @@ namespace Parley.Terminal.Tests;
 /// what appeared.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class DescribedWritesTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("parley-described-").FullName;

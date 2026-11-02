@@ -185,8 +185,8 @@ public sealed partial class ChannelNudges(BrokerLink link, McpServer server, ILo
 
     private void OnCollected(object? sender, EventArgs e)
     {
-        // A collection took everything it was told about, so whatever is counted from here is new or left behind, and
-        // either is worth a turn. Zero rather than what is left: mail landing between the drain and the read of what
+        // A collection took what it could, so whatever is counted from here is new or left behind, and either is worth
+        // a turn. Zero rather than what is left: mail landing between the drain and the read of what
         // remains is indistinguishable from mail that was left, and both should be told.
         lock (_gate)
         {

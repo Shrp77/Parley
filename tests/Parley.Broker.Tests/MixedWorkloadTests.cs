@@ -14,6 +14,7 @@ namespace Parley.Broker.Tests;
 /// every message names a conversation that exists, everything delivered arrived wrapped, and the participant
 /// list carries nothing from the registry a participant may not see.
 /// </remarks>
+[Integration]
 public sealed class MixedWorkloadTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

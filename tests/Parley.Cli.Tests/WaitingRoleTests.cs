@@ -18,6 +18,7 @@ namespace Parley.Cli.Tests;
 /// nothing less — until every such verb moved to <c>parley terminal</c>. See the note at the foot of the class.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WaitingRoleTests
 {
     private const string Nowhere = "http://127.0.0.1:1";

@@ -15,6 +15,7 @@ namespace Parley.Core.Tests;
 /// There is nothing left to pin to the second. A connection is open or it is not.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class PresenceTests
 {
     [Theory]

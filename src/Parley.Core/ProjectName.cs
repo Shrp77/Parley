@@ -50,6 +50,20 @@ public readonly partial struct ProjectName : IEquatable<ProjectName>, IComparabl
     public static bool IsValid([NotNullWhen(true)] string? candidate) =>
         candidate is not null && Pattern.IsMatch(candidate);
 
+    /// <summary>Whether a name is one Windows keeps for a device, so no folder can properly be called it.</summary>
+    /// <param name="candidate">The name.</param>
+    /// <returns><see langword="true"/> for <c>con</c>, <c>prn</c>, <c>aux</c>, <c>nul</c>, <c>com1</c> to <c>com9</c> and
+    /// <c>lpt1</c> to <c>lpt9</c>.</returns>
+    /// <remarks>
+    /// Refused when a project is made, not when one is read: a project's folder is named after it, and <c>nul</c> fails
+    /// to be made while <c>con</c> or <c>aux</c> make a folder that some tools cannot open (review, lens 2 run 66). A
+    /// project already called one on a machine that is not Windows keeps working.
+    /// </remarks>
+    public static bool IsDeviceName(string? candidate) =>
+        candidate is "con" or "prn" or "aux" or "nul"
+        || (candidate is { Length: 4 } && (candidate.StartsWith("com", StringComparison.Ordinal)
+            || candidate.StartsWith("lpt", StringComparison.Ordinal)) && candidate[3] is >= '1' and <= '9');
+
     /// <summary>
     /// Creates a project name if the candidate is well formed.
     /// </summary>

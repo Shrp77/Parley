@@ -23,6 +23,7 @@ namespace Parley.Web.Tests;
 /// SPEC.md §4.1 says the protocol never sees.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ManifestCurrencyTests : IDisposable
 {
     private readonly string _folder = Path.Combine(

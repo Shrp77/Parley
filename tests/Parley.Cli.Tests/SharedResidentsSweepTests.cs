@@ -33,6 +33,7 @@ namespace Parley.Cli.Tests;
 /// project's side.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SharedResidentsSweepTests : IAsyncDisposable
 {
     private readonly SqliteConnection _alphaStore = ParleyDatabase.OpenInMemory();

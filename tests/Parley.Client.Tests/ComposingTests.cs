@@ -17,6 +17,7 @@ namespace Parley.Client.Tests;
 /// What is tested here is addressing: who a line goes to, narrowing and widening it.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class ComposingTests
 {
     private static readonly AgentName Billing = AgentName.Create("billing@test");

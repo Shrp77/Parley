@@ -1,3 +1,4 @@
+using Parley.Configuration;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
@@ -32,7 +33,7 @@ namespace Parley.Terminal;
 /// checkouts, which is not itself a repository, so that mode takes a folder with repositories directly inside it.
 /// </para>
 /// </remarks>
-internal sealed class Browsing : Dialog
+internal sealed class Browsing : TableDialog<Browsing>, IKeyTable<Browsing>
 {
     /// <summary>What the dialog is called.</summary>
     internal const string Name = "Find the repository";
@@ -93,6 +94,7 @@ internal sealed class Browsing : Dialog
 
     private Browsing(string opening, bool ofRepositories)
     {
+        HotKeySpecifier = Parley.Terminal.Plain.NoHotKey;
         _ofRepositories = ofRepositories;
         Title = ofRepositories ? FolderName : Name;
         Width = Dim.Percent(80);
@@ -200,7 +202,9 @@ internal sealed class Browsing : Dialog
     {
         var git = Path.Combine(folder, ".git");
 
-        return Directory.Exists(git) || File.Exists(git);
+        // Never looked up through a link off this machine: a folder link an agent made beside its repository would have
+        // every listing offer the person's sign-in to the share it names (review, lens 2 run 72).
+        return !OffMachineLinks.LeadsOffThisMachine(git) && (Directory.Exists(git) || File.Exists(git));
     }
 
     /// <summary>Opens a folder, as if a row for it had been pressed.</summary>
@@ -325,17 +329,15 @@ internal sealed class Browsing : Dialog
     }
 
     /// <inheritdoc/>
-    protected override bool OnKeyDown(Key key)
-    {
-        ArgumentNullException.ThrowIfNull(key);
-
-        if (key == Key.Esc)
-        {
-            Done?.Invoke(this, null);
-
-            return true;
-        }
-
-        return base.OnKeyDown(key);
-    }
+    /// <remarks>Escape gives up, as everywhere; the list takes its own keys first, and Enter on it walks or takes the row.</remarks>
+    static CommandManager<Browsing> IKeyTable<Browsing>.BuildTable() => new(
+        [new(KeyContext.BrowsingDialog, [])],
+        [
+            new(KeyContext.BrowsingDialog, default, Prompting.Cancel, KeyCommand.Doing<Browsing>(dialog => dialog.Done?.Invoke(dialog, null)), KeyCommand.Always, Chord: Key.Esc),
+        ],
+        [
+            new(KeyContext.BrowsingDialog, Key.Enter, "open the row"),
+            .. ReservedKey.Moving(KeyContext.BrowsingDialog),
+            .. ReservedKey.TakenBy(KeyContext.BrowsingDialog, () => Lists.Filling(), "the folders"),
+        ]);
 }

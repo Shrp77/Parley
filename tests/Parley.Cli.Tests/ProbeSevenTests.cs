@@ -21,6 +21,7 @@ namespace Parley.Cli.Tests;
 /// them**, because a machine with an autostart entry written earlier still holds one.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeSevenTests : IDisposable
 {
     private readonly string _root =

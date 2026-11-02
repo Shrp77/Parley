@@ -19,6 +19,7 @@ namespace Parley.Cli.Tests;
 /// architecture is built on — for a warning. The scripts ask the broker.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class InFlightWarningTests
 {
     private static string Windows => RepositoryFile.Read("install.ps1");

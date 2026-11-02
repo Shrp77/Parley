@@ -20,6 +20,7 @@ namespace Parley.Client.Tests;
 /// missing from a roster it was never in.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RegistrationGuidanceTests
 {
     private static string Page =>
@@ -53,8 +54,9 @@ public sealed class RegistrationGuidanceTests
     public void It_says_how_to_confirm_the_registration_took()
     {
         // Instructions that end at "write this file" leave somebody unable to tell success from a
-        // server that never started. The confirmation is the roster, and the page links it.
-        Assert.Contains("/Projects/Agents?project=", Page, StringComparison.Ordinal);
+        // server that never started. The confirmation is the roster, and the page links it: the agents tab, never the
+        // Conversations page, where the new name does not appear (review, lens 3 run 67).
+        Assert.Contains("/?tab=agents&amp;project=", Page, StringComparison.Ordinal);
         Assert.Contains("appears there once its session has attached", Page, StringComparison.Ordinal);
     }
 
@@ -62,7 +64,8 @@ public sealed class RegistrationGuidanceTests
     public void No_page_in_the_console_renders_a_resolved_credential()
     {
         // Credentials are references and never values -- env:, keychain:, file: -- and the broker
-        // resolves them at invocation without persisting or logging them. A console that printed
+        // will resolve them at invocation without persisting or logging them (not built yet, SPEC
+        // §12; this holds the console to the rule before anything takes one). A console that printed
         // a resolved one would undo that in the one place it is most likely to be screenshotted.
         var pages = Directory.GetFiles(
             RepositoryPath("src/Parley.Web/Pages"), "*.cshtml", SearchOption.AllDirectories);

@@ -9,6 +9,7 @@ namespace Parley.Cli.Tests;
 /// <remarks>
 /// Enumerates every current document rather than sampling, because a fix is a claim about every place.
 /// </remarks>
+[Integration]
 public sealed class DeprecationClaimsTests
 {
     private static readonly string Root =

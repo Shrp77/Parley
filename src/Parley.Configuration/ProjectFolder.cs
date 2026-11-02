@@ -188,7 +188,7 @@ public static class ProjectFolder
 
         try
         {
-            parsed = JsonNode.Parse(text);
+            parsed = StrictJson.Parse(text);
         }
         catch (JsonException exception)
         {
@@ -309,7 +309,7 @@ public static class ProjectFolder
 
         try
         {
-            return JsonNode.Parse(ReadShared(path)) as JsonObject;
+            return StrictJson.Parse(ReadShared(path)) as JsonObject;
         }
         catch (JsonException)
         {

@@ -35,6 +35,7 @@ namespace Parley.Server.Tests;
 /// read its mail, and answer in its name". Probing it would report the threat model as a defect.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class CapHoldsForEveryTypeTests
 {
     /// <summary>Comfortably past the cap, so nothing turns on framing arithmetic.</summary>

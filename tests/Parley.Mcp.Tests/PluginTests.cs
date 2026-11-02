@@ -22,6 +22,7 @@ namespace Parley.Mcp.Tests;
 /// build every time somebody improved a sentence.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class PluginTests
 {
     private const string Marketplace = ".claude-plugin/marketplace.json";

@@ -64,6 +64,12 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <summary>The roadmaps <c>Roadmap</c> returns, by identifier.</summary>
     public Dictionary<long, Wire.RoadmapDetail> Details { get; } = [];
 
+    /// <summary>The conversations every list returns.</summary>
+    public List<Wire.ConversationSummary> Conversations { get; } = [];
+
+    /// <summary>The agents the registry lists, none by default.</summary>
+    public List<Wire.RegistryRow> Registry { get; } = [];
+
     /// <summary>Every confirmation the broker was asked for.</summary>
     public List<Wire.ConfirmProposalRequest> Confirmed { get; } = [];
 
@@ -73,6 +79,9 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <summary>Every edit it was asked for.</summary>
     public List<Wire.EditRoadmapRequest> Edited { get; } = [];
 
+    /// <summary>Exchanges every export carries, as when retention has removed a conversation's messages and kept them.</summary>
+    public List<Wire.ExchangeSnapshot> ExportExchanges { get; } = [];
+
     /// <summary>When set, the proposals read is not implemented, as a broker older than roadmaps would answer.</summary>
     public bool Old { get; set; }
 
@@ -81,6 +90,18 @@ public sealed class RoadmapBroker : HttpMessageHandler
 
     /// <summary>How many calls were made at all, so "nothing was sent" is a count and not an absence.</summary>
     public int Calls { get; private set; }
+
+    /// <summary>
+    /// When set, the person's seat is held (an Attach answered and left open) and a Request is accepted, so a send from
+    /// the page reaches its successful end. The registry must also list the person's seat.
+    /// </summary>
+    public bool Seats { get; set; }
+
+    /// <summary>When set with <see cref="Seats"/>, the seat's stream says, after the attach, that the store is being rewritten.</summary>
+    public bool Tidying { get; set; }
+
+    /// <summary>Every Request the seat sent.</summary>
+    public List<Wire.OpenRequest> Requested { get; } = [];
 
     /// <summary>Adds a waiting proposal.</summary>
     /// <param name="id">Its identifier.</param>
@@ -119,36 +140,71 @@ public sealed class RoadmapBroker : HttpMessageHandler
         var body = request.Content is null ? [] : await request.Content.ReadAsByteArrayAsync(cancellationToken);
         var payload = body.Length > 5 ? body.AsSpan(5).ToArray() : [];
 
+        // The seat: the broker's first event, and then a stream that stays open as long as the seat is held.
+        if (Seats && request.RequestUri!.AbsolutePath == "/parley.v1.Agents/Attach")
+        {
+            lock (_lock)
+            {
+                Calls++;
+            }
+
+            var attached = Frame(new Wire.Event { Attached = new Wire.Attached() });
+
+            if (Tidying)
+            {
+                attached = [.. attached, .. Frame(new Wire.Event { Tidying = new Wire.Tidying { Underway = true } })];
+            }
+            var held = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Version = HttpVersion.Version20,
+                RequestMessage = request,
+                Content = new StreamContent(new HeldOpen(attached, cancellationToken)),
+            };
+
+            held.Content.Headers.ContentType = new MediaTypeHeaderValue("application/grpc");
+
+            return held;
+        }
+
         IMessage? reply;
 
         lock (_lock)
         {
             Calls++;
 
+            if (Seats && request.RequestUri!.AbsolutePath == "/parley.v1.Agents/Request")
+            {
+                var open = Wire.OpenRequest.Parser.ParseFrom(payload);
+                Requested.Add(open);
+            }
+
             reply = request.RequestUri!.AbsolutePath switch
             {
-                "/parley.v1.Operators/Proposals" => Old ? null : ListProposals(),
+                "/parley.v1.Operators/Proposals" => Old ? null : ListProposals(Wire.ProposalsRequest.Parser.ParseFrom(payload)),
+                "/parley.v1.Operators/Proposal" => Old ? null : OneProposal(Wire.ProposalRequest.Parser.ParseFrom(payload).Id),
+                "/parley.v1.Operators/ProposalCount" => Old
+                    ? null
+                    : new Wire.ProposalCountReply { Count = Proposals.Count(p => p.State == Wire.ProposalState.Waiting) },
                 "/parley.v1.Operators/Roadmaps" => ListRoadmaps(),
                 "/parley.v1.Operators/Roadmap" => One(Wire.RoadmapRequest.Parser.ParseFrom(payload).Id),
                 "/parley.v1.Operators/ConfirmProposal" => Confirm(Wire.ConfirmProposalRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/DeclineProposal" => Decline(Wire.ProposalRequest.Parser.ParseFrom(payload).Id),
                 "/parley.v1.Operators/EditRoadmap" => Edit(Wire.EditRoadmapRequest.Parser.ParseFrom(payload)),
-                "/parley.v1.Operators/DescribeRegistry" => new Wire.RegistryReply(),
+                "/parley.v1.Operators/DescribeRegistry" => new Wire.RegistryReply { Rows = { Registry } },
                 "/parley.v1.Operators/DescribeWaiting" => new Wire.WaitingReply(),
-                "/parley.v1.Operators/ListConversations" => new Wire.ListConversationsReply(),
+                "/parley.v1.Operators/ListConversations" => new Wire.ListConversationsReply { Conversations = { Conversations } },
+                "/parley.v1.Operators/Export" => Export(Wire.ExportRequest.Parser.ParseFrom(payload).ConversationId),
                 "/parley.v1.Operators/Implements" => new Wire.ImplementsReply { ProtocolVersion = Parley.Core.ProtocolVersion.Current },
+                "/parley.v1.Agents/Request" when Seats => new Wire.RequestReply
+                {
+                    Outcomes = { new Wire.RequestOutcome { Ok = true, ExchangeId = 7, ConversationId = "rm1-1" } },
+                },
+                "/parley.v1.Agents/Waiting" when Seats => new Wire.Notice(),
                 _ => null,
             };
         }
 
-        var bytes = reply?.ToByteArray() ?? [];
-        var framed = new byte[reply is null ? 0 : 5 + bytes.Length];
-
-        if (reply is not null)
-        {
-            BinaryPrimitives.WriteUInt32BigEndian(framed.AsSpan(1, 4), (uint)bytes.Length);
-            bytes.CopyTo(framed, 5);
-        }
+        var framed = reply is null ? [] : Frame(reply);
 
         var response = new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -165,11 +221,107 @@ public sealed class RoadmapBroker : HttpMessageHandler
         return response;
     }
 
-    private Wire.ProposalsReply ListProposals()
+    /// <summary>One message as gRPC frames it on the wire: an uncompressed flag, its length, and its bytes.</summary>
+    private static byte[] Frame(IMessage message)
+    {
+        var bytes = message.ToByteArray();
+        var framed = new byte[5 + bytes.Length];
+
+        BinaryPrimitives.WriteUInt32BigEndian(framed.AsSpan(1, 4), (uint)bytes.Length);
+        bytes.CopyTo(framed, 5);
+
+        return framed;
+    }
+
+    /// <summary>A response body that gives its first bytes and then waits, as a held seat's stream does, until the call ends.</summary>
+    private sealed class HeldOpen(byte[] first, CancellationToken ends) : Stream
+    {
+        private int _given;
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (_given < first.Length)
+            {
+                var count = Math.Min(buffer.Length, first.Length - _given);
+                first.AsMemory(_given, count).CopyTo(buffer);
+                _given += count;
+
+                return count;
+            }
+
+            using var either = CancellationTokenSource.CreateLinkedTokenSource(ends, cancellationToken);
+
+            try
+            {
+                await Task.Delay(Timeout.Infinite, either.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+
+            return 0;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            ReadAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    /// <summary>Answers as the broker does: one proposal by its identifier, or none.</summary>
+    private Wire.ProposalsReply OneProposal(long id)
     {
         var reply = new Wire.ProposalsReply();
 
-        reply.Proposals.AddRange(Proposals);
+        reply.Proposals.AddRange(Proposals.Where(p => p.Id == id));
+
+        return reply;
+    }
+
+    /// <summary>Answers as the broker does: a list, as headings when asked.</summary>
+    private Wire.ProposalsReply ListProposals(Wire.ProposalsRequest request)
+    {
+        var reply = new Wire.ProposalsReply();
+
+        foreach (var proposal in Proposals)
+        {
+            if (request.Headings)
+            {
+                var heading = proposal.Clone();
+                heading.ItemCount = proposal.Content.Items.Count;
+                heading.Content = new Wire.RoadmapContent { Title = proposal.Content.Title };
+                reply.Proposals.Add(heading);
+            }
+            else
+            {
+                reply.Proposals.Add(proposal);
+            }
+        }
 
         return reply;
     }
@@ -179,6 +331,35 @@ public sealed class RoadmapBroker : HttpMessageHandler
         var reply = new Wire.RoadmapsReply();
 
         reply.Roadmaps.AddRange(Roadmaps);
+
+        return reply;
+    }
+
+    /// <summary>An empty conversation, carrying the reservation when a roadmap's item holds that name.</summary>
+    /// <remarks>
+    /// By the item's record, the way the broker answers, and never by the name's shape: a conversation called
+    /// <c>rm9-9</c> that no item reserved is an ordinary one.
+    /// </remarks>
+    private Wire.ExportReply Export(string conversation)
+    {
+        var reply = new Wire.ExportReply();
+
+        reply.Exchanges.AddRange(ExportExchanges);
+
+        foreach (var detail in Details.Values)
+        {
+            if (detail.Items.FirstOrDefault(i => i.ConversationName == conversation) is { } item)
+            {
+                reply.Item = new Wire.RoadmapItemRef
+                {
+                    RoadmapId = detail.Id,
+                    RoadmapNumber = detail.Number,
+                    Title = detail.Title,
+                    ItemNumber = item.Number,
+                    Removed = item.RemovedRevision != 0,
+                };
+            }
+        }
 
         return reply;
     }

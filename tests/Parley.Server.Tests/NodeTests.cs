@@ -12,6 +12,7 @@ namespace Parley.Server.Tests;
 /// which is not gets started. Without a node that is a promise with nothing behind it: the Request is admitted and
 /// sits there, flagged, until somebody happens to open the repository.
 /// </remarks>
+[Integration]
 public sealed class NodeTests
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(5);

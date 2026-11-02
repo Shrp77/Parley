@@ -21,6 +21,7 @@ namespace Parley.Server.Tests;
 /// work.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class AskThePersonLaterTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 9, 30, 9, 0, 0, TimeSpan.Zero);

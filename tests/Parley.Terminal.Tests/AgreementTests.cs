@@ -26,6 +26,7 @@ namespace Parley.Terminal.Tests;
 /// messages precisely so a client cannot hold one without the other.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class AgreementTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

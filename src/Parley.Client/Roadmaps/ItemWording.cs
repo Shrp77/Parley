@@ -18,6 +18,13 @@ namespace Parley.Client.Roadmaps;
 /// </remarks>
 public static class ItemWording
 {
+    /// <summary>What a blocked item says the person can do about it.</summary>
+    /// <remarks>
+    /// Said on the item because nobody else can do either (SPEC.md §5.7): its agents cannot close an item's conversation,
+    /// and only a new request from the person reaches the blocked agent again.
+    /// </remarks>
+    public const string YoursToClear = " — answer it with a new request, or close it";
+
     /// <summary>One roadmap as a row in a list.</summary>
     /// <param name="roadmap">The roadmap's summary.</param>
     /// <returns>For example <c>#2 Billing export — 5 items, 1 started</c>.</returns>
@@ -39,19 +46,39 @@ public static class ItemWording
 
         var holders = string.Join(", ", state.Holders.Select(h => h.Role));
 
+        // Worded as the transcript words it: missing_information is "missing information".
+        var blocker = state.Blocker is { Length: > 0 } named ? named.Replace('_', ' ') : null;
+        var alsoBlocked = blocker is null ? string.Empty : $"; blocked: {blocker}";
+
         var said = state.Standing switch
         {
             ItemStanding.NotStarted => "not started",
-            ItemStanding.InProgress => holders.Length > 0 ? $"in progress with {holders}" : "in progress",
-            ItemStanding.WaitingOnAgent => holders.Length > 0 ? $"waiting on {holders}" : "waiting on an agent",
-            ItemStanding.WaitingOnPerson => "waiting on you",
-            ItemStanding.Blocked => state.Blocker is { Length: > 0 } blocker ? $"blocked: {blocker}" : "blocked",
+            ItemStanding.InProgress => (holders.Length > 0 ? $"in progress with {holders}" : "in progress") + alsoBlocked,
+            ItemStanding.WaitingOnAgent => (holders.Length > 0 ? $"waiting on {holders}" : "waiting on an agent") + alsoBlocked,
+            ItemStanding.WaitingOnPerson => "waiting on you" + alsoBlocked,
+            ItemStanding.Blocked => (blocker is null ? "blocked" : $"blocked: {blocker}") + YoursToClear,
             ItemStanding.Done => "done",
-            ItemStanding.Closed => "closed",
+            ItemStanding.Closed => blocker is null ? "closed" : $"closed while blocked: {blocker}",
             _ => "could not be read",
         };
 
         return state.TextChanged ? said + " (reworded since it began)" : said;
+    }
+
+    /// <summary>Which roadmap item a conversation is the work on, for a list of conversations (SPEC.md §5.7).</summary>
+    /// <param name="item">The broker's record that the conversation is an item's.</param>
+    /// <returns>For example <c>item 3 of #1 Billing export</c>, or <c>formerly item 3 of #1 Billing export</c>.</returns>
+    /// <remarks>
+    /// Taken from the reservation and never from the conversation's name or messages, so an agent cannot make a
+    /// conversation look like an item's. A removed item's conversation stays, belongs to no item, and says which it was.
+    /// </remarks>
+    public static string Belongs(RoadmapItemRef item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{(item.Removed ? "formerly " : string.Empty)}item {item.ItemNumber} of #{item.RoadmapNumber} {item.Title}");
     }
 
     /// <summary>What comes next in a roadmap.</summary>
@@ -66,7 +93,7 @@ public static class ItemWording
             NextKind.Item => string.Create(CultureInfo.InvariantCulture, $"Next: item {standing.NextNumber}."),
             NextKind.Complete => "Every item is done.",
             NextKind.Empty => "This roadmap has no items.",
-            _ => "Nothing is ready to start: what is left is waiting on something or blocked.",
+            _ => "Nothing is ready to start: what is left is waiting, blocked or closed, or needs an item that is.",
         };
     }
 }

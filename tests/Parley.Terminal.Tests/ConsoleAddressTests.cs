@@ -28,6 +28,7 @@ namespace Parley.Terminal.Tests;
 /// project's graph and there must not be one.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ConsoleAddressTests
 {
     private static string Shell()

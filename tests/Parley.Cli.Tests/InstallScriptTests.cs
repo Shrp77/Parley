@@ -20,6 +20,7 @@ namespace Parley.Cli.Tests;
 /// they were run by hand on both shells before being committed.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class InstallScriptTests
 {
     private static string Windows => RepositoryFile.Read("install.ps1");

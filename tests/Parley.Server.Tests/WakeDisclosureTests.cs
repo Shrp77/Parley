@@ -23,6 +23,7 @@ namespace Parley.Server.Tests;
 /// outcome changing, which it could already infer from the roster's presence column. Recorded as low.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WakeDisclosureTests
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(5);

@@ -7,6 +7,7 @@ namespace Parley.Mcp.Tests;
 /// That the adapter takes the launch token its node put in its environment, and presents nothing when there is none
 /// (SPEC.md §11.7).
 /// </summary>
+[Unit]
 public sealed class LaunchTokenTests
 {
     private static Func<string, string?> Env(params (string Name, string Value)[] set)

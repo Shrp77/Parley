@@ -5,6 +5,7 @@ namespace Parley.Terminal.Tests;
 /// <summary>
 /// That the transcript box says which conversation it is showing.
 /// </summary>
+[Integration]
 public sealed class TranscriptTitleTests
 {
     [Fact]

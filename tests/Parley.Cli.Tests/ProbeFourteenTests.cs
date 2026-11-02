@@ -19,6 +19,7 @@ namespace Parley.Cli.Tests;
 /// different verb.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeFourteenTests : IDisposable
 {
     private readonly string _root =

@@ -15,6 +15,7 @@ namespace Parley.Cli.Tests;
 /// that passes on exactly the file somebody hand-edited, and hand-editing is the ordinary state of
 /// every file this feature touches.
 /// </remarks>
+[Integration]
 public sealed class ProbeFourTests : IDisposable
 {
     private readonly string _root =

@@ -26,6 +26,7 @@ namespace Parley.Server.Tests;
 /// that is not there — this repository's practice for a suspected race is many attempts.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ConcurrentResultTests
 {
     private const int Attempts = 25;

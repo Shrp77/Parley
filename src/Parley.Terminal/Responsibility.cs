@@ -171,22 +171,25 @@ internal static class Responsibility
 
         var name = Safe.Text(agent.Name.Value);
 
+        // Every line here is unbounded and may be an agent's words, so each is shortened, and the answer is flattened:
+        // drawn whole, or with its blank lines, they would push what Save records off a page that cannot scroll. The field
+        // below holds the whole line.
         var peers = OwnershipStatement.Read(agent.Owns) is { } live
-            ? $"'{Safe.Text(live)}'"
+            ? $"'{Safe.Text(AgentWords.Shortened(live))}'"
             : "nothing -- this agent has no line yet";
 
         var accepted = agent.OwnsPending
-            ? $"{Environment.NewLine}Accepted, not yet read by peers: '{Safe.Text(agent.OwnsAccepted!)}' "
+            ? $"{Environment.NewLine}Accepted, not yet read by peers: '{Safe.Text(AgentWords.Shortened(agent.OwnsAccepted!))}' "
               + $"-- {Safe.Text(Provenance.Of(agent.OwnsSource))}."
             : string.Empty;
 
-        var said = question?.Answer is { Length: > 0 } answer
+        var said = question?.Flattened is { Length: > 0 } answer
             ? $"""
 
 
                {name} said this, at {When(question.AskedUtc)} local time. These are its words, not this screen's:
 
-               {Safe.Lines(answer)}
+               {Safe.Text(AgentWords.Shortened(answer))}
 
                Parley: {Safe.Text(Provenance.Of(question))}
                """
@@ -197,20 +200,21 @@ internal static class Responsibility
             : Environment.NewLine + Environment.NewLine + "What the others already say they own:" + Environment.NewLine
               + string.Join(
                   Environment.NewLine,
-                  neighbours.Take(Named).Select(peer => $"  {Safe.Text(peer.Name)}: {Safe.Text(peer.Owns)}"))
+                  neighbours.Take(Named).Select(peer => $"  {Safe.Text(peer.Name)}: {Safe.Text(AgentWords.Shortened(peer.Owns))}"))
               + (neighbours.Count > Named ? $"{Environment.NewLine}  and {neighbours.Count - Named} more." : string.Empty);
 
         var cannot = elsewhere is null
             ? string.Empty
             : $"{Environment.NewLine}{Environment.NewLine}{Safe.Text(elsewhere)} You can still ask it to refresh.";
 
+        // What Save and Refresh do first, then the lines: the page cannot scroll and cuts its tail.
         return $"""
                 {name}
 
-                Peers read: {peers}{accepted}{said}{others}
-
                 Change the line below and choose {Save}, or choose {Refresh} to have {name} say it again. Saving records
                 the words as yours unless you left the agent's own untouched, and takes effect when the agent next starts.{cannot}
+
+                Peers read: {peers}{accepted}{said}{others}
                 """;
     }
 
@@ -325,7 +329,7 @@ internal enum ResponsibilityChoice
 internal sealed record ResponsibilityOutcome(ResponsibilityChoice Choice, string Text);
 
 /// <summary>The page itself: a description, one field, and three ways out.</summary>
-internal sealed class ResponsibilityDialog : Dialog
+internal sealed class ResponsibilityDialog : TableDialog<ResponsibilityDialog>, IKeyTable<ResponsibilityDialog>
 {
     private readonly TextField _field;
     private readonly Label _why;
@@ -337,6 +341,7 @@ internal sealed class ResponsibilityDialog : Dialog
     /// <param name="canSave">Whether the line can be written from here at all.</param>
     internal ResponsibilityDialog(string description, string line, bool canSave)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = Responsibility.Title;
         Width = Dim.Percent(80);
         Height = Dim.Percent(80);
@@ -353,12 +358,12 @@ internal sealed class ResponsibilityDialog : Dialog
         shown.TextFormatter.WordWrap = true;
 
         // The footer sits against the bottom, so the description keeps everything above it however tall the page is.
-        _field = new TextField { X = 1, Y = Pos.AnchorEnd(4), Width = Dim.Fill(2), Text = line };
+        _field = new TextField { HotKeySpecifier = Plain.NoHotKey, X = 1, Y = Pos.AnchorEnd(4), Width = Dim.Fill(2), Text = line };
         _why = new Plain { X = 1, Y = Pos.AnchorEnd(3), Width = Dim.Fill(2), Text = string.Empty };
-        _save = new Button { Title = Responsibility.Save, X = 1, Y = Pos.AnchorEnd(2), IsDefault = true, Enabled = canSave };
+        _save = new PlainButton { Title = Responsibility.Save, X = 1, Y = Pos.AnchorEnd(2), IsDefault = true, Enabled = canSave };
 
-        var refresh = new Button { Title = Responsibility.Refresh, X = Pos.Right(_save) + 1, Y = Pos.AnchorEnd(2) };
-        var close = new Button { Title = Responsibility.Close, X = Pos.Right(refresh) + 1, Y = Pos.AnchorEnd(2) };
+        var refresh = new PlainButton { Title = Responsibility.Refresh, X = Pos.Right(_save) + 1, Y = Pos.AnchorEnd(2) };
+        var close = new PlainButton { Title = Responsibility.Close, X = Pos.Right(refresh) + 1, Y = Pos.AnchorEnd(2) };
 
         _field.TextChanged += (_, _) => Check(canSave);
         _save.Accepting += (_, args) => { args.Handled = true; Finish(ResponsibilityChoice.Save); };
@@ -387,26 +392,31 @@ internal sealed class ResponsibilityDialog : Dialog
         Done?.Invoke(this, new ResponsibilityOutcome(choice, _field.Text));
 
     /// <inheritdoc/>
-    protected override bool OnKeyDown(Key key)
-    {
-        ArgumentNullException.ThrowIfNull(key);
-
-        if (key == Key.Esc)
-        {
-            Finish(ResponsibilityChoice.Close);
-
-            return true;
-        }
-
-        return base.OnKeyDown(key);
-    }
+    /// <remarks>Escape closes it, as everywhere; the line and the buttons take their own keys first.</remarks>
+    static CommandManager<ResponsibilityDialog> IKeyTable<ResponsibilityDialog>.BuildTable() => new(
+        [new(KeyContext.ResponsibilityDialog, [])],
+        [
+            new(
+                KeyContext.ResponsibilityDialog,
+                default,
+                Responsibility.Close,
+                KeyCommand.Doing<ResponsibilityDialog>(dialog => dialog.Finish(ResponsibilityChoice.Close)),
+                KeyCommand.Always,
+                Chord: Key.Esc),
+        ],
+        [
+            .. ReservedKey.Pressing(KeyContext.ResponsibilityDialog, "save, the default button"),
+            .. ReservedKey.Moving(KeyContext.ResponsibilityDialog),
+            .. ReservedKey.TakenBy(KeyContext.ResponsibilityDialog, () => new TextField { HotKeySpecifier = Plain.NoHotKey }, "the line"),
+            .. ReservedKey.Typing(KeyContext.ResponsibilityDialog, "the line"),
+        ]);
 
     private void Check(bool canSave)
     {
         var text = _field.Text;
         var problem = string.Empty;
 
-        if (text.Trim().Length > 0 && !OwnershipStatement.IsValid(text, out var wrong))
+        if (text.Trim().Length > 0 && !OwnershipStatement.IsLaunchable(text, out var wrong))
         {
             problem = wrong ?? string.Empty;
         }

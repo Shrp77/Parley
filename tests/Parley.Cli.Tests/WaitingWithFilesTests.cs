@@ -10,6 +10,7 @@ namespace Parley.Cli.Tests;
 /// so the plain call must keep printing two counts; and the flag must reach the command, which the tool's refusal of
 /// unknown options stopped it doing the first time it was written.
 /// </remarks>
+[Integration]
 public sealed class WaitingWithFilesTests : IAsyncDisposable
 {
     private readonly FileLocationFixture _files = new();

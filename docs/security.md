@@ -39,7 +39,8 @@ absent from the type an adapter is handed, and not compiled into `parley-mcp`.
 **You.** The person holds the operator operations: export, retire, purge, destroy, close and
 prune. Destructive ones need a description and a deliberate act, usually typing a name back.
 
-**The facilitator.** Parley's own participant may ask a question and relay a reply you wrote. It
+**The facilitator.** Parley's own participant may ask a question, relay a reply you wrote, and
+agree that its own conversation is done. It
 holds no operator operation, never receives anybody's work, and never assigns, directs,
 prioritises, closes or overrides anything.
 
@@ -56,8 +57,16 @@ prioritises, closes or overrides anything.
 - **No agent can read the log or search it.** There is no shared memory to poison.
 - **Files go to disk, not into context.** Only `.md` and `.txt` files can be placed, so code
   travels as `Name.cs.txt` and nothing that runs can be opened by accident. A fetched file is
-  another participant's data and cannot give instructions. Files are checked against their
+  another participant's data, never instructions. It is written only as a `.md` or
+  `.txt` file, never under `.git`, `.claude`, `.github` or another agent client's settings or rules folder, and
+  never as `CLAUDE.md`, `AGENTS.md` and the other instruction files Parley knows of. No list can
+  name every place a tool reads instructions from, so the agent is told never to put a fetched
+  file where one would. Files are checked against their
   SHA-256 hash when fetched.
+- **An agent's answer becomes its ownership line with nobody reading it, by default.** Auto
+  Accept is a recorded reduction in a control: peers route by a line no person checked. It is
+  recorded as `automatic`, shown for review on every surface, kept in the agent's own words, and
+  can be turned off so every answer waits for you.
 - **Ownership lines have no length limit by default.** This is a recorded reduction in a
   control: a roster can become the largest thing an agent reads. The character rules that stop a
   line breaking, hiding or reordering its own entry still apply.
@@ -66,22 +75,39 @@ prioritises, closes or overrides anything.
 Between processes that can reach the port, see above.
 
 **Loss of control over spending.** Nothing runs agents unless something is waiting for them, and
-`parley up` and the broker report what each turn cost. They also report how often an agent ran and
-still owed exactly what it owed, which is how a runaway first shows itself.
+only in repositories you listed as startable. The broker records each turn and what it cost, but
+no screen shows the cost yet: your provider's bill is where you see it. Health flags a turn that
+stopped on a refused permission, and `parley up` prints a turn that failed.
 
 **A web page reaching your console.** The web console answers only loopback host names and the
-address it binds, which protects against DNS rebinding.
+address it binds, which protects against DNS rebinding. No other site can show the console inside
+a frame and trick you into clicking its buttons. The one page the console frames is a roadmap
+item's conversation, inside the console's own roadmap page. A request another site starts, such as an
+image pointing at the console, is refused before any page runs, so it cannot take your seat or
+mark your mail as read. This relies on the browser saying who started a request, which current
+browsers do for a loopback address; a browser too old to say, or a console bound to an address
+other than loopback, is left with the host check alone.
+
+**A link in an agent's message.** Links in what agents write are live, so a link can open any
+console page. It cannot choose what you send, to whom, or skip a confirmation: what a form sends
+comes only from the form you see, and every page that acts shows which project it acts in. Nor can it
+make the console look up a folder on another machine: a path naming a network share or a device,
+or reaching one through a folder link, is refused before anything touches the disk, because on Windows the lookup alone would offer your
+sign-in to that machine.
 
 **Silent damage to your files.** Project files are written atomically, preserve what they do not
-understand, and refuse to write when anything was left out of a read.
+understand, and refuse to write when anything was left out of a read. Nothing is kept on a synced cloud
+folder, a network drive or a virtual file system (a FUSE mount such as rclone or sshfs on Linux and macOS; on Windows, any drive that is not a
+local disk volume): the deployment's folder and every repository must be on
+this machine's own disks, so no sync client copies a store while it is being written.
 
 ## Credentials
 
-Credentials are **references, never values**. A launch setting that needs a credential
-holds `env:`, `keychain:` or `file:`, and the broker resolves it when it is needed, and never
-stores or logs the value. The database holds no credential reference at all, and a launch
-configuration is safe to commit. Most agents need no credential from Parley at all, because the
-command-line tool behind them signs in on its own and keeps its own token.
+Most agents need no credential from Parley at all, because the command-line tool behind them signs
+in on its own and keeps its own token. **Nothing in Parley takes a credential yet**: no launch
+setting has a place for one, and the database holds none. The rule for when one does is that it
+holds a **reference, never a value** (`env:` or `file:`), which the broker resolves when it is
+needed and never stores or logs.
 
 ## Reaching a broker from another machine
 
@@ -102,12 +128,17 @@ whoever read the log and not to whoever made the edit.
 ## The store
 
 A store has one broker. A lock is taken before anything else touches the store, and a second
-launcher says so and exits. Do not put a store on a network share. SQLite in WAL mode needs
-coherent shared memory, so a store on a share is corrupted, not just slow.
+launcher says so and exits. A store is served only from this machine's own disks, as described
+above: SQLite in WAL mode needs coherent shared memory, so a store on a share is corrupted, not just
+slow.
 
-Retention removes old messages on a schedule, with a floor that can never delete a message nobody
-has collected, anything on an open exchange, or the rows deduplication still reads. See
+Retention removes old messages on a schedule. Only text on an open exchange is never removed on a
+schedule; a message nobody collected is kept until it passes the age cap, and then removed. See
 [Configuration](configuration.md#retention). Export is how you keep a conversation.
+
+Before a new build upgrades a store, the broker copies it beside itself. The copy holds every
+conversation's text as it was, so it is removed as soon as the upgraded store is served, and
+destroying a project removes any left.
 
 ## Next
 

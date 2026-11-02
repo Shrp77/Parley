@@ -13,19 +13,20 @@ namespace Parley.Client.Tests;
 /// broker can really return, and a state that could not be read is held to never reading as not started.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class ItemStatesTests
 {
     private static readonly AgentName Person = AgentName.Create("human-user@test");
     private static readonly AgentName Orders = AgentName.Create("orders@test");
     private static readonly AgentName Billing = AgentName.Create("billing@test");
 
-    private static ItemFacts Untouched() => new(false, 0, false, 0, 0, 0, null, null, false, null, []);
+    private static ItemFacts Untouched() => new(false, 0, false, 0, 0, 0, null, null, false, false, []);
 
     private static ItemFacts Open(bool collected, params long[] exchanges) =>
-        new(true, exchanges.Length, collected, 0, 0, 0, null, null, false, null, exchanges);
+        new(true, exchanges.Length, collected, 0, 0, 0, null, null, false, false, exchanges);
 
     private static ItemFacts Closed(int complete = 0, int blocked = 0, int closed = 0, string? blocker = null, string? by = null) =>
-        new(true, 0, false, complete, blocked, closed, blocker, by, false, null, []);
+        new(true, 0, false, complete, blocked, closed, blocker, by, false, false, []);
 
     private static RoadmapItem Item(int number, ItemFacts? facts, params int[] needs) =>
         new(number, number, number, $"Item {number}", null, needs, $"rm1-{number}", null, facts);
@@ -103,6 +104,42 @@ public sealed class ItemStatesTests
         Assert.Equal("permission", state.Blocker);
     }
 
+    [Theory]
+    [InlineData("person", 0, 0)]
+    [InlineData("person", 0, 1)]
+    [InlineData("consensus", 0, 0)]
+    [InlineData("person", 1, 0)]
+    [InlineData("consensus", 1, 0)]
+    public void A_blocked_item_whose_conversation_was_closed_reads_closed_names_its_blocker_and_is_never_done(
+        string closedBy, int complete, int closedWithoutAnAnswer)
+    {
+        // Found by review, round 26: an item blocked in a conversation nobody can ask in again read blocked for good. Then
+        // round 27: reading it closed dropped the blocker, though one agent may close a conversation holding nothing open,
+        // and with another part done it read done, and the item that needs it became next.
+        var standing = ItemStates.Of(
+            Plan(
+                Item(1, Closed(complete: complete, blocked: 1, closed: closedWithoutAnAnswer, blocker: "permission", by: closedBy)),
+                Item(2, Untouched(), 1)),
+            [],
+            Person);
+
+        Assert.Equal(ItemStanding.Closed, standing.Items[0].Standing);
+        Assert.Equal("permission", standing.Items[0].Blocker);
+        Assert.Null(standing.NextNumber);
+    }
+
+    [Fact]
+    public void Open_work_beside_a_blocked_part_reads_as_that_work_and_still_names_the_blocker()
+    {
+        // Found by review, round 28: an item sent to two agents read "in progress" with the other's block not shown.
+        var facts = new ItemFacts(true, 1, true, 0, 1, 0, "permission", null, false, false, [8]);
+
+        var state = ItemStates.Of(Plan(Item(1, facts)), [new WaitingEdge(Person, Billing, 8)], Person).Items[0];
+
+        Assert.Equal(ItemStanding.InProgress, state.Standing);
+        Assert.Equal("permission", state.Blocker);
+    }
+
     [Fact]
     public void Every_exchange_ending_in_a_result_is_done()
     {
@@ -122,7 +159,7 @@ public sealed class ItemStatesTests
     [Fact]
     public void A_destroyed_conversation_is_closed_and_not_not_started()
     {
-        var facts = new ItemFacts(false, 0, false, 0, 0, 0, null, null, true, null, []);
+        var facts = new ItemFacts(false, 0, false, 0, 0, 0, null, null, true, false, []);
 
         Assert.Equal(ItemStanding.Closed, Standing(facts));
     }
@@ -231,28 +268,15 @@ public sealed class ItemStatesTests
     // ---- the words
 
     [Fact]
-    public void An_items_text_changed_since_it_was_sent_is_said_and_unchanged_text_is_not()
+    public void An_item_edited_since_it_began_is_said_to_be_and_one_never_edited_is_not()
     {
-        var sent = new ItemFacts(true, 0, false, 1, 0, 0, null, null, false, "Item 1", []);
+        // The broker's fact, taken from the item's own edit record. The person may have trimmed or reworded the item's
+        // words in the box before sending, which is not the item being reworded.
+        var edited = new ItemFacts(true, 0, false, 1, 0, 0, null, null, false, true, []);
+        var untouched = new ItemFacts(true, 0, false, 1, 0, 0, null, null, false, false, []);
 
-        var same = ItemStates.Of(Plan(Item(1, sent)), [], Person).Items[0];
-
-        var reworded = ItemStates.Of(
-            Plan(new RoadmapItem(1, 1, 1, "Item 1 with headers", null, [], "rm1-1", null, sent)),
-            [],
-            Person).Items[0];
-
-        Assert.False(same.TextChanged);
-        Assert.True(reworded.TextChanged);
-    }
-
-    [Fact]
-    public void Text_the_agent_received_inside_a_frame_is_still_the_text_sent()
-    {
-        // The Request carries the person's words around the item's, so the comparison is containment.
-        var facts = new ItemFacts(true, 0, false, 1, 0, 0, null, null, false, "Start this: Item 1. Thanks.", []);
-
-        Assert.False(ItemStates.Of(Plan(Item(1, facts)), [], Person).Items[0].TextChanged);
+        Assert.True(ItemStates.Of(Plan(Item(1, edited)), [], Person).Items[0].TextChanged);
+        Assert.False(ItemStates.Of(Plan(Item(1, untouched)), [], Person).Items[0].TextChanged);
     }
 
     [Theory]

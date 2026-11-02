@@ -11,6 +11,7 @@ namespace Parley.Core.Tests;
 /// prints as two lines wherever it is shown, which is the forgery the transcript's column rule and every listing guard
 /// against.
 /// </remarks>
+[Unit]
 public sealed class NamesEndWhereTheyEndTests
 {
     [Theory]

@@ -20,6 +20,7 @@ namespace Parley.Web.Tests;
 /// more than two agents saw.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ExportTests
 {
     private static AgentName Orders => AgentName.Create("orders@alpha");

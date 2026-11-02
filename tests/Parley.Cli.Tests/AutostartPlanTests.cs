@@ -20,6 +20,7 @@ namespace Parley.Cli.Tests;
 /// testable and where the defects are.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class AutostartPlanTests
 {
     // **The root, not a store.** An entry serves this machine's projects, or the one it names with
