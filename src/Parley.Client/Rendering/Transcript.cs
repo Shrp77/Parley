@@ -58,8 +58,9 @@ public static class Transcript
 
         var messages = export.Messages;
         var exchanges = export.Exchanges;
+        // Both can come from a web page's query string, so they are flattened like a payload.
         var heading = new StringBuilder()
-            .Append(CultureInfo.InvariantCulture, $"Conversation {conversationId} in project {project}")
+            .Append(CultureInfo.InvariantCulture, $"Conversation {OneLine(conversationId)} in project {OneLine(project)}")
             .AppendLine();
 
         // The item's title is the person's text; flattened like a payload, so it cannot put a line of its own here.

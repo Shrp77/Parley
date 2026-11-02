@@ -713,12 +713,13 @@ public sealed class ResidentAgent : IAsyncDisposable
         {
             try
             {
-                // A line cannot nest deeper than it is long, so no line is skipped for its depth. The default of 64 lost
-                // a result whose refused tool call carried a deeply nested input, which the model writes: the turn timed
-                // out, its reply was owed and never came, and the refusal went unflagged (lens 2 run 139). The parse
-                // keeps its own stack, so a deep line costs memory in proportion to its length, never the call stack.
-                using var document = JsonDocument.Parse(
-                    line, new JsonDocumentOptions { MaxDepth = Math.Max(line.Length, 64) });
+                // The default depth of 64 lost a result whose refused tool call carried a deeply nested input, which the
+                // model writes: the turn timed out, its reply was owed and never came, and the refusal went unflagged
+                // (lens 2 run 139). 4096 keeps any input a model writes. It is a fixed number, not the line's length,
+                // because the parse's CPU time grows with the square of the depth: 64 thousand deep took two seconds and
+                // two million about forty minutes, all of it on this agent's pump (lens 2 run 140). A line deeper than
+                // this is not JSON here, as any other unreadable line is.
+                using var document = JsonDocument.Parse(line, new JsonDocumentOptions { MaxDepth = 4096 });
                 var root = document.RootElement;
 
                 if (root.ValueKind != JsonValueKind.Object)

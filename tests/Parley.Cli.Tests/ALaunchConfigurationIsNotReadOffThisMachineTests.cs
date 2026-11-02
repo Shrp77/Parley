@@ -112,27 +112,28 @@ public sealed class ALaunchConfigurationIsNotReadOffThisMachineTests : IDisposab
     {
         _ = _workspace.CreateSubdirectory(".git");
         LinkOrSkip("CLAUDE.md", @"\\192.0.2.219\s\c.md");
-        var said = new StringWriter();
+        var output = new StringWriter();
+        var error = new StringWriter();
 
         var watch = System.Diagnostics.Stopwatch.StartNew();
 
-        _ = await EnrollCommand.EnrolAsync(
+        var code = await EnrollCommand.EnrolAsync(
             [new EnrollmentEntry(_workspace.FullName, "orders", null, Unattended: true) { Enroll = true }],
             describe: true,
             new Resolved(Path.Combine(_elsewhere.FullName, "node.json"), ValueSource.Argument),
-            TextWriter.Null,
-            said,
+            output,
+            error,
             cancellationToken: Ct);
 
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), $"the path was looked up: {watch.Elapsed}");
 
-        // Lens 3 run 147: the refusal is about the instructions file, which is appended to, never merged into.
+        // The plan says what the write does: the file is left alone with the write's note, and the plan carries on.
+        Assert.Equal(string.Empty, error.ToString());
+        Assert.Equal(0, code);
         Assert.Contains(
-            $"{Path.Combine(_workspace.FullName, "CLAUDE.md")} cannot be read",
-            said.ToString(),
+            $"{Path.Combine(_workspace.FullName, "CLAUDE.md")}: left alone, ",
+            output.ToString(),
             StringComparison.Ordinal);
-        Assert.DoesNotContain(LaunchConfiguration.FileName, said.ToString(), StringComparison.Ordinal);
-        Assert.DoesNotContain("..", said.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

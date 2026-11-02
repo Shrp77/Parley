@@ -191,7 +191,7 @@ public static class Enrolment
     /// the read is safe where the write is not — and without it the plan would report a *create* for
     /// a file that plainly exists, which reads as a fault in the tool rather than as a link refused.
     /// </remarks>
-    private static async Task<string?> DeclinedTextAsync(
+    internal static async Task<string?> DeclinedTextAsync(
         string? declined,
         string path,
         CancellationToken cancellationToken)
@@ -330,9 +330,7 @@ public static class Enrolment
         // meant, and this cannot tell the two apart; the person can.
         if (Linked(path) is { } target)
         {
-            throw new InvalidDataException(
-                $"{path} is a link to {Quoting.Flat(target)}, so writing it would write somewhere "
-                + "outside this repository. Replace the link with a file, or remove it");
+            throw new InvalidDataException(LinkRefusal(path, target));
         }
 
         for (var attempt = 0; ; attempt++)
@@ -426,9 +424,26 @@ public static class Enrolment
         }
         catch (InvalidDataException linked)
         {
-            return (null, $"{path}: left alone, {linked.Message}");
+            return (null, Declining(path, linked.Message));
         }
     }
+
+    /// <summary>Why the standing instructions would be left alone, said without holding them.</summary>
+    /// <param name="path">Where they live.</param>
+    /// <returns>The note a write gives for them, or null when a write would hold them and write them.</returns>
+    /// <remarks>
+    /// For the plan, which holds nothing and must say what the write would do: it refused the whole plan for an
+    /// instructions file the write leaves alone and carries on past. The same test as
+    /// <see cref="HoldAsync"/>'s and the same words as <see cref="HoldInstructionsAsync"/>'s, so the two cannot differ.
+    /// </remarks>
+    internal static string? InstructionsDeclined(string path) =>
+        File.Exists(path) && Linked(path) is { } target ? Declining(path, LinkRefusal(path, target)) : null;
+
+    private static string LinkRefusal(string path, string target) =>
+        $"{path} is a link to {Quoting.Flat(target)}, so writing it would write somewhere "
+        + "outside this repository. Replace the link with a file, or remove it";
+
+    private static string Declining(string path, string why) => $"{path}: left alone, {why}";
 
     /// <summary>Whether a held file starts with a byte-order mark.</summary>
     /// <param name="stream">The handle.</param>

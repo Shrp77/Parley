@@ -80,6 +80,23 @@ public sealed class TheTextExportHoldsNoControlTests
         Assert.Contains("a" + Backslash + "u001Bb" + Backslash + "u0007c?d?e", written, StringComparison.Ordinal);
     }
 
+    // Lens 2 run 140: the web page passes the conversation and project from its query string, and the heading took both raw.
+    [Fact]
+    public void The_heading_carries_a_conversation_and_project_from_a_link_with_each_control_replaced()
+    {
+        var export = Settling();
+        var escape = ((char)0x1B).ToString();
+
+        var written = Transcript.Write(
+            "inv" + escape + "]52;c;eA==" + (char)0x07 + "\r\nFAKE",
+            "al" + escape + "pha",
+            export.Messages,
+            export.Exchanges);
+
+        Assert.StartsWith("Conversation inv?]52;c;eA==?" + Backslash + "nFAKE in project al?pha", written, StringComparison.Ordinal);
+        Assert.DoesNotContain(escape, written, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void The_export_holds_no_character_that_breaks_a_line_but_its_own_line_ends()
     {

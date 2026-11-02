@@ -862,10 +862,6 @@ public static class EnrollCommand
                 project?.Name.Value,
                 nodeWorkspace: listed[entry.Agent]?["workspace"]?.GetValue<string>());
 
-            // The file a refusal below is about. Only the launch configuration is ever merged into; the instructions
-            // file can stop a plan only by leading off this machine.
-            var refusing = launchPath;
-
             try
             {
                 // Deciding and writing happen under one hold when this is going to write. Reporting
@@ -882,25 +878,33 @@ public static class EnrollCommand
                     // `plan` writes nothing, so both files are read plainly here. Holding them would
                     // be a lock taken to describe a file and released before anything acted on it. Walked
                     // first, as every read of a repository's files is (lens 2 run 126).
-                    foreach (var read in new[] { launchPath, instructionsPath })
+                    if (OffMachineLinks.LeadsOffThisMachine(launchPath))
                     {
-                        if (OffMachineLinks.LeadsOffThisMachine(read))
-                        {
-                            refusing = read;
-
-                            throw new InvalidDataException(
-                                $"{read} leads to another machine, and Parley does not look up a path there");
-                        }
+                        throw new InvalidDataException(
+                            $"{launchPath} leads to another machine, and Parley does not look up a path there");
                     }
+
+                    // The instructions file is decided as the write decides it: a link is left alone with the
+                    // write's note and the plan carries on, read only as far as the write reads a declined one. It
+                    // refused the whole plan, a preview saying something other than what happens.
+                    var declined = Enrolment.InstructionsDeclined(instructionsPath);
 
                     plan = Decide(
                         File.Exists(launchPath)
                             ? await StrictJson.ReadFileAsync(launchPath, cancellationToken).ConfigureAwait(false)
                             : null,
-                        // Prose of any length, so not bounded as the JSON beside it is (lens 3 run 147).
-                        File.Exists(instructionsPath)
-                            ? await File.ReadAllTextAsync(instructionsPath, cancellationToken).ConfigureAwait(false)
-                            : null);
+                        declined is not null
+                            ? await Enrolment.DeclinedTextAsync(declined, instructionsPath, cancellationToken)
+                                .ConfigureAwait(false)
+                            // Prose of any length, so not bounded as the JSON beside it is (lens 3 run 147).
+                            : !OffMachineLinks.LeadsOffThisMachine(instructionsPath) && File.Exists(instructionsPath)
+                                ? await File.ReadAllTextAsync(instructionsPath, cancellationToken).ConfigureAwait(false)
+                                : null);
+
+                    if (declined is not null && plan.Instructions is not null)
+                    {
+                        said = [declined];
+                    }
                 }
             }
             catch (Exception ex) when (ex is JsonException or InvalidDataException)
@@ -908,12 +912,10 @@ public static class EnrollCommand
                 // Refused rather than merged into. Everything this cannot merge is somebody's
                 // own file in a shape it does not understand, and the failure of the alternative
                 // is silent: the entries it could not read are simply not in what gets written.
+                // Only the launch configuration refuses: the instructions file is declined with a note, in both modes.
                 await error.WriteLineAsync(
-                    string.Equals(refusing, launchPath, StringComparison.Ordinal)
-                        ? $"{entry.Agent}: {launchPath} cannot be merged into — {OneSentence(ex.Message)}\n"
-                          + "Fix or move it first; enrolling would replace what is there."
-                        : $"{entry.Agent}: {refusing} cannot be read — {OneSentence(ex.Message)}\n"
-                          + "Replace it with a file on this machine first.").ConfigureAwait(false);
+                    $"{entry.Agent}: {launchPath} cannot be merged into — {OneSentence(ex.Message)}\n" +
+                    "Fix or move it first; enrolling would replace what is there.").ConfigureAwait(false);
 
                 // Say where it stopped. Validation is hoisted ahead of every write so that a set is never
                 // half applied, but this refusal cannot be hoisted: knowing it means reading each
