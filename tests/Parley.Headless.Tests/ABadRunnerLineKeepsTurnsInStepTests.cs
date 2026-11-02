@@ -46,6 +46,17 @@ public sealed class ABadRunnerLineKeepsTurnsInStepTests : IDisposable
         {"type":"result","subtype":"success","is_error":false,"result":"four","num_turns":1,"total_cost_usd":4,"permission_denials":[]}
         """;
 
+    // A result whose refused tool call carried an input nested 200 deep, as the model can write (lens 2 run 139).
+    private static readonly string DeepDenialResult =
+        "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"deep\",\"num_turns\":1,"
+        + "\"total_cost_usd\":5,\"permission_denials\":[{\"tool_name\":\"Bash\",\"tool_input\":"
+        + string.Concat(Enumerable.Repeat("{\"a\":", 200)) + "0" + new string('}', 200) + "}]}";
+
+    // The turn after it, ordinary.
+    private const string AfterDeepResult = """
+        {"type":"result","subtype":"success","is_error":false,"result":"after","num_turns":1,"total_cost_usd":6,"permission_denials":[]}
+        """;
+
     private readonly string _workspace =
         Path.Combine(Path.GetTempPath(), "parley-bad-line-" + Guid.NewGuid().ToString("N"));
 
@@ -102,5 +113,28 @@ public sealed class ABadRunnerLineKeepsTurnsInStepTests : IDisposable
         Assert.Equal(4, fourth.CostUsd, 3);
         Assert.Equal("four", fourth.Reply);
         Assert.True(agent.IsAlive);
+    }
+
+    [Fact]
+    public async Task A_result_with_a_deeply_nested_refused_call_completes_its_turn()
+    {
+        var template = StubRunner.Scripted(_workspace, [DeepDenialResult], [AfterDeepResult]);
+
+        await using var agent = ResidentAgent.Start(
+            AgentName.Create("billing@test"), InvocationCommand.Parse(template), _workspace, TimeProvider.System);
+
+        var deep = await agent.TakeTurnAsync("1", Patience, Ct);
+
+        Assert.True(deep.Succeeded, deep.Describe());
+        Assert.False(deep.TimedOut);
+        Assert.Equal(5, deep.CostUsd, 3);
+        Assert.Equal(1, deep.PermissionDenials);
+        Assert.Equal("deep", deep.Reply);
+
+        var after = await agent.TakeTurnAsync("2", Patience, Ct);
+
+        Assert.True(after.Succeeded, after.Describe());
+        Assert.Equal(6, after.CostUsd, 3);
+        Assert.Equal("after", after.Reply);
     }
 }

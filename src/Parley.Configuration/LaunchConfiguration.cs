@@ -96,7 +96,7 @@ public sealed record LaunchConfiguration
 
         try
         {
-            using var document = StrictJson.Document(File.ReadAllText(path));
+            using var document = StrictJson.Document(StrictJson.ReadFile(path));
             var root = document.RootElement;
 
             if (root.ValueKind != JsonValueKind.Object)

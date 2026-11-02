@@ -205,9 +205,9 @@ public static class Enrolment
 
         try
         {
-            return await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+            return await StrictJson.ReadFileAsync(path, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
         {
             return null;
         }
@@ -352,13 +352,29 @@ public static class Enrolment
     /// <param name="stream">The handle.</param>
     /// <param name="cancellationToken">Stops the read.</param>
     /// <returns>Its text.</returns>
+    /// <exception cref="InvalidDataException">The file is larger than <see cref="StrictJson.MostBytes"/>.</exception>
+    /// <remarks>
+    /// Bounded for the reason <see cref="StrictJson.MostBytes"/> gives, and refused as everything else here this cannot
+    /// act on is. The broker reads a repository's launch configuration this way when an ownership line is accepted.
+    /// </remarks>
     internal static async Task<string> ReadHeldAsync(FileStream stream, CancellationToken cancellationToken)
     {
         stream.Position = 0;
 
-        using var reader = new StreamReader(stream, leaveOpen: true);
+        return await Bounded(StrictJson.ReadAsync(stream, cancellationToken), stream.Name).ConfigureAwait(false);
+    }
 
-        return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+    // A file refused for its size, as the InvalidDataException every caller here already reports.
+    private static async Task<string> Bounded(Task<string> read, string path)
+    {
+        try
+        {
+            return await read.ConfigureAwait(false);
+        }
+        catch (System.Text.Json.JsonException tooLarge)
+        {
+            throw new InvalidDataException($"{path} cannot be read: {tooLarge.Message}", tooLarge);
+        }
     }
 
     /// <summary>Takes the standing instructions for the length of a read-modify-write.</summary>
@@ -631,9 +647,10 @@ public static class Enrolment
         try
         {
             // Walked before it is read, as every launch configuration is (lens 2 run 126).
-            return !OffMachineLinks.LeadsOffThisMachine(path) && File.Exists(path) ? File.ReadAllText(path) : null;
+            return !OffMachineLinks.LeadsOffThisMachine(path) && File.Exists(path) ? StrictJson.ReadFile(path) : null;
         }
-        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        catch (Exception failure)
+            when (failure is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
         {
             return null;
         }
@@ -931,7 +948,8 @@ public static class Enrolment
                 using var holding = held;
 
                 var text = held is null
-                    ? await File.ReadAllTextAsync(launchPath, cancellationToken).ConfigureAwait(false)
+                    ? await Bounded(StrictJson.ReadFileAsync(launchPath, cancellationToken), launchPath)
+                        .ConfigureAwait(false)
                     : await ReadHeldAsync(held, cancellationToken).ConfigureAwait(false);
 
                 JsonNode? parsed;
@@ -1153,7 +1171,7 @@ public static class Enrolment
         }
 
         return ParseCatalogue(
-            await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false), path);
+            await Bounded(StrictJson.ReadFileAsync(path, cancellationToken), path).ConfigureAwait(false), path);
     }
 
     /// <summary>Reads a catalogue's text, refusing shapes that writing over would destroy.</summary>

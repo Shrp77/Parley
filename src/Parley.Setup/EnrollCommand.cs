@@ -427,7 +427,7 @@ public static class EnrollCommand
             }
 
             return File.Exists(path)
-                ? LaunchEntries.Read(StrictJson.Parse(File.ReadAllText(path))?["mcpServers"] as JsonObject)
+                ? LaunchEntries.Read(StrictJson.Parse(StrictJson.ReadFile(path))?["mcpServers"] as JsonObject)
                 : [];
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException
@@ -750,9 +750,19 @@ public static class EnrollCommand
         // startable. The single-repository path was given this and the bulk one was not.
         using var nodeHeld = await Enrolment.HoldAsync(nodePath, cancellationToken).ConfigureAwait(false);
 
-        var node = nodeHeld is null
-            ? ReadNode(nodePath)
-            : ReadNodeText(await Enrolment.ReadHeldAsync(nodeHeld, cancellationToken).ConfigureAwait(false));
+        JsonObject? node;
+
+        try
+        {
+            node = nodeHeld is null
+                ? ReadNode(nodePath)
+                : ReadNodeText(await Enrolment.ReadHeldAsync(nodeHeld, cancellationToken).ConfigureAwait(false));
+        }
+        catch (InvalidDataException)
+        {
+            // Too large to read, which is unreadable like any other.
+            node = null;
+        }
 
         if (node is null)
         {
@@ -879,10 +889,10 @@ public static class EnrollCommand
 
                     plan = Decide(
                         File.Exists(launchPath)
-                            ? await File.ReadAllTextAsync(launchPath, cancellationToken).ConfigureAwait(false)
+                            ? await StrictJson.ReadFileAsync(launchPath, cancellationToken).ConfigureAwait(false)
                             : null,
                         File.Exists(instructionsPath)
-                            ? await File.ReadAllTextAsync(instructionsPath, cancellationToken).ConfigureAwait(false)
+                            ? await StrictJson.ReadFileAsync(instructionsPath, cancellationToken).ConfigureAwait(false)
                             : null);
                 }
             }
@@ -1129,7 +1139,7 @@ public static class EnrollCommand
 
         try
         {
-            return StrictJson.Parse(File.ReadAllText(path))?.AsObject() ?? [];
+            return StrictJson.Parse(StrictJson.ReadFile(path))?.AsObject() ?? [];
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException)
         {

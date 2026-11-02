@@ -133,8 +133,9 @@ public static class Transcript
 
             if (Reading.Settled(message, whole) is { Count: > 0 } settled)
             {
-                // Each question's start is already one line: Reading.Settled collapses every run of whitespace.
-                written.Append("  ").AppendLine(Reading.SettledLine(settled));
+                // Each question's start is the asker's own words, so it takes the payload's rule: Reading.Settled
+                // collapses whitespace and nothing else, and an escape sequence in a question reached the file raw.
+                written.Append("  ").AppendLine(OneLine(Reading.SettledLine(settled)));
             }
 
             if (Reading.RoleRequest(message, whole) is { } role)
@@ -155,9 +156,9 @@ public static class Transcript
         return written.ToString();
     }
 
-    /// <summary>Flattens a payload so it cannot occupy a line of its own.</summary>
+    /// <summary>Flattens a payload so it cannot occupy a line of its own, or do anything but read as text.</summary>
     /// <param name="payload">The message's payload, as the agent wrote it.</param>
-    /// <returns>The payload on one line.</returns>
+    /// <returns>The payload on one line, with nothing a terminal or editor would act on.</returns>
     /// <remarks>
     /// <para>
     /// The one place this file is not a straight copy of what the broker returned, and the reason
@@ -184,10 +185,27 @@ public static class Transcript
     /// string, where <c>\n</c> already appears as those two characters. Doubling them would make
     /// the common case render wrongly to defend a case the schema does not permit.
     /// </para>
+    /// <para>
+    /// Every other character <see cref="PrintableLine.Breaks"/> names is then replaced one for one, as the command
+    /// line's own neutraliser does. JSON refuses a raw C0 control inside a string but not DEL, a C1 control such as
+    /// <c>U+009B</c> (a terminal's one-byte CSI), or <c>U+202E</c>, and the downloaded file is read with <c>cat</c> or
+    /// <c>type</c>, which hand an escape sequence to the terminal to clear the screen or set the clipboard, or in an
+    /// editor that reverses the line after an override (lens 2 run 139).
+    /// </para>
     /// </remarks>
-    private static string OneLine(string? payload) =>
-        (payload ?? string.Empty)
+    private static string OneLine(string? payload)
+    {
+        var flat = (payload ?? string.Empty)
             .Replace("\r\n", "\\n", StringComparison.Ordinal)
             .Replace("\r", "\\n", StringComparison.Ordinal)
             .Replace("\n", "\\n", StringComparison.Ordinal);
+        var inert = new StringBuilder(flat.Length);
+
+        foreach (var rune in flat.EnumerateRunes())
+        {
+            inert.Append(PrintableLine.Breaks(rune) ? "?" : rune.ToString());
+        }
+
+        return inert.ToString();
+    }
 }

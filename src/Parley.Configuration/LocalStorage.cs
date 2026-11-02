@@ -163,7 +163,7 @@ public static class LocalStorage
                 return null;
             }
 
-            using var document = StrictJson.Document(File.ReadAllText(info));
+            using var document = StrictJson.Document(StrictJson.ReadFile(info));
 
             // The file is Dropbox's, and a top level that is not an object would throw from EnumerateObject; a bad file
             // there names no folder rather than stopping every check (review, lens 1 run 69).

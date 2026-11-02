@@ -132,13 +132,16 @@ public static class OwnershipLine
                        "not enrolled from here. Nothing has been written.";
             }
 
-            var text = await Enrolment.ReadHeldAsync(held, cancellationToken).ConfigureAwait(false);
             var mark = Enrolment.HeldHasByteOrderMark(held);
 
             JsonObject root;
 
             try
             {
+                // Read inside the refusal: the broker calls this, and a file refused for its size is an answer here like
+                // any other unreadable one, never a throw through the facilitator's pass.
+                var text = await Enrolment.ReadHeldAsync(held, cancellationToken).ConfigureAwait(false);
+
                 root = StrictJson.Parse(text) as JsonObject
                        ?? throw new InvalidDataException("the file is not a JSON object.");
             }

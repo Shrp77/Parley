@@ -139,7 +139,7 @@ internal sealed class AddressBook(string? path)
 
         try
         {
-            if (Parley.Configuration.StrictJson.Parse(File.ReadAllText(path)) is JsonObject projects)
+            if (Parley.Configuration.StrictJson.Parse(Parley.Configuration.StrictJson.ReadFile(path)) is JsonObject projects)
             {
                 foreach (var (project, value) in projects)
                 {

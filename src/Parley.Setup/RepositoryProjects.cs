@@ -75,7 +75,7 @@ public static class RepositoryProjects
         try
         {
             root = Parley.Configuration.StrictJson.Parse(
-                File.ReadAllText(launch),
+                Parley.Configuration.StrictJson.ReadFile(launch),
                 new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
         }
         catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException or JsonException)

@@ -140,7 +140,7 @@ public sealed class NodeCatalogue
 
         try
         {
-            using var document = StrictJson.Document(File.ReadAllText(path));
+            using var document = StrictJson.Document(StrictJson.ReadFile(path));
 
             if (!document.RootElement.TryGetProperty("agents", out var agents)
                 || agents.ValueKind != JsonValueKind.Object)

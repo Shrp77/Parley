@@ -45,6 +45,126 @@ public static class StrictJson
     /// <summary>What a refused name or string that is not valid text reads as, wherever it is shown.</summary>
     public const string BrokenTextMessage = "A name or string in it is not valid Unicode text.";
 
+    /// <summary>The most bytes a file read through this class may hold.</summary>
+    /// <remarks>
+    /// The largest file read this way is a node's catalogue, a few hundred bytes for each agent on one machine; a
+    /// repository's launch configuration is a few hundred bytes for each project it answers in. A mebibyte is thousands
+    /// of times either, so no file anybody wrote by hand or by a tool reaches it. Without a bound a repository's
+    /// <c>.mcp.json</c> past about a billion characters threw <see cref="OutOfMemoryException"/>, which no reader catches,
+    /// out of the node's catalogue scan, and ended the node with every resident agent on the machine (lens 2 run 139).
+    /// Anybody who can write in a repository can write that file, an agent working in it included.
+    /// </remarks>
+    public const int MostBytes = 1 << 20;
+
+    /// <summary>What a file refused for its size reads as, wherever it is shown.</summary>
+    public const string TooLargeMessage = "It holds more than 1 MiB, which is more than Parley reads from one file.";
+
+    /// <summary>Reads a file's text, refusing one larger than <see cref="MostBytes"/> without reading it.</summary>
+    /// <param name="path">The file.</param>
+    /// <returns>Its text, decoded as <see cref="File.ReadAllText(string)"/> decodes it.</returns>
+    /// <exception cref="JsonException">The file is larger than <see cref="MostBytes"/>.</exception>
+    /// <exception cref="IOException">The file could not be read.</exception>
+    /// <exception cref="UnauthorizedAccessException">The file may not be read.</exception>
+    public static string ReadFile(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+
+        return Read(stream);
+    }
+
+    /// <summary>Reads a file's text, refusing one larger than <see cref="MostBytes"/> without reading it.</summary>
+    /// <param name="path">The file.</param>
+    /// <param name="cancellationToken">Stops the read.</param>
+    /// <returns>Its text, decoded as <see cref="File.ReadAllText(string)"/> decodes it.</returns>
+    /// <exception cref="JsonException">The file is larger than <see cref="MostBytes"/>.</exception>
+    /// <exception cref="IOException">The file could not be read.</exception>
+    /// <exception cref="UnauthorizedAccessException">The file may not be read.</exception>
+    public static async Task<string> ReadFileAsync(string path, CancellationToken cancellationToken)
+    {
+        var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true);
+
+        await using (stream.ConfigureAwait(false))
+        {
+            return await ReadAsync(stream, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Reads a stream's text from where it stands, refusing more than <see cref="MostBytes"/>.</summary>
+    /// <param name="stream">The stream, left open.</param>
+    /// <returns>Its text.</returns>
+    /// <exception cref="JsonException">More than <see cref="MostBytes"/> remain.</exception>
+    /// <remarks>
+    /// The length is checked before anything is read, and the read stops at the bound too, so a file that grows after
+    /// the check is refused rather than read whole.
+    /// </remarks>
+    public static string Read(Stream stream)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+
+        using var buffer = Bounded(stream);
+        var chunk = new byte[81920];
+        int read;
+
+        while ((read = stream.Read(chunk)) > 0)
+        {
+            Append(buffer, chunk, read);
+        }
+
+        return Decoded(buffer);
+    }
+
+    /// <summary>Reads a stream's text from where it stands, refusing more than <see cref="MostBytes"/>.</summary>
+    /// <param name="stream">The stream, left open.</param>
+    /// <param name="cancellationToken">Stops the read.</param>
+    /// <returns>Its text.</returns>
+    /// <exception cref="JsonException">More than <see cref="MostBytes"/> remain.</exception>
+    public static async Task<string> ReadAsync(Stream stream, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+
+        using var buffer = Bounded(stream);
+        var chunk = new byte[81920];
+        int read;
+
+        while ((read = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            Append(buffer, chunk, read);
+        }
+
+        return Decoded(buffer);
+    }
+
+    // Refused on the length alone when the stream has one, so a file of a billion characters is never read at all.
+    private static MemoryStream Bounded(Stream stream)
+    {
+        if (stream.CanSeek && stream.Length - stream.Position > MostBytes)
+        {
+            throw new JsonException(TooLargeMessage);
+        }
+
+        return new MemoryStream();
+    }
+
+    private static void Append(MemoryStream buffer, byte[] chunk, int read)
+    {
+        if (buffer.Length + read > MostBytes)
+        {
+            throw new JsonException(TooLargeMessage);
+        }
+
+        buffer.Write(chunk, 0, read);
+    }
+
+    // UTF-8 unless a byte-order mark says otherwise, which is what File.ReadAllText does.
+    private static string Decoded(MemoryStream buffer)
+    {
+        buffer.Position = 0;
+
+        using var reader = new StreamReader(buffer, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+
+        return reader.ReadToEnd();
+    }
+
     /// <summary>Parses text into a node, refusing a duplicated member and text that does not decode.</summary>
     /// <param name="text">The text.</param>
     /// <param name="options">Any other reading options; its duplicate setting is ignored.</param>
