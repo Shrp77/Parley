@@ -186,12 +186,15 @@ public sealed class ProbeOneTests : IDisposable
         Assert.Contains(withdrawal.Notes, note => note.Contains("left alone", StringComparison.Ordinal));
         Assert.Empty(withdrawal.Written);
 
-        await Assert.ThrowsAsync<InvalidDataException>(() => Enrolment.AddAsync(
+        // Refused at the parse since duplicates are refused there (lens 2 run 137), with the fixed sentence the
+        // terminal's enrolment says in its own words; it catches JsonException beside InvalidDataException.
+        var refused = await Assert.ThrowsAsync<System.Text.Json.JsonException>(() => Enrolment.AddAsync(
             Entry(Workspace, "inventory"),
             "alpha",
             CatalogueFor("alpha"),
             Path.Combine(Workspace, "CLAUDE.md"),
             TestContext.Current.CancellationToken));
+        Assert.Equal(Parley.Configuration.StrictJson.DuplicateMessage, refused.Message);
 
         // Nothing touched it, which is the whole of what a file this cannot read is owed.
         Assert.Equal(before, await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken));
