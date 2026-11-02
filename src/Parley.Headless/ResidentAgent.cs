@@ -684,9 +684,8 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// the parse and outside its catch. Here the pump is a line's only reader and takes every field it will ever use at
     /// the parse, under one catch, so neither can happen. Refusing costs a reply: a result line skipped leaves its turn
     /// to time out, its reply is counted owed to nobody and never comes, and every later turn waits on it (lens 1 run
-    /// 132). So a member named twice reads as its last copy (<see cref="JsonElement.TryGetProperty(string, out JsonElement)"/>
-    /// documents that), a member whose name is not valid text is never looked up, a field that cannot be decoded reads
-    /// as absent, and only a line that is not JSON at all is skipped.
+    /// 132). So a member named twice reads as its last copy, a member whose name is not valid text is passed over, a field
+    /// that cannot be decoded reads as absent, and only a line that is not JSON at all is skipped.
     /// </para>
     /// <para>
     /// Nothing else is kept, so nothing in the line is decoded later: a lone surrogate escape in a nested object, which
@@ -722,18 +721,20 @@ public sealed class ResidentAgent : IAsyncDisposable
                     return null;
                 }
 
+                var members = Members(root);
+
                 return new RunnerEvent(
-                    String(root, "type"),
-                    String(root, "subtype"),
-                    String(root, "session_id"),
-                    root.TryGetProperty("is_error", out var error) && error.ValueKind == JsonValueKind.True,
-                    String(root, "stop_reason"),
-                    Number(root, "total_cost_usd"),
-                    (int)Number(root, "num_turns"),
-                    root.TryGetProperty("permission_denials", out var denials) && denials.ValueKind == JsonValueKind.Array
+                    String(members, "type"),
+                    String(members, "subtype"),
+                    String(members, "session_id"),
+                    members.TryGetValue("is_error", out var error) && error.ValueKind == JsonValueKind.True,
+                    String(members, "stop_reason"),
+                    Number(members, "total_cost_usd"),
+                    (int)Number(members, "num_turns"),
+                    members.TryGetValue("permission_denials", out var denials) && denials.ValueKind == JsonValueKind.Array
                         ? denials.GetArrayLength()
                         : 0,
-                    String(root, "result"));
+                    String(members, "result"));
             }
             catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException)
             {
@@ -741,11 +742,38 @@ public sealed class ResidentAgent : IAsyncDisposable
             }
         }
 
-        private static string? String(JsonElement root, string name)
+        // The top-level members by name, read forward once, so a later copy replaces an earlier one. Each name is decoded
+        // on its own and one that is not valid text is passed over: looking a name up decodes every name it compares
+        // against, so a lone surrogate escape beside the one sought threw for any sought name sharing its unescaped
+        // start, and the result line was lost (lens 1 run 133).
+        private static Dictionary<string, JsonElement> Members(JsonElement root)
+        {
+            var members = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+
+            foreach (var member in root.EnumerateObject())
+            {
+                string name;
+
+                try
+                {
+                    name = member.Name;
+                }
+                catch (InvalidOperationException)
+                {
+                    continue;
+                }
+
+                members[name] = member.Value;
+            }
+
+            return members;
+        }
+
+        private static string? String(Dictionary<string, JsonElement> members, string name)
         {
             try
             {
-                return root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+                return members.TryGetValue(name, out var value) && value.ValueKind == JsonValueKind.String
                     ? value.GetString()
                     : null;
             }
@@ -756,8 +784,8 @@ public sealed class ResidentAgent : IAsyncDisposable
             }
         }
 
-        private static double Number(JsonElement root, string name) =>
-            root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number
+        private static double Number(Dictionary<string, JsonElement> members, string name) =>
+            members.TryGetValue(name, out var value) && value.ValueKind == JsonValueKind.Number
                 && value.TryGetDouble(out var number)
                 ? number
                 : 0;

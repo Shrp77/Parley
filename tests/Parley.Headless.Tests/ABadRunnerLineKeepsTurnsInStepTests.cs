@@ -35,9 +35,10 @@ public sealed class ABadRunnerLineKeepsTurnsInStepTests : IDisposable
         {"type":"result","subtype":"success","is_error":false,"result":"stale","result":"two","num_turns":1,"total_cost_usd":0,"total_cost_usd":2,"permission_denials":[]}
         """;
 
-    // The third turn's result, with a lone surrogate in a top-level name and in the reply itself.
+    // The third turn's result, with lone surrogates in top-level names and in the reply itself. The names start with nothing
+    // and with 't', so looking up "type" or "is_error" past them decodes them (lens 1 run 133: a name starting 'T' did not).
     private const string BrokenTopLevelResult = """
-        {"type":"result","T\uD800":0,"subtype":"success","is_error":false,"result":"three\uD800","num_turns":1,"total_cost_usd":3,"permission_denials":[]}
+        {"type":"result","\uD800":0,"t\uD800":0,"subtype":"success","is_error":false,"result":"three\uD800","num_turns":1,"total_cost_usd":3,"permission_denials":[]}
         """;
 
     // The fourth turn's result, ordinary.
