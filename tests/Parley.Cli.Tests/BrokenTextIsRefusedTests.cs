@@ -105,9 +105,15 @@ public sealed class BrokenTextIsRefusedTests
     {
         Assert.Equal(default, EnrollmentPlan.IdentityIn(NestedName));
     }
+}
 
+/// <summary>That a repository whose launch file holds text that is not valid reads as unreadable, not as a throw.</summary>
+/// <remarks>The file half of <see cref="BrokenTextIsRefusedTests"/>, which parses the same texts in memory.</remarks>
+[Integration]
+public sealed class ALaunchFileHoldingBrokenTextIsUnreadableTests
+{
     [Theory]
-    [MemberData(nameof(Broken))]
+    [MemberData(nameof(BrokenTextIsRefusedTests.Broken), MemberType = typeof(BrokenTextIsRefusedTests))]
     public void A_repository_whose_launch_file_holds_it_reads_as_unreadable(string text)
     {
         var workspace = Directory.CreateTempSubdirectory("parley-broken-text-");

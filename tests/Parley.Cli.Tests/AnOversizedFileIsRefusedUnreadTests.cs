@@ -14,15 +14,23 @@ namespace Parley.Cli.Tests;
 /// <remarks>
 /// Lens 2 run 139: a repository's <c>.mcp.json</c> past about a billion characters threw
 /// <see cref="OutOfMemoryException"/> out of the read, past every catch, through the node's catalogue scan, and ended
-/// the node with every resident agent on the machine.
+/// the node with every resident agent on the machine. The stream cases, which touch no file, are
+/// <see cref="AnOversizedStreamIsRefusedUnreadTests"/>.
 /// </remarks>
-[Unit]
+[Integration]
 public sealed class AnOversizedFileIsRefusedUnreadTests : IDisposable
 {
     private readonly string _workspace =
         Path.Combine(Path.GetTempPath(), "parley-oversized-" + Guid.NewGuid().ToString("N"));
 
-    public AnOversizedFileIsRefusedUnreadTests() => Directory.CreateDirectory(_workspace);
+    private readonly string _elsewhere =
+        Path.Combine(Path.GetTempPath(), "parley-oversized-elsewhere-" + Guid.NewGuid().ToString("N"));
+
+    public AnOversizedFileIsRefusedUnreadTests()
+    {
+        Directory.CreateDirectory(_workspace);
+        Directory.CreateDirectory(_elsewhere);
+    }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -30,7 +38,10 @@ public sealed class AnOversizedFileIsRefusedUnreadTests : IDisposable
     {
         try
         {
+            // A link is deleted as itself, before anything recursive runs.
+            File.Delete(Path.Combine(_workspace, "CLAUDE.md"));
             Directory.Delete(_workspace, recursive: true);
+            Directory.Delete(_elsewhere, recursive: true);
         }
         catch (IOException)
         {
@@ -68,27 +79,6 @@ public sealed class AnOversizedFileIsRefusedUnreadTests : IDisposable
         File.WriteAllText(marked, "{}", new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
 
         Assert.Equal("{}", StrictJson.ReadFile(marked));
-    }
-
-    [Fact]
-    public void A_stream_that_says_it_is_too_long_is_refused_before_one_byte_is_read()
-    {
-        using var huge = new Unreadable(length: 2L * int.MaxValue);
-
-        var refused = Assert.Throws<JsonException>(() => StrictJson.Read(huge));
-
-        Assert.Equal(StrictJson.TooLargeMessage, refused.Message);
-        Assert.Equal(0, huge.Reads);
-    }
-
-    [Fact]
-    public async Task A_stream_with_no_length_is_read_only_as_far_as_the_bound()
-    {
-        using var endless = new Endless();
-
-        await Assert.ThrowsAsync<JsonException>(() => StrictJson.ReadAsync(endless, Ct));
-
-        Assert.True(endless.Served <= StrictJson.MostBytes + 81920, $"read {endless.Served} bytes");
     }
 
     [Fact]
@@ -153,6 +143,35 @@ public sealed class AnOversizedFileIsRefusedUnreadTests : IDisposable
         Assert.StartsWith(prose, File.ReadAllText(instructions), StringComparison.Ordinal);
     }
 
+    // Lens 3 run 148: a linked instructions file is declined, and its text is read for the plan's sake; read as JSON is
+    // read, a long one stopped the enrolment with a refusal that blamed .mcp.json.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task An_instructions_file_linked_to_a_long_file_on_this_machine_is_left_alone(bool describe)
+    {
+        var target = Path.Combine(_elsewhere, "CLAUDE.md");
+        var prose = "# Orders\n\n" + new string('x', StrictJson.MostBytes) + "\n";
+        File.WriteAllText(target, prose, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        var instructions = Path.Combine(_workspace, "CLAUDE.md");
+
+        try
+        {
+            _ = File.CreateSymbolicLink(instructions, target);
+        }
+        catch (Exception refused) when (refused is IOException or UnauthorizedAccessException)
+        {
+            Assert.Skip("This machine does not let this user make a symbolic link (Windows without Developer Mode).");
+        }
+
+        var (code, output, error) = await EnrolAsync(describe);
+
+        Assert.Equal(string.Empty, error);
+        Assert.Equal(0, code);
+        Assert.Contains($"{instructions}: left alone, ", output, StringComparison.Ordinal);
+        Assert.Equal(prose, File.ReadAllText(target));
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -199,91 +218,5 @@ public sealed class AnOversizedFileIsRefusedUnreadTests : IDisposable
         File.WriteAllText(path, text, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
 
         return path;
-    }
-
-    // A stream that claims a length and counts any attempt to read it.
-    private sealed class Unreadable(long length) : Stream
-    {
-        public int Reads { get; private set; }
-
-        public override bool CanRead => true;
-
-        public override bool CanSeek => true;
-
-        public override bool CanWrite => false;
-
-        public override long Length => length;
-
-        public override long Position { get; set; }
-
-        public override int Read(byte[] buffer, int offset, int count)
-        {
-            Reads++;
-
-            return 0;
-        }
-
-        public override int Read(Span<byte> buffer)
-        {
-            Reads++;
-
-            return 0;
-        }
-
-        public override void Flush()
-        {
-        }
-
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-
-        public override void SetLength(long value) => throw new NotSupportedException();
-
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-    }
-
-    // A stream with no length that never ends, counting what it has served.
-    private sealed class Endless : Stream
-    {
-        public long Served { get; private set; }
-
-        public override bool CanRead => true;
-
-        public override bool CanSeek => false;
-
-        public override bool CanWrite => false;
-
-        public override long Length => throw new NotSupportedException();
-
-        public override long Position
-        {
-            get => throw new NotSupportedException();
-            set => throw new NotSupportedException();
-        }
-
-        public override int Read(byte[] buffer, int offset, int count)
-        {
-            Array.Fill(buffer, (byte)' ', offset, count);
-            Served += count;
-
-            return count;
-        }
-
-        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
-        {
-            buffer.Span.Fill((byte)' ');
-            Served += buffer.Length;
-
-            return ValueTask.FromResult(buffer.Length);
-        }
-
-        public override void Flush()
-        {
-        }
-
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-
-        public override void SetLength(long value) => throw new NotSupportedException();
-
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }

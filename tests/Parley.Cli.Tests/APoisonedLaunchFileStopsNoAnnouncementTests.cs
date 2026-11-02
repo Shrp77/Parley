@@ -15,7 +15,7 @@ namespace Parley.Cli.Tests;
 /// <see cref="NodeCatalogue.Announceable"/>, and ended the node, which under <c>parley up</c> stops every resident agent
 /// on the machine. The value case was older than the strict parse: it threw when the agent's name was read.
 /// </remarks>
-[Unit]
+[Integration]
 public sealed class APoisonedLaunchFileStopsNoAnnouncementTests : IDisposable
 {
     private const string Clean = """
