@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.48.2, protocol 0.9, schema 4. Nothing has been released, but **live stores hold work
+- Version 0.48.3, protocol 0.9, schema 4. Nothing has been released, but **live stores hold work
   in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
   `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
   upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
@@ -356,23 +356,33 @@ Decided and built. The reasoning is in `SPEC.md`, the feature's `research.md` an
 - **Turns.** The node reports each turn's start and end (`Nodes.ReportTurn`). Running turns
   live in the broker's memory, not a table. An older node reads as *unknown*, never *stopped*.
   A permission-refused stop is flagged at once.
-- **Terminal keys.** Every action is Alt plus a letter and menus open with F10, so a plain
-  character is never an action. A focused view is offered a key before the surface's own
-  handler, so Enter is taken on the box itself. Enter sends; Shift+Enter, Ctrl+Enter or
-  backslash then Enter make a line break. A conversation is tailed only for a reader at its
-  end. Every command is registered in a table (`CommandManager<T>`: the surface's in `ShellCommands.cs`,
-  each dialog's in the dialog, every dialog a place of its own, read-only ones included) with the place it is
-  live in and a condition for whether it is live now; dispatch, the status line, the menus and a button label
-  that names a key read only it. Each place also reserves the keys its views take first (a list's cursor keys,
-  the box's editing keys, a pane's own Enter). A table refuses to build when a command shares a key with
-  another claim in a place, its layers included, or is unreachable, plain or has both a letter and a chord;
-  the tool builds every table (`CommandTables.BuildEvery`) before it takes the console, so a refusal is a
-  plain message saying which kind and exit 70. `CommandTableTests` holds the check. `KeysTakenBeforeTheTableTests`
-  (both unit) finds every view opened as a session by reflection and fails on one with no place, presses every
-  key at every pane and dialog, and reads every `OnKeyDown`: a surface arm's key must be claimed in the place
-  it names (in every place when it names none), any other read of the key fails, and a dialog's handler may
-  only ask its table. `NoTwoActionsShareAKeyTests` and `KeysNeedAModifierTests` hold the
-  drawn surface to it.
+- **Terminal keys.** Every action is Alt plus a letter, or a declared chord, and menus open with
+  F10. A plain character is never an action; the only unmodified keys a command may have are
+  Enter, Space and Escape, and Space only where nothing types. A focused view is offered a key
+  before the surface's own handler, so Enter is taken on the box itself. Enter sends; Shift+Enter,
+  Ctrl+Enter or backslash then Enter make a line break. A conversation is tailed only for a reader
+  at its end. Every key is declared in one table per type (`CommandManager<T>`, built by the type's
+  `IKeyTable<T>.BuildTable` and listed once in `CommandTables`): the surface's in `ShellCommands.cs`,
+  each dialog's in the dialog, every dialog a place of its own, read-only ones included. A table holds
+  commands (named on screen, with the place they are live in and a condition for whether they are live
+  now), the keys views take first (a list's cursor keys, the box's editing keys, a list's own Enter) and
+  the keys the surface takes with no label (`KeyHandler<T>`: Tab, Ctrl+Q, F8, F10, a pane's Enter, the
+  completion list's arrows). Dispatch, the status line, the menus and a button label that names a key read
+  only it; button labels are `Name (Key)`. No key handler is written by hand: every dialog derives from
+  `TableDialog<T>`, whose sealed `OnKeyDown` only asks its table, and `Shell.OnKeyDown` is a fixed body
+  that does the same. The only key-event subscriptions are in `KeyRouting.cs`. A table refuses to build
+  when a command shares a key with another claim in a place, its layers included, or is unreachable,
+  plain or has both a letter and a chord; the tool builds every table (`CommandTables.BuildEvery`) before
+  it takes the console, so a refusal is a plain message saying which kind and exit 70.
+  `CommandTableTests` holds the check. `KeysTakenBeforeTheTableTests` (both unit) holds the rest by
+  reflection: every view opened as a session builds a table, is listed and derives from
+  `TableDialog<T>` (the surface aside); the only key handler overrides are the dialog base's and the
+  surface's, and each calls only what it names; the only key-event subscriptions are `KeyRouting`'s
+  four. It also presses every pane and dialog in memory with every named key and its chords, Alt and
+  Ctrl with each letter, and plain letters, digits and a few marks: a key taken must be claimed in its
+  place, and a plain character taken by a view that does not type fails whatever claims it. Tab is not
+  pressed, and a key a view binds is read from its bindings rather than pressed. `NoTwoActionsShareAKeyTests`
+  and `KeysNeedAModifierTests` hold the drawn surface to it.
 - **Dialogs open on the thread that draws.** The work queue runs on the thread pool and most dialogs open after a read,
   so `Prompting.Open` hands the open to the loop (`Prompting.Marshal`, set by `TerminalCommand`). Never open one
   from the pool directly. What the loop has not started within five seconds is given up, never done late (a late

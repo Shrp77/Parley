@@ -25,13 +25,16 @@ public sealed class CommandTableTests
     private static KeyCommand<Shell> Extra(KeyContext context, char key, string name) =>
         new(context, key, name, _ => Task.CompletedTask, KeyCommand.Always);
 
+    /// <summary>The surface's real table, as the terminal builds it.</summary>
+    private static readonly CommandManager<Shell> Surface = CommandTables.Of<Shell>();
+
     private static CommandManager<Shell> With(params KeyCommand<Shell>[] extra) =>
-        new(Shell.Places, [.. Shell.Registered, .. extra], Shell.Reserved);
+        new(Surface.Places, [.. Surface.Commands, .. extra], Surface.Reserved, Surface.Handlers);
 
     [Fact]
     public void The_real_table_has_no_key_claimed_twice_in_any_place()
     {
-        var table = new CommandManager<Shell>(Shell.Places, Shell.Registered, Shell.Reserved);
+        var table = CommandTables.Of<Shell>();
 
         // Non-vacuity: both halves of the clash that was found are in the table, in the places they were found in.
         Assert.Contains(table.Commands, c => c.Context == KeyContext.Plans && c.Key == PlanView.EditKey);
@@ -77,11 +80,11 @@ public sealed class CommandTableTests
     [Fact]
     public void Putting_the_message_lines_key_back_on_edit_refuses_naming_both_and_the_place()
     {
-        var table = Shell.Registered
+        var table = Surface.Commands
             .Select(c => c.Context == KeyContext.MessageLine && c.Key == Shell.WholeKey ? c with { Key = PlanView.EditKey } : c)
             .ToList();
 
-        var refused = Assert.Throws<InvalidOperationException>(() => new CommandManager<Shell>(Shell.Places, table, Shell.Reserved));
+        var refused = Assert.Throws<InvalidOperationException>(() => new CommandManager<Shell>(Surface.Places, table, Surface.Reserved, Surface.Handlers));
 
         Assert.Contains(Shell.WholeTitle, refused.Message, StringComparison.Ordinal);
         Assert.Contains(Revising.Title, refused.Message, StringComparison.Ordinal);
@@ -167,7 +170,7 @@ public sealed class CommandTableTests
 
         var refused = Assert.Throws<InvalidOperationException>(() => With(tab));
 
-        Assert.Contains("the next pane", refused.Message, StringComparison.Ordinal);
+        Assert.Contains(Shell.NextPaneName, refused.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -204,10 +207,11 @@ public sealed class CommandTableTests
     public void A_dialog_is_held_to_the_same_check()
     {
         // Confirm and edit on one letter in the proposal dialog: the second would never run.
-        var table = ProposalView.Registered.Select(c => c.Name == "Edit" ? c with { Key = 'c' } : c).ToList();
+        var real = CommandTables.Of<ProposalView>();
+        var table = real.Commands.Select(c => c.Name == "Edit" ? c with { Key = 'c' } : c).ToList();
 
         var refused = Assert.Throws<InvalidOperationException>(
-            () => new CommandManager<ProposalView>(ProposalView.Places, table, ProposalView.Reserved));
+            () => new CommandManager<ProposalView>(real.Places, table, real.Reserved));
 
         Assert.Contains($"in {nameof(KeyContext.ProposalDialog)}:", refused.Message, StringComparison.Ordinal);
         Assert.Contains("Confirm", refused.Message, StringComparison.Ordinal);
@@ -216,15 +220,15 @@ public sealed class CommandTableTests
     [Fact]
     public void Every_dialog_goes_back_on_escape_from_its_table()
     {
-        Assert.Contains(PlanView.Registered, c => Key.Esc.Equals(c.Chord));
-        Assert.Contains(ProposalView.Registered, c => Key.Esc.Equals(c.Chord));
-        Assert.Contains(TickDialog.Registered, c => Key.Esc.Equals(c.Chord));
-        Assert.Contains(ResponsibilityDialog.Registered, c => Key.Esc.Equals(c.Chord));
-        Assert.Contains(TextDialog.Registered, c => Key.Esc.Equals(c.Chord));
-        Assert.Contains(ChoiceDialog.Registered, c => Key.Esc.Equals(c.Chord));
-        Assert.Contains(FormDialog.Registered, c => Key.Esc.Equals(c.Chord));
-        Assert.Contains(Browsing.Registered, c => Key.Esc.Equals(c.Chord));
-        Assert.Contains(LogView.Registered, c => Key.Esc.Equals(c.Chord));
+        Assert.Contains(CommandTables.Of<PlanView>().Commands, c => Key.Esc.Equals(c.Chord));
+        Assert.Contains(CommandTables.Of<ProposalView>().Commands, c => Key.Esc.Equals(c.Chord));
+        Assert.Contains(CommandTables.Of<TickDialog>().Commands, c => Key.Esc.Equals(c.Chord));
+        Assert.Contains(CommandTables.Of<ResponsibilityDialog>().Commands, c => Key.Esc.Equals(c.Chord));
+        Assert.Contains(CommandTables.Of<TextDialog>().Commands, c => Key.Esc.Equals(c.Chord));
+        Assert.Contains(CommandTables.Of<ChoiceDialog>().Commands, c => Key.Esc.Equals(c.Chord));
+        Assert.Contains(CommandTables.Of<FormDialog>().Commands, c => Key.Esc.Equals(c.Chord));
+        Assert.Contains(CommandTables.Of<Browsing>().Commands, c => Key.Esc.Equals(c.Chord));
+        Assert.Contains(CommandTables.Of<LogView>().Commands, c => Key.Esc.Equals(c.Chord));
     }
 
     [Fact]
@@ -244,7 +248,7 @@ public sealed class CommandTableTests
         var plain = new KeyCommand<Shell>(KeyContext.Agents, default, "Plain", _ => Task.CompletedTask, KeyCommand.Always, Chord: Key.J);
         var both = new KeyCommand<Shell>(KeyContext.Agents, 'j', "Both", _ => Task.CompletedTask, KeyCommand.Always, Chord: Key.J.WithAlt);
         var tab = new KeyCommand<Shell>(KeyContext.Agents, default, "Tabbed", _ => Task.CompletedTask, KeyCommand.Always, Chord: Key.Tab);
-        var places = Shell.Places.Where(place => place.Context != KeyContext.Roadmaps).ToList();
+        var places = Surface.Places.Where(place => place.Context != KeyContext.Roadmaps).ToList();
 
         Assert.Equal(Starts + "a command is bound to a plain character.", First(() => With(plain)));
         Assert.Equal(Starts + "a command has both a letter and a chord, or neither.", First(() => With(both)));
@@ -255,7 +259,7 @@ public sealed class CommandTableTests
             First(() => With(tab, Extra(KeyContext.Projects, Shell.ClearKey, "Clash"))));
         Assert.Equal(
             Starts + "a command is registered in a place nothing declares.",
-            First(() => new CommandManager<Shell>(places, Shell.Registered, Shell.Reserved)));
+            First(() => new CommandManager<Shell>(places, Surface.Commands, Surface.Reserved, Surface.Handlers)));
     }
 
     [Fact]
@@ -288,13 +292,15 @@ public sealed class CommandTableTests
     [Fact]
     public void Every_label_that_names_a_key_reads_it_from_its_dialogs_table()
     {
-        Assert.Equal("Edit roadmap (" + KeyCommand.Stroke(PlanView.Registered, "Edit roadmap") + ")", PlanView.EditLabel);
+        Assert.Equal("Edit roadmap (" + KeyCommand.Stroke(CommandTables.Of<PlanView>().Commands, "Edit roadmap") + ")", PlanView.EditLabel);
         Assert.Equal("Edit roadmap (Alt+e)", PlanView.EditLabel);
         Assert.Equal("Close (Esc)", PlanView.CloseLabel);
-        Assert.Equal("Confirm Alt+c", ProposalView.ConfirmLabel);
-        Assert.Equal("Edit Alt+e", ProposalView.EditLabel);
-        Assert.Equal("Decline Alt+d", ProposalView.DeclineLabel);
-        Assert.Equal("Leave Esc", ProposalView.LeaveLabel);
+
+        // One format on every button that names a key: the name, then the key in brackets.
+        Assert.Equal("Confirm (Alt+c)", ProposalView.ConfirmLabel);
+        Assert.Equal("Edit (Alt+e)", ProposalView.EditLabel);
+        Assert.Equal("Decline (Alt+d)", ProposalView.DeclineLabel);
+        Assert.Equal("Leave (Esc)", ProposalView.LeaveLabel);
         Assert.Equal("Space: tick   Alt+a: all   Alt+n: none   Enter: go   Esc: cancel", TickDialog.KeysLine(paged: false));
         Assert.Equal(
             "Space: tick   Alt+a: all   Alt+n: none   PageUp/PageDown: page   Enter: go   Esc: cancel", TickDialog.KeysLine(paged: true));
@@ -329,8 +335,105 @@ public sealed class CommandTableTests
     [Fact]
     public void A_command_in_a_place_nothing_declares_is_refused()
     {
-        var places = Shell.Places.Where(place => place.Context != KeyContext.Roadmaps).ToList();
+        var places = Surface.Places.Where(place => place.Context != KeyContext.Roadmaps).ToList();
 
-        Assert.Throws<InvalidOperationException>(() => new CommandManager<Shell>(places, Shell.Registered, Shell.Reserved));
+        Assert.Throws<InvalidOperationException>(() => new CommandManager<Shell>(places, Surface.Commands, Surface.Reserved, Surface.Handlers));
+    }
+
+    [Fact]
+    public void A_printable_mark_is_as_plain_as_a_letter()
+    {
+        // Typing a question mark into a box is typing, whatever the mark: the check once refused letters and digits only.
+        var marked = new KeyCommand<Shell>(KeyContext.Agents, default, "Marked", _ => Task.CompletedTask, KeyCommand.Always, Chord: new Key('?'));
+        var refused = Assert.Throws<InvalidOperationException>(() => With(marked));
+
+        Assert.StartsWith("a command is bound to a plain character.", refused.Message, StringComparison.Ordinal);
+
+        // Space, Enter and Escape are the chords a person presses unmodified, and are not refused for it.
+        Assert.False(CommandManager<Shell>.Printable(Key.Space));
+        Assert.False(CommandManager<Shell>.Printable(Key.Enter));
+        Assert.False(CommandManager<Shell>.Printable(Key.Esc));
+        Assert.True(CommandManager<Shell>.Printable(new Key('j')));
+        Assert.True(CommandManager<Shell>.Printable(new Key('J')));
+    }
+
+    [Fact]
+    public void A_key_the_surface_takes_itself_is_held_to_the_same_check()
+    {
+        static KeyHandler<string> Handler(KeyContext context, Key key, string name) => new(context, key, name, _ => true);
+
+        KeyPlace[] places = [new(KeyContext.Projects, [])];
+        var command = new KeyCommand<string>(KeyContext.Projects, default, "Commanded", _ => Task.CompletedTask, KeyCommand.Always, Chord: Key.F5);
+
+        // On a command's key: the command would be named and the handler would never be reached, or the other way round.
+        var under = Assert.Throws<InvalidOperationException>(
+            () => new CommandManager<string>(places, [command], [], [Handler(KeyContext.Projects, Key.F5, "Handled")]));
+
+        Assert.StartsWith("a command is on a key taken before any command.", under.Message, StringComparison.Ordinal);
+        Assert.Contains("Handled", under.Message, StringComparison.Ordinal);
+
+        // Two on one key: only one could ever run.
+        var twice = Assert.Throws<InvalidOperationException>(
+            () => new CommandManager<string>(places, [], [], [Handler(KeyContext.Projects, Key.F5, "One"), Handler(KeyContext.Projects, Key.F5, "Two")]));
+
+        Assert.StartsWith("two keys the surface takes itself share a key.", twice.Message, StringComparison.Ordinal);
+
+        // On a plain character, or in no place.
+        Assert.StartsWith(
+            "a key the surface takes is a plain character.",
+            Assert.Throws<InvalidOperationException>(() => new CommandManager<string>(places, [], [], [Handler(KeyContext.Projects, new Key('x'), "Typed")])).Message,
+            StringComparison.Ordinal);
+        Assert.StartsWith(
+            "a key the surface takes is in a place nothing declares.",
+            Assert.Throws<InvalidOperationException>(() => new CommandManager<string>(places, [], [], [Handler(KeyContext.Agents, Key.F5, "Nowhere")])).Message,
+            StringComparison.Ordinal);
+
+        // Beside a view's own reservation of the key it is not a clash: the view takes it while it has focus, and what it
+        // declines reaches the handler.
+        _ = new CommandManager<string>(places, [], [new(KeyContext.Projects, Key.F5, "a view")], [Handler(KeyContext.Projects, Key.F5, "Handled")]);
+    }
+
+    [Fact]
+    public void A_key_is_answered_by_the_live_command_then_the_handler_then_kept_or_passed_on()
+    {
+        var ran = new List<string>();
+        var live = false;
+        KeyPlace[] places = [new(KeyContext.Projects, [])];
+        var table = new CommandManager<string>(
+            places,
+            [
+                new(KeyContext.Projects, default, "Back", _ => { ran.Add("back"); return Task.CompletedTask; }, _ => live, Chord: Key.Esc, KeepsKey: true),
+                new(KeyContext.Projects, default, "Refresh", _ => { ran.Add("refresh"); return Task.CompletedTask; }, _ => live, Chord: Key.F5),
+            ],
+            [],
+            [
+                new(KeyContext.Projects, Key.Tab, "Moved", _ => { ran.Add("moved"); return true; }),
+                new(KeyContext.Projects, Key.F6, "Declined", _ => { ran.Add("declined"); return false; }),
+            ]);
+
+        // Not live: Escape is kept and runs nothing, a command's other key is passed on, and a handler answers for itself.
+        Assert.True(table.Take(KeyContext.Projects, "x", Key.Esc));
+        Assert.False(table.Take(KeyContext.Projects, "x", Key.F5));
+        Assert.True(table.Take(KeyContext.Projects, "x", Key.Tab));
+        Assert.False(table.Take(KeyContext.Projects, "x", Key.F6));
+        Assert.False(table.Take(KeyContext.Projects, "x", Key.F7));
+        Assert.Equal(["moved", "declined"], ran);
+
+        live = true;
+        ran.Clear();
+
+        Assert.True(table.Take(KeyContext.Projects, "x", Key.Esc));
+        Assert.True(table.Take(KeyContext.Projects, "x", Key.F5));
+        Assert.Equal(["back", "refresh"], ran);
+    }
+
+    [Fact]
+    public void Escape_on_the_surface_is_kept_where_there_is_nowhere_to_go_back_to()
+    {
+        // Passed on from the top it would reach the toolkit, which ends the program on it.
+        var back = Assert.Single(Surface.Commands, command => Key.Esc.Equals(command.Chord) && command.Context == KeyContext.Everywhere);
+
+        Assert.True(back.KeepsKey);
+        Assert.DoesNotContain(Surface.Commands, command => command.KeepsKey && command != back);
     }
 }

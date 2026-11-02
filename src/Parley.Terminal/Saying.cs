@@ -1,8 +1,6 @@
 using System.Collections.ObjectModel;
 using Terminal.Gui.App;
-using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
-using Terminal.Gui.Views;
 
 namespace Parley.Terminal;
 
@@ -26,12 +24,11 @@ namespace Parley.Terminal;
 /// breaks inserted here the surface's own rather than something a payload chose.
 /// </para>
 /// </remarks>
-internal sealed class Saying : Dialog
+internal sealed class Saying : TableDialog<Saying>, IKeyTable<Saying>
 {
     /// <summary>What the dialog is called.</summary>
     internal const string Heading = "The whole message";
 
-    private readonly CommandManager<Saying> _commands = new(Places, Registered, Reserved);
     private readonly ObservableCollection<string> _lines = [];
 
     internal Saying(string said, int width)
@@ -56,37 +53,18 @@ internal sealed class Saying : Dialog
     /// <summary>Every line this dialog shows.</summary>
     internal IReadOnlyList<string> Shown => _lines;
 
-    /// <summary>This dialog's place in the command tables, with nothing of the surface's layered on it.</summary>
-    internal static IReadOnlyList<KeyPlace> Places => [new(KeyContext.SayingDialog, [])];
-
-    /// <summary>What a key does here: nothing of its own.</summary>
-    /// <remarks>
-    /// Read-only, so there is nothing to do but read and leave. Escape leaves through the toolkit, which ends the session
-    /// on top when no view in it takes the key.
-    /// </remarks>
-    internal static IReadOnlyList<KeyCommand<Saying>> Registered => [];
-
-    /// <summary>What the lines take before this dialog is offered a key.</summary>
-    internal static IReadOnlyList<ReservedKey> Reserved =>
-    [
-        .. ReservedKey.Moving(KeyContext.SayingDialog),
-        .. ReservedKey.TakenBy(KeyContext.SayingDialog, () => Lists.Filling(), "the lines"),
-    ];
-
     /// <inheritdoc/>
-    protected override bool OnKeyDown(Key key)
-    {
-        ArgumentNullException.ThrowIfNull(key);
-
-        if (_commands.Answering(KeyContext.SayingDialog, this, key) is { } chosen)
-        {
-            _ = chosen.Run();
-
-            return true;
-        }
-
-        return base.OnKeyDown(key);
-    }
+    /// <remarks>
+    /// No command of its own: read-only, so there is nothing to do but read and leave. Escape leaves through the toolkit,
+    /// which ends the session on top when no view in it takes the key. The lines take their own keys first.
+    /// </remarks>
+    static CommandManager<Saying> IKeyTable<Saying>.BuildTable() => new(
+        [new(KeyContext.SayingDialog, [])],
+        [],
+        [
+            .. ReservedKey.Moving(KeyContext.SayingDialog),
+            .. ReservedKey.TakenBy(KeyContext.SayingDialog, () => Lists.Filling(), "the lines"),
+        ]);
 
     /// <summary>Shows a message whole.</summary>
     /// <param name="app">The application.</param>

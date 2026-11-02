@@ -29,10 +29,10 @@ namespace Parley.Terminal;
 /// from. On a long roadmap the next item can be far down, so a key goes back to it from anywhere.
 /// </para>
 /// </remarks>
-internal sealed class PlanView : Dialog
+internal sealed class PlanView : TableDialog<PlanView>, IKeyTable<PlanView>
 {
-    /// <summary>Said on the button that opens an item.</summary>
-    private const string OpenLabel = "Open item (Enter)";
+    /// <summary>Said on the button that opens an item: the list's own Enter, which is no command of this table's.</summary>
+    private static readonly string OpenLabel = KeyCommand.Label("Open item", Key.Enter.ToString());
 
     /// <summary>The letter, with Alt, that edits the roadmap.</summary>
     internal const char EditKey = 'e';
@@ -63,7 +63,6 @@ internal sealed class PlanView : Dialog
         "An item that has not started opens an empty conversation with its text in the box, "
         + "and nothing is sent until you send it.";
 
-    private readonly CommandManager<PlanView> _commands = new(Places, Registered, Reserved);
     private readonly ListView _items;
     private readonly View _detail;
     private readonly RoadmapStanding _standing;
@@ -120,7 +119,7 @@ internal sealed class PlanView : Dialog
 
         var detailHeading = new Plain { Text = "The item", X = 1, Y = Pos.AnchorEnd(FooterRows + DetailRows + 1), Width = Dim.Fill(2), Height = 1 };
 
-        _detail = Entry.Reader(string.Empty, Choose);
+        _detail = Entry.Reader(string.Empty, this);
         _detail.X = 1;
         _detail.Y = Pos.AnchorEnd(FooterRows + DetailRows);
         _detail.Width = Dim.Fill(2);
@@ -212,53 +211,29 @@ internal sealed class PlanView : Dialog
         return Safe.Lines(string.Join('\n', lines));
     }
 
-    /// <summary>This view's place in the command tables, with nothing of the surface's layered on it.</summary>
-    internal static IReadOnlyList<KeyPlace> Places => [new(KeyContext.RoadmapDialog, [])];
-
-    /// <summary>What a key does here: what each button is labelled with, and Escape.</summary>
-    internal static IReadOnlyList<KeyCommand<PlanView>> Registered =>
-    [
-        new(KeyContext.RoadmapDialog, NextKey, NextName, KeyCommand.Doing<PlanView>(view => view.GoToNext()), KeyCommand.Always),
-        new(KeyContext.RoadmapDialog, EditKey, EditName, KeyCommand.Doing<PlanView>(view => view.Edit()), KeyCommand.Always),
-        new(KeyContext.RoadmapDialog, default, CloseName, KeyCommand.Doing<PlanView>(view => view.Close()), KeyCommand.Always, Chord: Key.Esc),
-    ];
+    /// <inheritdoc/>
+    /// <remarks>
+    /// What each button is labelled with, and Escape; and what the items, the item's text and the buttons take before
+    /// this view is offered a key.
+    /// </remarks>
+    static CommandManager<PlanView> IKeyTable<PlanView>.BuildTable() => new(
+        [new(KeyContext.RoadmapDialog, [])],
+        [
+            new(KeyContext.RoadmapDialog, NextKey, NextName, KeyCommand.Doing<PlanView>(view => view.GoToNext()), KeyCommand.Always),
+            new(KeyContext.RoadmapDialog, EditKey, EditName, KeyCommand.Doing<PlanView>(view => view.Edit()), KeyCommand.Always),
+            new(KeyContext.RoadmapDialog, default, CloseName, KeyCommand.Doing<PlanView>(view => view.Close()), KeyCommand.Always, Chord: Key.Esc),
+        ],
+        [
+            .. ReservedKey.Pressing(KeyContext.RoadmapDialog, "open the item, or the focused button"),
+            .. ReservedKey.Moving(KeyContext.RoadmapDialog),
+            .. ReservedKey.TakenBy(KeyContext.RoadmapDialog, () => new ListView { KeystrokeNavigator = null }, "the items"),
+            .. ReservedKey.TakenBy(KeyContext.RoadmapDialog, () => Entry.Reader(string.Empty), "the item's text"),
+        ]);
 
     /// <summary>A button's label: the command's name and the key the table gives it.</summary>
     /// <param name="name">The command.</param>
     /// <returns>The label.</returns>
-    private static string Labelled(string name) => $"{name} ({KeyCommand.Stroke(Registered, name)})";
-
-    /// <summary>What the items, the item's text and the buttons take before this view is offered a key.</summary>
-    internal static IReadOnlyList<ReservedKey> Reserved =>
-    [
-        .. ReservedKey.Pressing(KeyContext.RoadmapDialog, "open the item, or the focused button"),
-        .. ReservedKey.Moving(KeyContext.RoadmapDialog),
-        .. ReservedKey.TakenBy(KeyContext.RoadmapDialog, () => new ListView { KeystrokeNavigator = null }, "the items"),
-        .. ReservedKey.TakenBy(KeyContext.RoadmapDialog, () => Entry.Reader(string.Empty), "the item's text"),
-    ];
-
-    /// <inheritdoc/>
-    protected override bool OnKeyDown(Key key)
-    {
-        ArgumentNullException.ThrowIfNull(key);
-
-        return Choose(key) || base.OnKeyDown(key);
-    }
-
-    /// <summary>Runs what a key does here, from the command table.</summary>
-    /// <param name="key">What arrived.</param>
-    /// <returns>Whether it ran anything.</returns>
-    private bool Choose(Key key)
-    {
-        if (_commands.Answering(KeyContext.RoadmapDialog, this, key) is not { } chosen)
-        {
-            return false;
-        }
-
-        _ = chosen.Run();
-
-        return true;
-    }
+    private static string Labelled(string name) => CommandTables.Of<PlanView>().Label(name);
 
     /// <summary>Leaves the view without choosing.</summary>
     private void Close() => Closed?.Invoke(this, EventArgs.Empty);

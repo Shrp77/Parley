@@ -130,22 +130,17 @@ internal sealed class MenuBarView(
         var menu = new PopoverMenu(Views(items));
 
         // **Left and Right go to the neighbouring menu**, because F10 opens only the first and a bar a person can enter
-        // and not cross is half a bar. Taken on the menu's own key event, which runs before its bindings do.
-        menu.KeyDown += (_, key) =>
+        // and not cross is half a bar.
+        KeyRouting.Walking(menu, by =>
         {
-            if (key == Key.CursorRight || key == Key.CursorLeft)
+            var next = (at + by + offered.Count) % offered.Count;
+            var now = menus();
+
+            if (now.Count > 0)
             {
-                key.Handled = true;
-
-                var next = (at + (key == Key.CursorRight ? 1 : -1) + offered.Count) % offered.Count;
-                var now = menus();
-
-                if (now.Count > 0)
-                {
-                    OpenAt(now, Math.Min(next, now.Count - 1));
-                }
+                OpenAt(now, Math.Min(next, now.Count - 1));
             }
-        };
+        });
 
         popovers.Register(menu);
 

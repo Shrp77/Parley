@@ -3,9 +3,7 @@ using System.Globalization;
 using Parley.Client.Rendering;
 using Parley.Core;
 using Terminal.Gui.App;
-using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
-using Terminal.Gui.Views;
 
 namespace Parley.Terminal;
 
@@ -25,9 +23,8 @@ namespace Parley.Terminal;
 /// every row is indented, and everything drawn goes through <see cref="Safe.Text"/>.
 /// </para>
 /// </remarks>
-internal sealed class Health : Dialog
+internal sealed class Health : TableDialog<Health>, IKeyTable<Health>
 {
-    private readonly CommandManager<Health> _commands = new(Places, Registered, Reserved);
     private readonly ObservableCollection<string> _lines = [];
 
     internal Health(string project, IReadOnlyList<string> lines)
@@ -52,37 +49,19 @@ internal sealed class Health : Dialog
     /// <summary>Every line this dialog shows.</summary>
     internal IReadOnlyList<string> Shown => _lines;
 
-    /// <summary>This dialog's place in the command tables, with nothing of the surface's layered on it.</summary>
-    internal static IReadOnlyList<KeyPlace> Places => [new(KeyContext.HealthDialog, [])];
-
-    /// <summary>What a key does here: nothing of its own.</summary>
-    /// <remarks>
-    /// Read-only, so there is nothing to do but read and leave. Escape leaves through the toolkit, which ends the session
-    /// on top when no view in it takes the key, as it does for <see cref="Saying"/>.
-    /// </remarks>
-    internal static IReadOnlyList<KeyCommand<Health>> Registered => [];
-
-    /// <summary>What the lines take before this dialog is offered a key.</summary>
-    internal static IReadOnlyList<ReservedKey> Reserved =>
-    [
-        .. ReservedKey.Moving(KeyContext.HealthDialog),
-        .. ReservedKey.TakenBy(KeyContext.HealthDialog, () => Lists.Filling(), "the lines"),
-    ];
-
     /// <inheritdoc/>
-    protected override bool OnKeyDown(Key key)
-    {
-        ArgumentNullException.ThrowIfNull(key);
-
-        if (_commands.Answering(KeyContext.HealthDialog, this, key) is { } chosen)
-        {
-            _ = chosen.Run();
-
-            return true;
-        }
-
-        return base.OnKeyDown(key);
-    }
+    /// <remarks>
+    /// No command of its own: read-only, so there is nothing to do but read and leave. Escape leaves through the toolkit,
+    /// which ends the session on top when no view in it takes the key, as it does for <see cref="Saying"/>. The lines take
+    /// their own keys first.
+    /// </remarks>
+    static CommandManager<Health> IKeyTable<Health>.BuildTable() => new(
+        [new(KeyContext.HealthDialog, [])],
+        [],
+        [
+            .. ReservedKey.Moving(KeyContext.HealthDialog),
+            .. ReservedKey.TakenBy(KeyContext.HealthDialog, () => Lists.Filling(), "the lines"),
+        ]);
 
     /// <summary>Turns the five reports into lines, headings at column zero and nothing else.</summary>
     /// <param name="flags">Open work that needs the person.</param>

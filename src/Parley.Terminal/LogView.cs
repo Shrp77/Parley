@@ -21,7 +21,7 @@ namespace Parley.Terminal;
 /// Escape closes this, through the same key handling as every other dialog, so a test can drive it.
 /// </para>
 /// </remarks>
-internal sealed class LogView : Dialog
+internal sealed class LogView : TableDialog<LogView>, IKeyTable<LogView>
 {
     /// <summary>What is said when no log can be found where one is expected.</summary>
     private const string NoLog = "No log where this project's broker usually writes one";
@@ -29,7 +29,6 @@ internal sealed class LogView : Dialog
     /// <summary>What is said above the lines.</summary>
     internal const string Following = "Following ";
 
-    private readonly CommandManager<LogView> _commands = new(Places, Registered, Reserved);
     private readonly ObservableCollection<string> _lines = [];
     private readonly List<string> _pending = [];
     private readonly ListView _list;
@@ -131,36 +130,17 @@ internal sealed class LogView : Dialog
         }
     }
 
-    /// <summary>This dialog's place in the command tables, with nothing of the surface's layered on it.</summary>
-    internal static IReadOnlyList<KeyPlace> Places => [new(KeyContext.LogDialog, [])];
-
-    /// <summary>What a key does here: Escape closes it, as everywhere.</summary>
-    internal static IReadOnlyList<KeyCommand<LogView>> Registered =>
-    [
-        new(KeyContext.LogDialog, default, "Close", KeyCommand.Doing<LogView>(view => view.Closing?.Invoke(view, EventArgs.Empty)), KeyCommand.Always, Chord: Key.Esc),
-    ];
-
-    /// <summary>What the lines take before this dialog is offered a key.</summary>
-    internal static IReadOnlyList<ReservedKey> Reserved =>
-    [
-        .. ReservedKey.Moving(KeyContext.LogDialog),
-        .. ReservedKey.TakenBy(KeyContext.LogDialog, () => Lists.Filling(), "the lines"),
-    ];
-
     /// <inheritdoc/>
-    protected override bool OnKeyDown(Key key)
-    {
-        ArgumentNullException.ThrowIfNull(key);
-
-        if (_commands.Answering(KeyContext.LogDialog, this, key) is { } chosen)
-        {
-            _ = chosen.Run();
-
-            return true;
-        }
-
-        return base.OnKeyDown(key);
-    }
+    /// <remarks>Escape closes it, as everywhere; the lines take their own keys first.</remarks>
+    static CommandManager<LogView> IKeyTable<LogView>.BuildTable() => new(
+        [new(KeyContext.LogDialog, [])],
+        [
+            new(KeyContext.LogDialog, default, "Close", KeyCommand.Doing<LogView>(view => view.Closing?.Invoke(view, EventArgs.Empty)), KeyCommand.Always, Chord: Key.Esc),
+        ],
+        [
+            .. ReservedKey.Moving(KeyContext.LogDialog),
+            .. ReservedKey.TakenBy(KeyContext.LogDialog, () => Lists.Filling(), "the lines"),
+        ]);
 
     /// <inheritdoc/>
     protected override void Dispose(bool disposing)

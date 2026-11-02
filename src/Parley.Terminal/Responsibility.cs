@@ -329,9 +329,8 @@ internal enum ResponsibilityChoice
 internal sealed record ResponsibilityOutcome(ResponsibilityChoice Choice, string Text);
 
 /// <summary>The page itself: a description, one field, and three ways out.</summary>
-internal sealed class ResponsibilityDialog : Dialog
+internal sealed class ResponsibilityDialog : TableDialog<ResponsibilityDialog>, IKeyTable<ResponsibilityDialog>
 {
-    private readonly CommandManager<ResponsibilityDialog> _commands = new(Places, Registered, Reserved);
     private readonly TextField _field;
     private readonly Label _why;
     private readonly Button _save;
@@ -392,44 +391,25 @@ internal sealed class ResponsibilityDialog : Dialog
     internal void Finish(ResponsibilityChoice choice) =>
         Done?.Invoke(this, new ResponsibilityOutcome(choice, _field.Text));
 
-    /// <summary>This dialog's place in the command tables, with nothing of the surface's layered on it.</summary>
-    internal static IReadOnlyList<KeyPlace> Places => [new(KeyContext.ResponsibilityDialog, [])];
-
-    /// <summary>What a key does here: Escape closes it, as everywhere.</summary>
-    internal static IReadOnlyList<KeyCommand<ResponsibilityDialog>> Registered =>
-    [
-        new(
-            KeyContext.ResponsibilityDialog,
-            default,
-            Responsibility.Close,
-            KeyCommand.Doing<ResponsibilityDialog>(dialog => dialog.Finish(ResponsibilityChoice.Close)),
-            KeyCommand.Always,
-            Chord: Key.Esc),
-    ];
-
-    /// <summary>What the line and the buttons take before this dialog is offered a key.</summary>
-    internal static IReadOnlyList<ReservedKey> Reserved =>
-    [
-        .. ReservedKey.Pressing(KeyContext.ResponsibilityDialog, "save, the default button"),
-        .. ReservedKey.Moving(KeyContext.ResponsibilityDialog),
-        .. ReservedKey.TakenBy(KeyContext.ResponsibilityDialog, () => new TextField(), "the line"),
-        .. ReservedKey.Typing(KeyContext.ResponsibilityDialog, "the line"),
-    ];
-
     /// <inheritdoc/>
-    protected override bool OnKeyDown(Key key)
-    {
-        ArgumentNullException.ThrowIfNull(key);
-
-        if (_commands.Answering(KeyContext.ResponsibilityDialog, this, key) is { } chosen)
-        {
-            _ = chosen.Run();
-
-            return true;
-        }
-
-        return base.OnKeyDown(key);
-    }
+    /// <remarks>Escape closes it, as everywhere; the line and the buttons take their own keys first.</remarks>
+    static CommandManager<ResponsibilityDialog> IKeyTable<ResponsibilityDialog>.BuildTable() => new(
+        [new(KeyContext.ResponsibilityDialog, [])],
+        [
+            new(
+                KeyContext.ResponsibilityDialog,
+                default,
+                Responsibility.Close,
+                KeyCommand.Doing<ResponsibilityDialog>(dialog => dialog.Finish(ResponsibilityChoice.Close)),
+                KeyCommand.Always,
+                Chord: Key.Esc),
+        ],
+        [
+            .. ReservedKey.Pressing(KeyContext.ResponsibilityDialog, "save, the default button"),
+            .. ReservedKey.Moving(KeyContext.ResponsibilityDialog),
+            .. ReservedKey.TakenBy(KeyContext.ResponsibilityDialog, () => new TextField(), "the line"),
+            .. ReservedKey.Typing(KeyContext.ResponsibilityDialog, "the line"),
+        ]);
 
     private void Check(bool canSave)
     {

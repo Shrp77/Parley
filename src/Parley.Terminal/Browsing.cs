@@ -33,7 +33,7 @@ namespace Parley.Terminal;
 /// checkouts, which is not itself a repository, so that mode takes a folder with repositories directly inside it.
 /// </para>
 /// </remarks>
-internal sealed class Browsing : Dialog
+internal sealed class Browsing : TableDialog<Browsing>, IKeyTable<Browsing>
 {
     /// <summary>What the dialog is called.</summary>
     internal const string Name = "Find the repository";
@@ -74,7 +74,6 @@ internal sealed class Browsing : Dialog
     /// <summary>What is said when a folder cannot be listed.</summary>
     internal const string Unreadable = "This folder cannot be read from here.";
 
-    private readonly CommandManager<Browsing> _commands = new(Places, Registered, Reserved);
     private readonly GuardedList _list = Lists.Filling();
     private readonly Label _where;
     private readonly Label _said;
@@ -329,35 +328,16 @@ internal sealed class Browsing : Dialog
         Done?.Invoke(this, At);
     }
 
-    /// <summary>This dialog's place in the command tables, with nothing of the surface's layered on it.</summary>
-    internal static IReadOnlyList<KeyPlace> Places => [new(KeyContext.BrowsingDialog, [])];
-
-    /// <summary>What a key does here: Escape gives up, as everywhere.</summary>
-    internal static IReadOnlyList<KeyCommand<Browsing>> Registered =>
-    [
-        new(KeyContext.BrowsingDialog, default, Prompting.Cancel, KeyCommand.Doing<Browsing>(dialog => dialog.Done?.Invoke(dialog, null)), KeyCommand.Always, Chord: Key.Esc),
-    ];
-
-    /// <summary>What the list takes before this dialog is offered a key; Enter on it walks or takes the row.</summary>
-    internal static IReadOnlyList<ReservedKey> Reserved =>
-    [
-        new(KeyContext.BrowsingDialog, Key.Enter, "open the row"),
-        .. ReservedKey.Moving(KeyContext.BrowsingDialog),
-        .. ReservedKey.TakenBy(KeyContext.BrowsingDialog, () => Lists.Filling(), "the folders"),
-    ];
-
     /// <inheritdoc/>
-    protected override bool OnKeyDown(Key key)
-    {
-        ArgumentNullException.ThrowIfNull(key);
-
-        if (_commands.Answering(KeyContext.BrowsingDialog, this, key) is { } chosen)
-        {
-            _ = chosen.Run();
-
-            return true;
-        }
-
-        return base.OnKeyDown(key);
-    }
+    /// <remarks>Escape gives up, as everywhere; the list takes its own keys first, and Enter on it walks or takes the row.</remarks>
+    static CommandManager<Browsing> IKeyTable<Browsing>.BuildTable() => new(
+        [new(KeyContext.BrowsingDialog, [])],
+        [
+            new(KeyContext.BrowsingDialog, default, Prompting.Cancel, KeyCommand.Doing<Browsing>(dialog => dialog.Done?.Invoke(dialog, null)), KeyCommand.Always, Chord: Key.Esc),
+        ],
+        [
+            new(KeyContext.BrowsingDialog, Key.Enter, "open the row"),
+            .. ReservedKey.Moving(KeyContext.BrowsingDialog),
+            .. ReservedKey.TakenBy(KeyContext.BrowsingDialog, () => Lists.Filling(), "the folders"),
+        ]);
 }

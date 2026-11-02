@@ -1,7 +1,7 @@
-using System.Text.RegularExpressions;
 using Grpc.Net.Client;
 using Parley.Client;
 using Parley.Core;
+using Terminal.Gui.Input;
 using Xunit;
 
 namespace Parley.Terminal.Tests;
@@ -18,10 +18,10 @@ namespace Parley.Terminal.Tests;
 /// and bound nowhere at all. Each was found by somebody using the thing, months apart.
 /// </para>
 /// <para>
-/// <b>So the list of keys is read out of <c>OnKeyDown</c> rather than written here.</b> A test
-/// carrying its own copy of the bindings passes forever after somebody adds a fifth: it would be
-/// a second statement of the surface rather than a check on it, which is the failure this whole
-/// promise keeps having.
+/// <b>So the list of keys is read out of the surface's command table rather than written here.</b>
+/// Every key the surface takes is declared there, and a test carrying its own copy of the bindings
+/// passes forever after somebody adds a fifth: it would be a second statement of the surface rather
+/// than a check on it, which is the failure this whole promise keeps having.
 /// </para>
 /// </remarks>
 [Integration]
@@ -37,12 +37,13 @@ public sealed class EveryKeyIsOfferedTests
     /// the one gesture a list already means.
     /// </remarks>
     /// <remarks>
-    /// The arrow keys joined the list at 0.30.0. They move the selection in the input line's completion list,
-    /// which is what an arrow key means in every list on this surface -- and 0.20.3 is the record of what a
-    /// list that cannot be left in one direction costs, so this is the one gesture nobody has to be told.
+    /// The arrow keys move the selection in the input line's completion list, which is what an arrow key
+    /// means in every list on this surface -- and 0.20.3 is the record of what a list that cannot be left
+    /// in one direction costs, so this is the one gesture nobody has to be told. F10 opens the menu bar,
+    /// which names it on its own row.
     /// </remarks>
-    private static readonly string[] Navigation =
-        ["Key.Tab", "Key.Tab.WithShift", "Key.Enter", "Key.CursorUp", "Key.CursorDown"];
+    private static readonly Key[] Navigation =
+        [Key.Tab, Key.Tab.WithShift, Key.Enter, Key.CursorUp, Key.CursorDown, Shell.MenuKey];
 
     private static BrokerDirectory Directory() =>
         new(
@@ -82,20 +83,17 @@ public sealed class EveryKeyIsOfferedTests
         var everything = string.Join(" | ", offered);
         var missing = new List<string>();
 
-        foreach (var key in bound.Where(key => !Navigation.Contains(key, StringComparer.Ordinal)))
+        foreach (var key in bound.Where(key => !Navigation.Contains(key)))
         {
-            var named = key switch
-            {
-                "Key.Esc" => everything.Contains(Shell.BackStroke, StringComparison.Ordinal),
-                "QuitKey" => everything.Contains(Shell.QuitLabel, StringComparison.Ordinal),
-                "BrowserKey" => everything.Contains("F8", StringComparison.Ordinal)
-                    || offered.Any(line => line.Contains("browser", StringComparison.Ordinal)),
-                _ => false,
-            };
+            var named =
+                key == Key.Esc ? everything.Contains(Shell.BackStroke, StringComparison.Ordinal)
+                : key == Shell.QuitKey ? everything.Contains(Shell.QuitLabel, StringComparison.Ordinal)
+                : key == Shell.BrowserKey && (everything.Contains("F8", StringComparison.Ordinal)
+                    || offered.Any(line => line.Contains("browser", StringComparison.Ordinal)));
 
             if (!named)
             {
-                missing.Add(key);
+                missing.Add(key.ToString());
             }
         }
 
@@ -133,51 +131,24 @@ public sealed class EveryKeyIsOfferedTests
         // about.
         var bound = Bound();
 
-        Assert.Contains("Key.Tab", bound);
-        Assert.Contains("Key.Esc", bound);
-        Assert.Contains("QuitKey", bound);
-        Assert.Contains("BrowserKey", bound);
+        Assert.Contains(Key.Tab, bound);
+        Assert.Contains(Key.Esc, bound);
+        Assert.Contains(Shell.QuitKey, bound);
+        Assert.Contains(Shell.BrowserKey, bound);
     }
 
-    /// <summary>Every key <c>Shell.OnKeyDown</c> compares against before the box's guard, read from its source.</summary>
-    /// <returns>The keys, as written.</returns>
+    /// <summary>Every key the surface takes with no command of its own to name it, read from its table.</summary>
+    /// <returns>The keys: those it takes itself, and Escape, which it keeps where going back is not live.</returns>
     /// <remarks>
-    /// The guard returns early for a printable key, so what follows it is only ever a modified key. Whether the command
+    /// A command is named wherever it is live, by the status line and the menus that read the same table. Whether the
     /// table claims each key, in the place that takes it, is <c>KeysTakenBeforeTheTableTests</c>, a unit test.
     /// </remarks>
-    private static IReadOnlyList<string> Bound()
+    private static IReadOnlyList<Key> Bound()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        var table = CommandTables.Of<Shell>();
 
-        while (directory is not null && !Directory_Exists(directory))
-        {
-            directory = directory.Parent;
-        }
-
-        Assert.NotNull(directory);
-
-        var source = File.ReadAllText(
-            Path.Combine(directory!.FullName, "src", "Parley.Terminal", "Shell.cs"));
-
-        var from = source.IndexOf("protected override bool OnKeyDown", StringComparison.Ordinal);
-
-        Assert.True(from > 0, "OnKeyDown is not where this test expects it");
-
-        var body = source[from..];
-        var ends = body.IndexOf("return base.OnKeyDown", StringComparison.Ordinal);
-
-        Assert.True(ends > 0, "OnKeyDown no longer ends the way this test expects");
-
-        return [.. Regex
-            .Matches(
-                body[..ends],
-                @"key == ([A-Za-z][A-Za-z0-9.]*)",
-                RegexOptions.CultureInvariant,
-                TimeSpan.FromSeconds(5))
-            .Select(match => match.Groups[1].Value)
-            .Distinct(StringComparer.Ordinal)];
+        return [.. table.Handlers.Select(handler => handler.Key)
+            .Concat(table.Commands.Where(command => command.KeepsKey && command.Chord is not null).Select(command => command.Chord!))
+            .Distinct()];
     }
-
-    private static bool Directory_Exists(DirectoryInfo directory) =>
-        System.IO.Directory.Exists(Path.Combine(directory.FullName, "src"));
 }

@@ -873,7 +873,10 @@ public sealed class FileLocationStore : IDisposable
 
             // **Looked at again as it comes off the stack**, because it was a folder when it was stacked and may have
             // been swapped for a link since: entered then, the link would be followed and what it leads to deleted. This
-            // narrows the window to between this look and the read below; another program can still act inside it.
+            // covers a swap made before this look, which is deleted as a link and never entered. It does not cover one
+            // made after it: one before the listing below is listed through the link, and one while its entries are
+            // deleted sends every later delete into what the link leads to, because each entry is deleted through the
+            // folder's name. Either needs another program writing in the location as the delete runs.
             var link = false;
 
             Try(top.Path, () =>

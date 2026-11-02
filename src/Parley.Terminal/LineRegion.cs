@@ -1,5 +1,4 @@
 using Parley.Client.Seating;
-using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
@@ -126,36 +125,13 @@ internal sealed class LineRegion : FrameView
         // what it names is what Enter does.
         _field.Changed += () => Typing?.Invoke(this, EventArgs.Empty);
 
-        // **Enter is taken on the box, because that is where it lands.**
+        // **Enter is taken on the box, because that is where it lands** (KeyRouting.Box says why there).
         //
-        // A focused view is offered a key before the surface's own handler is, so what reaches the shell is
-        // only what this box declined: Tab arrives there because this box does not bind it, and Enter never
-        // arrives at all because it does. An arm in the shell for Enter is an arm that never runs, so a test
-        // must press the key itself: the `Accept()` seam raises the same event from the other side.
-        //
-        // `KeyDown` rather than `Accepting`, because this box adds a line on Enter and that is a binding
-        // rather than an accept: the key has to be taken before the binding runs.
-        _field.View.KeyDown += (_, key) =>
+        // What reaches the shell is only what this box declined: Tab arrives there because this box does not bind
+        // it, and Enter never arrives at all because it does. A test must press the key itself: the `Accept()` seam
+        // raises the same event from the other side.
+        KeyRouting.Box(_field.View, () => _breaking, Break, () =>
         {
-            // **Shift+Enter is a line break, and so is Ctrl+Enter.** Taken
-            // here rather than left to the shell's action, because a focused view is offered a key first and the field's
-            // own Enter binding would otherwise read either chord as Enter.
-            if (key == Key.Enter.WithShift || key == Key.Enter.WithCtrl)
-            {
-                key.Handled = true;
-                Break();
-
-                return;
-            }
-
-            // The break itself, which is the field's own Enter: let it through rather than reading it as a send.
-            if (key != Key.Enter || _breaking)
-            {
-                return;
-            }
-
-            key.Handled = true;
-
             // **A trailing backslash makes it a line break instead**, which is the spelling that works in
             // every terminal. A chord is what a person reaches for, and several terminals deliver Ctrl+Enter,
             // Shift+Enter and a bare Enter as the same bytes — so the chord is offered beside it and this is
@@ -168,7 +144,7 @@ internal sealed class LineRegion : FrameView
             }
 
             Sending?.Invoke(this, EventArgs.Empty);
-        };
+        });
 
         Add(_preview);
         Add(_list);

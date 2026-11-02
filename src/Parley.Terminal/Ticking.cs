@@ -51,7 +51,7 @@ internal readonly record struct Tickable(string Label, string Note, bool Ticked,
 /// does not move the columns under the reader.
 /// </para>
 /// </remarks>
-internal sealed class TickDialog : Dialog
+internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog>
 {
     /// <summary>How many rows a page shows.</summary>
     internal const int PageSize = 10;
@@ -64,7 +64,6 @@ internal sealed class TickDialog : Dialog
     /// <summary>What the tick column is as wide as, so the heading lines up with the names under it.</summary>
     private const string Box = "[ ] ";
 
-    private readonly CommandManager<TickDialog> _commands = new(Places, Registered, Reserved);
     private readonly ListView _rows;
     private readonly int _labelWidth;
     private readonly int _noteWidth;
@@ -145,13 +144,7 @@ internal sealed class TickDialog : Dialog
             Height = Dim.Fill(2),
         };
 
-        _rows.KeyDown += (_, key) =>
-        {
-            if (Handle(key))
-            {
-                key.Handled = true;
-            }
-        };
+        KeyRouting.TableFirst(_rows, this);
 
         _count = new Plain
         {
@@ -236,16 +229,6 @@ internal sealed class TickDialog : Dialog
         ShowPage(_page, _rows.SelectedItem ?? 0);
     }
 
-    /// <inheritdoc/>
-    protected override bool OnKeyDown(Key key)
-    {
-        ArgumentNullException.ThrowIfNull(key);
-
-        // Reached when the list does not have focus. When it does, the list's own handler above has already
-        // taken the key, and it does not arrive here.
-        return Handle(key) || base.OnKeyDown(key);
-    }
-
     private static int Room(View? view) => view?.App?.Screen.Height ?? int.MaxValue;
 
     private static int Content(View? view) =>
@@ -283,35 +266,26 @@ internal sealed class TickDialog : Dialog
         return line.TrimEnd();
     }
 
-    /// <summary>Does what a key means here.</summary>
-    /// <param name="key">The key.</param>
-    /// <returns>Whether it meant anything; a key that did not is left to the list, which moves the cursor.</returns>
-    private bool Handle(Key key)
-    {
-        if (_commands.Answering(KeyContext.TickDialog, this, key) is not { } chosen)
-        {
-            return false;
-        }
-
-        _ = chosen.Run();
-
-        return true;
-    }
-
     /// <summary>The row of the page the cursor is on.</summary>
     private int At => _rows.SelectedItem ?? 0;
 
-    /// <summary>This dialog's place in the command tables, with nothing of the surface's layered on it.</summary>
-    internal static IReadOnlyList<KeyPlace> Places => [new(KeyContext.TickDialog, [])];
-
-    /// <summary>What a key does here, as the line along the bottom says.</summary>
+    /// <inheritdoc/>
     /// <remarks>
-    /// The arrows down and up carry on past the end of a page only at its edge, so one key still walks the whole list;
-    /// anywhere else they are not live and the list moves its cursor, which is why the list's own binding of them is
-    /// passed in <see cref="Reserved"/>. Alt plus a letter, like every action on this surface, so a plain character is
-    /// never an action and the list's own type-to-find is left alone.
+    /// <para>
+    /// What a key does here, as the line along the bottom says. The arrows down and up carry on past the end of a page
+    /// only at its edge, so one key still walks the whole list; anywhere else they are not live and the list moves its
+    /// cursor, which is why the list's own binding of them is passed. Alt plus a letter, like every action on this
+    /// surface, so a plain character is never an action and the list's own type-to-find is left alone.
+    /// </para>
+    /// <para>
+    /// The list is offered the table's answer first, so the page keys and the arrows it binds are passed: a command
+    /// claims each, and the arrows reach the list whenever theirs is not live.
+    /// </para>
     /// </remarks>
-    internal static IReadOnlyList<KeyCommand<TickDialog>> Registered =>
+    static CommandManager<TickDialog> IKeyTable<TickDialog>.BuildTable() => new([new(KeyContext.TickDialog, [])], Commands, Reserved);
+
+    /// <summary>What a key does here.</summary>
+    private static IReadOnlyList<KeyCommand<TickDialog>> Commands =>
     [
         new(KeyContext.TickDialog, default, CancelName, KeyCommand.Doing<TickDialog>(dialog => dialog.Done?.Invoke(dialog, null)), KeyCommand.Always, Chord: Key.Esc),
         new(KeyContext.TickDialog, default, GoName, KeyCommand.Doing<TickDialog>(dialog => dialog.Done?.Invoke(dialog, dialog._items)), KeyCommand.Always, Chord: Key.Enter),
@@ -339,11 +313,7 @@ internal sealed class TickDialog : Dialog
     ];
 
     /// <summary>What the list takes when no command here does.</summary>
-    /// <remarks>
-    /// The list is offered its own key handler's answer first, which is this dialog's commands, so the page keys and the
-    /// arrows it binds are passed: a command claims each, and the arrows reach the list whenever theirs is not live.
-    /// </remarks>
-    internal static IReadOnlyList<ReservedKey> Reserved =>
+    private static IReadOnlyList<ReservedKey> Reserved =>
     [
         .. ReservedKey.Moving(KeyContext.TickDialog),
         .. ReservedKey.TakenBy(
@@ -362,14 +332,14 @@ internal sealed class TickDialog : Dialog
     /// <remarks>Read from the table so a key moved there cannot leave this line naming the old one.</remarks>
     internal static string KeysLine(bool paged)
     {
-        string Says(string name, string what) => KeyCommand.Stroke(Registered, name) + ": " + what;
+        string Says(string name, string what) => KeyCommand.Stroke(Commands, name) + ": " + what;
 
         return string.Join("   ", (IEnumerable<string>)
         [
             Says(TickName, "tick"),
             Says(AllName, "all"),
             Says(NoneName, "none"),
-            .. paged ? [KeyCommand.Stroke(Registered, PreviousName) + "/" + Says(NextName, "page")] : Array.Empty<string>(),
+            .. paged ? [KeyCommand.Stroke(Commands, PreviousName) + "/" + Says(NextName, "page")] : Array.Empty<string>(),
             Says(GoName, "go"),
             Says(CancelName, "cancel"),
         ]);

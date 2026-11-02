@@ -17,14 +17,21 @@ namespace Parley.Terminal;
 /// always had: offered only while it would do something, so the line never names a key that does nothing.
 /// </para>
 /// </remarks>
-internal sealed partial class Shell
+internal sealed partial class Shell : IKeyTable<Shell>
 {
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The surface's whole table: its places, commands, the keys its views take first, and the keys it takes itself.
+    /// Read by type (<see cref="CommandTables.Of{TTarget}"/>), never by the names of the lists it is built from.
+    /// </remarks>
+    static CommandManager<Shell> IKeyTable<Shell>.BuildTable() => new(Places, Registered, Reserved, Handlers);
+
     /// <summary>Every place and the layers live in it.</summary>
     /// <remarks>
     /// <b>Both layers are live in every place.</b> The message line and what belongs to no pane are on every screen,
     /// so their keys are checked against every pane's, including a pane that is shown only once a roadmap exists.
     /// </remarks>
-    internal static IReadOnlyList<KeyPlace> Places =>
+    private static IReadOnlyList<KeyPlace> Places =>
     [
         .. new[]
         {
@@ -36,6 +43,9 @@ internal sealed partial class Shell
     /// <summary>What a list's own keys are called when a clash names one.</summary>
     internal const string ListName = "the list's cursor";
 
+    /// <summary>What the key that moves to the next pane is called when a clash names it.</summary>
+    internal const string NextPaneName = "the next pane, or the name being completed";
+
     /// <summary>The panes that are a list, and so take a list's keys.</summary>
     private static readonly KeyContext[] ListPlaces =
     [
@@ -43,7 +53,7 @@ internal sealed partial class Shell
         KeyContext.Plans, KeyContext.Roadmaps, KeyContext.Configuration,
     ];
 
-    /// <summary>Every key taken before a command is asked: by <c>OnKeyDown</c>, or by the view that has focus in a pane.</summary>
+    /// <summary>Every key the view that has focus in a pane takes before the surface is offered it.</summary>
     /// <remarks>
     /// <para>
     /// <b>A focused view is offered a key before the surface is</b>, so a key a pane's list or the box takes never
@@ -53,28 +63,15 @@ internal sealed partial class Shell
     /// place does not claim fails a unit test.
     /// </para>
     /// <para>
-    /// Escape is not here: going back is a command, in <see cref="KeyContext.Everywhere"/>, and that is what claims it.
-    /// Enter on the agents list and on the roadmap lists is a command too. The Enters here are the ones a pane takes with
-    /// no label of its own: the conversations and the room take it through their list's own accept, which is why it was
-    /// missed when only <c>OnKeyDown</c> was read.
+    /// The Enters here are the ones a pane's list takes through its own accept, with no label of its own: the
+    /// conversations and the room. Enter on the agents list and on the roadmap lists is a command; on the projects list,
+    /// a folded transcript and a setting it is a key the surface takes (<see cref="Handlers"/>).
     /// </para>
     /// </remarks>
-    internal static IReadOnlyList<ReservedKey> Reserved =>
+    private static IReadOnlyList<ReservedKey> Reserved =>
     [
-        new(KeyContext.Everywhere, Key.Tab, "the next pane"),
-        new(KeyContext.Everywhere, Key.Tab.WithShift, "the previous pane"),
-        new(KeyContext.Everywhere, QuitKey, QuitLabel),
-        new(KeyContext.Everywhere, BrowserKey, OpenConsoleTitle),
-        new(KeyContext.Everywhere, MenuKey, "the menu bar"),
-        new(KeyContext.Projects, Key.Enter, "open the project"),
         new(KeyContext.Conversations, Key.Enter, "open the conversation"),
-        new(KeyContext.Transcript, Key.Enter, "open the folded message"),
         new(KeyContext.Room, Key.Enter, "start, write to or read the row"),
-        new(KeyContext.Configuration, Key.Enter, ConfigurationRegion.ChangeTitle),
-
-        // The box binds the arrows too; while a completion list is offered the surface moves its selection instead.
-        new(KeyContext.Line, Key.CursorUp, "the box's cursor, or the completion list"),
-        new(KeyContext.Line, Key.CursorDown, "the box's cursor, or the completion list"),
 
         // The box takes Ctrl+Enter itself, as the line break Shift+Enter is: several terminals cannot send the one.
         new(KeyContext.Line, Key.Enter.WithCtrl, BreakTitle),
@@ -86,8 +83,91 @@ internal sealed partial class Shell
         .. ReservedKey.Typing(KeyContext.Line, "the box"),
     ];
 
+    /// <summary>Every key the surface takes itself, with no label of its own.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Tab, the quit chord, F8 and F10 are taken wherever the cursor is</b>, because none of them is a character and
+    /// leaving a box must never need the mouse. Tab is taken rather than left to the toolkit's own navigation, which walks
+    /// every focusable view including the list inside a pane: what a person means by Tab on this surface is the next
+    /// pane, and a Tab that stepped into a list and out again would visit eight places to reach four. While the box
+    /// offers a completion list, Tab completes instead; the list is on screen while it applies, which makes it
+    /// unambiguous.
+    /// </para>
+    /// <para>
+    /// <b>Enter is the surface's on the projects list, a folded transcript and a setting.</b> The conversations list
+    /// raises its own event from the toolkit's accept, which is what makes the key route and the mouse route one code
+    /// path, so taking Enter in every pane would take it before that fires and break opening a conversation by pointer.
+    /// In a transcript Enter opens the folded message under the cursor and is left alone where nothing is folded.
+    /// </para>
+    /// <para>
+    /// <b>Up and down move the completion list's selection while the box keeps focus</b>, which is what keeps Enter
+    /// answerable: what Enter does is decided by what is active, and the list is never active.
+    /// </para>
+    /// </remarks>
+    private static IReadOnlyList<KeyHandler<Shell>> Handlers =>
+    [
+        new(KeyContext.Everywhere, Key.Tab, NextPaneName, s => s.TabForwards()),
+        new(KeyContext.Everywhere, Key.Tab.WithShift, "the previous pane", s => Taken(() => s.Move(forwards: false))),
+        new(KeyContext.Everywhere, QuitKey, QuitLabel, s => Taken(s.Quit)),
+        new(KeyContext.Everywhere, BrowserKey, OpenConsoleTitle, s => Started(s.OpenConsole())),
+        new(KeyContext.Everywhere, MenuKey, "the menu bar", s => Taken(() => s._bar.OpenFirst())),
+        new(KeyContext.Projects, Key.Enter, "open the project", s => Started(s.OpenAsync())),
+        new(KeyContext.Transcript, Key.Enter, "open the folded message", s => s.Transcript.Under is { } message && s.Transcript.Expand(message)),
+        new(KeyContext.Configuration, Key.Enter, ConfigurationRegion.ChangeTitle, s => s.Configuration.Selected is not null && Started(s.ChangeSetting())),
+        new(KeyContext.Line, Key.CursorUp, "the completion list", s => s.MoveListing(-1)),
+        new(KeyContext.Line, Key.CursorDown, "the completion list", s => s.MoveListing(+1)),
+    ];
+
+    /// <summary>A key taken for something done at once.</summary>
+    /// <param name="act">What it does.</param>
+    /// <returns><see langword="true"/>.</returns>
+    private static bool Taken(Action act)
+    {
+        act();
+
+        return true;
+    }
+
+    /// <summary>A key taken for work that runs on and is not waited for, as a command's is not.</summary>
+    /// <param name="started">The work, already started.</param>
+    /// <returns><see langword="true"/>.</returns>
+    /// <remarks>Takes the task so a handler reads as one expression; nothing here waits on it.</remarks>
+    private static bool Started(Task started) => started is not null;
+
+    /// <summary>Completes the name being typed when the box offers a list, and otherwise moves to the next pane.</summary>
+    /// <returns><see langword="true"/>.</returns>
+    private bool TabForwards()
+    {
+        if (Line.Editing && Line.Offering.Count > 0)
+        {
+            Complete();
+        }
+        else
+        {
+            Move(forwards: true);
+        }
+
+        return true;
+    }
+
+    /// <summary>Moves the completion list's selection while the box keeps focus.</summary>
+    /// <param name="by">Which way.</param>
+    /// <returns>Whether there was a list to move; with none, the box's own cursor has the key.</returns>
+    private bool MoveListing(int by)
+    {
+        if (!Line.Editing || Line.Offering.Count == 0)
+        {
+            return false;
+        }
+
+        _listing = _listing.Move(by);
+        Line.Offer(_listing);
+
+        return true;
+    }
+
     /// <summary>Every command, in every place and layer.</summary>
-    internal static IReadOnlyList<KeyCommand<Shell>> Registered =>
+    private static IReadOnlyList<KeyCommand<Shell>> Registered =>
     [
         // **The projects list.** Auto Accept lives in the configuration view, reached from Everywhere, which says what
         // it decides before anybody changes it.
@@ -288,8 +368,10 @@ internal sealed partial class Shell
         new(KeyContext.MessageLine, ClearKey, ClearTitle, s => s.Clear(), s => s.Said.Length > 0, Category: ActionCategory.View),
 
         // **Everywhere**, a layer on every place: what the keys are, which build this is, and what is about the project
-        // rather than the pane the cursor is in. Back is on the bar under View, so it is never only a key; Escape is
-        // answered by `OnKeyDown` first, and this entry names it and runs the same delegate so the two cannot drift.
+        // rather than the pane the cursor is in. Back is on the bar under View, so it is never only a key. **Escape is
+        // kept where there is nowhere to go back to**, rather than passed on: a dialog is a session on top of this one
+        // and takes the key first, so by the time it arrives here none is open, and passed on it would reach the
+        // toolkit, which ends the program on Escape at application scope.
         new(
             KeyContext.Everywhere,
             default,
@@ -299,7 +381,8 @@ internal sealed partial class Shell
             Chord: Key.Esc,
             Category: ActionCategory.View,
             Order: 1,
-            Says: s => s.BackLabel ?? BackStroke),
+            Says: s => s.BackLabel ?? BackStroke,
+            KeepsKey: true),
 
         // **The way into a project's settings, from wherever a project is in view.** A setting of the project is
         // neither the agents nor the conversations.

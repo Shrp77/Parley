@@ -41,7 +41,7 @@ internal enum ProposalChoice
 /// act from reading one and the keys for it would be the keys that scroll.
 /// </para>
 /// </remarks>
-internal sealed class ProposalView : Dialog
+internal sealed class ProposalView : TableDialog<ProposalView>, IKeyTable<ProposalView>
 {
     /// <summary>The label of the button that confirms as proposed, with its key from the table.</summary>
     internal static string ConfirmLabel => Labelled(ConfirmName);
@@ -74,7 +74,6 @@ internal sealed class ProposalView : Dialog
     /// <summary>The most rows the heading takes; the rest of it scrolls.</summary>
     private const int MostHeadingRows = 4;
 
-    private readonly CommandManager<ProposalView> _commands = new(Places, Registered, Reserved);
     private readonly string _header;
     private readonly View _items;
     private readonly View _agents;
@@ -110,7 +109,7 @@ internal sealed class ProposalView : Dialog
         var itemsHeading = new Plain { Text = "The roadmap", X = 1, Y = Pos.Bottom(heading), Width = Dim.Fill(AgentsWidth + 3), Height = 1 };
 
         // The roadmap takes everything the heading, the hint and the buttons leave.
-        _items = Entry.Reader(Safe.Lines(ProposalText.Items(proposal)), Choose);
+        _items = Entry.Reader(Safe.Lines(ProposalText.Items(proposal)), this);
         _items.X = 1;
         _items.Y = Pos.Bottom(itemsHeading);
         _items.Width = Dim.Fill(AgentsWidth + 3);
@@ -119,7 +118,7 @@ internal sealed class ProposalView : Dialog
         // Who it names, on the side, for the same rows.
         var agentsHeading = new Plain { Text = "Who it names", X = Pos.Right(_items) + 1, Y = Pos.Bottom(heading), Width = Dim.Fill(1), Height = 1 };
 
-        _agents = Entry.Reader(Safe.Lines(ProposalText.Agents(proposal)), Choose);
+        _agents = Entry.Reader(Safe.Lines(ProposalText.Agents(proposal)), this);
         _agents.X = Pos.Right(_items) + 1;
         _agents.Y = Pos.Bottom(agentsHeading);
         _agents.Width = Dim.Fill(1);
@@ -169,64 +168,38 @@ internal sealed class ProposalView : Dialog
     internal void Finish(ProposalChoice choice) => Done?.Invoke(this, choice);
 
     /// <inheritdoc/>
-    protected override bool OnKeyDown(Key key)
-    {
-        ArgumentNullException.ThrowIfNull(key);
-
-        return Choose(key) || base.OnKeyDown(key);
-    }
-
-    /// <summary>Takes the key a button is labelled with, or Escape.</summary>
-    /// <param name="key">What arrived.</param>
-    /// <returns>Whether it was a choice.</returns>
     /// <remarks>
-    /// Alt plus the letter, like every action on this surface, so a plain character is never an action even though
-    /// nothing here is typed into. Esc leaves, as it does everywhere on this surface. The paragraphs offer their keys
-    /// here first, since a focused view is offered a key before the dialog around it.
+    /// <para>
+    /// The letter each button is labelled with, and Escape. Alt plus the letter, like every action on this surface, so a
+    /// plain character is never an action even though nothing here is typed into. The paragraphs offer their keys to the
+    /// table first, since a focused view is offered a key before the dialog around it.
+    /// </para>
+    /// <para>Enter is only a button's: there is no default, which the buttons below say why.</para>
     /// </remarks>
-    private bool Choose(Key key)
-    {
-        if (_commands.Answering(KeyContext.ProposalDialog, this, key) is not { } chosen)
-        {
-            return false;
-        }
-
-        _ = chosen.Run();
-
-        return true;
-    }
-
-    /// <summary>This view's place in the command tables, with nothing of the surface's layered on it.</summary>
-    internal static IReadOnlyList<KeyPlace> Places => [new(KeyContext.ProposalDialog, [])];
-
-    /// <summary>What a key does here: the letter each button is labelled with, and Escape.</summary>
-    internal static IReadOnlyList<KeyCommand<ProposalView>> Registered =>
-    [
-        new(KeyContext.ProposalDialog, 'c', ConfirmName, KeyCommand.Doing<ProposalView>(view => view.Finish(ProposalChoice.Confirm)), KeyCommand.Always),
-        new(KeyContext.ProposalDialog, 'e', EditName, KeyCommand.Doing<ProposalView>(view => view.Finish(ProposalChoice.Edit)), KeyCommand.Always),
-        new(KeyContext.ProposalDialog, 'd', DeclineName, KeyCommand.Doing<ProposalView>(view => view.Finish(ProposalChoice.Decline)), KeyCommand.Always),
-        new(
-            KeyContext.ProposalDialog,
-            default,
-            LeaveName,
-            KeyCommand.Doing<ProposalView>(view => view.Finish(ProposalChoice.Leave)),
-            KeyCommand.Always,
-            Chord: Key.Esc),
-    ];
+    static CommandManager<ProposalView> IKeyTable<ProposalView>.BuildTable() => new(
+        [new(KeyContext.ProposalDialog, [])],
+        [
+            new(KeyContext.ProposalDialog, 'c', ConfirmName, KeyCommand.Doing<ProposalView>(view => view.Finish(ProposalChoice.Confirm)), KeyCommand.Always),
+            new(KeyContext.ProposalDialog, 'e', EditName, KeyCommand.Doing<ProposalView>(view => view.Finish(ProposalChoice.Edit)), KeyCommand.Always),
+            new(KeyContext.ProposalDialog, 'd', DeclineName, KeyCommand.Doing<ProposalView>(view => view.Finish(ProposalChoice.Decline)), KeyCommand.Always),
+            new(
+                KeyContext.ProposalDialog,
+                default,
+                LeaveName,
+                KeyCommand.Doing<ProposalView>(view => view.Finish(ProposalChoice.Leave)),
+                KeyCommand.Always,
+                Chord: Key.Esc),
+        ],
+        [
+            .. ReservedKey.Pressing(KeyContext.ProposalDialog),
+            .. ReservedKey.Moving(KeyContext.ProposalDialog),
+            .. ReservedKey.TakenBy(KeyContext.ProposalDialog, () => Entry.Reader(string.Empty), "the roadmap, or who it names"),
+        ]);
 
     /// <summary>A button's label: the command's name and the key the table gives it.</summary>
     /// <param name="name">The command.</param>
     /// <returns>The label.</returns>
-    private static string Labelled(string name) => $"{name} {KeyCommand.Stroke(Registered, name)}";
-
-    /// <summary>What the paragraphs and the buttons take before this view is offered a key.</summary>
-    /// <remarks>Enter is only a button's: there is no default, which the buttons below say why.</remarks>
-    internal static IReadOnlyList<ReservedKey> Reserved =>
-    [
-        .. ReservedKey.Pressing(KeyContext.ProposalDialog),
-        .. ReservedKey.Moving(KeyContext.ProposalDialog),
-        .. ReservedKey.TakenBy(KeyContext.ProposalDialog, () => Entry.Reader(string.Empty), "the roadmap, or who it names"),
-    ];
+    private static string Labelled(string name) => CommandTables.Of<ProposalView>().Label(name);
 
     private Button Choice(string label, ProposalChoice choice)
     {

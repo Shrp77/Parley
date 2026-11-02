@@ -1,5 +1,5 @@
 using System.Reflection;
-using System.Text.RegularExpressions;
+using System.Reflection.Emit;
 using Parley.Client.Roadmaps;
 using Parley.Core;
 using Terminal.Gui.App;
@@ -11,20 +11,23 @@ using Xunit;
 namespace Parley.Terminal.Tests;
 
 /// <summary>
-/// That every key taken before a command is asked is claimed in the command table, in the place that takes it.
+/// That every key the terminal takes is taken through a command table, and claimed there in the place that takes it.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Review found the room and the conversations taking Enter through their lists' own accept</b>, so Enter never
-/// reached the surface there and the table had no claim on it. A command added on Enter in either passed every check,
-/// was named on the status line and never ran. The check that should have caught it asked only whether a key appeared
-/// anywhere in the table, and Enter did, as a chord in another pane.
+/// <b>Three rounds of review each found a key taken outside the table</b> that the tests could not see, because they
+/// guarded hand-written key handlers by reading their source: a comparison written another way, then a helper the scan
+/// accepted by name and never read. So nothing here reads source. Every key handler in the assembly is found by
+/// reflection and must be one of the two that only ask a table; every subscription to a key event is found in the
+/// compiled code and must be one of the few in <see cref="KeyRouting"/>; and every view that can be opened as a session
+/// must build a table.
 /// </para>
 /// <para>
-/// <b>So the places are found, not assumed.</b> Each pane and each dialog is built in memory and every key it could take
-/// is put to its views: what they bind, what their accept and activate handlers answer, and what their own key handlers
-/// take when it is pressed. The surface's own handler is read from its source, each arm's place from its condition.
-/// Every key found must be claimed in that place, or in every place when the arm names none.
+/// <b>And the places are pressed, not assumed.</b> Review found the room and the conversations taking Enter through
+/// their lists' own accept, so a command added on Enter there was named on the status line and never ran. Each pane and
+/// each dialog is built in memory and every key it could take is put to its views: what they bind, what their accept and
+/// activate handlers answer, and what their own key handlers take when it is pressed. Every key found must be claimed in
+/// that place, and a plain character taken by a view that does not type is a failure whatever claims it.
 /// </para>
 /// </remarks>
 [Unit]
@@ -32,32 +35,31 @@ public sealed class KeysTakenBeforeTheTableTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");
 
-    /// <summary>The keys of <c>OnKeyDown</c>'s comparisons, by how the source writes them.</summary>
-    private static readonly Dictionary<string, Key> Named = new(StringComparer.Ordinal)
-    {
-        ["Key.Tab"] = Key.Tab,
-        ["Key.Tab.WithShift"] = Key.Tab.WithShift,
-        ["Key.CursorUp"] = Key.CursorUp,
-        ["Key.CursorDown"] = Key.CursorDown,
-        ["Key.Esc"] = Key.Esc,
-        ["Key.Enter"] = Key.Enter,
-        ["QuitKey"] = Shell.QuitKey,
-        ["BrowserKey"] = Shell.BrowserKey,
-        ["MenuKey"] = Shell.MenuKey,
-    };
-
     /// <summary>A view's accept and activate handlers, read because the toolkit offers no other way to ask.</summary>
     private static readonly FieldInfo Accepting = typeof(View).GetField("Accepting", BindingFlags.Instance | BindingFlags.NonPublic)!;
 
     private static readonly FieldInfo Activating = typeof(View).GetField("Activating", BindingFlags.Instance | BindingFlags.NonPublic)!;
 
-    private static readonly CommandManager<Shell> Surface = new(Shell.Places, Shell.Registered, Shell.Reserved);
+    private static readonly CommandManager<Shell> Surface = CommandTables.Of<Shell>();
+
+    private static readonly Assembly TheTerminal = typeof(Shell).Assembly;
+
+    private const BindingFlags Declared =
+        BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
 
     /// <summary>Every pane and dialog, built as the terminal builds it, and what its place claims.</summary>
     /// <returns>Each place, a view standing in it, and whether the place claims a key.</returns>
     private static IEnumerable<(KeyContext Place, View View, Func<Key, bool> Claims)> Everywhere()
     {
         Func<Key, bool> Shell(KeyContext place) => key => Surface.Claims(place, key);
+
+        Func<Key, bool> Dialog<TDialog>(KeyContext place)
+            where TDialog : IKeyTable<TDialog>
+        {
+            var table = CommandTables.Of<TDialog>();
+
+            return key => table.Claims(place, key);
+        }
 
         yield return (KeyContext.Projects, new ProjectsRegion(), Shell(KeyContext.Projects));
         yield return (KeyContext.Agents, new AgentsRegion(), Shell(KeyContext.Agents));
@@ -69,79 +71,56 @@ public sealed class KeysTakenBeforeTheTableTests
         yield return (KeyContext.Roadmaps, new RoadmapsRegion(), Shell(KeyContext.Roadmaps));
         yield return (KeyContext.Configuration, new ConfigurationRegion(), Shell(KeyContext.Configuration));
 
-        var roadmap = new CommandManager<PlanView>(PlanView.Places, PlanView.Registered, PlanView.Reserved);
         yield return (
             KeyContext.RoadmapDialog,
             new PlanView(new Roadmap(1, 1, "Ship it", default, null, 1, []), new RoadmapStanding([], NextKind.Complete, null, 0)),
-            key => roadmap.Claims(KeyContext.RoadmapDialog, key));
+            Dialog<PlanView>(KeyContext.RoadmapDialog));
 
-        var proposal = new CommandManager<ProposalView>(ProposalView.Places, ProposalView.Registered, ProposalView.Reserved);
         var content = new RoadmapContent("Ship it", [new RoadmapItemDraft(null, "Write the notes", Orders, [])]);
         yield return (
             KeyContext.ProposalDialog,
             new ProposalView(new RoadmapProposal(1, Orders, null, "Ship it", content, 10, ProposalState.Waiting, DateTimeOffset.UnixEpoch, null)),
-            key => proposal.Claims(KeyContext.ProposalDialog, key));
+            Dialog<ProposalView>(KeyContext.ProposalDialog));
 
-        var ticking = new CommandManager<TickDialog>(TickDialog.Places, TickDialog.Registered, TickDialog.Reserved);
         yield return (
             KeyContext.TickDialog,
             new TickDialog("Choose", "Which.", [new Tickable("orders", string.Empty, false)]),
-            key => ticking.Claims(KeyContext.TickDialog, key));
+            Dialog<TickDialog>(KeyContext.TickDialog));
 
-        var responsibility = new CommandManager<ResponsibilityDialog>(
-            ResponsibilityDialog.Places, ResponsibilityDialog.Registered, ResponsibilityDialog.Reserved);
         yield return (
             KeyContext.ResponsibilityDialog,
             new ResponsibilityDialog("What it owns.", "orders", canSave: true),
-            key => responsibility.Claims(KeyContext.ResponsibilityDialog, key));
+            Dialog<ResponsibilityDialog>(KeyContext.ResponsibilityDialog));
 
-        var text = new CommandManager<TextDialog>(TextDialog.Places, TextDialog.Registered, TextDialog.Reserved);
-        yield return (KeyContext.TextDialog, new TextDialog("Name", "Which?", "alpha", null), key => text.Claims(KeyContext.TextDialog, key));
-
-        var choice = new CommandManager<ChoiceDialog>(ChoiceDialog.Places, ChoiceDialog.Registered, ChoiceDialog.Reserved);
-        yield return (KeyContext.ChoiceDialog, new ChoiceDialog("Pick", "Which?", ["one", "two"]), key => choice.Claims(KeyContext.ChoiceDialog, key));
-
-        var form = new CommandManager<FormDialog>(FormDialog.Places, FormDialog.Registered, FormDialog.Reserved);
+        yield return (KeyContext.TextDialog, new TextDialog("Name", "Which?", "alpha", null), Dialog<TextDialog>(KeyContext.TextDialog));
+        yield return (KeyContext.ChoiceDialog, new ChoiceDialog("Pick", "Which?", ["one", "two"]), Dialog<ChoiceDialog>(KeyContext.ChoiceDialog));
         yield return (
             KeyContext.FormDialog,
             new FormDialog("Fill", [new FormField("Short:"), new FormField("Long:", Long: true)]),
-            key => form.Claims(KeyContext.FormDialog, key));
+            Dialog<FormDialog>(KeyContext.FormDialog));
 
         // Opened on the test's own build folder, which is small and always there: the walk reads the folder it opens.
-        var browsing = new CommandManager<Browsing>(Browsing.Places, Browsing.Registered, Browsing.Reserved);
-        yield return (KeyContext.BrowsingDialog, new Browsing(AppContext.BaseDirectory), key => browsing.Claims(KeyContext.BrowsingDialog, key));
-
-        var log = new CommandManager<LogView>(LogView.Places, LogView.Registered, LogView.Reserved);
-        yield return (KeyContext.LogDialog, new LogView("following nothing"), key => log.Claims(KeyContext.LogDialog, key));
-
-        var health = new CommandManager<Health>(Health.Places, Health.Registered, Health.Reserved);
-        yield return (KeyContext.HealthDialog, new Health("alpha", ["Work that needs you", "  Nothing is flagged."]), key => health.Claims(KeyContext.HealthDialog, key));
-
-        var saying = new CommandManager<Saying>(Saying.Places, Saying.Registered, Saying.Reserved);
-        yield return (KeyContext.SayingDialog, new Saying("Said, whole.", 40), key => saying.Claims(KeyContext.SayingDialog, key));
+        yield return (KeyContext.BrowsingDialog, new Browsing(AppContext.BaseDirectory), Dialog<Browsing>(KeyContext.BrowsingDialog));
+        yield return (KeyContext.LogDialog, new LogView("following nothing"), Dialog<LogView>(KeyContext.LogDialog));
+        yield return (KeyContext.HealthDialog, new Health("alpha", ["Work that needs you", "  Nothing is flagged."]), Dialog<Health>(KeyContext.HealthDialog));
+        yield return (KeyContext.SayingDialog, new Saying("Said, whole.", 40), Dialog<Saying>(KeyContext.SayingDialog));
     }
 
     /// <summary>Every view the terminal can open as a session: each concrete runnable type in its assembly.</summary>
     /// <returns>The types.</returns>
     /// <remarks>
     /// Found, not listed, so a dialog added next month is in it the day it is written. A session takes every key first,
-    /// so one with no place is a set of keys no table has ever seen.
+    /// so one with no table is a set of keys no table has ever seen.
     /// </remarks>
     private static IReadOnlyList<Type> Sessions() =>
     [
-        .. typeof(Shell).Assembly.GetTypes()
+        .. TheTerminal.GetTypes()
             .Where(type => type is { IsClass: true, IsAbstract: false } && typeof(IRunnable).IsAssignableFrom(type))
             .OrderBy(type => type.FullName, StringComparer.Ordinal),
     ];
 
-    /// <summary>The places a session's type declares, by its static <c>Places</c>, or null when it declares none.</summary>
-    /// <param name="type">The session's type.</param>
-    /// <returns>The places, or null.</returns>
-    private static IReadOnlyList<KeyPlace>? Declared(Type type) =>
-        type.GetProperty("Places", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(null) as IReadOnlyList<KeyPlace>;
-
     [Fact]
-    public void Every_view_opened_as_a_session_has_a_place_every_table_builds_and_the_probe_presses()
+    public void Every_view_opened_as_a_session_builds_a_table_is_listed_and_is_pressed()
     {
         var built = CommandTables.BuildEvery();
         var pressed = new HashSet<Type>();
@@ -158,38 +137,112 @@ public sealed class KeysTakenBeforeTheTableTests
 
         foreach (var session in Sessions())
         {
-            if (Declared(session) is not { Count: > 0 } places)
+            if (!session.GetInterfaces().Any(table => Of(table, typeof(IKeyTable<>), session)))
             {
-                problems.Add($"{session.Name} is opened as a session and declares no Places: give it a KeyContext and a table");
-
-                continue;
+                problems.Add($"{session.Name} is opened as a session and builds no table: implement IKeyTable<{session.Name}>");
             }
 
-            problems.AddRange(places
-                .Where(place => !built.Contains(place.Context))
-                .Select(place => $"{session.Name}'s place {place.Context} is not built in CommandTables.BuildEvery"));
-
-            // The surface is pressed one pane at a time, as each pane's own view; every dialog is pressed whole.
-            if (session != typeof(Shell) && !pressed.Contains(session))
+            if (!CommandTables.Targets.Contains(session))
             {
-                problems.Add($"{session.Name} is never built and pressed in {nameof(Everywhere)}");
+                problems.Add($"{session.Name} is not listed in CommandTables, so its table is not built before the tool starts");
+            }
+
+            // The surface is pressed one pane at a time, as each pane's own view; every dialog is pressed whole, and is a
+            // table dialog of its own type, so its key handler is the sealed one.
+            if (session != typeof(Shell))
+            {
+                if (!Of(session.BaseType, typeof(TableDialog<>), session))
+                {
+                    problems.Add($"{session.Name} derives from {session.BaseType?.Name}, not TableDialog<{session.Name}>");
+                }
+
+                if (!pressed.Contains(session))
+                {
+                    problems.Add($"{session.Name} is never built and pressed in {nameof(Everywhere)}");
+                }
             }
         }
 
-        // Non-vacuity: the surface and every dialog the review named were found as sessions.
+        // Only a table dialog of its own type derives from the dialog base, so no dialog can answer a key some other way.
+        problems.AddRange(TheTerminal.GetTypes()
+            .Where(type => typeof(TableDialog).IsAssignableFrom(type) && type != typeof(TableDialog) && type != typeof(TableDialog<>))
+            .Where(type => type.IsAbstract || !Of(type.BaseType, typeof(TableDialog<>), type))
+            .Select(type => $"{type.Name} derives from the dialog base other than as TableDialog<{type.Name}>"));
+
+        // Non-vacuity: the surface and every dialog the review named were found as sessions, and every place is built.
         Assert.Contains(typeof(Shell), Sessions());
-        Assert.Contains(typeof(Browsing), Sessions());
-        Assert.Contains(typeof(LogView), Sessions());
-        Assert.Contains(typeof(Health), Sessions());
+        Assert.Contains(typeof(PlanView), Sessions());
         Assert.Contains(typeof(Saying), Sessions());
+        Assert.True(Sessions().Count >= CommandTables.Targets.Count, $"found {Sessions().Count} sessions");
+        Assert.Equal(built.Count, built.Distinct().Count());
 
         Assert.True(problems.Count == 0, string.Join("\n", problems));
+    }
+
+    /// <summary>Whether a type is a generic definition closed over one type.</summary>
+    /// <param name="type">The type, or null.</param>
+    /// <param name="definition">The generic definition.</param>
+    /// <param name="over">Its one argument.</param>
+    /// <returns><see langword="true"/> when <paramref name="type"/> is <paramref name="definition"/> of <paramref name="over"/>.</returns>
+    /// <remarks>Compared rather than built, because building one over a type that breaks its constraint throws.</remarks>
+    private static bool Of(Type? type, Type definition, Type over) =>
+        type is { IsGenericType: true } && type.GetGenericTypeDefinition() == definition && type.GetGenericArguments()[0] == over;
+
+    [Fact]
+    public void No_key_handler_in_the_terminal_does_anything_but_ask_its_table()
+    {
+        // Every override in the assembly that is handed a key: OnKeyDown, OnKeyDownNotHandled, OnKeyUp, the dialog base's
+        // Take, and any the toolkit adds. Only the dialog base's sealed pair and the surface's fixed handler may exist.
+        var overrides = TheTerminal.GetTypes()
+            .SelectMany(type => type.GetMethods(Declared))
+            .Where(method => method.GetBaseDefinition() != method && method.GetParameters().Any(parameter => parameter.ParameterType == typeof(Key)))
+            .Select(Name)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.Equal(["Shell.OnKeyDown", "TableDialog.OnKeyDown", "TableDialog`1.Take"], overrides);
+
+        // Sealed, so no dialog can put its own handler in front of the table.
+        Assert.True(typeof(TableDialog).GetMethod("OnKeyDown", Declared)!.IsFinal);
+        Assert.True(typeof(TableDialog<>).GetMethod("Take", Declared)!.IsFinal);
+
+        // And each does nothing but what its body is for: no comparison, no helper handed the key, no second table.
+        // Review's probes were `if (Handle(key))` in the surface's handler, with Handle comparing the key itself, and a
+        // comparison inside a dialog's helper; each is a call this list does not name.
+        Assert.Equal(
+            ["ArgumentNullException.ThrowIfNull", "CommandManager`1.Take", "Shell.Touched", "Shell.get_Context", "View.OnKeyDown"],
+            Called(typeof(Shell).GetMethod("OnKeyDown", Declared)!));
+        Assert.Equal(
+            ["ArgumentNullException.ThrowIfNull", "TableDialog.Take", "View.OnKeyDown"],
+            Called(typeof(TableDialog).GetMethod("OnKeyDown", Declared)!));
+        Assert.Equal(["CommandManager`1.Take"], Called(typeof(TableDialog<>).GetMethod("Take", Declared)!));
+    }
+
+    [Fact]
+    public void Nothing_subscribes_to_a_key_but_the_few_ways_in_key_routing()
+    {
+        // Found in the compiled code, so a subscription written in any spelling, in a lambda, a local function or a
+        // constructor, is found the same way.
+        var subscribing = TheTerminal.GetTypes()
+            .SelectMany(Bodies)
+            .Where(body => Calls(body).Any(SubscribesToAKey))
+            .Select(Name)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.Equal(["KeyRouting.Box", "KeyRouting.TableFirst", "KeyRouting.Touching", "KeyRouting.Walking"], subscribing);
+
+        // Non-vacuity: the reader sees calls at all, and sees the toolkit's key event as one.
+        Assert.Contains(Calls(typeof(KeyRouting).GetMethod(nameof(KeyRouting.TableFirst), Declared)!), SubscribesToAKey);
+        Assert.Contains(Calls(typeof(Shell).GetMethod("OnKeyDown", Declared)!), called => called.Name == "Touched");
     }
 
     [Fact]
     public void Every_key_a_pane_or_dialog_takes_is_claimed_in_its_place()
     {
         var missing = new List<string>();
+        var plain = new List<string>();
         var visited = new HashSet<KeyContext>();
 
         foreach (var (place, root, claims) in Everywhere())
@@ -198,9 +251,18 @@ public sealed class KeysTakenBeforeTheTableTests
             {
                 visited.Add(place);
 
-                foreach (var (key, by) in Taken(root).Where(taken => !claims(taken.Key)))
+                foreach (var (key, by) in Taken(root))
                 {
-                    missing.Add($"{place}: {key} (taken by {by})");
+                    // A plain character is never an action: where nothing types, a view that takes one is a key a
+                    // person types by accident, and no claim makes it otherwise.
+                    if (CommandManager<Shell>.Printable(key) && !Types(by))
+                    {
+                        plain.Add($"{place}: {key} (taken by {by.GetType().Name})");
+                    }
+                    else if (!claims(key))
+                    {
+                        missing.Add($"{place}: {key} (taken by {by.GetType().Name})");
+                    }
                 }
             }
         }
@@ -212,6 +274,7 @@ public sealed class KeysTakenBeforeTheTableTests
         Assert.NotNull(Accepting);
         Assert.NotNull(Activating);
 
+        Assert.True(plain.Count == 0, "a plain character taken where nothing types:\n" + string.Join("\n", plain.Distinct()));
         Assert.True(missing.Count == 0, "taken before any command, and claimed nowhere in the place:\n" + string.Join("\n", missing.Distinct()));
     }
 
@@ -232,70 +295,42 @@ public sealed class KeysTakenBeforeTheTableTests
         using var agents = new AgentsRegion();
 
         Assert.DoesNotContain(Taken(agents), taken => taken.Key == Key.Enter);
+
+        // Plain characters are pressed: a view that takes one is seen taking it, and the surface's lists take none.
+        using var taking = new View { CanFocus = true };
+        taking.KeyDown += (_, key) => key.Handled = key == new Key('j');
+        using var filling = Lists.Filling();
+        filling.SetSource(new System.Collections.ObjectModel.ObservableCollection<string>(["orders", "billing"]));
+
+        Assert.Contains(Taken(taking), taken => taken.Key == new Key('j'));
+        Assert.False(Types(taking));
+        Assert.DoesNotContain(Taken(filling), taken => CommandManager<Shell>.Printable(taken.Key));
+        Assert.False(Types(filling));
     }
 
-    [Fact]
-    public void Every_key_the_surfaces_own_handler_takes_is_claimed_in_the_place_its_arm_names()
+    /// <summary>Whether a view is one somebody types into, where a plain character is text rather than an action.</summary>
+    /// <param name="view">The view.</param>
+    /// <returns><see langword="true"/> for one of the toolkit's editors, or a list that finds a row as it is typed.</returns>
+    /// <remarks>
+    /// An editor takes every character as text, read-only included: a paragraph somebody reads swallows a letter typed
+    /// at it, which runs nothing. The box is the toolkit's deprecated text view, which the terminal still builds
+    /// (Entry.cs says why).
+    /// </remarks>
+#pragma warning disable CS0618
+    private static bool Types(View view) => view switch
     {
-        var arms = Arms(Handlers().Single(handler => handler.File == "Shell.cs").Body);
-        var missing = new List<string>();
-
-        foreach (var (name, place) in arms)
-        {
-            Assert.True(Named.TryGetValue(name, out var key), $"OnKeyDown compares {name}; say here which key it is");
-
-            // An arm that names no place takes its key in every one.
-            var where = place is { } one ? [one] : Surface.Places.Select(p => p.Context).ToArray();
-
-            missing.AddRange(where.Where(at => !Surface.Claims(at, key!)).Select(at => $"{at}: {name}"));
-        }
-
-        // Non-vacuity: the arms were read, with their places, including the two Enters only one pane takes.
-        Assert.Contains(("Key.Enter", (KeyContext?)KeyContext.Configuration), arms);
-        Assert.Contains(("Key.Enter", (KeyContext?)KeyContext.Transcript), arms);
-        Assert.Contains(("Key.CursorUp", (KeyContext?)KeyContext.Line), arms);
-        Assert.Contains(("MenuKey", (KeyContext?)null), arms);
-
-        Assert.True(missing.Count == 0, "OnKeyDown takes these, and the place does not claim them: " + string.Join(", ", missing));
-    }
-
-    [Fact]
-    public void No_key_handler_reads_a_key_in_a_way_this_test_cannot_attribute_to_a_place()
-    {
-        // Review's probe: `if (Key.F12 == key)` added to the surface's handler passed, because only `key == X` was read.
-        // So every mention of the key is accounted for: an arm read above, or a use that only hands it on. The dialogs'
-        // handlers have no arms at all: every key there goes through the dialog's table.
-        var handlers = Handlers();
-        var problems = new List<string>();
-
-        foreach (var (file, body) in handlers)
-        {
-            problems.AddRange(Unattributed(body).Select(use => $"{file}: {use}"));
-
-            if (file != "Shell.cs")
-            {
-                problems.AddRange(Arms(body).Select(arm => $"{file}: compares {arm.Key} outside its table"));
-            }
-        }
-
-        // Non-vacuity: the surface's handler and every dialog's were read, and the reader sees what review's probe added.
-        Assert.Contains(handlers, handler => handler.File == "Shell.cs");
-        Assert.True(handlers.Count >= 12, $"read {handlers.Count} OnKeyDown overrides; expected the surface's and eleven dialogs'");
-        Assert.NotEmpty(Unattributed("if (Key.F12 == key)\n"));
-        Assert.NotEmpty(Unattributed("if (key.KeyCode == KeyCode.F12)\n"));
-        Assert.NotEmpty(Unattributed("if (key.Equals(Key.F12))\n"));
-        Assert.NotEmpty(Unattributed("switch (key)\n"));
-        Assert.Empty(Unattributed("if (key == Key.F12 && Context == KeyContext.Agents)\n"));
-
-        Assert.True(problems.Count == 0, "a key handler reads the key where no place can be read off it:\n" + string.Join("\n", problems));
-    }
+        TextField or TextView => true,
+        ListView list => list.KeystrokeNavigator is not null,
+        _ => false,
+    };
+#pragma warning restore CS0618
 
     /// <summary>Every key a view or anything inside it takes, and which view takes it.</summary>
     /// <param name="root">The pane or dialog.</param>
     /// <returns>The keys.</returns>
-    private static IReadOnlyList<(Key Key, string By)> Taken(View root)
+    private static IReadOnlyList<(Key Key, View By)> Taken(View root)
     {
-        var taken = new List<(Key, string)>();
+        var taken = new List<(Key, View)>();
         var defaults = Inside(root).OfType<Button>().Any(button => button.IsDefault);
 
         // Pressed one view at a time, so nothing focused inside may route a key onward: a view out of an application
@@ -305,8 +340,6 @@ public sealed class KeysTakenBeforeTheTableTests
         // A view that cannot have focus is never offered a key: the room's completion list, a dialog's heading.
         foreach (var view in Inside(root).Where(view => view == root || view.CanFocus))
         {
-            var by = view.GetType().Name;
-
             foreach (var (key, binding) in view.KeyBindings.GetBindings())
             {
                 var commands = binding.Commands;
@@ -320,30 +353,30 @@ public sealed class KeysTakenBeforeTheTableTests
 
                 if (answered)
                 {
-                    taken.Add((key, by));
+                    taken.Add((key, view));
                 }
             }
 
             // What a view's own key handler takes, found by pressing it. A key bound by this view, or by one inside it
             // that a key pressed here can be passed on to, is never pressed: it is decided above, a binding to copy or
-            // paste would reach the machine's clipboard, and activating a view gives it focus. A key handler that takes a
-            // bound key before its binding is therefore not seen here; the dialog's own commands are the only ones.
+            // paste would reach the machine's clipboard, and activating a view gives it focus. A plain character is not
+            // pressed at a view that types, where it is text.
             var bound = Inside(view)
                 .SelectMany(inside => inside.KeyBindings.GetBindings())
                 .Select(binding => binding.Key)
                 .ToHashSet();
 
-            foreach (var key in Candidates().Where(key => !bound.Contains(key)))
+            foreach (var key in Candidates().Where(key => !bound.Contains(key) && !(Types(view) && CommandManager<Shell>.Printable(key))))
             {
                 // A fresh key every time: a key carries whether it was handled, and one made from a handled key with
                 // Shift added arrives handled already.
                 if (view.NewKeyDownEvent(new Key(key.KeyCode)))
                 {
-                    taken.Add((key, by));
+                    taken.Add((key, view));
                 }
 
                 // Still nothing focused, or a later press would go somewhere other than the view it was pressed at.
-                Assert.False(Inside(root).Any(inside => inside.HasFocus), $"{key} at {by} gave a view focus");
+                Assert.False(Inside(root).Any(inside => inside.HasFocus), $"{key} at {view.GetType().Name} gave a view focus");
             }
         }
 
@@ -354,21 +387,21 @@ public sealed class KeysTakenBeforeTheTableTests
 
     private static IEnumerable<View> Inside(View root) => [root, .. root.SubViews.SelectMany(Inside)];
 
-    /// <summary>Every key a person could mean as an action: no plain letter, digit or mark, which is typing.</summary>
+    /// <summary>Every key a person could press: the named keys and their chords, and every plain character.</summary>
     /// <remarks>
     /// Tab is not pressed: it moves focus between views, which every place reserves, and pressed at a view in memory it
     /// would give a view focus and send every later key somewhere else.
     /// </remarks>
     private static IEnumerable<Key> Candidates()
     {
-        Key[] plain =
+        Key[] named =
         [
             Key.Enter, Key.Space, Key.Esc, Key.Backspace, Key.Delete, Key.InsertChar, Key.Home, Key.End, Key.PageUp,
             Key.PageDown, Key.CursorUp, Key.CursorDown, Key.CursorLeft, Key.CursorRight,
             Key.F1, Key.F2, Key.F3, Key.F4, Key.F5, Key.F6, Key.F7, Key.F8, Key.F9, Key.F10, Key.F11, Key.F12,
         ];
 
-        foreach (var key in plain)
+        foreach (var key in named)
         {
             yield return key;
             yield return key.WithShift;
@@ -387,97 +420,99 @@ public sealed class KeysTakenBeforeTheTableTests
                 yield return key.WithCtrl;
             }
         }
+
+        // **Plain characters too**, which review found were never pressed: a plain letter could become a dialog's action
+        // and pass every test. Capitals and a few marks as well as the letters and digits.
+        foreach (var character in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789?/.,;-")
+        {
+            yield return new Key(character);
+        }
     }
 
-    /// <summary>An <c>if</c> and its whole condition, nested parentheses included.</summary>
-    private static readonly Regex Condition = new(
-        @"if \((?<c>(?>[^()]+|\((?<d>)|\)(?<-d>))*(?(d)(?!)))\)", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(5));
-
-    /// <summary>What a condition may say of the key: an arm's comparison, or the box's test for a typed character.</summary>
-    private static readonly Regex Attributed = new(
-        @"key == [A-Za-z][A-Za-z0-9.]*|key\.IsCtrl\b|key\.IsAlt\b|key\.AsRune\.Value", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(5));
-
-    /// <summary>
-    /// What a handler may do with the key outside a condition: be declared, checked for null, handed to the base, to the
-    /// table or to the method that asks the table, or pick a direction inside an arm already read.
-    /// </summary>
-    private static readonly Regex HandedOn = new(
-        @"OnKeyDown\(Key key\)|ThrowIfNull\(key\)|base\.OnKeyDown\(key\)|Answering\([^()]*\bkey\)|\b(Choose|Handle)\(key\)|Move\(key == Key\.CursorDown \? 1 : -1\)",
-        RegexOptions.CultureInvariant,
-        TimeSpan.FromSeconds(5));
-
-    /// <summary>Every <c>OnKeyDown</c> override in the terminal's source, its comments removed.</summary>
-    /// <returns>Each file's name and the override's body; a file with several has an entry for each.</returns>
-    private static IReadOnlyList<(string File, string Body)> Handlers()
+    /// <summary>A method as the assertions name it: its declaring type, outside any compiler-made one, and its name.</summary>
+    /// <param name="method">The method.</param>
+    /// <returns>The name.</returns>
+    private static string Name(MethodBase method)
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        var type = method.DeclaringType!;
 
-        while (directory is not null && !Directory.Exists(Path.Combine(directory.FullName, "src")))
+        while (type.IsNested && type.Name.Contains('<', StringComparison.Ordinal))
         {
-            directory = directory.Parent;
+            type = type.DeclaringType!;
         }
 
-        Assert.NotNull(directory);
-
-        var handlers = new List<(string, string)>();
-
-        foreach (var path in Directory.GetFiles(Path.Combine(directory!.FullName, "src", "Parley.Terminal"), "*.cs"))
-        {
-            var source = File.ReadAllText(path);
-
-            for (var from = source.IndexOf("protected override bool OnKeyDown", StringComparison.Ordinal);
-                 from >= 0;
-                 from = source.IndexOf("protected override bool OnKeyDown", from + 1, StringComparison.Ordinal))
-            {
-                var ends = source.IndexOf("\n    }", from, StringComparison.Ordinal);
-
-                Assert.True(ends > from, $"an OnKeyDown in {Path.GetFileName(path)} no longer ends the way this test expects");
-
-                var body = Regex.Replace(source[from..ends], @"//[^\n]*", string.Empty, RegexOptions.CultureInvariant, TimeSpan.FromSeconds(5));
-
-                handlers.Add((Path.GetFileName(path), body));
-            }
-        }
-
-        return handlers;
+        return type.Name + "." + method.Name;
     }
 
-    /// <summary>Every key a handler compares against in an <c>if</c>, with the place its arm names.</summary>
-    /// <param name="body">The handler.</param>
-    /// <returns>Each key as written, and its place, or null when the arm names none.</returns>
-    private static IReadOnlyList<(string Key, KeyContext? Place)> Arms(string body)
-    {
-        var arms = new List<(string, KeyContext?)>();
+    /// <summary>The method bodies a type declares, constructors included.</summary>
+    /// <param name="type">The type.</param>
+    /// <returns>The methods.</returns>
+    private static IEnumerable<MethodBase> Bodies(Type type) =>
+        [.. type.GetMethods(Declared), .. type.GetConstructors(Declared)];
 
-        foreach (Match condition in Condition.Matches(body))
-        {
-            var text = condition.Groups["c"].Value;
-            var place = Regex.Match(text, @"Context == KeyContext\.(\w+)", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(5)) is { Success: true } named
-                ? Enum.Parse<KeyContext>(named.Groups[1].Value)
-                : text.Contains("Line.Editing", StringComparison.Ordinal) ? KeyContext.Line : (KeyContext?)null;
+    /// <summary>Whether a call adds a handler to an event that hands over a key.</summary>
+    /// <param name="called">The method called.</param>
+    /// <returns><see langword="true"/> for <c>KeyDown +=</c>, <c>KeyUp +=</c> and any other such event.</returns>
+    private static bool SubscribesToAKey(MethodBase called) =>
+        called.Name.StartsWith("add_", StringComparison.Ordinal)
+        && called.GetParameters() is [{ ParameterType: { IsGenericType: true } handler }]
+        && handler.GetGenericArguments().Contains(typeof(Key));
 
-            arms.AddRange(Regex
-                .Matches(text, @"key == ([A-Za-z][A-Za-z0-9.]*)", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(5))
-                .Select(match => (match.Groups[1].Value, place)));
-        }
+    /// <summary>The methods a method calls, by name, each once and in order.</summary>
+    /// <param name="method">The method.</param>
+    /// <returns>The names.</returns>
+    private static IReadOnlyList<string> Called(MethodBase method) =>
+        [.. Calls(method).Select(called => called.DeclaringType!.Name + "." + called.Name).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
 
-        return arms;
-    }
+    /// <summary>The single-byte and two-byte opcodes, by value, for walking a method's code.</summary>
+    private static readonly Dictionary<short, OpCode> Codes = typeof(OpCodes)
+        .GetFields(BindingFlags.Public | BindingFlags.Static)
+        .Select(field => (OpCode)field.GetValue(null)!)
+        .ToDictionary(code => code.Value);
 
-    /// <summary>Every mention of the key in a handler that is neither an arm <see cref="Arms"/> reads nor handed on.</summary>
-    /// <param name="body">The handler.</param>
-    /// <returns>Each such mention, with what is around it.</returns>
+    /// <summary>Every method a method's compiled code calls, or takes the address of.</summary>
+    /// <param name="method">The method.</param>
+    /// <returns>The methods.</returns>
     /// <remarks>
-    /// Whatever else reads the key (a reversed comparison, its code, <c>Equals</c>, a <c>switch</c>, a copy in another
-    /// variable) is a key taken where no place can be read off it, so it is reported rather than guessed at.
+    /// Walks the instructions rather than looking for a byte, so an operand is never read as an instruction. A token that
+    /// does not resolve fails the test: a call this cannot name is one it cannot vouch for.
     /// </remarks>
-    private static IReadOnlyList<string> Unattributed(string body)
+    private static IReadOnlyList<MethodBase> Calls(MethodBase method)
     {
-        var left = HandedOn.Replace(
-            Condition.Replace(body, condition => "if (" + Attributed.Replace(condition.Groups["c"].Value, string.Empty) + ")"),
-            string.Empty);
+        if (method.GetMethodBody()?.GetILAsByteArray() is not { } code)
+        {
+            return [];
+        }
 
-        return [.. Regex.Matches(left, @"\bkey\b", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(5))
-            .Select(use => left.Substring(Math.Max(0, use.Index - 30), Math.Min(left.Length, use.Index + 30) - Math.Max(0, use.Index - 30)).Trim())];
+        var typeArguments = method.DeclaringType is { IsGenericType: true } generic ? generic.GetGenericArguments() : null;
+        var methodArguments = method.IsGenericMethod ? method.GetGenericArguments() : null;
+        var calls = new List<MethodBase>();
+
+        for (var at = 0; at < code.Length;)
+        {
+            var value = code[at] == 0xFE ? unchecked((short)(0xFE00 | code[at + 1])) : code[at];
+            var instruction = Codes[value];
+
+            at += instruction.Size;
+
+            var operand = instruction.OperandType switch
+            {
+                OperandType.InlineNone => 0,
+                OperandType.ShortInlineBrTarget or OperandType.ShortInlineI or OperandType.ShortInlineVar => 1,
+                OperandType.InlineVar => 2,
+                OperandType.InlineI8 or OperandType.InlineR => 8,
+                OperandType.InlineSwitch => 4 + (4 * BitConverter.ToInt32(code, at)),
+                _ => 4,
+            };
+
+            if (instruction.OperandType == OperandType.InlineMethod)
+            {
+                calls.Add(method.Module.ResolveMethod(BitConverter.ToInt32(code, at), typeArguments, methodArguments)!);
+            }
+
+            at += operand;
+        }
+
+        return calls;
     }
 }

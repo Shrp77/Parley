@@ -596,7 +596,7 @@ internal sealed partial class Shell : Window
     /// is named on screen and runs something else. The tool builds every table before it takes the console
     /// (<see cref="CommandTables"/>), so this is the second time this table is checked, never the first.
     /// </remarks>
-    private readonly CommandManager<Shell> _commands = new(Places, Registered, Reserved);
+    private readonly CommandManager<Shell> _commands = CommandTables.Of<Shell>();
 
     private readonly BrokerDirectory _directory;
     // One row by design, and fixed at one: its text is set from pool threads (a count read off the loop redraws it),
@@ -690,9 +690,8 @@ internal sealed partial class Shell : Window
     private Task _work = Task.CompletedTask;
     private DateTimeOffset _touched = DateTimeOffset.UtcNow;
 
-    // The application's keyboard, once hooked, so every key counts as being here (`AnyKey`) and the hook is let go on
-    // dispose.
-    private IKeyboard? _keyboard;
+    // The hook on the application's keyboard, once there is one, so every key counts as being here; let go on dispose.
+    private IDisposable? _touching;
 
     internal Shell(BrokerDirectory directory)
     {
@@ -3966,10 +3965,9 @@ internal sealed partial class Shell : Window
         // **Every key is a touch, wherever it lands.** This hooks the application's keyboard the first time
         // there is one, because a key the focused view takes never reaches `OnKeyDown`; without the hook, writing
         // an answer would mark the person away while they typed it.
-        if (_keyboard is null && App?.Keyboard is { } keyboard)
+        if (_touching is null && App?.Keyboard is { } keyboard)
         {
-            _keyboard = keyboard;
-            keyboard.KeyDown += AnyKey;
+            _touching = KeyRouting.Touching(keyboard, () => Touched());
         }
 
         // Every draw, because there is nowhere else this could hang. What it does not do is call this a touch.
@@ -3977,11 +3975,6 @@ internal sealed partial class Shell : Window
 
         return base.OnDrawingContent(context);
     }
-
-    /// <summary>Marks the person here for any key the application receives, before any view sees it.</summary>
-    /// <param name="sender">The keyboard.</param>
-    /// <param name="key">The key, which is left unhandled.</param>
-    private void AnyKey(object? sender, Key key) => Touched();
 
     /// <summary>Records that somebody is actually here.</summary>
     /// <param name="at">When, or now when a caller has no reason to say.</param>
@@ -4020,162 +4013,27 @@ internal sealed partial class Shell : Window
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// <b>Fixed, and the table's alone.</b> Every key the surface takes is declared in its table (ShellCommands.cs): a
+    /// command named on screen, or a key it takes with no label (Tab, the quit chord, F8, F10, a pane's Enter, the
+    /// completion list's arrows). Nothing here compares a key, so nothing here can take one the table has not seen;
+    /// <c>KeysTakenBeforeTheTableTests</c> reads this method by reflection and fails on any call it does not name.
+    /// </para>
+    /// <para>
+    /// <b>A box somebody types into wins every printable key</b> without a guard here: a focused view is offered a key
+    /// first and the box types every printable key itself, and the table refuses a printable key on any command or
+    /// handler but Space, which it refuses where the box types.
+    /// </para>
+    /// </remarks>
     protected override bool OnKeyDown(Key key)
     {
         ArgumentNullException.ThrowIfNull(key);
 
-        // Taken here rather than left to the toolkit's own navigation, which walks every focusable
-        // view including the list inside a region. What a person means by Tab on this surface is
-        // "the next region", and a Tab that stepped into a list and then out of it again would
-        // visit eight places to reach four.
+        // Every key is a touch, including one that does nothing.
         Touched();
 
-        // **Tab completes an open list, and otherwise means what it means everywhere else on this surface.**
-        // The list is on screen while it applies, which makes it unambiguous. With no list showing there is
-        // nothing to complete and Tab is the next region.
-        if (key == Key.Tab && Line.Editing && Line.Offering.Count > 0)
-        {
-            Complete();
-
-            return true;
-        }
-
-        if (key == Key.Tab)
-        {
-            Move(forwards: true);
-
-            return true;
-        }
-
-        // Up and down move the list's selection while the box keeps focus, which is what keeps Enter
-        // answerable: what Enter does is decided by what is active, and the list is never active.
-        if ((key == Key.CursorUp || key == Key.CursorDown) && Line.Editing && Line.Offering.Count > 0)
-        {
-            _listing = _listing.Move(key == Key.CursorDown ? 1 : -1);
-            Line.Offer(_listing);
-
-            return true;
-        }
-
-        if (key == Key.Tab.WithShift)
-        {
-            Move(forwards: false);
-
-            return true;
-        }
-
-        if (key == QuitKey)
-        {
-            Quit();
-
-            return true;
-        }
-
-        // **Escape goes back, and is swallowed at the top rather than passed on.** A dialog is a session on
-        // top of this one and takes the key first, so by the time it arrives here none is open. Passed on, it
-        // would reach Terminal.Gui, which binds `Esc => Quit` at application scope and would end the program;
-        // the status line tells people to press Escape to go back, so one press too many is an ordinary mistake.
-        if (key == Key.Esc)
-        {
-            if (_place.CanGoBack)
-            {
-                _ = BackAsync();
-            }
-
-            return true;
-        }
-
-        if (key == BrowserKey)
-        {
-            OpenConsole();
-
-            return true;
-        }
-
-        // **Enter is taken here only on the projects view, and that asymmetry is deliberate.**
-        // The conversations list raises its own event from the toolkit's `Accepting`, which is what
-        // makes the key route and the mouse route one code path -- so intercepting Enter for every
-        // view would take the key before that fires and break opening a conversation by pointer.
-        // The projects list has no such handler, so there is nothing here to preempt.
-        //
-        // **Every arm that belongs to one pane says so as `Context == KeyContext.X`**, the place the command table
-        // reserves its key in, or as `Line.Editing`, which is the box having focus. `KeysTakenBeforeTheTableTests`
-        // reads each arm's place from that and fails when the place does not claim the key; an arm that names no place
-        // is held to claiming its key in every place.
-        if (key == Key.Enter && Context == KeyContext.Projects)
-        {
-            _ = OpenAsync();
-
-            return true;
-        }
-
-        // **Enter from the box is not taken here.** A focused view is offered a key before this handler is, so
-        // what reaches here is what that view declined: Tab arrives because the box does not bind it, and Enter
-        // does not arrive at all because the box does. `LineRegion` takes it on the box itself.
-        //
-        // **Enter in a folded transcript opens the message under the cursor**, which is the primary action of
-        // the active control read at the level of a fold: a folded header is a message somebody is asking to
-        // see. Unfolded it does nothing and is left alone, rather than swallowed to no effect.
-        if (key == Key.Enter
-            && Context == KeyContext.Transcript
-            && Transcript.Under is { } message
-            && Transcript.Expand(message))
-        {
-            return true;
-        }
-
-
-        // Enter on a setting changes it, which is the one thing a row in that list is for.
-        if (key == Key.Enter && Context == KeyContext.Configuration && Configuration.Selected is not null)
-        {
-            _ = ChangeSetting();
-
-            return true;
-        }
-
-        // **Enter on an agents-list row opens what can be done with it.** The agents list raises no `Accepting`
-        // of its own, so nothing is preempted.
-        if (key == Key.Enter && Context == KeyContext.Agents && Agents.Selected is not null)
-        {
-            _ = RowMenu();
-
-            return true;
-        }
-
-        // **A box somebody types into wins every printable key.** No action is a bare character, so this is
-        // the second line of defence: the guard holds only while the field itself has focus, and focus can sit
-        // elsewhere in its pane. `Lists` records the same collision from the other side (a list's type-to-find
-        // eats letters); while a text box has focus the box wins.
-        //
-        // Below the keys above rather than above them: Tab, Escape, the quit chord and F8 keep working
-        // while somebody types, because none of them is a character and leaving a box must not need the mouse.
-        if (Line.Editing && !key.IsCtrl && !key.IsAlt && key.AsRune.Value != 0)
-        {
-            return base.OnKeyDown(key);
-        }
-
-        // **F10 opens the bar, and Alt and a letter is an action**, so that a plain character is never one.
-        // Left and Right walk from the first menu to the rest.
-        if (key == MenuKey)
-        {
-            _ = _bar.OpenFirst();
-
-            return true;
-        }
-
-        // **The key named beside an action takes it**, from the one table the status line and the menus read, so
-        // nothing is named that a key does not run. The pane's commands, the message line's and those that belong
-        // to no pane are searched together: the table refused to be built if any two of them shared a key here, so
-        // there is no order for one to win by. Every one is also a menu entry the mouse reaches: contracts/surface.md
-        // is explicit that no action exists only as a key.
-        if (_commands.Answering(Context, this, key) is { } answering)
-        {
-            _ = answering.Run();
-
-            return true;
-        }
-
-        return base.OnKeyDown(key);
+        return _commands.Take(Context, this, key) || base.OnKeyDown(key);
     }
 
     /// <summary>How an action's character is written, wherever a person is told the key.</summary>
@@ -5597,11 +5455,8 @@ internal sealed partial class Shell : Window
         {
             _closed = true;
 
-            if (_keyboard is { } keyboard)
-            {
-                keyboard.KeyDown -= AnyKey;
-                _keyboard = null;
-            }
+            _touching?.Dispose();
+            _touching = null;
 
             // Cancelled before the base disposes the views, so a read still in flight cannot draw
             // into a region that has gone. The seat book's streams are not this object's to end;
