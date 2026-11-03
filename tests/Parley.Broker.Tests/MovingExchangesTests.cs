@@ -1017,6 +1017,14 @@ public sealed class MovingExchangesTests : IDisposable
     }
 
     [Fact]
+    public async Task A_settled_pair_no_move_has_split_is_not_said_to_be_elsewhere()
+    {
+        _ = await SettledPairAsync();
+
+        Assert.Empty((await _console.ExportAsync("pricing", Ct)).SettledElsewhere!);
+    }
+
+    [Fact]
     public async Task A_settled_pair_split_by_a_move_is_still_said_from_both_sides()
     {
         // The person asks; the agent's own question to the person is settled by what the person said.

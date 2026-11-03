@@ -131,6 +131,17 @@ public sealed class SpinOffAndMovePagesTests
         Assert.Equal(2, Regex.Matches(page, "class=\"move-pick\"", RegexOptions.None, TimeSpan.FromSeconds(2)).Count);
     }
 
+    [Fact]
+    public async Task The_panel_starts_a_spin_off_from_no_particular_message()
+    {
+        using var console = Console();
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At($"/Conversations/Detail?project={Project}&id=shared"), Ct);
+
+        Assert.Matches("<a class=\"file-button\" target=\"_top\" href=\"/Conversations/SpinOff\\?project=[^\"&]+&amp;id=shared\"", page);
+    }
+
     private static RoadmapConsole Seated()
     {
         var console = new RoadmapConsole();

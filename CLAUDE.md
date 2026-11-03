@@ -346,7 +346,7 @@ implementation detail, and needs to be argued.
 Decided and built. The reasoning is in `SPEC.md`, the feature's `research.md` and git.
 
 - **Only the person moves an exchange** (`move_exchanges`, SPEC §5.0), in `ConversationMoveRepository` and nowhere else. A
-  whole exchange goes, all or none, and a Request to a role goes whole. A move wakes nobody, so its handler must not nudge;
+  whole exchange goes, all or none, and a Request to a role goes whole; a surface keeps a send to several whole, since the broker has no record of one. A move wakes nobody, so its handler must not nudge;
   an agent on open work is told by a move notice at its next collection. A spin-off's link (`spin_off`) is recorded before
   its first Request is sent. A list's ` - spinoff from <parent>` is display only: `row.Id` stays the name.
 - **A deployment is a root with a folder per project** under `<root>/projects/`, holding

@@ -535,8 +535,10 @@ operation moves an exchange or names where one goes.
 
 - **The unit is the whole exchange, messages and all.** A message cannot leave its exchange, or a
   question would read in one conversation and its answer in another. The exchanges of a Request to a
-  role (§5.5) go together, so the count of who has answered stays true. Nothing else is pulled along:
-  no record says which exchange caused which, so an agent's follow-up stays unless the person picks it.
+  role (§5.5) go together, so the count of who has answered stays true. A send to several isn't
+  recorded by the broker, so the operation would move one part alone; a surface keeps it whole, and
+  picking any part takes every part. Nothing else is pulled along: no record says which exchange
+  caused which, so an agent's follow-up stays unless the person picks it.
 - **All or none, and nothing about a message changes** but which conversation holds it: not its words,
   author, recipient, time, delivery or place in the broker's order. A moved message sits among the
   destination's own in that order.

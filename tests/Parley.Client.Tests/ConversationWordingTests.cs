@@ -101,6 +101,24 @@ public sealed class ConversationWordingTests
     }
 
     [Fact]
+    public void In_the_destination_a_moves_note_comes_before_the_first_message_that_moved()
+    {
+        var export = new ConversationExport(
+            [Said(2, """{"ask":"its own"}"""), Said(5, """{"ask":"what moved"}"""), Said(6, """{"ask":"and later"}""")],
+            [],
+            Moves: [Moved]);
+
+        var lines = Reading.Lines(export, TimeZoneInfo.Utc, "tax-questions").Select(line => line.Text).ToList();
+
+        var note = lines.FindIndex(line => line.Contains("moved here from pricing", StringComparison.Ordinal));
+        var own = lines.FindIndex(line => line.Contains("its own", StringComparison.Ordinal));
+        var moved = lines.FindIndex(line => line.Contains("what moved", StringComparison.Ordinal));
+        var header = lines.FindLastIndex(moved, line => line.Contains("inventory@test", StringComparison.Ordinal));
+
+        Assert.InRange(note, own + 1, header - 1);
+    }
+
+    [Fact]
     public void A_transcript_says_what_a_split_settled_pair_is()
     {
         var export = new ConversationExport(
