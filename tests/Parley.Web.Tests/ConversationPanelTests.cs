@@ -92,29 +92,43 @@ public sealed class ConversationPanelTests
     }
 
     [Fact]
-    public async Task A_message_marked_as_waiting_is_listed_even_when_the_graph_has_no_edge_for_it()
+    public async Task A_question_handed_back_is_neither_marked_nor_listed()
     {
-        // Seen on a live store: a message said Waiting on you, was missing from the list, and could not be gone to.
+        // An agent settled its question and the turn came back to it (SPEC.md 5.6). That writes no message, so the transcript
+        // still ends with its question, and only the wait-for graph says the person owes nothing. Seen on a live store.
         using var console = new TranscriptConsole();
         console.Broker.Request(9, Orders, Person, "Which ledger?");
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Person, WaitedOn = Orders, ExchangeId = 9 });
 
         using var client = console.CreateClient();
 
         var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
 
-        Assert.Contains("class=\"reply-to\"", page, StringComparison.Ordinal);
-        Assert.Contains("href=\"#m9\" target=\"_self\" data-waiting", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("class=\"reply-to\"", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("target=\"_self\" data-waiting", page, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task A_question_both_listed_and_marked_is_listed_once_under_its_agent()
+    public async Task The_mark_and_the_list_always_name_the_same_messages()
+    {
+        using var console = Asked();
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(page, "class=\"reply-to\""));
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(page, "href=\"#m1\" target=\"_self\" data-waiting"));
+    }
+
+    [Fact]
+    public async Task Each_question_is_listed_once_under_its_agent()
     {
         using var console = new TranscriptConsole();
 
-        // One the wait-for graph knows, and one only the transcript marks, from one agent.
         console.Broker.Request(1, Orders, Person, "Gross or net?");
         console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Orders, WaitedOn = Person, ExchangeId = 1 });
         console.Broker.Request(2, Orders, Person, "Which ledger?");
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Orders, WaitedOn = Person, ExchangeId = 2 });
 
         using var client = console.CreateClient();
 

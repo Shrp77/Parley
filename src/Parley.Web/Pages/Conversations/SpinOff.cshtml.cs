@@ -16,7 +16,7 @@ namespace Parley.Web.Pages.Conversations;
 /// </para>
 /// <para>
 /// <b>Nothing happens until Send.</b> The link is recorded first and the Request sent after, so a Request can never arrive
-/// with no link behind it. A send that is refused leaves an empty conversation no list shows, and every field stays.
+/// with no link behind it. A send that reaches nobody takes the link back, and every field stays.
 /// </para>
 /// </remarks>
 /// <param name="directory">The projects and their brokers.</param>

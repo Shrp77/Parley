@@ -38,7 +38,7 @@ See [research.md](research.md). The ones that shape the work:
 ## Project structure
 
 ```
-proto/parley.proto                         SpinOff, PreviewMove, MoveExchanges; parent, links, moves; move notices
+proto/parley.proto                         SpinOff, AbandonSpinOff, PreviewMove, MoveExchanges; parent, links, moves; move notices
 src/Parley.Store/Migrations/006_conversation_moves.sql
 src/Parley.Store/ConversationMoveRepository.cs   the move and the link, in one place
 src/Parley.Store/ConversationRepository.cs       list and export read parent, moves; list keeps an emptied source

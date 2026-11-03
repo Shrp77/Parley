@@ -22,17 +22,19 @@ public static class ConversationWording
     /// <summary>A line about one move, as read from one of its two conversations.</summary>
     /// <param name="move">The move.</param>
     /// <param name="conversation">The conversation being read.</param>
+    /// <param name="zone">The zone to say the time in, or null for this machine's.</param>
     /// <returns>A sentence naming the other one.</returns>
-    public static string MoveLine(MoveRecord move, string conversation)
+    /// <remarks>With its date, because it sits among messages in the broker's order and may be days younger than they are.</remarks>
+    public static string MoveLine(MoveRecord move, string conversation, TimeZoneInfo? zone = null)
     {
         ArgumentNullException.ThrowIfNull(move);
 
         var what = Amount(move);
-        var when = LocalTime.Clock(move.MovedUtc);
+        var when = TimeZoneInfo.ConvertTime(move.MovedUtc, zone ?? TimeZoneInfo.Local).ToString("d MMM yyyy, HH:mm", CultureInfo.InvariantCulture);
 
         return string.Equals(move.Source, conversation, StringComparison.Ordinal)
-            ? $"{what} moved from here to {move.Destination} at {when}."
-            : $"{what} moved here from {move.Source} at {when}.";
+            ? $"{what} moved from here to {move.Destination} on {when}."
+            : $"{what} moved here from {move.Source} on {when}.";
     }
 
     /// <summary>The other conversation a move names, as read from one of its two.</summary>

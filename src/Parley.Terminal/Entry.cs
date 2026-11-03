@@ -211,6 +211,12 @@ internal sealed class Entry
         _paragraph?.MoveEnd();
     }
 
+    /// <summary>Puts the cursor and the view at the very start.</summary>
+    internal void MoveHome()
+    {
+        _paragraph?.MoveHome();
+    }
+
     /// <summary>Adds a line break where the cursor is.</summary>
     /// <remarks>
     /// Forwarded as a plain Enter rather than an inserted character, so the toolkit does whatever it does

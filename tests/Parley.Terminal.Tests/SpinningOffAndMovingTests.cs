@@ -106,6 +106,11 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
         Assert.Equal("disk-cleanup", shell.Transcript.Open);
         Assert.Contains("> the disk is full", shell.Line.Written, StringComparison.Ordinal);
         Assert.Contains("orders@test said in room:", shell.Line.Written, StringComparison.Ordinal);
+
+        // On the screen, not only in the box: these words go out as the person's.
+        driving.App.LayoutAndDraw(true);
+        Assert.Contains("orders@test said in room:", driving.Text(), StringComparison.Ordinal);
+        Assert.Contains("> the disk is full", driving.Text(), StringComparison.Ordinal);
         Assert.DoesNotContain((await Client.ConversationsAsync(cancellationToken: Ct)).Items, c => c.Id == "disk-cleanup");
 
         shell.Focus(shell.Panes.ToList().IndexOf(shell.Line));
@@ -519,6 +524,204 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
         await shell.Settled;
 
         Assert.DoesNotContain("Nothing was sent", shell.Said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_link_refused_for_any_other_reason_goes_on_refusing()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        Assert.True(shell.Transcript.Reach(message));
+
+        await shell.SpinOff();
+
+        var form = (FormDialog)driving.Find(SpinningOff.Title);
+
+        form.Fill(0, "disk-cleanup");
+        form.Finish(taken: true);
+        await shell.Settled;
+
+        _ = await Client.DestroyAsync(Conversation, Ct);
+
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Line));
+        shell.NewKeyDownEvent(Key.Enter);
+        await shell.Settled;
+        shell.NewKeyDownEvent(Key.Enter);
+        await shell.Settled;
+
+        Assert.Contains("Nothing was sent", shell.Said, StringComparison.Ordinal);
+        Assert.Empty((await Client.ExportAsync("disk-cleanup", Ct)).Messages);
+    }
+
+    [Fact]
+    public async Task An_ownership_name_and_a_parent_with_nothing_in_it_are_told_at_once()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        Assert.True(shell.Transcript.Reach(message));
+
+        await shell.SpinOff();
+
+        var form = (FormDialog)driving.Find(SpinningOff.Title);
+
+        form.Fill(0, "owns-zz");
+        form.Finish(taken: true);
+        await shell.Settled;
+
+        Assert.Contains("facilitator", shell.Said, StringComparison.Ordinal);
+        Assert.Equal(Conversation, shell.Transcript.Open);
+
+        await shell.SpinOff();
+
+        form = (FormDialog)driving.Find(SpinningOff.Title);
+        form.Fill(0, "first");
+        form.Finish(taken: true);
+        await shell.Settled;
+
+        await shell.SpinOff();
+
+        form = (FormDialog)driving.Find(SpinningOff.Title);
+        form.Fill(0, "second");
+        form.Finish(taken: true);
+        await shell.Settled;
+
+        Assert.Contains("nothing in it yet", shell.Said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Who_a_spin_off_was_started_for_does_not_outlast_its_first_send()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        Assert.True(shell.Transcript.Reach(message));
+
+        await shell.SpinOff();
+
+        var form = (FormDialog)driving.Find(SpinningOff.Title);
+
+        form.Fill(0, "disk-cleanup");
+        form.Finish(taken: true);
+        await shell.Settled;
+
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Line));
+        shell.NewKeyDownEvent(Key.Enter);
+        await shell.Settled;
+
+        var exchange = Assert.Single((await Client.ExportAsync("disk-cleanup", Ct)).Exchanges).ExchangeId;
+
+        Assert.True((await Client.MoveExchangesAsync("disk-cleanup", "elsewhere", true, [exchange], Ct)).Moved);
+
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+        await Walking.GoAsync(shell, Viewing.Conversation, "disk-cleanup");
+        await shell.Settled;
+
+        shell.Line.Written = "to nobody now";
+        await shell.Settled;
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Line));
+        shell.NewKeyDownEvent(Key.Enter);
+        await shell.Settled;
+
+        Assert.Empty((await Client.ExportAsync("disk-cleanup", Ct)).Messages);
+    }
+
+    [Fact]
+    public async Task Moving_nothing_says_so()
+    {
+        var (shell, _, message) = await SeatedAsync();
+        using var held = shell;
+
+        var exchange = (await Client.ExportAsync(Conversation, Ct)).Messages.Single(m => m.Id == message).ExchangeId;
+
+        Assert.True((await Client.MoveExchangesAsync(Conversation, "disk-cleanup", true, [exchange], Ct)).Moved);
+
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+        await shell.MoveEntries();
+        await shell.Settled;
+
+        Assert.Contains("nothing in this conversation to move", shell.Said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_spin_off_someone_else_started_and_emptied_does_not_keep_who_it_was_for()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        Assert.True(shell.Transcript.Reach(message));
+
+        await shell.SpinOff();
+
+        var form = (FormDialog)driving.Find(SpinningOff.Title);
+
+        form.Fill(0, "disk-cleanup");
+        form.Finish(taken: true);
+        await shell.Settled;
+
+        // Started by another surface, for somebody else, and everything moved out, while this one was still drafting.
+        var seat = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await seat.StartAsync(shell.Held!.Seat.Name, T0, Ct);
+
+        var other = await seat.RequestAsync(shell.Held!.Seat.Name, Billing, "model-a", """{"ask":"first"}""", T0.AddMinutes(2), "disk-cleanup", Ct);
+
+        Assert.True((await Client.MoveExchangesAsync("disk-cleanup", "elsewhere", true, [other.Exchange!.Id], Ct)).Moved);
+
+        await Walking.GoAsync(shell, Viewing.Project);
+        await shell.Settled;
+        await Walking.GoAsync(shell, Viewing.Conversation, "disk-cleanup");
+        await shell.Settled;
+
+        shell.Line.Written = "to nobody now";
+        await shell.Settled;
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Line));
+        shell.NewKeyDownEvent(Key.Enter);
+        await shell.Settled;
+
+        Assert.Empty((await Client.ExportAsync("disk-cleanup", Ct)).Messages);
+    }
+
+    [Fact]
+    public async Task Unticking_part_of_a_request_to_a_role_keeps_it_whole()
+    {
+        var (shell, driving, _) = await SeatedAsync();
+        using var held = shell;
+
+        var seat = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await seat.StartAsync(shell.Held!.Seat.Name, T0, Ct);
+
+        var one = await seat.RequestAsync(shell.Held!.Seat.Name, Orders, "model-a", """{"ask":"to a role a"}""", T0.AddMinutes(2), Conversation, Ct);
+        var two = await seat.RequestAsync(shell.Held!.Seat.Name, Billing, "model-a", """{"ask":"to a role b"}""", T0.AddMinutes(2), Conversation, Ct);
+
+        System.Data.Common.DbConnection raw = _connection;
+
+        using (var group = raw.CreateCommand())
+        {
+            group.CommandText = $"UPDATE exchanges SET request_group = 'g1' WHERE id IN ({one.Exchange!.Id}, {two.Exchange!.Id});";
+            group.ExecuteNonQuery();
+        }
+
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+
+        Assert.True(shell.Transcript.Reach(one.Request!.Id));
+
+        await shell.MoveEntries();
+        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        var reviewing = (TickDialog)driving.Find(Moving.ReviewTitle);
+
+        reviewing.Rows.SelectedItem = 1;
+        reviewing.NewKeyDownEvent(Key.Space);
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        Assert.Contains("2 exchanges", ((ChoiceDialog)driving.Find(Moving.WhereTitle)).Described, StringComparison.Ordinal);
     }
 
     [Fact]

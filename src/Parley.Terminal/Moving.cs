@@ -66,6 +66,14 @@ internal static class Moving
         ArgumentNullException.ThrowIfNull(done);
 
         var export = await client.ExportAsync(source, token).ConfigureAwait(false);
+
+        if (export.Exchanges.Count == 0)
+        {
+            await done("There is nothing in this conversation to move.", null).ConfigureAwait(false);
+
+            return;
+        }
+
         var everything = await client
             .PreviewMoveAsync(source, [.. export.Exchanges.Select(e => e.ExchangeId)], token).ConfigureAwait(false);
 
@@ -157,9 +165,9 @@ internal static class Moving
                 return;
             }
 
-            // A send to several stays whole whatever was unticked: the broker keeps no record of one, so nothing else can
-            // hold it, and the next step says how many will go.
-            var kept = MovePicking.WithSendsToSeveral(export.Messages, left);
+            // A send to several or a Request to a role stays whole whatever was unticked. The broker keeps no record of the
+            // first, so nothing else can hold it, and the next step says how many will go.
+            var kept = MovePicking.Whole(export, left);
 
             AskWhere(app, client, source, kept, destinations, queue, done);
         };
@@ -280,7 +288,7 @@ internal static class Moving
             CultureInfo.InvariantCulture,
             $"{preview.Exchanges.Count} exchange{(preview.Exchanges.Count == 1 ? string.Empty : "s")} and {messages} message{(messages == 1 ? string.Empty : "s")}. "));
 
-        said.Append("Each keeps its words, author and time, and you can move them back. ");
+        said.Append(Safe.Text($"Each keeps its words, author and time, and you can move them back unless {source} has closed. "));
 
         if (preview.Exchanges.Any(e => e.Open))
         {
@@ -300,7 +308,7 @@ internal static class Moving
             said.Append(Safe.Text($"These files stay in {source}: {named}{more}. "));
         }
 
-        return said.Append("Untick anything you meant to leave; a message to several goes whole.").ToString();
+        return said.Append("Untick anything you meant to leave; a message to several, or to a role, goes whole.").ToString();
     }
 
     private static string Label(MovePreviewExchange exchange) =>

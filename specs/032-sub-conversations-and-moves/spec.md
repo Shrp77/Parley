@@ -50,7 +50,7 @@ The person sees that some entries are about something else. They pick those mess
 3. **Given** a confirmed move to a new conversation, **When** it completes, **Then** the source no longer shows those entries and notes what moved and where, and the destination shows them and notes where they came from.
 4. **Given** a confirmed move to an existing open conversation, **When** it completes, **Then** the moved entries sit among its own in the order the broker first recorded them.
 5. **Given** a move is under way, **When** anything stops it, **Then** nothing has moved: a move happens whole or not at all.
-6. **Given** entries were moved by mistake, **When** the person moves them back, **Then** they return to the source and both moves stay on record.
+6. **Given** entries were moved by mistake from a conversation still open, **When** the person moves them back, **Then** they return to the source and both moves stay on record.
 7. **Given** a conversation or its export, **When** anybody reads the export after a move, **Then** it records what moved in or out, when, and by whom.
 
 ---
@@ -142,7 +142,7 @@ An exchange that is moved may still be open: an agent owes an answer, or the per
 - **FR-012**: The broker MUST keep a record of every move: what moved, from where, to where, when and by whom. It MUST hold no message text. Both conversations MUST show it where the entries were, and exports MUST carry it.
 - **FR-013**: Moves MUST follow the refusals under Edge Cases, each with a sentence saying why.
 - **FR-014**: A move MUST void a closure poll running in either conversation.
-- **FR-015**: Moved entries MUST be movable again, including back, with each move on record.
+- **FR-015**: Moved entries MUST be movable again, including back unless their source has closed, with each move on record. Surfaces MUST say that limit where they say a move can be undone.
 
 **Agents**
 

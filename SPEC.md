@@ -561,7 +561,8 @@ operation moves an exchange or names where one goes.
 - **An exchange that settled another stays linked to it** when only one of them moves (§5.6). A new
   settlement is still only within one conversation.
 
-A move can be undone by moving the exchanges back, and both moves stay on record.
+A move can be undone by moving the exchanges back, unless the conversation they came from has closed, and both
+moves stay on record.
 
 **A conversation may have a parent** (`spin_off`, §10.2). A person who wants a focused conversation about
 something raised in another starts one from it, and the broker records the link before anything is sent,

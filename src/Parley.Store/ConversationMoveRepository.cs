@@ -33,9 +33,9 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns>Why it was refused, or <see langword="null"/> when the link is recorded.</returns>
     /// <remarks>
-    /// Recorded before the Request that follows it, so a Request can never reach a spin-off with no link behind it. A
-    /// conversation with nothing in it appears in no list, so a send that is refused leaves nothing to see, and asking
-    /// again with the same two names succeeds so the person can try again.
+    /// Recorded before the Request that follows it, so a Request can never reach a spin-off with no link behind it. A surface
+    /// whose send reaches nobody takes it back with <see cref="AbandonSpinOffAsync"/>. Asking again with the same two names
+    /// succeeds, for a surface that has not.
     /// </remarks>
     public async Task<string?> SpinOffAsync(
         string parent,

@@ -201,7 +201,7 @@ timezone, sortable either way.
 - **Move entries to another conversation** (`Alt+v` in a conversation, or **Move entries** in the panel). A message can't
   leave its exchange, so a whole exchange goes, with every part of a request to a role. You see everything that would go
   before you confirm. Work still open carries on in the new place: its agents aren't woken, and are told at their next
-  collection. Both conversations say what moved, and you can move it back. Files stay where they are. Closed destinations,
+  collection. Both conversations say what moved, and you can move it back unless where it came from has closed. Files stay where they are. Closed destinations,
   roadmap items' conversations and ownership conversations are refused.
 - **Go to a linked conversation** (`Alt+l` in a conversation, or the links in the panel): its parent, what was started
   from it, and where entries moved to or from.

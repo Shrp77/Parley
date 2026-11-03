@@ -46,7 +46,7 @@ else if (Model.Preview is { Refused: null } preview)
     <p class="lede">
         This will move @preview.Exchanges.Count exchange@(preview.Exchanges.Count == 1 ? null : "s") and @messages message@(messages == 1 ? null : "s").
         A message can't leave its exchange, so a whole exchange goes. Each message keeps its words, its author and its time.
-        You can move them back afterwards.
+        You can move them back afterwards, unless @Model.Id has closed.
     </p>
     @if (open > 0)
     {

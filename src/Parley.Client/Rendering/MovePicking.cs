@@ -62,6 +62,22 @@ public static class MovePicking
         return [.. whole.Order()];
     }
 
+    /// <summary>What was picked, with every other exchange of any send to several or Request to a role among it.</summary>
+    /// <param name="export">The conversation.</param>
+    /// <param name="picked">The exchanges picked.</param>
+    /// <returns>The exchanges that go.</returns>
+    public static IReadOnlyList<long> Whole(ConversationExport export, IReadOnlyCollection<long> picked)
+    {
+        ArgumentNullException.ThrowIfNull(export);
+
+        var whole = new HashSet<long>(WithSendsToSeveral(export.Messages, picked));
+        var groups = export.Exchanges.Where(e => e.RequestGroup is not null && whole.Contains(e.ExchangeId)).Select(e => e.RequestGroup).ToHashSet();
+
+        whole.UnionWith(export.Exchanges.Where(e => groups.Contains(e.RequestGroup)).Select(e => e.ExchangeId));
+
+        return [.. whole.Order()];
+    }
+
     /// <summary>Every conversation entries could be moved to, archived ones and every page included.</summary>
     /// <param name="client">The project's broker.</param>
     /// <param name="source">The conversation they are in.</param>

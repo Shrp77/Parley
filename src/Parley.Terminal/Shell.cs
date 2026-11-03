@@ -306,11 +306,19 @@ internal sealed partial class Shell : Window
                 && await SpinningOff.LinkAsync(new BrokerClient(_directory.ClientFor(place)), spinning.Parent, conversation, token)
                     .ConfigureAwait(false) is { } refused)
             {
-                // Something else took the name since. It is an ordinary conversation now, and what is on screen says so.
                 Said = $"Nothing was sent: {refused}";
-                _spinningOff = null;
 
-                await OpenAsync(place, conversation, token).ConfigureAwait(false);
+                // Only if something else took the name since: it is an ordinary conversation now, and what is on screen says
+                // so. Refused for any other reason, say its parent went, a later Enter must be refused too, or it would send
+                // with no link behind it. Leaving this conversation is what ends that.
+                var taken = await new BrokerClient(_directory.ClientFor(place)).ExportAsync(conversation, token).ConfigureAwait(false);
+
+                if (taken.Exchanges.Count > 0)
+                {
+                    _spinningOff = null;
+
+                    await OpenAsync(place, conversation, token).ConfigureAwait(false);
+                }
 
                 return;
             }
@@ -334,6 +342,12 @@ internal sealed partial class Shell : Window
             }
 
             _spinningOff = null;
+
+            // Its participants are the broker's to say from now on, and a conversation can empty again by a move.
+            if (_pending is { } started && started.Project == place.Name.Value && started.Conversation == conversation)
+            {
+                _pending = null;
+            }
 
             // Only what was sent leaves the box: what was typed after Enter is the start of the next thought, and is the
             // person's own, so a command in it runs.
@@ -1698,6 +1712,12 @@ internal sealed partial class Shell : Window
             if (_spinningOff is { } spinning && spinning.Project + "/" + spinning.Conversation != lineFor)
             {
                 _spinningOff = null;
+            }
+
+            // Who a conversation not yet spoken in was started for belongs to it alone too.
+            if (_pending is { } waiting && waiting.Project + "/" + waiting.Conversation != lineFor)
+            {
+                _pending = null;
             }
 
             if (!string.Equals(_lineFor, lineFor, StringComparison.Ordinal))
@@ -4878,9 +4898,27 @@ internal sealed partial class Shell : Window
                     return;
                 }
 
+                if (name.StartsWith(Facilitation.ConversationPrefix, StringComparison.Ordinal))
+                {
+                    Said = $"Nothing was started: a name beginning {Facilitation.ConversationPrefix} belongs to the facilitator's conversations.";
+
+                    return;
+                }
+
                 var export = await client.ExportAsync(parent, reading).ConfigureAwait(false);
+
+                // A spin-off of something itself not yet sent has no parent to name.
+                if (export.Exchanges.Count == 0 && (export.Moves is not { Count: > 0 }))
+                {
+                    Said = "Nothing was started: this conversation has nothing in it yet, so send it first.";
+
+                    return;
+                }
+
                 var message = under is { } id ? export.Messages.FirstOrDefault(m => m.Id == id) : null;
-                var quote = message is null ? string.Empty : Parley.Client.Rendering.Quoting.Of(message, parent);
+
+                // A line of the person's own first, with the quote below it where they can read it before they send it.
+                var quote = message is null ? string.Empty : "\n" + Parley.Client.Rendering.Quoting.Of(message, parent).TrimEnd();
 
                 _pending = (project.Name.Value, name, message is null || PersonSeat.Is(message.From) ? [] : [message.From]);
                 _spinningOff = (project.Name.Value, name, parent);
@@ -4900,6 +4938,8 @@ internal sealed partial class Shell : Window
 
                     return quote;
                 });
+
+                Line.ShowFromTheTop();
 
                 Focus(Panes.ToList().IndexOf(Line));
             });
@@ -5143,7 +5183,7 @@ internal sealed partial class Shell : Window
         // A conversation named and not yet spoken in has nobody in it as far as the broker knows; the agents it was
         // started for are its participants until the first message makes that true.
         if (_pending is { } pending && pending.Project == project.Name.Value
-            && pending.Conversation == conversationId && export.Messages.Count == 0)
+            && pending.Conversation == conversationId && export.Messages.Count == 0 && export.Moves is not { Count: > 0 })
         {
             pairs =
             [

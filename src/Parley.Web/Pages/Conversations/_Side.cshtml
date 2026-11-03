@@ -30,19 +30,19 @@
 
 @if (Model.Destroyed is null)
 {
-    @if (Model.WaitingHere.Count > 0)
+    @if (Model.WaitingOnYou.Count > 0)
     {
         @* Each agent once with how many of its questions, and each question a link to where it was asked. The words are
            the agent's and are escaped like every other agent-written text. *@
         <section class="waiting-on-you" aria-label="Waiting on you">
-            <h2>Waiting on you <span class="waiting-count">@Model.WaitingHere.Sum(on => on.Questions.Count)</span></h2>
+            <h2>Waiting on you <span class="waiting-count">@Model.WaitingOnYou.Sum(on => on.Questions.Count)</span></h2>
             <p class="waiting-step">
                 <button type="button" class="quiet" data-waiting-step="-1">Previous</button>
                 <button type="button" id="next-waiting" class="quiet" data-waiting-step="1">Next</button>
                 <span id="waiting-where" class="waiting-where" role="status"></span>
             </p>
             <ul>
-                @foreach (var on in Model.WaitingHere)
+                @foreach (var on in Model.WaitingOnYou)
                 {
                     <li>
                         <strong>@on.Peer.Value</strong> (@on.Questions.Count)

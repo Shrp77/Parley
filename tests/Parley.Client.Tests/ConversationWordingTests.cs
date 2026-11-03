@@ -40,6 +40,12 @@ public sealed class ConversationWordingTests
     }
 
     [Fact]
+    public void A_moves_note_says_the_day_so_it_cannot_read_as_the_day_of_the_messages_around_it()
+    {
+        Assert.Contains("on 3 Nov 2026, 09:00", ConversationWording.MoveLine(Moved, "pricing", TimeZoneInfo.Utc), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_quote_says_who_and_where_and_marks_every_line()
     {
         var quote = Quoting.Of(Said(1, """{"ask":"first\nsecond"}"""), "pricing").ReplaceLineEndings("\n");

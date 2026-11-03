@@ -73,44 +73,6 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// </remarks>
     public IReadOnlyList<WaitingOn> WaitingOnYou { get; private set; } = [];
 
-    /// <summary>What the page lists as waiting on the person: <see cref="WaitingOnYou"/>, and every message it marks.</summary>
-    /// <remarks>
-    /// <see cref="AwaitsReply"/> reads the transcript and <see cref="WaitingOnYou"/> reads the wait-for graph, and they can
-    /// disagree. A message that says <i>Waiting on you</i> and is missing from the list could not be gone to, so a marked
-    /// message is always listed. Which of the two is right about such a message is an open question for the owner.
-    /// </remarks>
-    public IReadOnlyList<WaitingOn> WaitingHere
-    {
-        get
-        {
-            var listed = WaitingOnYou.SelectMany(on => on.Questions).Select(question => question.Exchange).ToHashSet();
-            var marked = Messages
-                .Where(message => AwaitsReply(message) && !listed.Contains(message.ExchangeId))
-                .GroupBy(message => message.From)
-                .ToDictionary(
-                    group => group.Key,
-                    group => group.Select(message => new WaitingQuestion(
-                        message.ExchangeId, message.CreatedUtc, message.Id, PayloadShape.Spoken(message.PayloadJson))).ToList());
-
-            if (marked.Count == 0)
-            {
-                return WaitingOnYou;
-            }
-
-            return
-            [
-                .. WaitingOnYou
-                    .Select(on => marked.TryGetValue(on.Peer, out var more)
-                        ? new WaitingOn(on.Peer, [.. on.Questions.Concat(more).OrderBy(question => question.Exchange)])
-                        : on)
-                    .Concat(marked
-                        .Where(pair => WaitingOnYou.All(on => on.Peer != pair.Key))
-                        .Select(pair => new WaitingOn(pair.Key, pair.Value)))
-                    .OrderBy(on => on.Peer.Value, StringComparer.Ordinal),
-            ];
-        }
-    }
-
     /// <summary>This conversation's parent and children (SPEC.md §5.0).</summary>
     public ConversationLinks Links { get; private set; } = ConversationLinks.None;
 
@@ -228,12 +190,16 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
 
     /// <summary>Whether a message is an agent's question back to the person that is still waiting on them.</summary>
     /// <param name="message">The message.</param>
-    /// <returns><see langword="true"/> for a Clarify to the person, on an open exchange, with nothing after it there.</returns>
+    /// <returns><see langword="true"/> for the latest thing said to the person on an exchange the person owes the next move on.</returns>
+    /// <remarks>
+    /// Who owes comes from the wait-for graph and never from the transcript's last message. An agent may settle its question
+    /// by handing the turn back (SPEC.md §5.6), which writes no message, so the transcript would go on saying the person owes
+    /// what they do not.
+    /// </remarks>
     public bool AwaitsReply(Message message) =>
         message.Type is MessageType.Clarify or MessageType.Request
         && message.To.Role == "human-user"
-        && Exchanges.TryGetValue(message.ExchangeId, out var snapshot)
-        && snapshot.State == ExchangeState.Open
+        && WaitingOnYou.Any(on => on.Questions.Any(question => question.Exchange == message.ExchangeId))
         && Messages.Last(m => m.ExchangeId == message.ExchangeId).Id == message.Id;
 
     /// <summary>The outcome the person chose, when their words close an agent's Request as well as answer it.</summary>

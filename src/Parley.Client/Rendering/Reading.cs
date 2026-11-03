@@ -165,7 +165,7 @@ public static class Reading
             {
                 while (moves.Count > 0 && moves.Peek().FirstMessage <= at)
                 {
-                    lines.Add(new TranscriptLine(Pad(ConversationWording.MoveLine(moves.Dequeue(), conversation!)), LineKind.Annotation, null));
+                    lines.Add(new TranscriptLine(Pad(ConversationWording.MoveLine(moves.Dequeue(), conversation!, zone)), LineKind.Annotation, null));
                 }
             }
 
@@ -193,7 +193,7 @@ public static class Reading
         {
             foreach (var move in moves.Concat((export.Moves ?? []).Where(m => m.FirstMessage is null)))
             {
-                lines.Add(new TranscriptLine(Pad(ConversationWording.MoveLine(move, conversation)), LineKind.Annotation, null));
+                lines.Add(new TranscriptLine(Pad(ConversationWording.MoveLine(move, conversation, zone)), LineKind.Annotation, null));
             }
 
             foreach (var pair in export.SettledElsewhere ?? [])
