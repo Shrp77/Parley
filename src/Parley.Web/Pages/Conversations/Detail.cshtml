@@ -136,9 +136,17 @@ else
     <p class="composer-to" id="to-summary" aria-live="polite"></p>
 
     @* Set by "Reply to this" on an agent's question, and cleared by Cancel or a send. *@
-    <input type="hidden" name="ReplyTo" id="reply-to" value="" />
-    <p class="composer-replying" id="replying" role="status" hidden>
-        <span id="replying-text"></span>
+    <input type="hidden" name="ReplyTo" id="reply-to" value="@Model.ReplyTo" />
+    <p class="composer-replying" id="replying" role="status" hidden="@(Model.ReplyTo is null)">
+        <span id="replying-text">@(Model.ReplyTo is { } replying ? $"Replying on exchange {replying}." : null)</span>
+        @* Only on an agent's Request: a reply can close it with an outcome, or leave it open. *@
+        <select name="Outcome" id="reply-outcome" aria-label="Close it with an outcome, or leave it open" hidden="@(string.IsNullOrEmpty(Model.Outcome))">
+            <option value="">Reply, and leave it open</option>
+            @foreach (var (value, says) in Parley.Client.Seating.SeatVoice.Outcomes)
+            {
+                <option value="@value" selected="@(Model.Outcome == value)">Close it: @says</option>
+            }
+        </select>
         <button type="button" id="reply-cancel" class="quiet">Cancel</button>
     </p>
 
@@ -151,6 +159,11 @@ else
         <span class="composer-note">Enter sends. Shift+Enter makes a new line.</span>
         <button type="submit">Send</button>
     </div>
+</form>
+
+@* Submitted by "Close without answering" on a message, which sits in the followed region. *@
+<form method="post" id="close-request" asp-page-handler="CloseRequest" asp-route-project="@Model.Project" asp-route-id="@Model.Id" hidden>
+    <input type="hidden" name="Closing" id="closing" value="" />
 </form>
 
 @section Scripts {
@@ -931,7 +944,36 @@ else
 
             if (!field || !bar || !form) { return; }
 
-            function clear() { field.value = ""; bar.hidden = true; }
+            var outcome = document.getElementById("reply-outcome");
+
+            function clear() { field.value = ""; bar.hidden = true; outcome.value = ""; outcome.hidden = true; }
+
+            document.addEventListener("click", function (e) {
+                var closing = e.target.closest ? e.target.closest("button.close-request") : null;
+
+                if (!closing) { return; }
+
+                var closer = document.getElementById("close-request");
+
+                // Back to the address this page was opened at, so an embedded page stays embedded.
+                closer.action = location.pathname + location.search + "&handler=CloseRequest";
+                document.getElementById("closing").value = closing.getAttribute("data-exchange");
+                closer.submit();
+            });
+
+            // The next message waiting on the person, after the one on screen, round to the first. The links are in the
+            // followed region and are replaced every few seconds, so they are read at each press.
+            document.addEventListener("click", function (e) {
+                if (!e.target.closest || !e.target.closest("#next-waiting")) { return; }
+
+                var links = Array.prototype.slice.call(document.querySelectorAll("a[data-waiting]"));
+
+                if (links.length === 0) { return; }
+
+                var at = links.findIndex(function (link) { return link.getAttribute("href") === location.hash; });
+
+                location.hash = links[(at + 1) % links.length].getAttribute("href");
+            });
 
             document.addEventListener("click", function (e) {
                 var button = e.target.closest ? e.target.closest("button.reply-to") : null;
@@ -941,6 +983,8 @@ else
                 field.value = button.getAttribute("data-exchange");
                 said.textContent = "Replying to " + button.getAttribute("data-agent") + "'s question (exchange " + field.value + "). Your words answer it.";
                 bar.hidden = false;
+                outcome.value = "";
+                outcome.hidden = !button.hasAttribute("data-request");
 
                 var box = form.querySelector("textarea[name=Says]");
                 form.scrollIntoView({ block: "end" });

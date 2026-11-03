@@ -413,6 +413,39 @@ public sealed class CompletingTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task The_key_goes_to_each_message_waiting_on_the_person_and_round_again()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (shell, driving) = await SeatedAsync(ct);
+
+        using var held = shell;
+
+        var broker = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await broker.StartAsync(Orders, T0, ct);
+
+        var second = await broker.RequestAsync(
+            Orders, shell.Held!.Seat.Name, "model-a", """{"ask":"and which rate?"}""", T0.AddMinutes(2), Conversation, ct);
+
+        Assert.NotNull(second.Exchange);
+
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+        driving.App.LayoutAndDraw(true);
+
+        var waiting = shell.Room.Outstanding.SelectMany(item => item.Questions).Select(q => q.At!.Value).Order().ToArray();
+
+        Assert.Equal(2, waiting.Length);
+
+        foreach (var expected in new[] { waiting[0], waiting[1], waiting[0] })
+        {
+            await shell.NextWaiting();
+
+            Assert.Equal(shell.Transcript.Rows.ToList().IndexOf(expected), shell.Transcript.List.SelectedItem);
+        }
+    }
+
+    [Fact]
     public async Task Sending_is_offered_where_a_person_would_look_for_it()
     {
         // `contracts/views.md`: no action exists only as a key, and whatever a key does a pointer reaches too. This was

@@ -139,11 +139,51 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// <param name="message">The message.</param>
     /// <returns><see langword="true"/> for a Clarify to the person, on an open exchange, with nothing after it there.</returns>
     public bool AwaitsReply(Message message) =>
-        message.Type == MessageType.Clarify
+        message.Type is MessageType.Clarify or MessageType.Request
         && message.To.Role == "human-user"
         && Exchanges.TryGetValue(message.ExchangeId, out var snapshot)
         && snapshot.State == ExchangeState.Open
         && Messages.Last(m => m.ExchangeId == message.ExchangeId).Id == message.Id;
+
+    /// <summary>The outcome the person chose, when their words close an agent's Request as well as answer it.</summary>
+    /// <remarks>Empty means a reply that leaves it open, which is a Clarify (SPEC.md 5.6).</remarks>
+    [BindProperty, FromForm]
+    public string? Outcome { get; set; }
+
+    /// <summary>The exchange the person is closing without answering.</summary>
+    [BindProperty, FromForm]
+    public long Closing { get; set; }
+
+    /// <summary>Closes one Request waiting on the person, without answering it (SPEC.md 10.2, <c>close_request</c>).</summary>
+    /// <returns>The page, saying what happened.</returns>
+    public async Task<IActionResult> OnPostCloseRequestAsync()
+    {
+        if (directory.Find(Project) is not { } project)
+        {
+            return RedirectToPage("/Index");
+        }
+
+        var read = await BrokerDirectory.ReadAsync(async () =>
+            await new BrokerClient(directory.ClientFor(project))
+                .CloseRequestAsync(Closing, cancellationToken: HttpContext.RequestAborted)
+                .ConfigureAwait(false)).ConfigureAwait(false);
+
+        if (read is { Reachable: true, Value: true })
+        {
+            seats.Held(project.Name.Value)?.Forget(Closing);
+        }
+
+        var said = !read.Reachable
+            ? read.Problem ?? "Its broker did not answer."
+            : read.Value ? "Closed, and they have been told." : "That request is not open, so nothing changed.";
+
+        Sent = [("Close", said)];
+        Tell(project.Name.Value, "Close", said);
+
+        await OnGetAsync().ConfigureAwait(false);
+
+        return Page();
+    }
 
     /// <summary>The agents a link ticked for the person, so they can untick before sending.</summary>
     /// <remarks>Only a head start on <see cref="Targets"/>: it is read on a GET and nothing is addressed until Send.</remarks>
@@ -498,18 +538,23 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
         // answer.
         if (ReplyTo is { } exchange)
         {
-            var answered = await new SeatVoice(directory.AgentsFor(project), hold.Seat)
-                .ClarifyAsync(hold, exchange, Says, token).ConfigureAwait(false);
+            var speaking = new SeatVoice(directory.AgentsFor(project), hold.Seat);
+
+            var answered = string.IsNullOrEmpty(Outcome)
+                ? await speaking.ClarifyAsync(hold, exchange, Says, token).ConfigureAwait(false)
+                : await speaking.ResultAsync(hold, exchange, [(PayloadShape.WholeRequest, Says, Outcome)], token)
+                    .ConfigureAwait(false);
 
             Sent = [("Reply", answered.Says)];
             Tell(project.Name.Value, "Reply", answered.Says);
 
+            // Refused, the words and what they answer stay, so that fixing them does not turn them into a new Request.
             if (answered.Closed)
             {
                 Says = null;
+                ReplyTo = null;
+                Outcome = null;
             }
-
-            ReplyTo = null;
 
             await OnGetAsync().ConfigureAwait(false);
 

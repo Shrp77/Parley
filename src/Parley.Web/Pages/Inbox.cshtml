@@ -149,7 +149,7 @@
                                 </span>
                                 @if (item.Message.ConversationId is { Length: > 0 } conversation)
                                 {
-                                    <a href="/Conversations/Detail?project=@projectName&amp;id=@conversation">in @conversation</a>
+                                    <a href="/Conversations/Detail?project=@projectName&amp;id=@conversation#m@(item.Message.Id)">Open in @conversation, with what led to it</a>
                                 }
                             </p>
 
