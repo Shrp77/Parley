@@ -352,6 +352,43 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task The_list_of_where_entries_can_go_says_what_each_was_spun_off_from()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        var seat = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        Assert.Null(await Client.SpinOffAsync(Conversation, "kid", Ct));
+        await seat.StartAsync(shell.Held!.Seat.Name, T0, Ct);
+        Assert.True((await seat.RequestAsync(shell.Held!.Seat.Name, Billing, "model-a", """{"ask":"kid"}""", T0, "kid", Ct)).Succeeded);
+
+        Assert.True(shell.Transcript.Reach(message));
+
+        await shell.MoveEntries();
+        await shell.Settled;
+
+        _ = (TickDialog)driving.Find(Moving.Title);
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+        _ = (TickDialog)driving.Find(Moving.ReviewTitle);
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        var choosing = (ChoiceDialog)driving.Find(Moving.WhereTitle);
+
+        Assert.Contains(
+            choosing.Choices.Source!.ToList().Cast<string>(),
+            row => row.Contains($"kid - spinoff from {Conversation}", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_row_to_place_a_file_says_what_a_conversation_was_spun_off_from_with_nobody_in_it_too()
+    {
+        var nobody = new ConversationSummary("kid", [], 0, T0, T0, false, Parent: "room");
+
+        Assert.Equal("  kid - spinoff from room", FilesPlacing.Row(nobody));
+    }
+
+    [Fact]
     public async Task A_move_lists_what_goes_starts_with_staying_and_moves_when_named()
     {
         var (shell, driving, message) = await SeatedAsync();

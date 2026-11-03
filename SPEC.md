@@ -710,7 +710,7 @@ Closes the exchange. Carries **one outcome**, for the ask as a whole:
 | `answered` | What was asked for is given | the receiver |
 | `acknowledged` | Received and understood; nothing further to do or say | the receiver |
 | `blocked` | A concrete blocker remains after the receiver tried to resolve it | the receiver |
-| `closed` | The person running the deployment closed the conversation first, or closed this Request without an answer (§10.2) | the broker, for the person |
+| `closed` | The person running the deployment closed the conversation first, or closed this Request without an answer (§10.2). Also a `settled` question whose settling exchange the person destroyed or purged after a move split them (§5.0); no Result is written for that | the broker, for the person |
 | `settled` | An agent's question to the person was settled by something the person said later, in the agent's judgement (§5.6) | the requester, in its reply to the person |
 
 The outcome is recorded against the item `request`, the one identifier a Request answered as a
@@ -1725,7 +1725,8 @@ CREATE TABLE exchanges (
   -- first, 'blocked' if the Result was, otherwise 'complete'. It outlives the message text §9.4
   -- prunes, so it is deliberately the least favourable reading of the Result. 'settled' is an
   -- agent's question to the person, closed by the agent because something the person wrote later
-  -- answered it (§5.6); no Result is written for it.
+  -- answered it (§5.6); no Result is written for it. It becomes 'closed' with no link if a destroy
+  -- or a purge takes what settled it, once a move has split them (§5.0).
   outcome             TEXT    CHECK (outcome IN ('complete', 'blocked', 'closed', 'settled')),
   -- For a 'settled' exchange, the person's Request whose reply settled it (§5.6). An exchange
   -- rather than a message, because retention deletes messages (§9.4) and the record must outlive them.
@@ -2860,7 +2861,10 @@ that needed it; an enumeration written as prose has already decayed.
   out how (§10.1). **The one exception is `settled`**, and the same trigger holds it: only an
   agent's question to the person, only by that agent, and only beside a reply it wrote at that
   instant on a Request the person opened with it, in the same conversation (§5.6). The two CHECKs
-  beside the column keep `settled` and `settled_by` together.
+  beside the column keep `settled` and `settled_by` together. A `settled` question whose settling
+  exchange goes with a destroy or a purge after a move split them becomes `closed` with no link
+  (§5.0): it had already closed, and nothing is left for its record to name. So a `closed` outcome has
+  the broker's Result except there, and the trigger, which holds only an exchange's first outcome, allows it.
 - **Closed stays closed.** An exchange by `tr_closed_exchange_stays_closed`, a conversation by
   `tr_closed_conversation_stays_closed`. Nothing reopens work; work worth resuming is new work
   (§5.0).

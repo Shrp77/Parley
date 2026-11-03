@@ -191,6 +191,36 @@ public sealed class ConversationPanelTests
     }
 
     [Fact]
+    public async Task The_other_conversations_list_says_how_many_wait_on_the_person_in_all_and_in_each()
+    {
+        using var console = Asked();
+
+        console.Broker.Request(2, Orders, Person, "And which market?");
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Orders, WaitedOn = Person, ExchangeId = 2 });
+        console.Broker.Request(3, Orders, "billing@test", "Not the person's.");
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Orders, WaitedOn = "billing@test", ExchangeId = 3 });
+
+        using var client = console.CreateClient();
+
+        var list = await client.GetStringAsync(Elsewhere("other"), TestContext.Current.CancellationToken);
+
+        Assert.Contains("<span class=\"waiting-count\">2</span>", list, StringComparison.Ordinal);
+        Assert.Contains("<strong>shared</strong> (2)", list, StringComparison.Ordinal);
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Count(list, "data-elsewhere"));
+    }
+
+    [Fact]
+    public async Task The_page_has_the_place_the_other_conversations_list_arrives_in()
+    {
+        using var console = Asked();
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+
+        Assert.Contains("<div id=\"elsewhere\"></div>", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task The_other_conversations_list_reads_every_page_archived_ones_included()
     {
         using var console = Asked();

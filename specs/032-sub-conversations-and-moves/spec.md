@@ -96,7 +96,7 @@ An exchange that is moved may still be open: an agent owes an answer, or the per
 - A closure poll running in the source or the destination is voided and every answer discarded, as new activity does (§5.0), because who would be asked has changed.
 - Membership is derived (§5.0), so it follows. An agent with nothing left in the source stops being its participant, unless it placed a file there.
 - Files stay in the source. The list says which, and the destination's note leads to them. An agent told of a move is told that files named in that exchange stayed behind, under the old conversation name, where it can still fetch them.
-- An exchange settled by another (§5.6) stays linked to it if only one of the two moves, and a surface says which conversation the other is now in.
+- An exchange settled by another (§5.6) stays linked to it if only one of the two moves, and a surface says which conversation the other is now in. If what settled it is later destroyed or purged, the question becomes `closed` with no link and no Result.
 - Length records (§17 question 16) follow their messages. None is lost.
 - Retention (§9.4) treats moved messages as the destination's from then on. A move cannot make a message prunable that the floor protects.
 - Exports taken before a move no longer match the conversation. This is accepted, and the move record is what explains the difference.

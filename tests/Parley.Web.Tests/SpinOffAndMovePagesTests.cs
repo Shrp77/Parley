@@ -386,6 +386,32 @@ public sealed class SpinOffAndMovePagesTests
     }
 
     [Fact]
+    public async Task The_destroy_page_says_what_a_conversation_was_spun_off_from()
+    {
+        using var console = Console();
+        console.Broker.Parent = "logging";
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At($"/Conversations/Destroy?project={Project}&id=shared"), Ct);
+
+        Assert.Contains($"<li>{WebUtility.HtmlEncode(ConversationWording.Listed("shared", "logging"))}</li>", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_destination_is_chosen_by_its_name_alone_though_its_row_says_more()
+    {
+        using var console = Console();
+        console.Broker.Parent = "logging";
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At($"/Conversations/Move?project={Project}&id=other&x=1"), Ct);
+
+        Assert.Matches(
+            $"<option value=\"shared\"[^>]*>{Regex.Escape(WebUtility.HtmlEncode(ConversationWording.Listed("shared", "logging")))}</option>",
+            page);
+    }
+
+    [Fact]
     public async Task A_list_to_choose_a_destination_from_says_what_each_was_spun_off_from_and_reads_every_page()
     {
         using var console = Console();

@@ -185,19 +185,21 @@ timezone, sortable either way.
   because an archived conversation goes on receiving messages, and a message does not un-archive
   it.
 - **Destroy** deletes a conversation and every participant's half of it. It is described first,
-  and keeping is offered first.
+  and keeping is offered first. If a move had split a question from what settled it, and what settled it goes, the
+  question stays in its conversation and reads as closed.
 - **Export** writes a conversation whole to a file you own.
 - **Close** ends a conversation. You can do this when the participants have not agreed. You give
   a reason, and it is recorded.
 - **Answer in the conversation.** A message waiting on you is marked where it was said, so you read
-  it with what led to it. *Next* and *Previous* (or `Alt+z` on the terminal) move between them, and the conversation page also lists what waits in other conversations. On
+  it with what led to it. *Next* and *Previous* move between them (`Alt+z` on the terminal goes to the next), and the conversation page also lists what waits in other conversations. On
   the web console, *Reply to this* sets the box to answer that message, and on an agent's request
   you can leave it open or close it with an outcome. The Inbox lists what waits across every
   conversation and links to each message.
 - **Spin off a conversation** (`Alt+b` in a conversation, or **Spin off** on a message). A new conversation, linked to the
   one you were reading, with that message quoted for you to edit. Nothing exists or is sent until you send. An agent gets
   exactly what you sent and no access to the other conversation. Lists show it as `name - spinoff from parent`. Closing or
-  destroying one never touches the other.
+  destroying one closes or destroys nothing in the other. The one thing that can change is under **Destroy**: a question
+  a move split from what settled it reads as closed once what settled it is gone.
 - **Move entries to another conversation** (`Alt+v` in a conversation, or **Move entries** in the panel). A message can't
   leave its exchange, so a whole exchange goes, with every part of a request to a role. You see everything that would go
   before you confirm. Work still open carries on in the new place: its agents aren't woken, and are told at their next

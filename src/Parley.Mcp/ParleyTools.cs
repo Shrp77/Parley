@@ -672,7 +672,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 result["move_notices_note"] =
                     "The person moved these exchanges of yours to another conversation. Nothing is owed back. Carry on: " +
                     "your replies on them go there by themselves, and a new request you send may have to name the conversation " +
-                    "it belongs to. Files stayed under the old conversation, where you can still fetch them." +
+                    "it belongs to. Files stayed under the old conversation, where you can fetch them while it exists." +
                     (inbox.MoveNoticesWaiting > 0
                         ? $" {inbox.MoveNoticesWaiting} more are waiting; call parley_inbox again for them."
                         : string.Empty);

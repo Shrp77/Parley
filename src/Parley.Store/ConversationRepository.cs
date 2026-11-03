@@ -555,8 +555,8 @@ public sealed class ConversationRepository(SqliteConnection connection)
     /// <para>
     /// Both parties are told: the receiver so it stops, the requester so it knows its work was not done.
     /// Each notice is a Result carrying an outcome of <c>closed</c> for every item the Request carried,
-    /// attributed to <c>parley:broker</c>, which the schema requires of a closed outcome and forbids of
-    /// anything else (§9.3). It says who closed it and nothing a participant wrote, so it cannot exceed
+    /// attributed to <c>parley:broker</c>, which the schema requires of an exchange first closing as closed and
+    /// forbids of anything else (§9.3). It says who closed it and nothing a participant wrote, so it cannot exceed
     /// the message cap by quoting one.
     /// </para>
     /// </remarks>

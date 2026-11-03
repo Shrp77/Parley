@@ -803,7 +803,11 @@ public sealed class MovingExchangesTests : IDisposable
 
         Assert.Equal(50, first.MoveNotices.Count);
         Assert.Equal(3, first.MoveNoticesWaiting);
-        Assert.Equal(3, (await _broker.DrainInboxAsync(Billing, T0.AddMinutes(2), cancellationToken: Ct)).MoveNotices.Count);
+
+        var second = await _broker.DrainInboxAsync(Billing, T0.AddMinutes(2), cancellationToken: Ct);
+
+        Assert.Equal(3, second.MoveNotices.Count);
+        Assert.Equal(0, second.MoveNoticesWaiting);
     }
 
     [Fact]
@@ -911,10 +915,100 @@ public sealed class MovingExchangesTests : IDisposable
         Assert.Empty(_connection.Query("PRAGMA foreign_key_check;"));
     }
 
-    private async Task<(long Persons, long Question)> SettledPairAsync()
+    [Fact]
+    public async Task Destroying_what_settled_a_question_elsewhere_leaves_every_other_settled_question_settled()
     {
-        var persons = await AskAsync(Person, Orders, "drop the old rate");
-        var question = await AskAsync(Orders, Person, "which rate?");
+        var (_, untouched) = await SettledPairAsync("unrelated");
+        var (persons, _) = await SettledPairAsync();
+
+        Assert.True((await MoveAsync("tax-questions", true, persons)).Moved);
+        Assert.Equal(DestroyVerdict.Gone, (await _console.DestroyConversationAsync("tax-questions", T0.AddMinutes(10), Ct)).Verdict);
+
+        var left = Assert.Single((await _console.ExportAsync("unrelated", Ct)).Exchanges, e => e.ExchangeId == untouched);
+
+        Assert.Equal(ExchangeOutcome.Settled, left.Outcome);
+        Assert.NotNull(left.SettledBy);
+    }
+
+    [Fact]
+    public async Task Purging_somebody_leaves_every_settled_question_they_had_no_part_in_settled()
+    {
+        var (_, untouched) = await SettledPairAsync("unrelated");
+        var (_, question) = await SettledPairAsync();
+
+        await AskAsync(Person, Billing, "something else");
+
+        Assert.True((await MoveAsync("tax-questions", true, question)).Moved);
+        Assert.Equal(PurgeVerdict.Gone, (await _console.PurgeAsync(Billing, Ct)).Verdict);
+
+        var left = Assert.Single((await _console.ExportAsync("unrelated", Ct)).Exchanges, e => e.ExchangeId == untouched);
+
+        Assert.Equal(ExchangeOutcome.Settled, left.Outcome);
+        Assert.NotNull(left.SettledBy);
+    }
+
+    [Fact]
+    public async Task Destroying_a_conversation_leaves_the_notices_about_exchanges_that_went_somewhere_else()
+    {
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+        var other = await AskAsync(Orders, Inventory, "how many?");
+
+        Assert.True((await MoveAsync("tax-questions", true, going)).Moved);
+        Assert.True((await MoveAsync("stock-questions", true, other)).Moved);
+
+        _ = await _console.DestroyConversationAsync("tax-questions", T0.AddMinutes(9), Ct);
+
+        Assert.Equal(
+            ["inventory@test", "orders@test"],
+            _connection.Query<string>("SELECT agent FROM move_notices ORDER BY agent;"));
+    }
+
+    [Fact]
+    public async Task Purging_an_agent_leaves_the_notices_about_exchanges_it_had_no_part_in()
+    {
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+        var other = await AskAsync(Orders, Inventory, "how many?");
+
+        // Apart, because a purge takes the whole of any conversation the agent was in.
+        Assert.True((await MoveAsync("tax-questions", true, going)).Moved);
+        Assert.True((await MoveAsync("stock-questions", true, other)).Moved);
+
+        await _console.RetireAsync(Billing, Ct);
+        _ = await _console.PurgeAsync(Billing, Ct);
+
+        Assert.Equal(
+            ["inventory@test", "orders@test"],
+            _connection.Query<string>("SELECT agent FROM move_notices ORDER BY agent;"));
+    }
+
+    [Fact]
+    public async Task A_delivered_notice_younger_than_the_limit_is_not_pruned()
+    {
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+        Assert.True((await MoveAsync("tax-questions", true, going)).Moved);
+        _ = await _broker.DrainInboxAsync(Billing, T0.AddMinutes(6), cancellationToken: Ct);
+
+        _ = await _console.PruneAsync(new RetentionPolicy(TimeSpan.FromDays(1), TimeSpan.FromDays(2)), T0.AddMinutes(7), Ct);
+
+        Assert.Equal(
+            ["billing@test", "orders@test"],
+            _connection.Query<string>("SELECT agent FROM move_notices ORDER BY agent;"));
+    }
+
+    [Fact]
+    public async Task A_preview_says_how_many_messages_each_exchange_holds()
+    {
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+
+        _ = await _broker.ClarifyAsync(going, Billing, "model-a", """{"text":"which market?"}""", T0.AddMinutes(1), Ct);
+
+        Assert.Equal(2, Assert.Single((await _console.PreviewMoveAsync("pricing", [going], Ct)).Exchanges).Messages);
+    }
+
+    private async Task<(long Persons, long Question)> SettledPairAsync(string conversation = "pricing")
+    {
+        var persons = await AskAsync(Person, Orders, "drop the old rate", conversation);
+        var question = await AskAsync(Orders, Person, "which rate?", conversation);
 
         _ = await _broker.ResultAsync(
             persons, Orders, "model-a", $$"""{"outcomes":[{"id":"{{PayloadShape.WholeRequest}}","outcome":"done","text":"done"}]}""", T0.AddMinutes(1), Ct, [question]);

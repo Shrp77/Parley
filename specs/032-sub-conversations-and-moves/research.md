@@ -37,6 +37,10 @@
 **Decision**: export carries `settled_elsewhere`: each exchange settled by, or settling, one in this conversation that is now in another, with that conversation's name. `Reading` uses it, so neither side's line disappears.
 **Rationale**: `Reading.Settled` searches one export, so a split pair would silently lose the line. A new settle stays same-conversation: `GetSettleableAsync` and the trigger clause are left alone. An agent asked to settle across a split is refused as it would be for any unrelated exchange.
 
+**Decision**: destroying or purging what settled a question a move has split off sets the surviving question to `closed` with `settled_by` NULL and writes no Result.
+**Rationale**: a CHECK forbids an exchange naming itself, and `settled_by` is a foreign key that cannot outlive its target. Refusing the destroy was tried and dropped: two split pairs can refuse each other in a circle, a purge of an unrelated agent would be held up too, and erasing is the person's control and has no exception. `tr_an_outcome_has_its_result` holds only an exchange's first outcome, so it allows this.
+**Alternatives considered**: a table rebuild to allow a dangling or self link, or keeping settled pairs together in a move. Neither is needed for the person to erase, and the second narrows what a person can pick.
+
 ## Spin-off and the existing send path
 
 **Decision**: `spin_off(parent, child)` then the ordinary `Request` naming `child`, on a page of its own.

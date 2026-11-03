@@ -29,7 +29,6 @@ public static class MovePicking
                 && turns[^1][0] is { Type: MessageType.Request } first
                 && message.Type == MessageType.Request
                 && first.From == message.From
-                && first.To != message.To
                 && string.Equals(first.PayloadJson, message.PayloadJson, StringComparison.Ordinal)
                 && turns[^1].All(m => m.To != message.To))
             {
