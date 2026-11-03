@@ -227,7 +227,7 @@ else
         // page honest about them: a group's box shows all, some or none of its members, ticking it
         // ticks them, and the composer says in a sentence who the message will go to.
         //
-        // The tree is part of the followed region and is replaced every few seconds so its states stay
+        // The tree is in `#followed-side` and is replaced every few seconds so its states stay
         // current. A replaced box knows only what the server was told, so what the reader ticked and
         // which groups they closed is taken before the swap and put back after it.
         window.parleyTree = (function () {
@@ -709,7 +709,7 @@ else
                         return;
                     }
 
-                    // A note between messages belongs to the one before it.
+                    // A note between messages goes with the turn before it, a move's note included.
                     li.classList.toggle("filtered-out", !lastTurn);
                 });
 
@@ -1039,7 +1039,7 @@ else
             cancel.addEventListener("click", clear);
         })();
 
-        // Closing the panel, and going through what is waiting on the person. The links are in the followed region and are
+        // Closing the panel, and going through what is waiting on the person. The links are in `#followed-side` and are
         // replaced every few seconds, so they are read at each press.
         (function () {
             var page = document.getElementById("convo-page");

@@ -226,8 +226,8 @@ internal sealed class TranscriptRegion : FrameView
     /// <see cref="Show"/> is called once, when a conversation is opened; this is every later read.
     /// </para>
     /// <para>
-    /// <b>It does not move what somebody is reading.</b> A transcript only grows at the end, so the row under the
-    /// cursor is the same row afterwards, and a reader at the end, who is reading as it arrives, is carried to
+    /// <b>It does not move what somebody is reading.</b> The cursor and the view stay on the message they were on,
+    /// wherever a move has put its rows, and a reader at the end, who is reading as it arrives, is carried to
     /// the new end. That includes a reader on no row, because a transcript opens at the end and tails what is
     /// said (<see cref="Tailing"/>).
     /// </para>
@@ -821,11 +821,20 @@ internal sealed class TranscriptRegion : FrameView
         // **No selection stays no selection.** A reader who
         // has never moved the cursor is left at the top and is not on a row; turning that into row zero makes
         // the surface claim they are reading something, and `FollowingTests` says so in as many words.
+        // **By message, not by row number.** A move takes rows out of the middle or adds them there (SPEC.md 5.0), so
+        // the same number can be a different message, and spinning off or moving starts from what is under the cursor.
+        var before = _owners;
+
         int? selected = _tailing && wrapped.Count > 0
             ? wrapped.Count - 1
             : _lines.SelectedItem is { } at && wrapped.Count > 0
-                ? Math.Clamp(at, 0, wrapped.Count - 1)
+                ? SameMessage(at, before, owners)
                 : null;
+
+        if (!_tailing && wrapped.Count > 0)
+        {
+            _top = SameMessage(_top, before, owners);
+        }
 
         _moving = true;
 
@@ -848,6 +857,64 @@ internal sealed class TranscriptRegion : FrameView
         // reader who wheeled up past a cursor left on the last row was sent back down by the redraw itself. The view is
         // put back where they had it, held inside the rows that now exist; a reader following the end is shown it.
         Place();
+    }
+
+    /// <summary>Where a row's message is now that the rows have been laid out again.</summary>
+    /// <param name="row">The row before.</param>
+    /// <param name="before">Which message each row belonged to before.</param>
+    /// <param name="after">Which message each row belongs to now. Not empty.</param>
+    /// <returns>A row that exists.</returns>
+    /// <remarks>
+    /// A message that has gone, or a row belonging to no message, gives way to the next message still here, then the
+    /// nearest before it: the reader stays at that point in the conversation. With nothing in common, as when another
+    /// conversation opens, the number is only held inside the rows there are.
+    /// </remarks>
+    private static int SameMessage(int row, List<long?> before, List<long?> after)
+    {
+        var last = after.Count - 1;
+
+        if (row < 0 || row >= before.Count)
+        {
+            return Math.Clamp(row, 0, last);
+        }
+
+        var first = new Dictionary<long, int>();
+        var rows = new Dictionary<long, int>();
+
+        for (var at = 0; at < after.Count; at++)
+        {
+            if (after[at] is { } message)
+            {
+                first.TryAdd(message, at);
+                rows[message] = rows.GetValueOrDefault(message) + 1;
+            }
+        }
+
+        if (before[row] is { } own && first.TryGetValue(own, out var start))
+        {
+            return start + Math.Min(row - before.IndexOf(own), rows[own] - 1);
+        }
+
+        // A row of a note or a heading keeps its distance from the message it sits above, or else below.
+        var unowned = before[row] is null;
+
+        for (var at = row + 1; at < before.Count; at++)
+        {
+            if (before[at] is { } later && first.TryGetValue(later, out var found))
+            {
+                return Math.Clamp(unowned && !before.Skip(row).Take(at - row).Any(id => id is not null) ? found - (at - row) : found, 0, last);
+            }
+        }
+
+        for (var at = row - 1; at >= 0; at--)
+        {
+            if (before[at] is { } earlier && first.TryGetValue(earlier, out var found))
+            {
+                return Math.Clamp(found + rows[earlier] - 1 + (unowned && !before.Skip(at + 1).Take(row - at).Any(id => id is not null) ? row - at : 0), 0, last);
+            }
+        }
+
+        return Math.Clamp(row, 0, last);
     }
 
     /// <summary>Whether a line is drawn as things stand.</summary>

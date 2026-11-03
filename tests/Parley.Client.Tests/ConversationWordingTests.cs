@@ -54,6 +54,18 @@ public sealed class ConversationWordingTests
     }
 
     [Fact]
+    public void A_notice_the_broker_wrote_is_not_quoted_as_the_senders_words()
+    {
+        var notice = Said(1, """{"outcomes":[{"id":"q1","outcome":"closed","text":"The person closed this request without an answer."}]}""")
+            with { ResponderModel = Responder.Broker };
+
+        var quote = Quoting.Of(notice, "pricing");
+
+        Assert.StartsWith("Parley noted in pricing:", quote, StringComparison.Ordinal);
+        Assert.DoesNotContain("inventory@test", quote, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void An_export_file_says_what_moved_and_who_is_related()
     {
         var export = new ConversationExport(

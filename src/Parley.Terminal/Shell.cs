@@ -1696,6 +1696,10 @@ internal sealed partial class Shell : Window
         // the furniture.
         Focus(Opening(place));
 
+        NotStartedAnyMore(place.Viewing == Viewing.Conversation && place.Title is { } arriving && Current is { } within
+            ? within.Name.Value + "/" + arriving
+            : null);
+
         // **Arriving at a conversation reads it**, so the view is never on a conversation it has not read.
         //
         // **Awaited rather than queued**: every caller is already on the work queue, so a queued read would sit
@@ -1707,18 +1711,6 @@ internal sealed partial class Shell : Window
             // meant for one agent to another. Coming back to the same conversation keeps them.
             // Keyed by project as well: `rm1-1` is a conversation in every project with a roadmap.
             var lineFor = project.Name.Value + "/" + conversation;
-
-            // A spin-off belongs to the conversation it was started for. Left, what the person writes anywhere is ordinary.
-            if (_spinningOff is { } spinning && spinning.Project + "/" + spinning.Conversation != lineFor)
-            {
-                _spinningOff = null;
-            }
-
-            // Who a conversation not yet spoken in was started for belongs to it alone too.
-            if (_pending is { } waiting && waiting.Project + "/" + waiting.Conversation != lineFor)
-            {
-                _pending = null;
-            }
 
             if (!string.Equals(_lineFor, lineFor, StringComparison.Ordinal))
             {
@@ -1750,6 +1742,43 @@ internal sealed partial class Shell : Window
         if (place.Viewing == Viewing.Configuration)
         {
             await ReadConfigurationAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Forgets a conversation that was named and never spoken in, once the person has gone anywhere else.</summary>
+    /// <param name="arriving">The project and conversation now on screen, or null when no conversation is.</param>
+    /// <remarks>
+    /// Any view counts, not only another conversation: Escape goes to the project, and what was armed there would otherwise
+    /// link whatever later takes the name to a parent the person left behind, and hand it the recipient they discarded. What
+    /// was written for a spin-off goes with it, because coming back it could only be sent with no link behind it.
+    /// </remarks>
+    private void NotStartedAnyMore(string? arriving)
+    {
+        if (_spinningOff is { } spinning && spinning.Project + "/" + spinning.Conversation != arriving)
+        {
+            _spinningOff = null;
+
+            if (string.Equals(_lineFor, spinning.Project + "/" + spinning.Conversation, StringComparison.Ordinal))
+            {
+                Line.Rewrite(_ =>
+                {
+                    _lineFor = null;
+                    _itemWords = null;
+
+                    return string.Empty;
+                });
+            }
+        }
+
+        if (_pending is { } waiting && waiting.Project + "/" + waiting.Conversation != arriving)
+        {
+            _pending = null;
+
+            // Who was ticked for it goes too, or a later conversation under the name would start with them ticked.
+            if (_drafted == (waiting.Project, waiting.Conversation))
+            {
+                _drafted = null;
+            }
         }
     }
 
@@ -4890,17 +4919,9 @@ internal sealed partial class Shell : Window
                 // conversation that already exists, and their words would go into it.
                 var there = await client.ExportAsync(name, reading).ConfigureAwait(false);
 
-                if (string.Equals(name, parent, StringComparison.Ordinal)
-                    || there.Destroyed is not null || there.Exchanges.Count > 0 || there.Messages.Count > 0)
+                if (SpinningOff.NameProblem(name, parent, there) is { } problem)
                 {
-                    Said = $"Nothing was started: there is already a conversation called {name}.";
-
-                    return;
-                }
-
-                if (name.StartsWith(Facilitation.ConversationPrefix, StringComparison.Ordinal))
-                {
-                    Said = $"Nothing was started: a name beginning {Facilitation.ConversationPrefix} belongs to the facilitator's conversations.";
+                    Said = $"Nothing was started: {problem}";
 
                     return;
                 }
@@ -4925,19 +4946,8 @@ internal sealed partial class Shell : Window
 
                 await GoAsync(ViewPlace.Into(project.Name).Into(name)).ConfigureAwait(false);
 
-                // Marked as a quote in the same turn of the loop that writes it, so Enter sends it as words and never
-                // runs it as a command, as an item's words are.
-                Line.Rewrite(now =>
-                {
-                    if (!string.IsNullOrWhiteSpace(now))
-                    {
-                        return now;
-                    }
-
-                    _itemWords = quote.Length == 0 ? null : quote;
-
-                    return quote;
-                });
+                // Beginning with a line break, so it reads as words and cannot be taken for a command.
+                Line.Rewrite(now => string.IsNullOrWhiteSpace(now) ? quote : now);
 
                 Line.ShowFromTheTop();
 

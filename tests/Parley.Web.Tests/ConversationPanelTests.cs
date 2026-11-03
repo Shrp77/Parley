@@ -81,7 +81,7 @@ public sealed class ConversationPanelTests
         Assert.Contains("id=\"followed-side\"", before, StringComparison.Ordinal);
         Assert.DoesNotContain("waiting-on-you", before, StringComparison.Ordinal);
 
-        // Only the wait-for graph changes. The transcript draws nothing from it, so the panel alone can move the digest,
+        // Only the wait-for graph changes, on a message to somebody else that no mark can sit on, so the panel alone moves the digest,
         // and a digest of the transcript alone would leave this list stale on screen.
         console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Orders, WaitedOn = Person, ExchangeId = 1 });
 
@@ -118,6 +118,42 @@ public sealed class ConversationPanelTests
 
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(page, "class=\"reply-to\""));
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(page, "href=\"#m1\" target=\"_self\" data-waiting"));
+    }
+
+    [Fact]
+    public async Task An_earlier_question_on_the_same_exchange_is_neither_marked_nor_listed()
+    {
+        // The agent asked, the person replied, the agent asked again: only its latest is owed.
+        using var console = new TranscriptConsole();
+        console.Broker.Request(1, Person, Orders, "Close the ledger.");
+        console.Broker.Messages.Add(Said(2, Orders, Person, "Gross or net?"));
+        console.Broker.Messages.Add(Said(3, Person, Orders, "Net."));
+        console.Broker.Messages.Add(Said(4, Orders, Person, "Which month?"));
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Orders, WaitedOn = Person, ExchangeId = 1 });
+
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(page, "class=\"reply-to\""));
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(page, "target=\"_self\" data-waiting"));
+        Assert.Contains("href=\"#m4\" target=\"_self\" data-waiting", page, StringComparison.Ordinal);
+        Assert.True(
+            page.IndexOf("class=\"reply-to\"", StringComparison.Ordinal) > page.IndexOf("Net.", StringComparison.Ordinal),
+            "the reply box is on an earlier question");
+
+        static Wire.Message Said(long id, string from, string to, string words) => new()
+        {
+            Id = id,
+            ExchangeId = 1,
+            Type = Wire.MessageType.Clarify,
+            From = from,
+            To = to,
+            ResponderModel = "test",
+            PayloadJson = "{\"text\":" + System.Text.Json.JsonSerializer.Serialize(words) + "}",
+            ConversationId = "shared",
+            CreatedUtc = "2026-09-16T10:00:00Z"
+        };
     }
 
     [Fact]

@@ -141,7 +141,7 @@ public static class Reading
 
     /// <summary>Lays a conversation out for reading, with what each reply settled beneath it (SPEC.md §5.6).</summary>
     /// <param name="export">The conversation: its messages and the state of its exchanges.</param>
-    /// <param name="zone">The zone to render times in, or <see langword="null"/> for this machine's.</param>
+    /// <param name="zone">The zone to render times in, or <see langword="null"/> for this machine's.</param>
     /// <param name="conversation">The conversation being read, for what moved in or out of it; <see langword="null"/> leaves that out.</param>
     /// <returns>The transcript, line by line.</returns>
     /// <remarks>

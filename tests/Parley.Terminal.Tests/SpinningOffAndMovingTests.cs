@@ -285,6 +285,133 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Leaving_a_spin_off_with_Escape_links_nothing_and_ticks_nobody_when_the_name_is_used_later()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        Assert.True(shell.Transcript.Reach(message));
+
+        await shell.SpinOff();
+
+        var form = (FormDialog)driving.Find(SpinningOff.Title);
+
+        form.Fill(0, "disk-cleanup");
+        form.Finish(taken: true);
+        await shell.Settled;
+
+        await driving.PressThenSettleAsync(Key.Esc, () => shell.Settled);
+
+        var leaving = (ChoiceDialog)driving.Find(Shell.DiscardTitle);
+
+        driving.Row(leaving.Choices, Shell.Discard);
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        Assert.Equal(Viewing.Project, shell.Place.Viewing);
+
+        // The person then starts something of their own, for billing, under the same name.
+        var seat = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await seat.StartAsync(Billing, T0, Ct);
+        await seat.RequestAsync(Billing, shell.Held!.Seat.Name, "model-a", """{"ask":"a fresh one"}""", T0.AddMinutes(2), "disk-cleanup", Ct);
+
+        await Walking.GoAsync(shell, Viewing.Conversation, "disk-cleanup");
+        await shell.Settled;
+
+        shell.Line.Written = "my own line";
+        await shell.Settled;
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Line));
+        shell.NewKeyDownEvent(Key.Enter);
+        await shell.Settled;
+
+        Assert.DoesNotContain("Nothing was sent", shell.Said, StringComparison.Ordinal);
+
+        var there = await Client.ExportAsync("disk-cleanup", Ct);
+
+        Assert.Null(there.Links!.Parent);
+        Assert.DoesNotContain(there.Messages, m => m.To == Orders);
+    }
+
+    [Fact]
+    public async Task Leaving_for_the_project_and_coming_back_leaves_no_words_that_could_go_with_no_link()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        Assert.True(shell.Transcript.Reach(message));
+
+        await shell.SpinOff();
+
+        var form = (FormDialog)driving.Find(SpinningOff.Title);
+
+        form.Fill(0, "disk-cleanup");
+        form.Finish(taken: true);
+        await shell.Settled;
+
+        Assert.Contains("the disk is full", shell.Line.Written, StringComparison.Ordinal);
+
+        await Walking.GoAsync(shell, Viewing.Project);
+        await shell.Settled;
+
+        Assert.Empty(shell.Line.Written);
+    }
+
+    [Fact]
+    public async Task A_name_whose_exchanges_all_moved_out_is_refused_before_anything_is_written()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        var seat = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+        await seat.StartAsync(Orders, T0, Ct);
+
+        var other = await seat.RequestAsync(Orders, shell.Held!.Seat.Name, "model-a", """{"ask":"elsewhere"}""", T0.AddMinutes(2), "emptied", Ct);
+
+        Assert.True((await Client.MoveExchangesAsync("emptied", "kept", true, [other.Exchange!.Id], Ct)).Moved);
+
+        Assert.True(shell.Transcript.Reach(message));
+
+        await shell.SpinOff();
+
+        var form = (FormDialog)driving.Find(SpinningOff.Title);
+
+        form.Fill(0, "emptied");
+        form.Finish(taken: true);
+        await shell.Settled;
+
+        Assert.Contains("already a conversation called emptied", shell.Said, StringComparison.Ordinal);
+        Assert.Equal(Conversation, shell.Transcript.Open);
+        Assert.Empty(shell.Line.Written);
+    }
+
+    [Theory]
+    [InlineData("owns-orders", "facilitator")]
+    [InlineData("room", "already a conversation")]
+    public void A_name_the_broker_would_refuse_is_said_at_once(string name, string says)
+    {
+        var problem = SpinningOff.NameProblem(name, Conversation, new ConversationExport([], []));
+
+        Assert.Contains(says, problem, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Every_other_thing_the_broker_counts_as_taken_is_said_at_once()
+    {
+        ConversationExport Empty(RoadmapItemRef? item = null, ConversationLinks? links = null) => new([], [], null, item, links);
+
+        Assert.Null(SpinningOff.NameProblem("free", Conversation, Empty()));
+        Assert.Contains("roadmap", SpinningOff.NameProblem("rm1-1", Conversation, Empty(item: new RoadmapItemRef(1, 1, "t", 1, false))), StringComparison.Ordinal);
+        Assert.Contains("already", SpinningOff.NameProblem("free", Conversation, Empty(links: new ConversationLinks("somewhere-else", ConversationLinkKind.SpinOff, []))), StringComparison.Ordinal);
+        Assert.Contains("already", SpinningOff.NameProblem("free", Conversation, Empty(links: new ConversationLinks(null, null, ["a-child"]))), StringComparison.Ordinal);
+
+        // Everything moved out to a conversation that already existed: no exchange, no child, only the record.
+        Assert.Contains("already", SpinningOff.NameProblem("free", Conversation, new ConversationExport([], [], Moves: [new MoveRecord(1, "free", "kept", "human-user@test", T0, 1, 1, [1])])), StringComparison.Ordinal);
+
+        // What a failed attempt to take a link back leaves: the broker lets the same parent have it.
+        Assert.Null(SpinningOff.NameProblem("free", Conversation, Empty(links: new ConversationLinks(Conversation, ConversationLinkKind.SpinOff, []))));
+    }
+
+    [Fact]
     public async Task Enter_on_an_empty_box_leaves_no_link_and_the_words_can_still_be_sent()
     {
         var (shell, driving, _) = await SeatedAsync();

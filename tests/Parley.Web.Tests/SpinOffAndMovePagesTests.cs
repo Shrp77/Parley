@@ -261,6 +261,7 @@ public sealed class SpinOffAndMovePagesTests
         Assert.Contains("is still in progress", page, StringComparison.Ordinal);
         Assert.Contains("name=\"Exchanges\" value=\"1\"", page, StringComparison.Ordinal);
         Assert.Contains("deck.md", page, StringComparison.Ordinal);
+        Assert.Contains("You can move them back afterwards, unless shared has closed.", page, StringComparison.Ordinal);
         Assert.Empty(console.Broker.MovesAsked);
     }
 

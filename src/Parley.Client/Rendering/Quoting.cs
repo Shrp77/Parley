@@ -18,7 +18,10 @@ public static class Quoting
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        var quote = new StringBuilder().AppendLine($"{message.From.Value} said in {conversation}:");
+        // A notice the broker wrote on a person's instruction is never the sender's words (SPEC.md §13), whoever's name is on it.
+        var quote = new StringBuilder().AppendLine(string.Equals(message.ResponderModel, Responder.Broker, StringComparison.Ordinal)
+            ? $"Parley noted in {conversation}:"
+            : $"{message.From.Value} said in {conversation}:");
 
         foreach (var line in PayloadShape.Spoken(message.PayloadJson).ReplaceLineEndings("\n").Split('\n'))
         {

@@ -76,6 +76,97 @@ public sealed class FollowingTests
         return shell;
     }
 
+    private static Message[] Numbered(int count) =>
+        [.. Enumerable.Range(1, count).Select(id => Question(id, $"question number {id}?"))];
+
+    [Fact]
+    public async Task A_move_taking_rows_from_above_leaves_the_cursor_on_the_same_message()
+    {
+        // A move on another surface takes rows out of the middle. Spinning off and moving start from what is under the cursor.
+        using var driving = Driving.Open(width: 100, height: 30);
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+        var all = Numbered(5);
+
+        await ReadingAsync(driving, shell, Holding(all));
+
+        Assert.True(shell.Transcript.Reach(3));
+        Assert.True(shell.Transcript.Follow(Conversation, "alpha", Holding([.. all.Skip(2)])));
+
+        Assert.Equal(3, shell.Transcript.Rows[shell.Transcript.List.SelectedItem!.Value]);
+    }
+
+    [Fact]
+    public async Task A_move_adding_rows_above_leaves_the_cursor_on_the_same_message()
+    {
+        using var driving = Driving.Open(width: 100, height: 30);
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+        var all = Numbered(5);
+
+        await ReadingAsync(driving, shell, Holding([.. all.Skip(2)]));
+
+        Assert.True(shell.Transcript.Reach(4));
+        Assert.True(shell.Transcript.Follow(Conversation, "alpha", Holding(all)));
+
+        Assert.Equal(4, shell.Transcript.Rows[shell.Transcript.List.SelectedItem!.Value]);
+    }
+
+    [Fact]
+    public async Task The_message_under_the_cursor_moving_away_leaves_the_reader_on_the_next_one()
+    {
+        using var driving = Driving.Open(width: 100, height: 30);
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+        var all = Numbered(5);
+
+        await ReadingAsync(driving, shell, Holding(all));
+
+        Assert.True(shell.Transcript.Reach(2));
+        Assert.True(shell.Transcript.Follow(Conversation, "alpha", Holding(all[0], all[3], all[4])));
+
+        Assert.Equal(4, shell.Transcript.Rows[shell.Transcript.List.SelectedItem!.Value]);
+    }
+
+    [Fact]
+    public async Task Everything_below_the_cursor_moving_away_leaves_the_reader_on_what_came_before()
+    {
+        using var driving = Driving.Open(width: 100, height: 30);
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+        var all = Numbered(5);
+
+        await ReadingAsync(driving, shell, Holding(all));
+
+        Assert.True(shell.Transcript.Reach(4));
+        Assert.True(shell.Transcript.Follow(Conversation, "alpha", Holding(all[0], all[1])));
+
+        Assert.Equal(2, shell.Transcript.Rows[shell.Transcript.List.SelectedItem!.Value]);
+    }
+
+    [Fact]
+    public async Task A_move_taking_rows_from_above_leaves_the_view_on_the_same_message()
+    {
+        // The cursor is not all a reader has: somebody who wheeled up is reading what is at the top of the view.
+        using var driving = Driving.Open(width: 100, height: 30);
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+        var all = Numbered(30);
+
+        await ReadingAsync(driving, shell, Holding(all));
+
+        var list = shell.Transcript.List;
+
+        list.Viewport = list.Viewport with { Y = shell.Transcript.Rows.ToList().IndexOf(12) };
+        driving.App.LayoutAndDraw(true);
+
+        Assert.True(shell.Transcript.Follow(Conversation, "alpha", Holding([.. all.Skip(5)])));
+
+        driving.App.LayoutAndDraw(true);
+
+        Assert.Equal(12, shell.Transcript.Rows[list.Viewport.Y]);
+    }
+
     [Fact]
     public async Task An_answer_that_arrives_is_drawn_without_reopening_the_transcript()
     {
@@ -112,7 +203,7 @@ public sealed class FollowingTests
     public async Task A_reader_further_up_is_left_where_they_are()
     {
         // The web console's objection to live transcripts, answered: a page that changes under somebody
-        // mid-sentence. A transcript grows only at the end, so the row under the cursor stays that row.
+        // mid-sentence. The row under the cursor stays that row while a transcript grows at its end.
         using var driving = Driving.Open();
         using var directory = Directory();
         using var shell = new Shell(directory);

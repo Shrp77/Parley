@@ -323,7 +323,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// </returns>
     /// <remarks>
     /// <para>
-    /// <b>The transcript follows its conversation.</b> A transcript grows only at its end, and
+    /// <b>The transcript follows its conversation.</b> A move can change its middle, and
     /// the page keeps the message a reader is looking at where it was, so a page never changes under a reader
     /// mid-sentence, and a reader at the bottom sees an answer arrive without reloading.
     /// </para>

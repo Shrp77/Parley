@@ -9,7 +9,7 @@
 
 ## Phase 2: Foundation (blocks every story)
 
-- [x] T003 `006_conversation_moves.sql`; update `MigrationDiscoveryTests`; add `MigrationSixTests` (rows kept, trigger refuses each case).
+- [x] T003 `006_conversation_moves.sql`; update `MigrationDiscoveryTests`; add `MigrationSixTests` (rows kept); `MovingExchangesTests` holds the trigger refusing each case.
 - [x] T004 `proto/parley.proto`, Core types in `ConversationMove.cs`, `ConversationSummary.Parent`, `ConversationExport` additions, `IParleyBrokerClient`, `ProtocolVersion`, `Directory.Build.props` 0.52.0.
 - [x] T005 `ConversationMoveRepository`: `SpinOffAsync`, `PreviewAsync`, `MoveAsync`, with store tests.
 
@@ -37,5 +37,5 @@
 ## Phase 6: Polish
 
 - [x] T018 CLI refuses `spin-off` and `move`, naming the terminal. `docs/operating.md`, plugin prose, `parley-operator` skill, MCP tool description.
-- [x] T019 `CLAUDE.md` state: version, protocol, schema, feature list, migration note for 027 (now 007), surfaces rule.
+- [x] T019 `CLAUDE.md` state: version, protocol, schema, feature list, migration note for 027 (now 007), the move and spin-off behaviour.
 - [ ] T020 Full run, drive the pages in a browser, hygiene check, PR, review gate.
