@@ -266,21 +266,6 @@ public sealed class SpinOffAndMovePagesTests
     }
 
     [Fact]
-    public async Task Destroying_what_settled_a_question_elsewhere_says_why_and_says_nothing_went()
-    {
-        using var console = Console();
-        console.Broker.DestroyRefusedFor = "tax-questions";
-
-        using var client = console.CreateClient();
-
-        var (_, body) = await PostAsync(client, $"/Conversations/Destroy?project={Project}&id=shared", ("Typed", "shared"));
-
-        Assert.Contains("Nothing was destroyed", body, StringComparison.Ordinal);
-        Assert.Contains("Destroy tax-questions first", body, StringComparison.Ordinal);
-        Assert.DoesNotContain("Destroyed shared", body, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public async Task With_nothing_picked_it_offers_everything_to_pick_from_and_cannot_move()
     {
         using var console = Console();

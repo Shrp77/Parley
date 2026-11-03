@@ -105,14 +105,6 @@ public sealed class DestroyModel(BrokerDirectory directory) : PageModel
 
         var result = destroyed.Value!;
 
-        if (result.Refusal(Id) is { } refused)
-        {
-            Outcome = refused;
-            Conversation = null;
-
-            return Page();
-        }
-
         // Per table rather than as a total, because a total is the one number that carries no
         // warning -- and this is the only account of those rows that will ever exist.
         Outcome = result.Verdict == DestroyVerdict.NoSuchConversation

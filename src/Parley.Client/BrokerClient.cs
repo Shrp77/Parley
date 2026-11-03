@@ -138,14 +138,8 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             new Wire.ConversationRequest { ConversationId = conversationId }, cancellationToken: cancellationToken);
 
         return new DestroyOutcome(
-            reply.Verdict switch
-            {
-                Wire.DestroyVerdict.Gone => DestroyVerdict.Gone,
-                Wire.DestroyVerdict.SettlesElsewhere => DestroyVerdict.SettlesElsewhere,
-                _ => DestroyVerdict.NoSuchConversation,
-            },
-            [.. reply.Destroyed.Select(d => new PurgeToll(d.Table, d.Rows))],
-            reply.SettlesIn.Length == 0 ? null : reply.SettlesIn);
+            reply.Verdict == Wire.DestroyVerdict.Gone ? DestroyVerdict.Gone : DestroyVerdict.NoSuchConversation,
+            [.. reply.Destroyed.Select(d => new PurgeToll(d.Table, d.Rows))]);
     }
 
     /// <inheritdoc/>

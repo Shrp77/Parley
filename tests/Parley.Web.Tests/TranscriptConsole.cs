@@ -95,9 +95,6 @@ public sealed class ScriptedExport : HttpMessageHandler
     /// <summary>The children every export names.</summary>
     public List<string> Children { get; } = [];
 
-    /// <summary>The conversation a destroy says it can't go before, when it should refuse.</summary>
-    public string DestroyRefusedFor { get; set; } = string.Empty;
-
     /// <summary>How many exports were asked for.</summary>
     public int Exports { get; private set; }
 
@@ -189,11 +186,6 @@ public sealed class ScriptedExport : HttpMessageHandler
                 "/parley.v1.Operators/PreviewMove" => Preview(Wire.PreviewMoveRequest.Parser.ParseFrom(sent.AsSpan(5))),
                 "/parley.v1.Operators/MoveExchanges" => Moved(Wire.MoveExchangesRequest.Parser.ParseFrom(sent.AsSpan(5))),
                 "/parley.v1.Operators/SpinOff" => Spun(Wire.SpinOffRequest.Parser.ParseFrom(sent.AsSpan(5))),
-                "/parley.v1.Operators/Destroy" => new Wire.DestroyReply
-                {
-                    Verdict = DestroyRefusedFor.Length == 0 ? Wire.DestroyVerdict.Gone : Wire.DestroyVerdict.SettlesElsewhere,
-                    SettlesIn = DestroyRefusedFor
-                },
                 "/parley.v1.Operators/Prune" => new Wire.PruneReply
                 {
                     Removed = 2,

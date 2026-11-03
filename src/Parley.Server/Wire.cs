@@ -295,7 +295,6 @@ internal static class Conversions
     {
         DestroyVerdict.NoSuchConversation => Wire.DestroyVerdict.NoSuchConversation,
         DestroyVerdict.Gone => Wire.DestroyVerdict.Gone,
-        DestroyVerdict.SettlesElsewhere => Wire.DestroyVerdict.SettlesElsewhere,
         _ => throw new ArgumentOutOfRangeException(nameof(verdict), verdict, "Not a defined verdict.")
     };
 
@@ -307,7 +306,6 @@ internal static class Conversions
     {
         Wire.DestroyVerdict.NoSuchConversation => DestroyVerdict.NoSuchConversation,
         Wire.DestroyVerdict.Gone => DestroyVerdict.Gone,
-        Wire.DestroyVerdict.SettlesElsewhere => DestroyVerdict.SettlesElsewhere,
         _ => throw new ArgumentOutOfRangeException(nameof(verdict), verdict, "Not a defined verdict.")
     };
 

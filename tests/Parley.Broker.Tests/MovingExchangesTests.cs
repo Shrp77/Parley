@@ -675,36 +675,67 @@ public sealed class MovingExchangesTests : IDisposable
     }
 
     [Fact]
-    public async Task A_conversation_holding_what_settled_a_question_elsewhere_refuses_to_be_destroyed_and_says_where()
+    public async Task Destroying_what_settled_a_question_elsewhere_leaves_it_closed_with_no_link()
+    {
+        var (persons, question) = await SettledPairAsync();
+
+        Assert.True((await MoveAsync("tax-questions", true, persons)).Moved);
+
+        Assert.Equal(DestroyVerdict.Gone, (await _console.DestroyConversationAsync("tax-questions", T0.AddMinutes(10), Ct)).Verdict);
+
+        var left = Assert.Single((await _console.ExportAsync("pricing", Ct)).Exchanges, e => e.ExchangeId == question);
+
+        Assert.Equal((ExchangeState.Closed, ExchangeOutcome.Closed, (long?)null), (left.State, left.Outcome, left.SettledBy));
+        Assert.Empty((await _console.ExportAsync("pricing", Ct)).SettledElsewhere!);
+        Assert.Empty(_connection.Query("PRAGMA foreign_key_check;"));
+
+        // And the rest of it can still go.
+        Assert.Equal(DestroyVerdict.Gone, (await _console.DestroyConversationAsync("pricing", T0.AddMinutes(11), Ct)).Verdict);
+        Assert.Empty(_connection.Query("PRAGMA foreign_key_check;"));
+    }
+
+    [Fact]
+    public async Task Destroying_where_a_question_went_leaves_what_settled_it_alone()
+    {
+        var (persons, question) = await SettledPairAsync();
+
+        Assert.True((await MoveAsync("tax-questions", true, question)).Moved);
+
+        Assert.Equal(DestroyVerdict.Gone, (await _console.DestroyConversationAsync("tax-questions", T0.AddMinutes(10), Ct)).Verdict);
+
+        Assert.Single((await _console.ExportAsync("pricing", Ct)).Exchanges, e => e.ExchangeId == persons);
+        Assert.Empty(_connection.Query("PRAGMA foreign_key_check;"));
+    }
+
+    [Fact]
+    public async Task A_pair_each_side_of_a_move_can_be_destroyed_in_either_order()
     {
         var (persons, _) = await SettledPairAsync();
 
         Assert.True((await MoveAsync("tax-questions", true, persons)).Moved);
 
-        var before = _connection.ExecuteScalar<long>("SELECT count(*) FROM messages;");
-        var refused = await _console.DestroyConversationAsync("tax-questions", T0.AddMinutes(10), Ct);
-
-        Assert.Equal(DestroyVerdict.SettlesElsewhere, refused.Verdict);
-        Assert.Equal("pricing", refused.SettlesIn);
-        Assert.Contains("Destroy pricing first", refused.Refusal("tax-questions"), StringComparison.Ordinal);
-        Assert.Empty(refused.Destroyed);
-        Assert.Equal(before, _connection.ExecuteScalar<long>("SELECT count(*) FROM messages;"));
-
-        // Both ways on work, and nothing is left dangling.
-        Assert.Equal(DestroyVerdict.Gone, (await _console.DestroyConversationAsync("pricing", T0.AddMinutes(11), Ct)).Verdict);
-        Assert.Equal(DestroyVerdict.Gone, (await _console.DestroyConversationAsync("tax-questions", T0.AddMinutes(12), Ct)).Verdict);
+        Assert.Equal(DestroyVerdict.Gone, (await _console.DestroyConversationAsync("pricing", T0.AddMinutes(10), Ct)).Verdict);
+        Assert.Equal(DestroyVerdict.Gone, (await _console.DestroyConversationAsync("tax-questions", T0.AddMinutes(11), Ct)).Verdict);
         Assert.Empty(_connection.Query("PRAGMA foreign_key_check;"));
     }
 
     [Fact]
-    public async Task A_settled_pair_moved_together_can_be_destroyed()
+    public async Task Purging_somebody_unrelated_to_a_split_pair_leaves_the_question_closed_with_no_link()
     {
+        // The purge dooms the conversation holding what settled it, for a reason that has nothing to do with the pair.
         var (persons, question) = await SettledPairAsync();
 
-        Assert.True((await MoveAsync("tax-questions", true, persons)).Moved);
-        Assert.Equal(DestroyVerdict.SettlesElsewhere, (await _console.DestroyConversationAsync("tax-questions", T0.AddMinutes(10), Ct)).Verdict);
-        Assert.True((await MoveAsync("tax-questions", false, question)).Moved);
-        Assert.Equal(DestroyVerdict.Gone, (await _console.DestroyConversationAsync("tax-questions", T0.AddMinutes(12), Ct)).Verdict);
+        await AskAsync(Person, Billing, "something else");
+
+        Assert.True((await MoveAsync("tax-questions", true, question)).Moved);
+
+        Assert.Equal(PurgeVerdict.Gone, (await _console.PurgeAsync(Billing, Ct)).Verdict);
+
+        var left = Assert.Single((await _console.ExportAsync("tax-questions", Ct)).Exchanges, e => e.ExchangeId == question);
+
+        Assert.Equal((ExchangeState.Closed, ExchangeOutcome.Closed, (long?)null), (left.State, left.Outcome, left.SettledBy));
+        Assert.Empty(_connection.Query("SELECT id FROM exchanges WHERE id = @persons;", new { persons }));
+        Assert.Empty(_connection.Query("PRAGMA foreign_key_check;"));
     }
 
     private async Task<(long Persons, long Question)> SettledPairAsync()

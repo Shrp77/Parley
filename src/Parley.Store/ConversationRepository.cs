@@ -1124,30 +1124,6 @@ public sealed class ConversationRepository(SqliteConnection connection)
             return DestroyOutcome.NoSuchConversation;
         }
 
-        // A move can leave what was settled in one conversation and what settled it in this one (SPEC.md 5.0). The settled
-        // one has to name what settled it, so this is refused with a sentence rather than failing at the commit.
-        var settlesIn = await _connection.ExecuteScalarAsync<string?>(
-            new CommandDefinition(
-                """
-                SELECT settled.conversation_id
-                  FROM exchanges settled
-                  JOIN exchanges here ON here.id = settled.settled_by
-                 WHERE here.conversation_id = @Conversation
-                   AND settled.conversation_id <> @Conversation
-                 ORDER BY settled.id
-                 LIMIT 1;
-                """,
-                new { Conversation = conversationId },
-                scope.Transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
-
-        if (settlesIn is not null)
-        {
-            scope.Complete();
-
-            return DestroyOutcome.Settles(settlesIn);
-        }
-
         var participants = await _connection.QueryAsync<string>(
             new CommandDefinition(
                 """
@@ -1198,6 +1174,16 @@ public sealed class ConversationRepository(SqliteConnection connection)
             """
             DELETE FROM move_notices
              WHERE exchange_id IN (SELECT id FROM exchanges WHERE conversation_id = @Conversation);
+            """).ConfigureAwait(false);
+
+        // A move can leave what was settled elsewhere and what settled it here (SPEC.md 5.0). Nothing can name what is gone,
+        // so the question stays closed and says only that: destroying is the person's erase control and has no exception.
+        await ExecuteAsync(
+            """
+            UPDATE exchanges
+               SET settled_by = NULL, outcome = 'closed'
+             WHERE conversation_id <> @Conversation
+               AND settled_by IN (SELECT id FROM exchanges WHERE conversation_id = @Conversation);
             """).ConfigureAwait(false);
 
         await RazeAsync("exchanges", "DELETE FROM exchanges WHERE conversation_id = @Conversation;")
