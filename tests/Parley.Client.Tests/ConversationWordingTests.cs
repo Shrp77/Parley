@@ -83,6 +83,30 @@ public sealed class ConversationWordingTests
     }
 
     [Fact]
+    public void A_transcript_says_what_a_split_settled_pair_is()
+    {
+        var export = new ConversationExport(
+            [Said(1, """{"ask":"before"}""")], [], SettledElsewhere: [new SettledElsewhere(3, 4, "other")]);
+
+        Assert.Contains(
+            Reading.Lines(export, TimeZoneInfo.Utc, "pricing"),
+            line => line.Text.Contains("One of them is now in other", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_send_to_several_is_one_entry_and_goes_whole()
+    {
+        Message To(long id, string to, string words) => new(
+            id, id, MessageType.Request, AgentName.Create("orders@test"), AgentName.Create(to), "model", $$"""{"ask":"{{words}}"}""", "pricing", At, null);
+
+        var messages = new[] { To(1, "billing@test", "same"), To(2, "inventory@test", "same"), To(3, "billing@test", "other") };
+
+        Assert.Equal(2, MovePicking.Turns(messages).Count);
+        Assert.Equal([1L, 2L], MovePicking.WithSendsToSeveral(messages, [2]));
+        Assert.Equal([3L], MovePicking.WithSendsToSeveral(messages, [3]));
+    }
+
+    [Fact]
     public void A_transcript_read_with_no_conversation_named_is_as_it_always_was()
     {
         var export = new ConversationExport([Said(1, """{"ask":"before"}""")], [], Moves: [Moved]);

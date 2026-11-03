@@ -44,6 +44,10 @@ A line of work stays in one **conversation**, however far it travels. If `orders
 `billing`, and `billing` asks `inventory`, and a question comes back to `orders`, all of that is
 one conversation. The broker attaches the conversation. An agent does not choose it.
 
+A person may also start a conversation from another, which links the two, or move whole exchanges
+to another conversation when they turn out not to belong. An agent can do neither: it is told at its
+next collection if an open exchange of its own moved, and carries on.
+
 Only a person, or an agent that is holding no request, starts a new conversation. An agent that
 finds unrelated work partway through a request raises it inside the conversation, or finishes
 first.

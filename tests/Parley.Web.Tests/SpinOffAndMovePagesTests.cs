@@ -385,6 +385,45 @@ public sealed class SpinOffAndMovePagesTests
     }
 
     [Fact]
+    public async Task A_list_to_choose_a_destination_from_says_what_each_was_spun_off_from_and_reads_every_page()
+    {
+        using var console = Console();
+        console.Broker.Parent = "logging";
+        console.Broker.TwoPages = true;
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At($"/Conversations/Move?project={Project}&id=other&x=1"), Ct);
+
+        Assert.Contains($"value=\"shared\"", page, StringComparison.Ordinal);
+        Assert.Contains(WebUtility.HtmlEncode(ConversationWording.Listed("shared", "logging")), page, StringComparison.Ordinal);
+        Assert.Contains("value=\"second-page\"", page, StringComparison.Ordinal);
+        Assert.All(console.Broker.Listings, asked => Assert.True(asked.IncludeArchived));
+    }
+
+    [Fact]
+    public async Task The_conversation_on_screen_is_not_offered_as_where_its_entries_go()
+    {
+        using var console = Console();
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At(Move("&x=1")), Ct);
+
+        Assert.DoesNotContain("<option value=\"shared\"", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_split_settled_pair_is_said_on_the_page()
+    {
+        using var console = Console();
+        console.Broker.SettledElsewhere.Add(new Wire.SettledElsewhere { ExchangeId = 3, SettledBy = 4, ConversationId = "other" });
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At($"/Conversations/Detail?project={Project}&id=shared"), Ct);
+
+        Assert.Contains("One of them is now in other", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_conversation_with_no_parent_lists_as_its_name_alone()
     {
         using var console = Console();

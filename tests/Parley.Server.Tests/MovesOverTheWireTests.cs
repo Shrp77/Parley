@@ -55,6 +55,10 @@ public sealed class MovesOverTheWireTests
         Assert.Equal(source, export.Parent);
         Assert.True(export.ParentByMove);
         Assert.Equal(exchange, Assert.Single(Assert.Single(export.Moves).Exchanges));
+        Assert.Equal(1, moved.Messages);
+        Assert.Equal(
+            "tax-questions",
+            Assert.Single((await operators.ExportAsync(new Wire.ExportRequest { ConversationId = source }, cancellationToken: Ct)).Children));
     }
 
     [Fact]

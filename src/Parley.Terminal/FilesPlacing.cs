@@ -88,7 +88,7 @@ internal static class FilesPlacing
     /// <param name="conversation">The conversation.</param>
     /// <returns>The row, safe to draw.</returns>
     /// <remarks>Indented, for the reason <see cref="Files.Row"/> gives.</remarks>
-    private static string Row(ConversationSummary conversation) =>
+    internal static string Row(ConversationSummary conversation) =>
         "  " + Safe.Text(conversation.Participants.Count == 0
             ? Parley.Client.Rendering.ConversationWording.Listed(conversation.Id, conversation.Parent)
             : $"{Parley.Client.Rendering.ConversationWording.Listed(conversation.Id, conversation.Parent)}  {string.Join(", ", conversation.Participants.Select(p => p.Value))}");

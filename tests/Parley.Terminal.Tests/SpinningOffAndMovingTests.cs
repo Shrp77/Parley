@@ -377,6 +377,19 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
 
         var ids = new List<long>();
 
+        System.Data.Common.DbConnection raw = _connection;
+
+        using (var place = raw.CreateCommand())
+        {
+            place.CommandText =
+                """
+                INSERT INTO conversation_folders (conversation_id, folder, created_utc) VALUES ('room', 'room', '2026-01-01T00:00:00.000Z');
+                INSERT INTO shared_files (conversation_id, name_key, name, size_bytes, sha256, placed_by, placed_utc, changed_utc, modified_ticks)
+                VALUES ('room', 'NOTES.MD', 'notes.md', 10, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'orders@test', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 0);
+                """;
+            place.ExecuteNonQuery();
+        }
+
         for (var i = 0; i < 12; i++)
         {
             ids.Add(await AskPersonAsync(shell, $"question {i}"));
@@ -389,16 +402,14 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
 
         var ticking = (TickDialog)driving.Find(Moving.Title);
 
-        foreach (var _ in Enumerable.Range(0, 1))
-        {
-            ticking.NewKeyDownEvent(Key.A.WithAlt);
-        }
+        ticking.NewKeyDownEvent(Key.A.WithAlt);
 
         await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         var reviewing = (TickDialog)driving.Find(Moving.ReviewTitle);
 
         Assert.Contains("13 exchanges", reviewing.Described, StringComparison.Ordinal);
+        Assert.Contains("These files stay in room: notes.md", reviewing.Described, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -451,6 +462,219 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
 
         Assert.Contains(rows, row => row.Contains("disk-cleanup - spinoff from room", StringComparison.Ordinal));
         Assert.Contains(rows, row => row.StartsWith("room ", StringComparison.Ordinal) && !row.Contains("spinoff", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_request_cannot_go_round_the_box_of_an_unsent_spin_off()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        Assert.True(shell.Transcript.Reach(message));
+
+        await shell.SpinOff();
+
+        var form = (FormDialog)driving.Find(SpinningOff.Title);
+
+        form.Fill(0, "disk-cleanup");
+        form.Finish(taken: true);
+        await shell.Settled;
+
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Transcript));
+        shell.NewKeyDownEvent(Key.K.WithAlt);
+        await shell.Settled;
+
+        Assert.Equal(Shell.SpinOffGoesFromTheBox, shell.Said);
+    }
+
+    [Fact]
+    public async Task A_name_taken_after_it_was_chosen_is_refused_at_the_send_and_does_not_keep_refusing()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        Assert.True(shell.Transcript.Reach(message));
+
+        await shell.SpinOff();
+
+        var form = (FormDialog)driving.Find(SpinningOff.Title);
+
+        form.Fill(0, "disk-cleanup");
+        form.Finish(taken: true);
+        await shell.Settled;
+
+        var seat = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await seat.StartAsync(shell.Held!.Seat.Name, T0, Ct);
+        Assert.True((await seat.RequestAsync(shell.Held!.Seat.Name, Billing, "model-a", """{"ask":"got here first"}""", T0.AddMinutes(2), "disk-cleanup", Ct)).Succeeded);
+
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Line));
+        shell.NewKeyDownEvent(Key.Enter);
+        await shell.Settled;
+
+        Assert.Contains("Nothing was sent", shell.Said, StringComparison.Ordinal);
+        Assert.Single((await Client.ExportAsync("disk-cleanup", Ct)).Messages);
+
+        shell.NewKeyDownEvent(Key.Enter);
+        await shell.Settled;
+
+        Assert.DoesNotContain("Nothing was sent", shell.Said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Unticking_part_of_a_send_to_several_keeps_it_whole()
+    {
+        var (shell, driving, _) = await SeatedAsync();
+        using var held = shell;
+
+        var voice = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await voice.StartAsync(shell.Held!.Seat.Name, T0, Ct);
+
+        var one = await voice.RequestAsync(shell.Held!.Seat.Name, Orders, "model-a", """{"ask":"same words"}""", T0.AddMinutes(2), Conversation, Ct);
+        _ = await voice.RequestAsync(shell.Held!.Seat.Name, Billing, "model-a", """{"ask":"same words"}""", T0.AddMinutes(2), Conversation, Ct);
+
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+
+        Assert.True(shell.Transcript.Reach(one.Request!.Id));
+
+        await shell.MoveEntries();
+        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        var reviewing = (TickDialog)driving.Find(Moving.ReviewTitle);
+
+        reviewing.Rows.SelectedItem = 1;
+        reviewing.NewKeyDownEvent(Key.Space);
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        var choosing = (ChoiceDialog)driving.Find(Moving.WhereTitle);
+
+        Assert.Contains("2 exchanges", choosing.Described, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_refused_destination_asks_again_with_what_was_picked()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        Assert.True(shell.Transcript.Reach(message));
+
+        await shell.MoveEntries();
+        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        var choosing = (ChoiceDialog)driving.Find(Moving.WhereTitle);
+
+        driving.Row(choosing.Choices, Moving.New);
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        var naming = (TextDialog)driving.Find(Moving.NameTitle);
+
+        foreach (var key in Conversation)
+        {
+            naming.NewKeyDownEvent(new Key(key));
+        }
+
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        Assert.Contains("Nothing moved", shell.Said, StringComparison.Ordinal);
+        _ = (ChoiceDialog)driving.Find(Moving.WhereTitle);
+    }
+
+    [Fact]
+    public async Task A_destination_list_reads_every_page_says_what_was_spun_off_and_offers_only_what_could_take_them()
+    {
+        var (shell, _, _) = await SeatedAsync();
+        using var held = shell;
+
+        var seat = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await seat.StartAsync(shell.Held!.Seat.Name, T0, Ct);
+
+        for (var i = 0; i < 60; i++)
+        {
+            Assert.True((await seat.RequestAsync(shell.Held!.Seat.Name, Orders, "model-a", $$"""{"ask":"work {{i}}"}""", T0.AddMinutes(i), $"work-{i}", Ct)).Succeeded);
+        }
+
+        Assert.True(await Client.ArchiveAsync("work-1", Ct));
+        Assert.True(await Client.ForceConcludeAsync("work-2", null, Ct));
+        Assert.Null(await Client.SpinOffAsync("work-3", "child-of-three", Ct));
+        Assert.True((await seat.RequestAsync(shell.Held!.Seat.Name, Orders, "model-a", """{"ask":"child"}""", T0, "child-of-three", Ct)).Succeeded);
+
+        var destinations = await Parley.Client.Rendering.MovePicking.DestinationsAsync(Client, "work-0", Ct);
+
+        Assert.Contains(destinations, c => c.Id == "work-59");
+        Assert.Contains(destinations, c => c.Id == "work-5");
+        Assert.Contains(destinations, c => c.Id == "work-1");
+        Assert.DoesNotContain(destinations, c => c.Id == "work-2");
+        Assert.DoesNotContain(destinations, c => c.Id == "work-0");
+        Assert.Equal("work-3", destinations.Single(c => c.Id == "child-of-three").Parent);
+        Assert.Contains("child-of-three - spinoff from work-3", FilesPlacing.Row(destinations.Single(c => c.Id == "child-of-three")), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_move_to_a_conversation_with_no_link_is_still_somewhere_to_go_and_so_is_a_child()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        var seat = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await seat.StartAsync(shell.Held!.Seat.Name, T0, Ct);
+        Assert.True((await seat.RequestAsync(shell.Held!.Seat.Name, Billing, "model-a", """{"ask":"elsewhere"}""", T0, "other", Ct)).Succeeded);
+
+        var exchange = (await Client.ExportAsync(Conversation, Ct)).Messages.Single(m => m.Id == message).ExchangeId;
+
+        Assert.True((await Client.MoveExchangesAsync(Conversation, "other", false, [exchange], Ct)).Moved);
+
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+        await shell.GoToRelated();
+        await shell.Settled;
+
+        var choosing = (ChoiceDialog)driving.Find(Shell.RelatedTitle);
+
+        Assert.Contains("other", choosing.Choices.Source!.ToList().Cast<string>());
+        await driving.PressThenSettleAsync(Key.Esc, () => shell.Settled);
+
+        Assert.Null(await Client.SpinOffAsync(Conversation, "kid", Ct));
+        Assert.True((await seat.RequestAsync(shell.Held!.Seat.Name, Billing, "model-a", """{"ask":"kid"}""", T0, "kid", Ct)).Succeeded);
+
+        await shell.GoToRelated();
+        await shell.Settled;
+
+        Assert.Contains("kid", ((ChoiceDialog)driving.Find(Shell.RelatedTitle)).Choices.Source!.ToList().Cast<string>());
+    }
+
+    [Fact]
+    public async Task A_preview_says_why_a_group_grew_through_the_client()
+    {
+        var (shell, _, _) = await SeatedAsync();
+        using var held = shell;
+
+        var seat = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await seat.StartAsync(shell.Held!.Seat.Name, T0, Ct);
+
+        var one = (await seat.RequestAsync(shell.Held!.Seat.Name, Orders, "model-a", """{"ask":"a"}""", T0, Conversation, Ct)).Exchange!.Id;
+        var two = (await seat.RequestAsync(shell.Held!.Seat.Name, Billing, "model-a", """{"ask":"b"}""", T0, Conversation, Ct)).Exchange!.Id;
+
+        System.Data.Common.DbConnection raw = _connection;
+
+        using (var group = raw.CreateCommand())
+        {
+            group.CommandText = $"UPDATE exchanges SET request_group = 'g1' WHERE id IN ({one}, {two});";
+            group.ExecuteNonQuery();
+        }
+
+        var preview = await Client.PreviewMoveAsync(Conversation, [one], Ct);
+
+        Assert.NotNull(preview.Exchanges.Single(e => e.Id == two).AddedBecause);
+        Assert.Null(preview.Exchanges.Single(e => e.Id == one).AddedBecause);
     }
 
     [Fact]

@@ -107,6 +107,53 @@ public sealed class ConversationPanelTests
     }
 
     [Fact]
+    public async Task A_question_both_listed_and_marked_is_listed_once_under_its_agent()
+    {
+        using var console = new TranscriptConsole();
+
+        // One the wait-for graph knows, and one only the transcript marks, from one agent.
+        console.Broker.Request(1, Orders, Person, "Gross or net?");
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Orders, WaitedOn = Person, ExchangeId = 1 });
+        console.Broker.Request(2, Orders, Person, "Which ledger?");
+
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(page, "href=\"#m1\" target=\"_self\" data-waiting"));
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(page, "href=\"#m2\" target=\"_self\" data-waiting"));
+        Assert.Contains("<strong>orders@test</strong> (2)", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_other_conversations_list_counts_only_what_waits_on_the_person()
+    {
+        using var console = new TranscriptConsole();
+
+        console.Broker.Request(1, Orders, "billing@test", "Not the person's.");
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Orders, WaitedOn = "billing@test", ExchangeId = 1 });
+
+        using var client = console.CreateClient();
+
+        var list = await client.GetStringAsync(Elsewhere("other"), TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain("data-elsewhere", list, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_other_conversations_list_reads_every_page_archived_ones_included()
+    {
+        using var console = Asked();
+        console.Broker.TwoPages = true;
+        using var client = console.CreateClient();
+
+        _ = await client.GetStringAsync(Elsewhere("other"), TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, console.Broker.Listings.Count);
+        Assert.All(console.Broker.Listings, asked => Assert.True(asked.IncludeArchived));
+    }
+
+    [Fact]
     public async Task The_other_conversations_list_names_each_with_a_link_to_the_message_and_encodes_what_was_said()
     {
         using var console = Asked();

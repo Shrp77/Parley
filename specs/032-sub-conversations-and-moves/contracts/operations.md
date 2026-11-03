@@ -9,7 +9,7 @@
 | `preview_move(source, exchanges)` | Say what a move of those exchanges takes: each exchange and whether it is open, its parties and message count, any added because it shares a group, and the files that stay. Changes nothing. |
 | `move_exchanges(source, destination, new, exchanges)` | Move whole exchanges, all or none. `new` says the destination must not exist yet, and makes the source its parent. Refused with a sentence for: an exchange not in the source, part of a group left behind, a source or destination that is a roadmap item's or an ownership conversation, a closed or destroyed destination, the same conversation twice, an invalid or taken new name, a missing existing destination, an empty list. |
 
-`export` gains `links`, `moves` and `settled_elsewhere`. `conversations` rows gain `parent`.
+`export` gains `links`, `moves` and `settled_elsewhere`. `conversations` rows gain `parent` and `closed`.
 
 The command line refuses `spin-off` and `move`, naming the terminal.
 
@@ -21,6 +21,6 @@ No agent operation can link, move or read a link or a move record.
 
 ## Surfaces
 
-- **Web**: `/Conversations/SpinOff?project&from` (message) or `?project&id` (conversation), and `/Conversations/Move?project&id&x=<exchange>...`. Each does its work on a POST, and each GET draws what the POST will do. Per-message "Spin off" links and "Move entries" tick boxes on the conversation page lead to them.
+- **Web**: `/Conversations/SpinOff?project&id&from` (from a message) or `?project&id` (from the conversation), and `/Conversations/Move?project&id&x=<exchange>...`. Each does its work on a POST, and each GET draws what the POST will do. Per-message "Spin off" links and "Move entries" tick boxes on the conversation page lead to them.
 - **Terminal**: a transcript command for each, the operation in `SpinningOff.cs` and `Moving.cs` with their doors.
 - **Lists**: `[name] - spinoff from [parent]`, on every list a conversation is chosen from: `Projects/Agents`, `Projects/Files`, the Move destination, and the terminal's conversations region, file placing list and move destination.

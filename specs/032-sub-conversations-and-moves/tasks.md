@@ -4,7 +4,7 @@
 
 ## Phase 1: The rule first
 
-- [x] T001 Change `SPEC.md`: principle 2.10, rule 9, §5.0, §9.2 (new tables, trigger, comment), §9.3, §9.4, §10.1 (`move_notices`), §10.2 (three rows, `export`, `conversations`), §14, §18 (0.12, schema 6) and the header. One rule stands; the old wording goes.
+- [x] T001 Change `SPEC.md`: principle 2.10, rule 9, §5.0, §9.2 (new tables, trigger, comment), §9.3, §9.4, §10.1 (`move_notices`), §10.2 (four rows, `export`, `conversations`), §14, §18 (0.12, schema 6) and the header. One rule stands; the old wording goes.
 - [x] T002 Spec change from the plan: FR-007 becomes "the link is recorded before anything is sent".
 
 ## Phase 2: Foundation (blocks every story)

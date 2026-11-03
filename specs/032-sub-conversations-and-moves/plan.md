@@ -4,7 +4,7 @@
 
 ## Summary
 
-Three operator operations, all on the `Operators` service: `spin_off` records a parent link for a new conversation, `preview_move` says what a move would take, and `move_exchanges` does it in one write transaction. Agents get one new thing: a move notice in their next collection. Storage gets migration 006. The terminal and the web console both get the two acts, and every conversation list says what is a spin-off.
+Four operator operations, all on the `Operators` service: `spin_off` records a parent link for a new conversation, `abandon_spin_off` takes it back when nothing was sent, `preview_move` says what a move would take, and `move_exchanges` does it in one write transaction. Agents get one new thing: a move notice in their next collection. Storage gets migration 006. The terminal and the web console both get the two acts, and every conversation list says what is a spin-off.
 
 Version 0.52.0, protocol 0.12, schema 6.
 

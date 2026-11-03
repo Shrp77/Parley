@@ -31,7 +31,7 @@ The person is reading a conversation. An agent has told them to fix something in
 4. **Given** the person leaves without sending, **When** they look at the project, **Then** no conversation was created and no link exists.
 5. **Given** the send is refused, **When** the page returns, **Then** the words, the name and the link they would have made are all kept, so fixing them does not lose the link.
 6. **Given** the person is reading a conversation and no one message fits, **When** they start a sub-conversation from the conversation itself, **Then** the box opens empty and the link is still recorded.
-7. **Given** a conversation that was spun off, **When** the person reads any list of conversations, **Then** it reads `[its name] - spinoff from [parent's name]`, and one with no parent reads as its name alone.
+7. **Given** a conversation that was spun off, **When** the person reads the conversations list, **Then** it reads `[its name] - spinoff from [parent's name]`, and one with no parent reads as its name alone.
 
 ---
 
@@ -158,7 +158,7 @@ An exchange that is moved may still be open: an agent owes an answer, or the per
 - **FR-022**: What is waiting on the person, on every surface, MUST reflect a move at its next read.
 - **FR-023**: An upgrade MUST keep every row of a live store, and the change MUST arrive as a new migration.
 - **FR-024**: SPEC.md MUST be changed in the same work: principle 2.10, §5.0, §9.2, §9.3, §10.2, §14 and the version in §18, so that one rule stands and the old wording is gone.
-- **FR-025**: Every list of conversations, on the terminal and the web console, MUST show a conversation with a parent as `[its name] - spinoff from [parent's name]`. This MUST be how the list displays it and MUST NOT change the conversation's name, which agents, links and exports go on using. The two names MUST be told apart on screen, so a name that happens to contain those words cannot pass for a spin-off.
+- **FR-025**: The conversations list, and every list a conversation is chosen from, on the terminal and the web console, MUST show a conversation with a parent as `[its name] - spinoff from [parent's name]`. This MUST be how the list displays it and MUST NOT change the conversation's name, which agents, links and exports go on using. The two names MUST be told apart on screen, so a name that happens to contain those words cannot pass for a spin-off.
 
 ### Key Entities
 
@@ -177,8 +177,8 @@ An exchange that is moved may still be open: an agent owes an answer, or the per
 - **SC-005**: Every open exchange that was moved can be finished normally, with no agent or person action beyond answering it.
 - **SC-006**: Before confirming, the person can see 100% of what will move. Nothing moves that the list did not name.
 - **SC-007**: From either side of a move or spin-off, the person reaches the other in one step, and can always tell what left a conversation and where it went.
-- **SC-009**: In any list of conversations, the person can tell every spin-off and its parent without opening anything.
 - **SC-008**: No agent-facing operation can perform a move, record a link or read another conversation through one.
+- **SC-009**: In the conversations list, the person can tell every spin-off and its parent without opening anything.
 
 ## Assumptions
 
@@ -187,4 +187,4 @@ An exchange that is moved may still be open: an agent owes an answer, or the per
 - The person names a new conversation under the same rules as any other, and a surface may suggest a name but MUST NOT apply one without them seeing it.
 - Quoting an agent's words into a Request sends them under the person's name, by the person's own act with the words in front of them. That is the existing rule for anything a person sends, and they stay inert data (§13).
 - The review gate applies as usual, and this is a protocol version change.
-- Depends on nothing unmerged. Feature 027 also claims a migration, so this one takes the next free number when it is built. The web page work in the unmerged `web-conversation-panel` branch overlaps the same page, so whichever merges second is rebased.
+- Depends on nothing unmerged. Feature 027 also claims a migration, so this one takes the next free number when it is built. The pull request also carries the conversation page's panel, which overlaps the same page and has no requirement here of its own: the owner's request for it was separate.

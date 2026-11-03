@@ -19,6 +19,7 @@ public sealed class MovingExchangesTests : IDisposable
     private readonly SqliteConnection _connection = ParleyDatabase.OpenInMemory();
     private readonly Broker _broker;
     private readonly OperatorConsole _console;
+    private readonly HashSet<AgentName> _started = [];
 
     public MovingExchangesTests()
     {
@@ -56,7 +57,11 @@ public sealed class MovingExchangesTests : IDisposable
 
     private async Task CloseAsync(long exchange, AgentName receiver)
     {
-        await _broker.StartAsync(receiver, T0, Ct);
+        // Starting hands back what the agent collected, so an agent already started is not started again.
+        if (!_started.Contains(receiver))
+        {
+            await _broker.StartAsync(receiver, T0, Ct);
+        }
 
         var done = await _broker.ResultAsync(
             exchange, receiver, "model-a", $$"""{"outcomes":[{"id":"{{PayloadShape.WholeRequest}}","outcome":"done","text":"done"}]}""", T0.AddMinutes(1), Ct);
@@ -441,7 +446,13 @@ public sealed class MovingExchangesTests : IDisposable
     public async Task Retention_counts_a_move_as_activity_though_no_message_time_changes()
     {
         var going = await AskAsync(Orders, Billing, "is it gross or net?");
+
+        // Collected first, or the floor holds them and the rule under test is never reached.
+        await _broker.StartAsync(Billing, T0, Ct);
+        _started.Add(Billing);
+        _ = await _broker.DrainInboxAsync(Billing, T0.AddSeconds(30), cancellationToken: Ct);
         await CloseAsync(going, Billing);
+        _ = await _broker.DrainInboxAsync(Orders, T0.AddMinutes(2), cancellationToken: Ct);
 
         var later = T0.AddDays(20);
         Assert.True((await _console.MoveExchangesAsync("pricing", "tax-questions", true, [going], later, Ct)).Moved);
@@ -451,12 +462,8 @@ public sealed class MovingExchangesTests : IDisposable
         _ = await _console.PruneAsync(policy, later.AddDays(1), Ct);
         Assert.Equal(2, _connection.ExecuteScalar<int>("SELECT count(*) FROM messages;"));
 
-        // Collected, or the floor holds them: work somebody has yet to read is not retention's to remove.
-        _ = await _broker.DrainInboxAsync(Billing, later, cancellationToken: Ct);
-        _ = await _broker.DrainInboxAsync(Orders, later, cancellationToken: Ct);
-
         _ = await _console.PruneAsync(policy, later.AddDays(11), Ct);
-        Assert.InRange(_connection.ExecuteScalar<int>("SELECT count(*) FROM messages;"), 0, 1);
+        Assert.Equal(0, _connection.ExecuteScalar<int>("SELECT count(*) FROM messages;"));
 
         // The record holds no words, and outlives them.
         Assert.Equal(1, _connection.ExecuteScalar<int>("SELECT count(*) FROM conversation_moves;"));
@@ -489,6 +496,25 @@ public sealed class MovingExchangesTests : IDisposable
         var going = await AskAsync(Orders, Inventory, "how many?");
 
         Assert.True((await MoveAsync("never-sent", true, going)).Moved);
+    }
+
+    [Fact]
+    public async Task A_child_with_a_file_a_participant_or_a_child_of_its_own_is_not_taken_back()
+    {
+        _ = await AskAsync(Orders, Billing, "is it gross or net?");
+
+        Assert.Null(await _console.SpinOffAsync("pricing", "with-file", T0, Ct));
+        PlaceFile("with-file", Orders);
+        Assert.False(await _console.AbandonSpinOffAsync("pricing", "with-file", Ct));
+
+        Assert.Null(await _console.SpinOffAsync("pricing", "with-participant", T0, Ct));
+        _connection.Execute(
+            "INSERT INTO conversation_participants (conversation_id, agent, joined_utc) VALUES ('with-participant', 'orders@test', '2026-11-03T09:00:00Z');");
+        Assert.False(await _console.AbandonSpinOffAsync("pricing", "with-participant", Ct));
+
+        Assert.Null(await _console.SpinOffAsync("pricing", "with-child", T0, Ct));
+        Assert.Null(await _console.SpinOffAsync("with-child", "grandchild", T0, Ct));
+        Assert.False(await _console.AbandonSpinOffAsync("pricing", "with-child", Ct));
     }
 
     [Fact]
@@ -528,15 +554,27 @@ public sealed class MovingExchangesTests : IDisposable
     }
 
     [Fact]
-    public async Task A_closed_source_keeps_its_participants_and_their_votes()
+    public async Task A_length_record_left_behind_closes_up_too()
+    {
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+        _ = await AskAsync(Orders, Inventory, "how many?");
+
+        Assert.True((await MoveAsync("tax-questions", true, going)).Moved);
+
+        Assert.Equal(
+            [1L],
+            _connection.Query<long>("SELECT position FROM message_lengths WHERE conversation_id = 'pricing';"));
+    }
+
+    [Fact]
+    public async Task Membership_follows_out_of_a_closed_conversation_too()
     {
         var inClosed = await AskAsync(Orders, Inventory, "how many?", "stock");
         Assert.True(await _console.ForceConcludeAsync("stock", null, T0.AddMinutes(1), Ct));
-        var before = _connection.ExecuteScalar<int>("SELECT count(*) FROM conversation_participants WHERE conversation_id = 'stock';");
 
         Assert.True((await _console.MoveExchangesAsync("stock", "elsewhere", true, [inClosed], T0.AddMinutes(2), Ct)).Moved);
 
-        Assert.Equal(before, _connection.ExecuteScalar<int>("SELECT count(*) FROM conversation_participants WHERE conversation_id = 'stock';"));
+        Assert.Equal(0, _connection.ExecuteScalar<int>("SELECT count(*) FROM conversation_participants WHERE conversation_id = 'stock';"));
     }
 
     [Fact]
@@ -544,8 +582,17 @@ public sealed class MovingExchangesTests : IDisposable
     {
         var going = await AskAsync(Orders, Billing, "is it gross or net?");
         var staying = await AskAsync(Orders, Inventory, "how many?");
+
+        // Collected first, or the floor holds them and the rule under test is never reached.
+        await _broker.StartAsync(Billing, T0, Ct);
+        await _broker.StartAsync(Inventory, T0, Ct);
+        _started.Add(Billing);
+        _started.Add(Inventory);
+        _ = await _broker.DrainInboxAsync(Billing, T0.AddSeconds(30), cancellationToken: Ct);
+        _ = await _broker.DrainInboxAsync(Inventory, T0.AddSeconds(30), cancellationToken: Ct);
         await CloseAsync(staying, Inventory);
         await CloseAsync(going, Billing);
+        _ = await _broker.DrainInboxAsync(Orders, T0.AddMinutes(2), cancellationToken: Ct);
 
         var later = T0.AddDays(20);
         Assert.True((await _console.MoveExchangesAsync("pricing", "tax-questions", true, [going], later, Ct)).Moved);
@@ -589,13 +636,19 @@ public sealed class MovingExchangesTests : IDisposable
     [Fact]
     public async Task Storage_refuses_moving_an_exchange_an_ownership_question_hangs_from()
     {
-        var facilitator = new Facilitator(_connection, BrokerOptions.Default);
-        var parley = await new AgentRepository(_connection).EnsureFacilitatorAsync(ProjectName.Create("test"), cancellationToken: Ct);
-        var exchange = (await facilitator.AskAsync(parley, Orders, T0, Ct)).Exchange!.Value;
+        var exchange = await AskAsync(Orders, Billing, "is it gross or net?");
 
-        _connection.Execute("INSERT INTO conversations (id, state, opened_utc) VALUES ('plain', 'OPEN', '2026-11-03T09:00:00Z');");
+        // In a conversation with an ordinary name, moving to another, so only the question can refuse this. A question has
+        // no business being here, which is what its own trigger says, so that one is out of the way for the test.
+        _connection.Execute(
+            """
+            DROP TRIGGER tr_question_is_the_facilitators;
+            INSERT INTO ownership_questions (agent, conversation_id, exchange_id, state, asked_utc)
+            VALUES ('billing@test', 'pricing', @exchange, 'asked', '2026-11-03T09:00:00Z');
+            INSERT INTO conversations (id, state, opened_utc) VALUES ('plain', 'OPEN', '2026-11-03T09:00:00Z');
+            """,
+            new { exchange });
 
-        // Any conversation at all, by a name that is not an ownership one: only the question can refuse this.
         var failure = Assert.Throws<SqliteException>(() =>
         {
             using var transaction = _connection.BeginTransaction();

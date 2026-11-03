@@ -395,6 +395,7 @@ internal sealed class TranscriptRegion : FrameView
             return
             [
                 new TranscriptLine(Destroyed, LineKind.Header, null),
+                .. Related(export),
                 new TranscriptLine(string.Empty, LineKind.Blank, null),
                 .. Reading.Gone(gone).Select(line =>
                     new TranscriptLine(new string(' ', Reading.Indent) + line, LineKind.Body, null)),
@@ -411,7 +412,10 @@ internal sealed class TranscriptRegion : FrameView
                     .. moves.Select(move => new TranscriptLine(
                         new string(' ', Reading.Indent) + Safe.Text(ConversationWording.MoveLine(move, conversationId)), LineKind.Annotation, null)),
                 ]
-                : [new TranscriptLine(new string(' ', Reading.Indent) + Empty, LineKind.Annotation, null)];
+                : [
+                    .. export is null ? [] : Related(export),
+                    new TranscriptLine(new string(' ', Reading.Indent) + Empty, LineKind.Annotation, null),
+                ];
         }
 
         return Lay(conversationId, project, export);

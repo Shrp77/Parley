@@ -67,7 +67,7 @@ Never changed by a move: any message's text, author, recipient, `created_utc`, `
 
 ## Domain types
 
-- `ConversationLinks(Parent?, How?, Children[])` on `ConversationExport`, and `Parent` on `ConversationSummary`.
+- `ConversationLinks(Parent?, How?, Children[])` on `ConversationExport`, and `Parent` and `Closed` on `ConversationSummary`.
 - `MoveRecord(Id, Source, Destination, MovedBy, MovedUtc, FirstMessage?, Messages, Exchanges[])`, on `ConversationExport`.
 - `MovePreview(Exchanges[], FilesStaying[], Refused?)`, each exchange: `(Id, Open, Requester, Receiver, Messages, FirstWords, AddedBecause?)`.
 - `MoveOutcome(Refused?, Exchanges, Messages)`.

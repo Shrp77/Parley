@@ -38,6 +38,8 @@ internal static class Moving
     /// <summary>The row that asks for a new conversation's name.</summary>
     internal const string New = "A new conversation";
 
+    private const int FilesNamed = 12;
+
     private const string Picking = "A message can't leave its exchange, so a whole exchange goes. Tick what to move.";
 
     /// <summary>Opens the dialogs that move some exchanges.</summary>
@@ -141,19 +143,23 @@ internal static class Moving
                 return;
             }
 
-            IReadOnlyList<long> kept =
+            IReadOnlyList<long> left =
             [
                 .. preview.Exchanges
                     .Where(e => chosen.Any(c => c.Ticked && c.Label == Label(e)))
                     .Select(e => e.Id),
             ];
 
-            if (kept.Count == 0)
+            if (left.Count == 0)
             {
                 _ = done("Nothing was left ticked, so nothing moved.", null);
 
                 return;
             }
+
+            // A send to several stays whole whatever was unticked: the broker keeps no record of one, so nothing else can
+            // hold it, and the next step says how many will go.
+            var kept = MovePicking.WithSendsToSeveral(export.Messages, left);
 
             AskWhere(app, client, source, kept, destinations, queue, done);
         };
@@ -195,7 +201,7 @@ internal static class Moving
             {
                 var existing = rows.First(r => r.Row == picked).Id;
 
-                queue(moving => MoveAsync(client, source, existing, false, exchanges, done, moving));
+                queue(moving => MoveAsync(client, source, existing, false, exchanges, destinations, app, queue, done, moving));
 
                 return;
             }
@@ -220,7 +226,7 @@ internal static class Moving
                     return;
                 }
 
-                queue(moving => MoveAsync(client, source, name.Trim(), true, exchanges, done, moving));
+                queue(moving => MoveAsync(client, source, name.Trim(), true, exchanges, destinations, app, queue, done, moving));
             };
         };
     }
@@ -232,14 +238,20 @@ internal static class Moving
         string destination,
         bool isNew,
         IReadOnlyList<long> exchanges,
+        IReadOnlyList<ConversationSummary> destinations,
+        IApplication app,
+        Action<Func<CancellationToken, Task>> queue,
         Func<string, string?, Task> done,
         CancellationToken token)
     {
         var moved = await client.MoveExchangesAsync(source, destination, isNew, exchanges, token).ConfigureAwait(false);
 
+        // Asked again, so what was picked is not lost to a name that was taken.
         if (moved.Refused is { } refused)
         {
             await done($"Nothing moved: {refused}", null).ConfigureAwait(false);
+
+            AskWhere(app, client, source, exchanges, destinations, queue, done);
 
             return;
         }
@@ -277,12 +289,18 @@ internal static class Moving
 
         said.Append("Anything asked as a result stays behind unless you ticked it. ");
 
+        // Cut, or a conversation with many files would push the list itself off the screen. An agent chooses these names.
         if (preview.FilesStaying.Count > 0)
         {
-            said.Append(Safe.Text($"These files stay in {source}: {string.Join(", ", preview.FilesStaying)}. "));
+            var named = string.Join(", ", preview.FilesStaying.Take(FilesNamed));
+            var more = preview.FilesStaying.Count > FilesNamed
+                ? string.Create(CultureInfo.InvariantCulture, $" and {preview.FilesStaying.Count - FilesNamed} more")
+                : string.Empty;
+
+            said.Append(Safe.Text($"These files stay in {source}: {named}{more}. "));
         }
 
-        return said.Append("Untick anything you meant to leave.").ToString();
+        return said.Append("Untick anything you meant to leave; a message to several goes whole.").ToString();
     }
 
     private static string Label(MovePreviewExchange exchange) =>

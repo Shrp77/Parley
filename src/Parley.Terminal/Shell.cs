@@ -306,7 +306,11 @@ internal sealed partial class Shell : Window
                 && await SpinningOff.LinkAsync(new BrokerClient(_directory.ClientFor(place)), spinning.Parent, conversation, token)
                     .ConfigureAwait(false) is { } refused)
             {
+                // Something else took the name since. It is an ordinary conversation now, and what is on screen says so.
                 Said = $"Nothing was sent: {refused}";
+                _spinningOff = null;
+
+                await OpenAsync(place, conversation, token).ConfigureAwait(false);
 
                 return;
             }
@@ -4035,7 +4039,18 @@ internal sealed partial class Shell : Window
 
     /// <summary>Sends a participant a Request, in the conversation on screen.</summary>
     /// <returns>When the dialog has been opened.</returns>
-    private Task SendRequest() => Compose(Transcript.Open);
+    private Task SendRequest()
+    {
+        // The box is what records a spin-off's link before anything is sent, so a Request from here would arrive with none.
+        if (_spinningOff is { } spinning && spinning.Conversation == Transcript.Open)
+        {
+            Said = SpinOffGoesFromTheBox;
+
+            return Task.CompletedTask;
+        }
+
+        return Compose(Transcript.Open);
+    }
 
     /// <summary>Sends a participant a Request, opening a new conversation.</summary>
     /// <returns>When the dialog has been opened.</returns>
@@ -5678,6 +5693,9 @@ internal sealed partial class Shell : Window
 
     /// <summary>The action's name, and the dialog's.</summary>
     internal const string RelatedTitle = "Go to a related conversation";
+
+    /// <summary>What is said when a Request is asked for in a spin-off not yet sent.</summary>
+    internal const string SpinOffGoesFromTheBox = "This conversation starts with what is in the box. Press Enter there to send it.";
 
     /// <summary>What is said when there is nowhere to go.</summary>
     internal const string NoRelated = "No other conversation is linked to this one.";

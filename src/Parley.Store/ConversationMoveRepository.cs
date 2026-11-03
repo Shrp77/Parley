@@ -307,15 +307,16 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
             "UPDATE message_lengths SET conversation_id = @Destination WHERE message_id IN (SELECT id FROM messages WHERE exchange_id IN @Ids);",
             parameters).ConfigureAwait(false);
 
+        // Both conversations, because position means how far into its conversation a message is.
         await RunAsync(
             """
             UPDATE message_lengths
                SET position = (SELECT count(*) FROM message_lengths other
-                                WHERE other.conversation_id = @Destination
+                                WHERE other.conversation_id = message_lengths.conversation_id
                                   AND other.message_id <= message_lengths.message_id)
-             WHERE conversation_id = @Destination;
+             WHERE conversation_id IN (@Source, @Destination);
             """,
-            parameters).ConfigureAwait(false);
+            new { Source = source, Destination = destination }).ConfigureAwait(false);
 
         var conversations = new ConversationRepository(_connection);
 
@@ -330,12 +331,10 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
         // Who would be asked has changed, here as much as there (§5.0). A no-op on a closed conversation.
         _ = await conversations.VoidPollAsync(source, transaction, cancellationToken).ConfigureAwait(false);
 
-        // Not from a closed conversation: its participants' votes are the record of how it ended, and it can take nothing back.
         await RunAsync(
             """
             DELETE FROM conversation_participants
              WHERE conversation_id = @Source
-               AND (SELECT state FROM conversations WHERE id = @Source) <> 'CLOSED'
                AND agent IN @Parties
                AND NOT EXISTS (SELECT 1 FROM exchanges e
                                 WHERE e.conversation_id = @Source
@@ -597,7 +596,8 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
                 SELECT EXISTS (SELECT 1 FROM exchanges WHERE conversation_id = @Id)
                     OR EXISTS (SELECT 1 FROM shared_files WHERE conversation_id = @Id)
                     OR EXISTS (SELECT 1 FROM conversation_participants WHERE conversation_id = @Id)
-                    OR EXISTS (SELECT 1 FROM conversation_moves WHERE source = @Id OR destination = @Id);
+                    OR EXISTS (SELECT 1 FROM conversation_moves WHERE source = @Id OR destination = @Id)
+                    OR EXISTS (SELECT 1 FROM conversation_links WHERE parent = @Id);
                 """,
                 new { Id = conversation },
                 transaction,

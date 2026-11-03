@@ -77,6 +77,15 @@ public sealed class ScriptedExport : HttpMessageHandler
     /// <summary>What a move answers, when it should refuse.</summary>
     public string MoveRefusal { get; set; } = string.Empty;
 
+    /// <summary>Split settled pairs every export carries.</summary>
+    public List<Wire.SettledElsewhere> SettledElsewhere { get; } = [];
+
+    /// <summary>Every listing of conversations asked for.</summary>
+    public List<Wire.ListConversationsRequest> Listings { get; } = [];
+
+    /// <summary>Whether a listing comes in two pages, the second holding another conversation.</summary>
+    public bool TwoPages { get; set; }
+
     /// <summary>The move records every export carries.</summary>
     public List<Wire.MoveRecord> Moves { get; } = [];
 
@@ -173,7 +182,7 @@ public sealed class ScriptedExport : HttpMessageHandler
                 "/parley.v1.Operators/Export" => Export(),
                 "/parley.v1.Operators/DescribeRegistry" => Rows(),
                 "/parley.v1.Operators/DescribeWaiting" => Waiting(),
-                "/parley.v1.Operators/ListConversations" => Conversations(),
+                "/parley.v1.Operators/ListConversations" => Conversations(Wire.ListConversationsRequest.Parser.ParseFrom(sent.AsSpan(5))),
                 "/parley.v1.Operators/PreviewMove" => Preview(Wire.PreviewMoveRequest.Parser.ParseFrom(sent.AsSpan(5))),
                 "/parley.v1.Operators/MoveExchanges" => Moved(Wire.MoveExchangesRequest.Parser.ParseFrom(sent.AsSpan(5))),
                 "/parley.v1.Operators/SpinOff" => Spun(Wire.SpinOffRequest.Parser.ParseFrom(sent.AsSpan(5))),
@@ -220,9 +229,20 @@ public sealed class ScriptedExport : HttpMessageHandler
         return reply;
     }
 
-    private Wire.ListConversationsReply Conversations()
+    private Wire.ListConversationsReply Conversations(Wire.ListConversationsRequest asked)
     {
+        Listings.Add(asked);
+
         var reply = new Wire.ListConversationsReply();
+
+        if (TwoPages && asked.PageToken.Length > 0)
+        {
+            reply.Conversations.Add(new Wire.ConversationSummary { ConversationId = "second-page", HasOpenExchange = true });
+
+            return reply;
+        }
+
+        reply.NextPageToken = TwoPages ? "next" : string.Empty;
         var row = new Wire.ConversationSummary { ConversationId = "shared", HasOpenExchange = true, Parent = Parent };
 
         row.Participants.AddRange(Edges.SelectMany(e => new[] { e.Waiter, e.WaitedOn }).Distinct());
@@ -249,6 +269,7 @@ public sealed class ScriptedExport : HttpMessageHandler
         reply.Messages.AddRange(Messages);
         reply.Exchanges.AddRange(Exchanges);
         reply.Moves.AddRange(Moves);
+        reply.SettledElsewhere.AddRange(SettledElsewhere);
         reply.Parent = Parent;
         reply.Children.AddRange(Children);
 

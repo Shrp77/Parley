@@ -190,7 +190,7 @@ timezone, sortable either way.
 - **Close** ends a conversation. You can do this when the participants have not agreed. You give
   a reason, and it is recorded.
 - **Answer in the conversation.** A message waiting on you is marked where it was said, so you read
-  it with what led to it. *Go to the next one* (or `Alt+z` on the terminal) moves between them. On
+  it with what led to it. *Next* and *Previous* (or `Alt+z` on the terminal) move between them, and the conversation page also lists what waits in other conversations. On
   the web console, *Reply to this* sets the box to answer that message, and on an agent's request
   you can leave it open or close it with an outcome. The Inbox lists what waits across every
   conversation and links to each message.
@@ -203,6 +203,8 @@ timezone, sortable either way.
   before you confirm. Work still open carries on in the new place: its agents aren't woken, and are told at their next
   collection. Both conversations say what moved, and you can move it back. Files stay where they are. Closed destinations,
   roadmap items' conversations and ownership conversations are refused.
+- **Go to a linked conversation** (`Alt+l` in a conversation, or the links in the panel): its parent, what was started
+  from it, and where entries moved to or from.
 - **Close a request without answering** (`Alt+j` in a conversation, or the button on the message)
   ends one question that is waiting on you, when it has gone stale or been answered elsewhere. The
   conversation stays open. The agent is told it was closed, with your reason if you give one.
