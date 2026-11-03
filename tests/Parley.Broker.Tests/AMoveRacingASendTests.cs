@@ -18,8 +18,14 @@ public sealed class AMoveRacingASendTests : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
-        Directory.Delete(_directory, recursive: true);
+        try
+        {
+            Directory.Delete(_directory, recursive: true);
+        }
+        catch (IOException)
+        {
+            // A pooled handle can outlast the test; the temporary folder is not worth failing it for.
+        }
     }
 
     [Fact]

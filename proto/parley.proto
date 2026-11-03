@@ -768,6 +768,7 @@ service Operators {
   // Section 5.0. Only the person links or moves: an agent that could split a line of work is what that section refuses.
   // A move wakes nobody; an agent party to an open exchange that moved is told at its next collection.
   rpc SpinOff(SpinOffRequest) returns (SpinOffReply);
+  rpc AbandonSpinOff(SpinOffRequest) returns (DidItReply);
   rpc PreviewMove(PreviewMoveRequest) returns (PreviewMoveReply);
   rpc MoveExchanges(MoveExchangesRequest) returns (MoveExchangesReply);
   rpc Retire(AgentRequest) returns (DidItReply);
