@@ -5183,7 +5183,7 @@ internal sealed partial class Shell : Window
         // A conversation named and not yet spoken in has nobody in it as far as the broker knows; the agents it was
         // started for are its participants until the first message makes that true.
         if (_pending is { } pending && pending.Project == project.Name.Value
-            && pending.Conversation == conversationId && export.Messages.Count == 0 && export.Moves is not { Count: > 0 })
+            && pending.Conversation == conversationId && export.Messages.Count == 0)
         {
             pairs =
             [
