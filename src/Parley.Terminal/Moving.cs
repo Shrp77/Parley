@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Parley.Client;
+using Parley.Client.Rendering;
 using Parley.Core;
 using Terminal.Gui.App;
 
@@ -10,8 +11,8 @@ namespace Parley.Terminal;
 /// <remarks>
 /// <para>
 /// <c>MoveExchangesAsync</c> and <c>PreviewMoveAsync</c> live here and nowhere else in this surface, carrying their door: the
-/// person ticks what to move, reads everything that would go, and then names or chooses where in that same step. The first
-/// row of that choice leaves them where they are.
+/// person ticks what to move, reads a list of everything that would go, and then names or chooses where. The first row of
+/// that choice leaves them where they are.
 /// </para>
 /// <para>
 /// <b>Nothing wakes anybody.</b> An agent party to an open exchange that moved is told at its next collection.
@@ -19,8 +20,17 @@ namespace Parley.Terminal;
 /// </remarks>
 internal static class Moving
 {
-    /// <summary>The action's name, on the status line and in the menu.</summary>
+    /// <summary>The action's name, on the status line and in the menu, and the dialog that picks.</summary>
     internal const string Title = "Move entries to another conversation";
+
+    /// <summary>The dialog that lists everything that would go.</summary>
+    internal const string ReviewTitle = "These entries will move";
+
+    /// <summary>The dialog that asks where.</summary>
+    internal const string WhereTitle = "Where do these entries go?";
+
+    /// <summary>The dialog that names a new conversation.</summary>
+    internal const string NameTitle = "Name the new conversation";
 
     /// <summary>The first row of the last choice: the safe one.</summary>
     internal const string Stay = "Leave them where they are";
@@ -45,7 +55,7 @@ internal static class Moving
         string source,
         long? under,
         Action<Func<CancellationToken, Task>> queue,
-        Func<string, string?, IReadOnlyList<long>, Task> done,
+        Func<string, string?, Task> done,
         CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(app);
@@ -59,7 +69,7 @@ internal static class Moving
 
         if (everything.Refused is { } refused)
         {
-            await done(refused, null, []).ConfigureAwait(false);
+            await done(refused, null).ConfigureAwait(false);
 
             return;
         }
@@ -81,45 +91,94 @@ internal static class Moving
 
             if (ticked.Count == 0)
             {
-                _ = done(chosen is null ? string.Empty : "Nothing was picked, so nothing moved.", null, []);
+                _ = done(chosen is null ? string.Empty : "Nothing was picked, so nothing moved.", null);
 
                 return;
             }
 
-            queue(reading => ConfirmAsync(app, client, source, ticked, queue, done, reading));
+            queue(reading => ReviewAsync(app, client, source, export, ticked, queue, done, reading));
         };
     }
 
-    /// <summary>Says everything that would go, and asks where.</summary>
-    private static async Task ConfirmAsync(
+    /// <summary>Lists everything that would go, every row of it, in a list that scrolls.</summary>
+    private static async Task ReviewAsync(
         IApplication app,
         BrokerClient client,
         string source,
+        ConversationExport export,
         IReadOnlyList<long> ticked,
         Action<Func<CancellationToken, Task>> queue,
-        Func<string, string?, IReadOnlyList<long>, Task> done,
+        Func<string, string?, Task> done,
         CancellationToken token)
     {
-        var preview = await client.PreviewMoveAsync(source, ticked, token).ConfigureAwait(false);
+        var whole = MovePicking.WithSendsToSeveral(export.Messages, ticked);
+        var preview = await client.PreviewMoveAsync(source, whole, token).ConfigureAwait(false);
 
         if (preview.Refused is { } refused)
         {
-            await done(refused, null, []).ConfigureAwait(false);
+            await done(refused, null).ConfigureAwait(false);
 
             return;
         }
 
-        var page = await client.ConversationsAsync(cancellationToken: token).ConfigureAwait(false);
+        var destinations = await MovePicking.DestinationsAsync(client, source, token).ConfigureAwait(false);
 
-        var existing = page.Items
-            .Where(c => !c.Closed && c.Item is null && !string.Equals(c.Id, source, StringComparison.Ordinal)
-                && !c.Id.StartsWith("owns-", StringComparison.Ordinal))
-            .Select(c => c.Id)
+        var rows = preview.Exchanges
+            .Select(e => new Tickable(Label(e), Note(e, ticked), Ticked: true))
             .ToList();
 
-        var choosing = Prompting.Choose(Title, Describe(preview, source), [Stay, New, .. existing]);
+        var reviewing = new TickDialog(ReviewTitle, Describe(preview, source), rows);
+        var opened = Prompting.Open(app, reviewing);
+
+        reviewing.Done += (_, chosen) =>
+        {
+            Prompting.Close(app, opened);
+
+            if (chosen is null)
+            {
+                _ = done("Nothing moved.", null);
+
+                return;
+            }
+
+            IReadOnlyList<long> kept =
+            [
+                .. preview.Exchanges
+                    .Where(e => chosen.Any(c => c.Ticked && c.Label == Label(e)))
+                    .Select(e => e.Id),
+            ];
+
+            if (kept.Count == 0)
+            {
+                _ = done("Nothing was left ticked, so nothing moved.", null);
+
+                return;
+            }
+
+            AskWhere(app, client, source, kept, destinations, queue, done);
+        };
+    }
+
+    /// <summary>Asks where they go. The first row leaves them where they are.</summary>
+    private static void AskWhere(
+        IApplication app,
+        BrokerClient client,
+        string source,
+        IReadOnlyList<long> exchanges,
+        IReadOnlyList<ConversationSummary> destinations,
+        Action<Func<CancellationToken, Task>> queue,
+        Func<string, string?, Task> done)
+    {
+        var rows = destinations
+            .Select(c => (c.Id, Row: Safe.Text(ConversationWording.Listed(c.Id, c.Parent))))
+            .ToList();
+
+        var choosing = Prompting.Choose(
+            WhereTitle,
+            string.Create(CultureInfo.InvariantCulture, $"{exchanges.Count} exchange{(exchanges.Count == 1 ? string.Empty : "s")} will move."),
+            [Stay, New, .. rows.Select(r => r.Row)]);
+
         var opened = Prompting.Open(app, choosing);
-        IReadOnlyList<long> all = [.. preview.Exchanges.Select(e => e.Id)];
 
         choosing.Done += (_, picked) =>
         {
@@ -127,20 +186,22 @@ internal static class Moving
 
             if (picked is null or Stay)
             {
-                _ = done("Nothing moved.", null, []);
+                _ = done("Nothing moved.", null);
 
                 return;
             }
 
             if (!string.Equals(picked, New, StringComparison.Ordinal))
             {
-                queue(moving => MoveAsync(client, source, picked, false, all, done, moving));
+                var existing = rows.First(r => r.Row == picked).Id;
+
+                queue(moving => MoveAsync(client, source, existing, false, exchanges, done, moving));
 
                 return;
             }
 
             var naming = Prompting.Text(
-                Title,
+                NameTitle,
                 "What is the new conversation called?\n\n" + ConversationName.Rule,
                 problem: said => string.IsNullOrWhiteSpace(said) || ConversationName.Correct(said.Trim()) != said.Trim()
                     ? ConversationName.Rule
@@ -154,12 +215,12 @@ internal static class Moving
 
                 if (string.IsNullOrWhiteSpace(name))
                 {
-                    _ = done("Nothing moved.", null, []);
+                    _ = done("Nothing moved.", null);
 
                     return;
                 }
 
-                queue(moving => MoveAsync(client, source, name.Trim(), true, all, done, moving));
+                queue(moving => MoveAsync(client, source, name.Trim(), true, exchanges, done, moving));
             };
         };
     }
@@ -171,14 +232,14 @@ internal static class Moving
         string destination,
         bool isNew,
         IReadOnlyList<long> exchanges,
-        Func<string, string?, IReadOnlyList<long>, Task> done,
+        Func<string, string?, Task> done,
         CancellationToken token)
     {
         var moved = await client.MoveExchangesAsync(source, destination, isNew, exchanges, token).ConfigureAwait(false);
 
         if (moved.Refused is { } refused)
         {
-            await done($"Nothing moved: {refused}", null, []).ConfigureAwait(false);
+            await done($"Nothing moved: {refused}", null).ConfigureAwait(false);
 
             return;
         }
@@ -187,50 +248,45 @@ internal static class Moving
             string.Create(
                 CultureInfo.InvariantCulture,
                 $"Moved {moved.Exchanges} exchange{(moved.Exchanges == 1 ? string.Empty : "s")} ({moved.Messages} message{(moved.Messages == 1 ? string.Empty : "s")}) to {destination}."),
-            destination,
-            exchanges).ConfigureAwait(false);
+            destination).ConfigureAwait(false);
     }
 
-    /// <summary>The door: everything that would go, and what happens to it.</summary>
+    /// <summary>What a row says beside an exchange: why it was added, and whether it is still open.</summary>
+    private static string Note(MovePreviewExchange exchange, IReadOnlyCollection<long> ticked)
+    {
+        var added = exchange.AddedBecause ?? (ticked.Contains(exchange.Id) ? null : MovePicking.SentTogether);
+        var open = exchange.Open ? "still open" : string.Empty;
+
+        return added is null ? open : Safe.Text(open.Length == 0 ? $"Added: {added}" : $"{open}. Added: {added}");
+    }
+
+    /// <summary>The door: what happens to what is listed below it.</summary>
     private static string Describe(MovePreview preview, string source)
     {
-        var said = new StringBuilder()
-            .AppendLine("Each message keeps its words, its author and its time, and you can move them back afterwards. This takes:");
+        var messages = preview.Exchanges.Sum(e => e.Messages);
+        var said = new StringBuilder(string.Create(
+            CultureInfo.InvariantCulture,
+            $"{preview.Exchanges.Count} exchange{(preview.Exchanges.Count == 1 ? string.Empty : "s")} and {messages} message{(messages == 1 ? string.Empty : "s")}. "));
 
-        foreach (var exchange in preview.Exchanges.Take(8))
-        {
-            said.Append(CultureInfo.InvariantCulture, $"- {Label(exchange)}{(exchange.Open ? " (still open)" : string.Empty)}");
-
-            if (exchange.AddedBecause is { } because)
-            {
-                said.Append(" Added: ").Append(Safe.Text(because));
-            }
-
-            said.AppendLine();
-        }
-
-        if (preview.Exchanges.Count > 8)
-        {
-            said.Append(CultureInfo.InvariantCulture, $"- and {preview.Exchanges.Count - 8} more").AppendLine();
-        }
+        said.Append("Each keeps its words, author and time, and you can move them back. ");
 
         if (preview.Exchanges.Any(e => e.Open))
         {
-            said.AppendLine("Work still open carries on in the new place. Agents aren't woken, and are told when they next collect.");
+            said.Append("Open work carries on in the new place; agents aren't woken, and are told when they next collect. ");
         }
 
-        said.AppendLine("Anything an agent asked as a result stays behind unless you ticked it too.");
+        said.Append("Anything asked as a result stays behind unless you ticked it. ");
 
         if (preview.FilesStaying.Count > 0)
         {
-            said.Append(CultureInfo.InvariantCulture, $"{preview.FilesStaying.Count} file(s) stay in {Safe.Text(source)}.").AppendLine();
+            said.Append(Safe.Text($"These files stay in {source}: {string.Join(", ", preview.FilesStaying)}. "));
         }
 
-        return said.AppendLine().Append("Where do they go?").ToString();
+        return said.Append("Untick anything you meant to leave.").ToString();
     }
 
     private static string Label(MovePreviewExchange exchange) =>
         Safe.Text(string.Create(
             CultureInfo.InvariantCulture,
-            $"{exchange.Id}: {exchange.Requester.Value} to {exchange.Receiver.Value}: {exchange.FirstWords}"));
+            $"{exchange.Id}: {exchange.Requester.Value} to {exchange.Receiver.Value}, {exchange.Messages} message{(exchange.Messages == 1 ? string.Empty : "s")}: {exchange.FirstWords}"));
 }

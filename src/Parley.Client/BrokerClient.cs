@@ -440,6 +440,15 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     }
 
     /// <inheritdoc/>
+    public async Task<bool> AbandonSpinOffAsync(string parent, string child, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.AbandonSpinOffAsync(
+            new Wire.SpinOffRequest { Parent = parent, Child = child }, cancellationToken: cancellationToken);
+
+        return reply.Changed;
+    }
+
+    /// <inheritdoc/>
     public async Task<MovePreview> PreviewMoveAsync(
         string source, IReadOnlyCollection<long> exchanges, CancellationToken cancellationToken = default)
     {

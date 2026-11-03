@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Parley.Client;
-using Parley.Client.Seating;
+using Parley.Client.Rendering;
 using Parley.Core;
 
 namespace Parley.Web.Pages.Conversations;
@@ -19,9 +19,8 @@ namespace Parley.Web.Pages.Conversations;
 /// </para>
 /// </remarks>
 /// <param name="directory">The projects and their brokers.</param>
-/// <param name="seats">The seats this console holds.</param>
 /// <param name="notices">What the console tells the person.</param>
-public sealed class MoveModel(BrokerDirectory directory, SeatBook seats, Parley.Web.Notifications.NotificationLog notices) : PageModel
+public sealed class MoveModel(BrokerDirectory directory, Parley.Web.Notifications.NotificationLog notices) : PageModel
 {
     /// <summary>Which project.</summary>
     [BindProperty(SupportsGet = true)]
@@ -56,6 +55,18 @@ public sealed class MoveModel(BrokerDirectory directory, SeatBook seats, Parley.
 
     /// <summary>Whether this is the list to pick from rather than the confirmation.</summary>
     public bool Picking { get; private set; }
+
+    /// <summary>Why an exchange goes though it was not picked: one send to several, which the broker keeps no record of.</summary>
+    /// <param name="exchange">The exchange.</param>
+    /// <returns>The words, or null when it was picked or the broker said why.</returns>
+    public string? AddedBecause(MovePreviewExchange exchange)
+    {
+        ArgumentNullException.ThrowIfNull(exchange);
+
+        return exchange.AddedBecause ?? (Asked.Contains(exchange.Id) ? null : MovePicking.SentTogether);
+    }
+
+    private HashSet<long> Asked { get; set; } = [];
 
     /// <summary>Open conversations they could go to.</summary>
     public IReadOnlyList<ConversationSummary> Destinations { get; private set; } = [];
@@ -111,12 +122,6 @@ public sealed class MoveModel(BrokerDirectory directory, SeatBook seats, Parley.
             return Page();
         }
 
-        // What this console held of them names the old conversation. The next read gets the new one.
-        foreach (var exchange in Exchanges)
-        {
-            seats.Held(project.Name.Value)?.Forget(exchange);
-        }
-
         notices.Add(
             project.Name.Value,
             destination,
@@ -131,28 +136,28 @@ public sealed class MoveModel(BrokerDirectory directory, SeatBook seats, Parley.
     {
         var token = HttpContext.RequestAborted;
         var client = new BrokerClient(directory.ClientFor(project));
-        var chosen = picked;
 
         Picking = picked.Count == 0;
+        Asked = [.. picked];
 
-        if (Picking)
+        var whole = await BrokerDirectory.ReadAsync(async () =>
+            await client.ExportAsync(Id!, token).ConfigureAwait(false)).ConfigureAwait(false);
+
+        if (whole.Value is not { } export)
         {
-            var whole = await BrokerDirectory.ReadAsync(async () =>
-                await client.ExportAsync(Id!, token).ConfigureAwait(false)).ConfigureAwait(false);
+            Problem ??= whole.Problem;
+            return;
+        }
 
-            if (whole.Value is not { } export)
-            {
-                Problem ??= whole.Problem;
-                return;
-            }
+        // On the list to pick from every exchange is its own row. What goes is every part of what was picked.
+        IList<long> chosen = Picking
+            ? [.. export.Exchanges.Select(e => e.ExchangeId)]
+            : [.. MovePicking.WithSendsToSeveral(export.Messages, [.. picked])];
 
-            chosen = [.. export.Exchanges.Select(e => e.ExchangeId)];
-
-            if (chosen.Count == 0)
-            {
-                Problem ??= "There is nothing in this conversation to move.";
-                return;
-            }
+        if (chosen.Count == 0)
+        {
+            Problem ??= "There is nothing in this conversation to move.";
+            return;
         }
 
         var read = await BrokerDirectory.ReadAsync(async () =>
@@ -172,14 +177,9 @@ public sealed class MoveModel(BrokerDirectory directory, SeatBook seats, Parley.
             return;
         }
 
-        var page = await BrokerDirectory.ReadAsync(async () =>
-            await client.ConversationsAsync(cancellationToken: token).ConfigureAwait(false)).ConfigureAwait(false);
+        var destinations = await BrokerDirectory.ReadAsync(async () =>
+            await MovePicking.DestinationsAsync(client, Id!, token).ConfigureAwait(false)).ConfigureAwait(false);
 
-        Destinations =
-        [
-            .. (page.Value?.Items ?? [])
-                .Where(c => !c.Closed && c.Item is null && !string.Equals(c.Id, Id, StringComparison.Ordinal)
-                    && !c.Id.StartsWith("owns-", StringComparison.Ordinal)),
-        ];
+        Destinations = destinations.Value ?? [];
     }
 }

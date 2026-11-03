@@ -104,7 +104,7 @@ else if (Model.Listing is { } listing)
             <select id="placeIn" name="placeIn">
                 @foreach (var id in Model.Placeable)
                 {
-                    <option value="@id">@id</option>
+                    <option value="@id">@(Model.ParentOf(id) is { } parent ? Parley.Client.Rendering.ConversationWording.Listed(id, parent) : id)</option>
                 }
             </select>
 

@@ -565,7 +565,8 @@ A move can be undone by moving the exchanges back, and both moves stay on record
 
 **A conversation may have a parent** (`spin_off`, §10.2). A person who wants a focused conversation about
 something raised in another starts one from it, and the broker records the link before anything is sent,
-so a Request can never arrive in a spin-off with no link behind it. A conversation made by a move has its
+so a Request can never arrive in a spin-off with no link behind it. If that Request reaches nobody, the link is taken
+back, so no record says a conversation was started when nothing was said in it. A conversation made by a move has its
 source as its parent too. A conversation has at most one parent and any number of children, to any depth.
 The link is the person's map and nothing else: it gives no agent any access to the other conversation, no
 agent operation reads or sets it, and nothing cascades along it. Closing or destroying one conversation
@@ -1068,7 +1069,7 @@ Collection is already recorded, so this needs no heartbeat. **A collection is de
 acknowledges it.** The broker hands a collection over and holds what it carries for that call alone, so no other
 collection hands the same things over meanwhile; the caller acknowledges it once the whole reply has arrived, and only
 then are its messages recorded delivered, a Request's collection recorded on its exchange (the second stage above),
-its gone notices deleted and its roadmap notices marked. A call that ends first — given up by its caller, lost on the
+its gone notices deleted and its roadmap and move notices marked. A call that ends first — given up by its caller, lost on the
 way, or ended by a broker that stopped — records nothing, and the next collection hands everything over again. A
 collection is therefore delivered at least once. A caller keeps a reply that has arrived whole, whatever becomes of
 the call after it, so a collection is lost only if the caller's own process ends between the reply and its use; and
@@ -3342,6 +3343,7 @@ other could.
 | `discard_answer(agent)` | Discard an answer that is waiting. Nothing is written, and the agent keeps whatever line it had. The agent is not asked again unless a person asks. |
 | `close_request(exchange, reason?)` | Close one open Request the person is a party to, without an answer: the question has gone stale or been answered elsewhere. The exchange ends `closed` and its conversation stays open. Both sides are sent the broker's `closed` Result, with the reason when one is given. Any other exchange is refused: between agents a Request is closed by its receiver, or with its conversation. |
 | `spin_off(parent, child)` | Open a new conversation `child` with `parent` as its parent (§5.0). Sends nothing. Refused when `parent` does not exist or was destroyed, or `child` is not a valid name, was destroyed, is reserved for a roadmap item, begins `owns-`, or already exists with anything in it or a different parent. Repeating it for a still-empty child with the same parent succeeds, so a send that was refused can be tried again. |
+| `abandon_spin_off(parent, child)` | Take back a spin-off whose first Request reached nobody: its link and the empty conversation go, and the name is free. A child with anything in it is left alone. |
 | `preview_move(source, exchanges)` | Say what moving those exchanges would take, changing nothing: each exchange with whether it is open, its parties, its message count and its first words, including any added because it shares a group (§5.5), and the files that stay. |
 | `move_exchanges(source, destination, new, exchanges)` | Move whole exchanges to another conversation, all or none (§5.0). `new` says the destination must not exist yet, and makes the source its parent. Refused, with a sentence, for an exchange not in the source, part of a group left behind, an empty list, the same conversation twice, a destroyed or closed destination, a roadmap item's or an ownership conversation either way, or a new name that is taken or invalid. Wakes nobody; each agent party to an open exchange that moved is told at its next collection. |
 | `force_conclude(conversation, reason?)` | Close a conversation now, regardless of its participants' votes. Every exchange still open in it ends `closed`, and every participant holding one is told, with the reason when one is given. |

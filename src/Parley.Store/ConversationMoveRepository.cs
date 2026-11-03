@@ -94,6 +94,49 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
         return null;
     }
 
+    /// <summary>Takes back a link whose first Request reached nobody, leaving no trace of the attempt.</summary>
+    /// <param name="parent">The conversation it came from.</param>
+    /// <param name="child">The conversation that was to be started.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Whether anything was taken back.</returns>
+    /// <remarks>
+    /// So a record never says a conversation was spun off when nothing was ever said in it, and the name stays free. A child
+    /// holding anything is left alone: the link is true of it by then.
+    /// </remarks>
+    public async Task<bool> AbandonSpinOffAsync(string parent, string child, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(parent);
+        ArgumentException.ThrowIfNullOrEmpty(child);
+
+        using var scope = WriteScope.Begin(_connection, null);
+
+        var linked = await _connection.ExecuteScalarAsync<bool>(
+            new CommandDefinition(
+                "SELECT EXISTS (SELECT 1 FROM conversation_links WHERE child = @Child AND parent = @Parent AND how = 'spinoff');",
+                new { Child = child, Parent = parent },
+                scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        if (!linked || await HoldsAnythingAsync(child, scope.Transaction, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                DELETE FROM conversation_links WHERE child = @Child;
+                DELETE FROM conversations WHERE id = @Child;
+                """,
+                new { Child = child },
+                scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        scope.Complete();
+
+        return true;
+    }
+
     /// <summary>Says what moving some exchanges would take, changing nothing.</summary>
     /// <param name="source">The conversation they are in.</param>
     /// <param name="exchanges">The exchanges picked.</param>
@@ -258,23 +301,21 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
         await RunAsync("UPDATE messages SET conversation_id = @Destination WHERE exchange_id IN @Ids;", parameters).ConfigureAwait(false);
         await RunAsync("UPDATE conversation_cycles SET conversation_id = @Destination WHERE exchange_id IN @Ids;", parameters).ConfigureAwait(false);
 
-        // A length record follows its message and continues the destination's count. Records of pruned messages have no
-        // exchange to trace them by, so they stay where they are, and no record is lost.
-        var position = await _connection.ExecuteScalarAsync<long>(
-            new CommandDefinition(
-                "SELECT coalesce(max(position), 0) FROM message_lengths WHERE conversation_id = @Destination;",
-                new { Destination = destination },
-                transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
+        // A length record follows its message, and its position is that message's place in the destination by the broker's
+        // order. Records of pruned messages have no exchange to trace them by, so they stay where they are, and no record is lost.
+        await RunAsync(
+            "UPDATE message_lengths SET conversation_id = @Destination WHERE message_id IN (SELECT id FROM messages WHERE exchange_id IN @Ids);",
+            parameters).ConfigureAwait(false);
 
-        foreach (var message in messageIds)
-        {
-            position++;
-
-            await RunAsync(
-                "UPDATE message_lengths SET conversation_id = @Destination, position = @Position WHERE message_id = @Message;",
-                new { Destination = destination, Position = position, Message = message }).ConfigureAwait(false);
-        }
+        await RunAsync(
+            """
+            UPDATE message_lengths
+               SET position = (SELECT count(*) FROM message_lengths other
+                                WHERE other.conversation_id = @Destination
+                                  AND other.message_id <= message_lengths.message_id)
+             WHERE conversation_id = @Destination;
+            """,
+            parameters).ConfigureAwait(false);
 
         var conversations = new ConversationRepository(_connection);
 
@@ -289,10 +330,12 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
         // Who would be asked has changed, here as much as there (§5.0). A no-op on a closed conversation.
         _ = await conversations.VoidPollAsync(source, transaction, cancellationToken).ConfigureAwait(false);
 
+        // Not from a closed conversation: its participants' votes are the record of how it ended, and it can take nothing back.
         await RunAsync(
             """
             DELETE FROM conversation_participants
              WHERE conversation_id = @Source
+               AND (SELECT state FROM conversations WHERE id = @Source) <> 'CLOSED'
                AND agent IN @Parties
                AND NOT EXISTS (SELECT 1 FROM exchanges e
                                 WHERE e.conversation_id = @Source
@@ -642,7 +685,7 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
     }
 
     private static bool IsOwnership(string conversation) =>
-        conversation.StartsWith("owns-", StringComparison.Ordinal);
+        conversation.StartsWith(Facilitation.ConversationPrefix, StringComparison.Ordinal);
 
     private async Task<List<ExchangeFacts>> ReadExchangesAsync(
         IReadOnlyCollection<long> exchanges, SqliteTransaction? transaction, CancellationToken cancellationToken) =>

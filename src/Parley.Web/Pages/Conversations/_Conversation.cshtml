@@ -27,7 +27,7 @@ else if (Model.Messages.Count == 0)
             {
                 <li class="moved-note">
                     @Parley.Client.Rendering.ConversationWording.MoveLine(move, Model.Id!)
-                    <a href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = Parley.Client.Rendering.ConversationWording.OtherSide(move, Model.Id!) })">Open @Parley.Client.Rendering.ConversationWording.OtherSide(move, Model.Id!)</a>
+                    <a target="_top" href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = Parley.Client.Rendering.ConversationWording.OtherSide(move, Model.Id!) })">Open @Parley.Client.Rendering.ConversationWording.OtherSide(move, Model.Id!)</a>
                 </li>
             }
         </ul>
@@ -56,7 +56,7 @@ else
                 var move = movesToNote.Dequeue();
                 <li class="moved-note">
                     @Parley.Client.Rendering.ConversationWording.MoveLine(move, Model.Id!)
-                    <a href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = Parley.Client.Rendering.ConversationWording.OtherSide(move, Model.Id!) })">Open @Parley.Client.Rendering.ConversationWording.OtherSide(move, Model.Id!)</a>
+                    <a target="_top" href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = Parley.Client.Rendering.ConversationWording.OtherSide(move, Model.Id!) })">Open @Parley.Client.Rendering.ConversationWording.OtherSide(move, Model.Id!)</a>
                 </li>
             }
             var on = DateOnly.FromDateTime(
@@ -157,7 +157,7 @@ else
                             <span> · exchange @message.ExchangeId, @state</span>
                         }
                         <span> · written by @message.ResponderModel</span>
-                        <span> · <a class="spin-off" href="@Url.Page("/Conversations/SpinOff", new { project = Model.Project, id = Model.Id, from = message.Id })">Spin off</a></span>
+                        <span> · <a class="spin-off" target="_top" href="@Url.Page("/Conversations/SpinOff", new { project = Model.Project, id = Model.Id, from = message.Id })">Spin off</a></span>
                         @* Shown only while picking, by the page's script. Every exchange of a send to several goes together. *@
                         <label class="move-pick"><input type="checkbox" data-exchanges="@string.Join(' ', turn.Select(m => m.ExchangeId))" aria-label="Move this entry" /> Move</label>
                     </p>
@@ -191,7 +191,7 @@ else
         {
             <li class="moved-note">
                 @Parley.Client.Rendering.ConversationWording.MoveLine(move, Model.Id!)
-                <a href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = Parley.Client.Rendering.ConversationWording.OtherSide(move, Model.Id!) })">Open @Parley.Client.Rendering.ConversationWording.OtherSide(move, Model.Id!)</a>
+                <a target="_top" href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = Parley.Client.Rendering.ConversationWording.OtherSide(move, Model.Id!) })">Open @Parley.Client.Rendering.ConversationWording.OtherSide(move, Model.Id!)</a>
             </li>
         }
         @foreach (var pair in Model.SettledAcross)

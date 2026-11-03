@@ -113,6 +113,19 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     }
 
     /// <inheritdoc/>
+    public override async Task<Wire.DidItReply> AbandonSpinOff(Wire.SpinOffRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var changed = await Console(
+            (console, _, ct) => console.AbandonSpinOffAsync(request.Parent, request.Child, ct),
+            context).ConfigureAwait(false);
+
+        return new Wire.DidItReply { Changed = changed };
+    }
+
+    /// <inheritdoc/>
     public override async Task<Wire.PreviewMoveReply> PreviewMove(Wire.PreviewMoveRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);

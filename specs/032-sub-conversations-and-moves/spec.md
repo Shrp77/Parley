@@ -105,7 +105,7 @@ An exchange that is moved may still be open: an agent owes an answer, or the per
 
 - An agent sends on an exchange while it is moving: the message lands either before the move or after it, in the conversation the exchange is then in. It is never lost or refused because of the move.
 - A page open on the source or destination catches up by itself, keeping the reader's place as following already does.
-- An address carrying a picked message that has since moved: the page says it moved and leads to where it is.
+- An address carrying a picked message that has since moved: the page says it may have moved, and to look at the conversation again.
 - A message that has been pruned cannot be picked. Its exchange may still move when another of its messages is picked, and the list says how many messages it has left.
 - The broker cannot be reached: nothing changes, and the surface says so.
 
@@ -113,7 +113,7 @@ An exchange that is moved may still be open: an agent owes an answer, or the per
 
 - A conversation has at most one parent and any number of children, to any depth.
 - Nothing cascades. Closing or destroying one does not close or destroy another.
-- A destroyed parent or child still reads as linked: its name, and that it was destroyed.
+- A destroyed parent or child still reads as linked, by its name. Following the link says it was destroyed.
 - A conversation made by a move is linked to its source, as a spin-off is, and reads the same way in a list.
 - A list names only the immediate parent, however deep the chain goes.
 - A destroyed parent's name is still shown in a list, because the link outlives it.
@@ -131,7 +131,7 @@ An exchange that is moved may still be open: an agent owes an answer, or the per
 - **FR-004**: What opens in the box MUST come from the broker's record of the named message. Words or recipients in a link MUST NOT be able to fill it, because an agent's message can contain live links.
 - **FR-005**: The ordinary limits and refusals for a person's Request MUST apply unchanged (§5.6, §7).
 - **FR-006**: The broker MUST record the link between the two conversations, and every surface showing either MUST show the link and lead to the other.
-- **FR-007**: The link MUST be recorded before anything is sent, so a Request can never be delivered unlinked. If it cannot be recorded, nothing MUST be sent and the surface MUST say why.
+- **FR-007**: The link MUST be recorded before anything is sent, so a Request can never be delivered unlinked. If it cannot be recorded, nothing MUST be sent and the surface MUST say why. If the Request then reaches nobody, the link MUST be taken back and the name left free.
 
 **Move**
 

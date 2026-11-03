@@ -153,10 +153,17 @@ public sealed class SpinOffModel(BrokerDirectory directory, SeatBook seats, Parl
             notices.Add(project.Name.Value, name, who, outcome, outcome.StartsWith("Sent.", StringComparison.Ordinal));
         }
 
-        if (sent.All(result => result.Item2.StartsWith("Sent.", StringComparison.Ordinal)))
+        // Once it reached anybody the conversation exists, so this form could only be refused the name if it were sent again.
+        // What became of anybody it did not reach is in the bell.
+        if (sent.Exists(result => result.Item2.StartsWith("Sent.", StringComparison.Ordinal)))
         {
             return RedirectToPage("/Conversations/Detail", new { project = project.Name.Value, id = name });
         }
+
+        // Reached nobody, so nothing was started: no record says it was, and the name stays free for another try.
+        _ = await BrokerDirectory.ReadAsync(async () =>
+            await new BrokerClient(directory.ClientFor(project)).AbandonSpinOffAsync(Id, name, token).ConfigureAwait(false))
+            .ConfigureAwait(false);
 
         Sent = sent;
 

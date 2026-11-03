@@ -48,7 +48,7 @@ public sealed class SpinOffAndMovePagesTests
         return (response, await response.Content.ReadAsStringAsync(Ct));
     }
 
-    private static HttpClient NoRedirects(TranscriptConsole console) =>
+    private static HttpClient NoRedirects(Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> console) =>
         console.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
 
     [Fact]
@@ -129,6 +129,124 @@ public sealed class SpinOffAndMovePagesTests
         Assert.Contains("from=2", page, StringComparison.Ordinal);
         Assert.Contains("id=\"move-start\"", page, StringComparison.Ordinal);
         Assert.Equal(2, Regex.Matches(page, "class=\"move-pick\"", RegexOptions.None, TimeSpan.FromSeconds(2)).Count);
+    }
+
+    private static RoadmapConsole Seated()
+    {
+        var console = new RoadmapConsole();
+
+        console.Broker.Seats = true;
+        console.Broker.Registry.Add(new Wire.RegistryRow
+        {
+            Name = "human-user@" + RoadmapConsole.Project, Adapter = "parley-console", Tier = Wire.AgentTier.Full, Status = Wire.AgentStatus.Active,
+        });
+
+        foreach (var agent in new[] { Orders, Billing })
+        {
+            console.Broker.Registry.Add(new Wire.RegistryRow { Name = agent, Adapter = "mcp", Tier = Wire.AgentTier.Full, Status = Wire.AgentStatus.Active });
+        }
+
+        return console;
+    }
+
+    private static (string, string)[] Spinning(params string[] to) =>
+        [("Name", "disk-cleanup"), ("Says", "my own words"), .. to.Select(agent => ("Targets", agent))];
+
+    [Fact]
+    public async Task A_send_links_first_then_sends_and_goes_to_the_new_conversation()
+    {
+        using var console = Seated();
+        using var client = NoRedirects(console);
+
+        var (response, _) = await PostAsync(client, Spin(), Spinning(Orders));
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Contains("id=disk-cleanup", response.Headers.Location!.ToString(), StringComparison.Ordinal);
+
+        var link = Assert.Single(console.Broker.SpunOff);
+
+        Assert.Equal(("shared", "disk-cleanup"), (link.Parent, link.Child));
+
+        var sent = Assert.Single(console.Broker.Requested);
+
+        Assert.Equal(("disk-cleanup", Orders), (sent.ConversationId, sent.To));
+        Assert.Contains("my own words", sent.PayloadJson, StringComparison.Ordinal);
+        Assert.Empty(console.Broker.Abandoned);
+    }
+
+    [Fact]
+    public async Task A_link_refused_sends_nothing_and_keeps_everything()
+    {
+        using var console = Seated();
+        console.Broker.SpinOffRefusal = "There is already a conversation called disk-cleanup.";
+        using var client = console.CreateClient();
+
+        var (_, body) = await PostAsync(client, Spin(), Spinning(Orders));
+
+        Assert.Contains("Nothing was sent: There is already", body, StringComparison.Ordinal);
+        Assert.Empty(console.Broker.Requested);
+        Assert.Contains("my own words", body, StringComparison.Ordinal);
+        Assert.Contains("value=\"disk-cleanup\"", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_send_that_reached_nobody_takes_the_link_back_and_keeps_everything()
+    {
+        using var console = Seated();
+        console.Broker.RefusesRequestsTo.Add(Orders);
+        using var client = console.CreateClient();
+
+        var (_, body) = await PostAsync(client, Spin(), Spinning(Orders));
+
+        Assert.Equal("disk-cleanup", Assert.Single(console.Broker.Abandoned).Child);
+        Assert.Contains("my own words", body, StringComparison.Ordinal);
+        Assert.Contains("value=\"disk-cleanup\"", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_send_that_reached_anybody_keeps_the_link_and_goes_there_rather_than_offering_a_retry_it_would_refuse()
+    {
+        using var console = Seated();
+        console.Broker.RefusesRequestsTo.Add(Billing);
+        using var client = NoRedirects(console);
+
+        var (response, _) = await PostAsync(client, Spin(), Spinning(Orders, Billing));
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Empty(console.Broker.Abandoned);
+    }
+
+    [Fact]
+    public async Task A_send_to_several_goes_together_and_the_page_says_why_it_grew()
+    {
+        using var console = new TranscriptConsole();
+        console.Broker.Request(1, Orders, Billing, "Same words.");
+        console.Broker.Request(2, Orders, "inventory@test", "Same words.");
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At(Move("&x=1")), Ct);
+
+        Assert.Contains("name=\"Exchanges\" value=\"1\"", page, StringComparison.Ordinal);
+        Assert.Contains("name=\"Exchanges\" value=\"2\"", page, StringComparison.Ordinal);
+        Assert.Contains(WebUtility.HtmlEncode(Parley.Client.Rendering.MovePicking.SentTogether), page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_json_export_carries_links_moves_and_settled_pairs()
+    {
+        var export = new Parley.Core.ConversationExport(
+            [],
+            [],
+            Links: new Parley.Core.ConversationLinks("logging", Parley.Core.ConversationLinkKind.Move, ["child-one"]),
+            Moves: [new Parley.Core.MoveRecord(1, "a", "b", "human-user@test", DateTimeOffset.UnixEpoch, 5, 3, [7])],
+            SettledElsewhere: [new Parley.Core.SettledElsewhere(3, 4, "other")]);
+
+        var file = System.Text.Encoding.UTF8.GetString(Parley.Web.Pages.Conversations.DetailModel.RawExport("shared", export));
+
+        foreach (var expected in new[] { "logging", "child-one", "destination", "settledElsewhere", "other" })
+        {
+            Assert.Contains(expected, file, StringComparison.Ordinal);
+        }
     }
 
     [Fact]

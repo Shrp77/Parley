@@ -315,6 +315,13 @@ internal sealed partial class Shell : Window
 
             Said = sent.Says;
 
+            // Reached nobody, so nothing was started. The words stay, and Enter links it again.
+            if (sent.Count == 0 && _spinningOff is { } unsent && unsent.Conversation == conversation && unsent.Project == place.Name.Value)
+            {
+                await SpinningOff.AbandonAsync(new BrokerClient(_directory.ClientFor(place)), unsent.Parent, conversation, token)
+                    .ConfigureAwait(false);
+            }
+
             // **Cleared only on a send that reached somebody**, decided by the count rather than by the words,
             // so a draft the cap refused is kept.
             if (sent.Count == 0)
@@ -1682,6 +1689,12 @@ internal sealed partial class Shell : Window
             // meant for one agent to another. Coming back to the same conversation keeps them.
             // Keyed by project as well: `rm1-1` is a conversation in every project with a roadmap.
             var lineFor = project.Name.Value + "/" + conversation;
+
+            // A spin-off belongs to the conversation it was started for. Left, what the person writes anywhere is ordinary.
+            if (_spinningOff is { } spinning && spinning.Project + "/" + spinning.Conversation != lineFor)
+            {
+                _spinningOff = null;
+            }
 
             if (!string.Equals(_lineFor, lineFor, StringComparison.Ordinal))
             {
@@ -4838,6 +4851,18 @@ internal sealed partial class Shell : Window
 
             Queue(async reading =>
             {
+                // Told now rather than after the person has written everything: the box would then belong to a
+                // conversation that already exists, and their words would go into it.
+                var there = await client.ExportAsync(name, reading).ConfigureAwait(false);
+
+                if (string.Equals(name, parent, StringComparison.Ordinal)
+                    || there.Destroyed is not null || there.Exchanges.Count > 0 || there.Messages.Count > 0)
+                {
+                    Said = $"Nothing was started: there is already a conversation called {name}.";
+
+                    return;
+                }
+
                 var export = await client.ExportAsync(parent, reading).ConfigureAwait(false);
                 var message = under is { } id ? export.Messages.FirstOrDefault(m => m.Id == id) : null;
                 var quote = message is null ? string.Empty : Parley.Client.Rendering.Quoting.Of(message, parent);
@@ -4868,6 +4893,54 @@ internal sealed partial class Shell : Window
         return Task.CompletedTask;
     }
 
+    /// <summary>Goes to a conversation this one is linked to, or that entries moved to or from.</summary>
+    /// <returns>When the work to open the choice has been queued.</returns>
+    internal Task GoToRelated()
+    {
+        if (App is not { } app || Current is not { } project || Transcript.Open is not { } here)
+        {
+            return Task.CompletedTask;
+        }
+
+        var client = new BrokerClient(_directory.ClientFor(project));
+
+        Queue(async token =>
+        {
+            var export = await client.ExportAsync(here, token).ConfigureAwait(false);
+
+            IReadOnlyList<string> related =
+            [
+                .. new[] { export.Links?.Parent }.OfType<string>()
+                    .Concat(export.Links?.Children ?? [])
+                    .Concat((export.Moves ?? []).Select(move => Parley.Client.Rendering.ConversationWording.OtherSide(move, here)))
+                    .Distinct(StringComparer.Ordinal),
+            ];
+
+            if (related.Count == 0)
+            {
+                Said = NoRelated;
+
+                return;
+            }
+
+            var rows = related.Select(id => (Id: id, Row: Safe.Text(id))).ToList();
+            var choosing = Prompting.Choose(RelatedTitle, "Which conversation?", [.. rows.Select(r => r.Row)]);
+            var opened = Prompting.Open(app, choosing);
+
+            choosing.Done += (_, picked) =>
+            {
+                Prompting.Close(app, opened);
+
+                if (rows.FirstOrDefault(r => r.Row == picked).Id is { } id)
+                {
+                    Queue(_ => GoAsync(ViewPlace.Into(project.Name).Into(id)));
+                }
+            };
+        });
+
+        return Task.CompletedTask;
+    }
+
     /// <summary>Moves entries of the conversation on screen to another, starting from the one under the cursor.</summary>
     /// <returns>When the work to open the dialog has been queued.</returns>
     internal Task MoveEntries()
@@ -4885,18 +4958,12 @@ internal sealed partial class Shell : Window
             var export = await client.ExportAsync(source, token).ConfigureAwait(false);
             var exchange = under is { } id ? export.Messages.FirstOrDefault(m => m.Id == id)?.ExchangeId : null;
 
-            await Moving.OpenAsync(app, client, source, exchange, Queue, async (said, destination, exchanges) =>
+            await Moving.OpenAsync(app, client, source, exchange, Queue, async (said, destination) =>
             {
                 Said = said;
 
                 if (destination is not null)
                 {
-                    // What this seat held of them names the old conversation. The next read gets the new one.
-                    foreach (var moved in exchanges)
-                    {
-                        Held?.Forget(moved);
-                    }
-
                     await GoAsync(ViewPlace.Into(project.Name).Into(destination)).ConfigureAwait(false);
                 }
             }, token).ConfigureAwait(false);
@@ -5608,6 +5675,12 @@ internal sealed partial class Shell : Window
     /// the room shows them as its participants meanwhile. Once the conversation has any message the record is ignored.
     /// </remarks>
     private (string Project, string Conversation, IReadOnlyList<AgentName> Peers)? _pending;
+
+    /// <summary>The action's name, and the dialog's.</summary>
+    internal const string RelatedTitle = "Go to a related conversation";
+
+    /// <summary>What is said when there is nowhere to go.</summary>
+    internal const string NoRelated = "No other conversation is linked to this one.";
 
     // A spin-off not yet sent: the link is recorded when its first words are, and not before (SPEC.md §5.0).
     private (string Project, string Conversation, string Parent)? _spinningOff;

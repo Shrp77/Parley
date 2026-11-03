@@ -58,6 +58,62 @@ public sealed class MovesOverTheWireTests
     }
 
     [Fact]
+    public async Task A_list_and_an_export_carry_the_parent_whether_it_closed_and_where_a_note_goes()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+        var operators = broker.ConnectAsOperator();
+
+        var opened = await orders.Client.RequestAsync(Requests.Open(Orders, Billing, "net or gross?"), cancellationToken: Ct);
+        var exchange = Assert.Single(opened.Outcomes).ExchangeId;
+        var source = Assert.Single(opened.Outcomes).ConversationId;
+
+        var move = new Wire.MoveExchangesRequest { Source = source, Destination = "tax-questions", NewConversation = true };
+        move.Exchanges.Add(exchange);
+        Assert.Equal(string.Empty, (await operators.MoveExchangesAsync(move, cancellationToken: Ct)).Refused);
+
+        Assert.True((await operators.ForceConcludeAsync(new Wire.ForceConcludeRequest { ConversationId = source }, cancellationToken: Ct)).Changed);
+
+        var listed = (await operators.ListConversationsAsync(new Wire.ListConversationsRequest(), cancellationToken: Ct)).Conversations;
+
+        Assert.Equal(source, listed.Single(c => c.ConversationId == "tax-questions").Parent);
+        Assert.False(listed.Single(c => c.ConversationId == "tax-questions").Closed);
+        Assert.True(listed.Single(c => c.ConversationId == source).Closed);
+
+        var export = await operators.ExportAsync(new Wire.ExportRequest { ConversationId = "tax-questions" }, cancellationToken: Ct);
+
+        Assert.NotEqual(0, Assert.Single(export.Moves).FirstMessage);
+    }
+
+    [Fact]
+    public async Task A_preview_says_why_a_group_grew_and_a_spin_off_can_be_taken_back()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+        await using var billing2 = await AttachedClient.AttachAsync(broker, "billing@other", cancellationToken: Ct);
+        var operators = broker.ConnectAsOperator();
+
+        var opened = await orders.Client.RequestAsync(Requests.Open(Orders, "billing", "are you on the new price?"), cancellationToken: Ct);
+
+        Assert.Equal(2, opened.Outcomes.Count);
+
+        var preview = new Wire.PreviewMoveRequest { Source = opened.Outcomes[0].ConversationId };
+        preview.Exchanges.Add(opened.Outcomes[0].ExchangeId);
+
+        var previewed = await operators.PreviewMoveAsync(preview, cancellationToken: Ct);
+
+        Assert.Equal(2, previewed.Exchanges.Count);
+        Assert.Single(previewed.Exchanges, e => e.AddedBecause.Length > 0);
+
+        var link = new Wire.SpinOffRequest { Parent = opened.Outcomes[0].ConversationId, Child = "never-sent" };
+
+        Assert.Equal(string.Empty, (await operators.SpinOffAsync(link, cancellationToken: Ct)).Refused);
+        Assert.True((await operators.AbandonSpinOffAsync(link, cancellationToken: Ct)).Changed);
+    }
+
+    [Fact]
     public async Task A_refused_move_answers_with_the_reason_and_not_a_failure()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);

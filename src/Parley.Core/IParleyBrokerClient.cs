@@ -216,6 +216,13 @@ public interface IParleyBrokerClient
     /// <remarks>Called before the first Request, so a Request never reaches a spin-off with no link behind it.</remarks>
     Task<string?> SpinOffAsync(string parent, string child, CancellationToken cancellationToken = default);
 
+    /// <summary>Takes back a link whose first Request reached nobody (SPEC.md §5.0, <c>abandon_spin_off</c>).</summary>
+    /// <param name="parent">The conversation it came from.</param>
+    /// <param name="child">The conversation that was to be started.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether anything was taken back. A child with anything in it is left alone.</returns>
+    Task<bool> AbandonSpinOffAsync(string parent, string child, CancellationToken cancellationToken = default);
+
     /// <summary>Says what moving some exchanges would take, changing nothing (SPEC.md §5.0, <c>preview_move</c>).</summary>
     /// <param name="source">The conversation they are in.</param>
     /// <param name="exchanges">The exchanges picked.</param>

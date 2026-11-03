@@ -113,6 +113,14 @@ public sealed class OperatorConsole
     public Task<string?> SpinOffAsync(string parent, string child, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) =>
         _moves.SpinOffAsync(parent, child, nowUtc, cancellationToken);
 
+    /// <summary>Takes back a link whose first Request reached nobody (§10.2's <c>abandon_spin_off</c>).</summary>
+    /// <param name="parent">The conversation it came from.</param>
+    /// <param name="child">The conversation that was to be started.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Whether anything was taken back.</returns>
+    public Task<bool> AbandonSpinOffAsync(string parent, string child, CancellationToken cancellationToken = default) =>
+        _moves.AbandonSpinOffAsync(parent, child, cancellationToken);
+
     /// <summary>Says what moving some exchanges would take (§10.2's <c>preview_move</c>).</summary>
     /// <param name="source">The conversation they are in.</param>
     /// <param name="exchanges">The exchanges picked.</param>

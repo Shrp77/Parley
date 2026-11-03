@@ -336,10 +336,6 @@ internal sealed class TextDialog : TableDialog<TextDialog>, IKeyTable<TextDialog
     /// <param name="taken">Whether they went ahead.</param>
     internal void Finish(bool taken) => Done?.Invoke(this, taken && !Wrong ? _field.Text : null);
 
-    /// <summary>Puts text in the field, as typing it would.</summary>
-    /// <param name="text">The text.</param>
-    internal void Fill(string text) => _field.Text = text;
-
     /// <inheritdoc/>
     /// <remarks>Escape cancels, as everywhere; the field and the buttons take their own keys first.</remarks>
     static CommandManager<TextDialog> IKeyTable<TextDialog>.BuildTable() => new(

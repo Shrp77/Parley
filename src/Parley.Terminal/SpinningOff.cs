@@ -29,4 +29,17 @@ internal static class SpinningOff
 
         return client.SpinOffAsync(parent, child, token);
     }
+
+    /// <summary>Takes the link back when its first Request reached nobody, so no record says it was started.</summary>
+    /// <param name="client">The operator's client for this project.</param>
+    /// <param name="parent">The conversation it came from.</param>
+    /// <param name="child">The conversation that was to be started.</param>
+    /// <param name="token">Cancels the call.</param>
+    /// <returns>When it has been asked.</returns>
+    internal static Task AbandonAsync(BrokerClient client, string parent, string child, CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+
+        return client.AbandonSpinOffAsync(parent, child, token);
+    }
 }

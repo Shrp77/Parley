@@ -33,6 +33,9 @@ every action with its key. **F3** opens a project's configuration (Auto Accept a
 |---|---|---|
 | Read a whole conversation | Open it from a project's conversations list. Alt+c copies all of it to the clipboard; Alt+m copies one message. | The conversation's page. Export, then Export TXT, saves it as a file. |
 | Close a conversation its participants have not closed | Conversations list, Alt+f (*Close this conversation now*). It asks for a reason, and each participant holding work is told. | Health page, "close it" beside the flag. |
+| Start a new conversation from one you are reading | In the conversation, Alt+b, on the message under the cursor. | *Spin off* on the message, or in the panel. |
+| Move entries to another conversation | In the conversation, Alt+v. It lists everything that would go first. | *Move entries* in the panel, then tick them. |
+| Go to a linked conversation | In the conversation, Alt+l. | The links in the panel. |
 | Archive or unarchive a conversation | Conversations list, Alt+h. | The project page: *Archive* or *Bring back* beside each conversation. |
 | Destroy a conversation | Conversations list, Alt+d. It takes the conversation's identifier typed back. | The project page: *Destroy…* beside each conversation, which takes the identifier typed back. |
 | Retire or purge an agent | Agents list, Alt+r (*Remove this agent*). It describes the agent, offers keeping it first, and takes the agent's name typed back. | The agent's page: Retire, Purge. |

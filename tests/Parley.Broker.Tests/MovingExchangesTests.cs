@@ -476,6 +476,138 @@ public sealed class MovingExchangesTests : IDisposable
     }
 
     [Fact]
+    public async Task A_spin_off_that_reached_nobody_is_taken_back_and_the_name_is_free()
+    {
+        _ = await AskAsync(Orders, Billing, "is it gross or net?");
+        Assert.Null(await _console.SpinOffAsync("pricing", "never-sent", T0, Ct));
+
+        Assert.True(await _console.AbandonSpinOffAsync("pricing", "never-sent", Ct));
+
+        Assert.Empty((await _console.ExportAsync("pricing", Ct)).Links!.Children);
+        Assert.Equal(0, _connection.ExecuteScalar<int>("SELECT count(*) FROM conversations WHERE id = 'never-sent';"));
+
+        var going = await AskAsync(Orders, Inventory, "how many?");
+
+        Assert.True((await MoveAsync("never-sent", true, going)).Moved);
+    }
+
+    [Fact]
+    public async Task A_child_holding_anything_is_not_taken_back_nor_a_link_it_does_not_have()
+    {
+        _ = await AskAsync(Orders, Billing, "is it gross or net?");
+        Assert.Null(await _console.SpinOffAsync("pricing", "disk-cleanup", T0, Ct));
+        _ = await AskAsync(Person, Orders, "what filled the disk?", "disk-cleanup");
+
+        Assert.False(await _console.AbandonSpinOffAsync("pricing", "disk-cleanup", Ct));
+        Assert.False(await _console.AbandonSpinOffAsync("elsewhere", "disk-cleanup", Ct));
+        Assert.Equal("pricing", (await _console.ExportAsync("disk-cleanup", Ct)).Links!.Parent);
+    }
+
+    [Fact]
+    public async Task A_conversation_entries_moved_out_of_cannot_be_called_a_spin_off()
+    {
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+        Assert.True((await MoveAsync("tax-questions", true, going)).Moved);
+
+        Assert.Contains("already", await _console.SpinOffAsync("tax-questions", "pricing", T0, Ct), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_length_record_takes_its_messages_place_in_the_broker_order()
+    {
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+        _ = await AskAsync(Orders, Inventory, "how many?", "stock");
+        _ = await AskAsync(Orders, Inventory, "how much?", "stock");
+
+        Assert.True((await MoveAsync("stock", false, going)).Moved);
+
+        var positions = _connection.Query<long>(
+            "SELECT position FROM message_lengths WHERE conversation_id = 'stock' ORDER BY message_id;").ToList();
+
+        Assert.Equal([1L, 2L, 3L], positions);
+    }
+
+    [Fact]
+    public async Task A_closed_source_keeps_its_participants_and_their_votes()
+    {
+        var inClosed = await AskAsync(Orders, Inventory, "how many?", "stock");
+        Assert.True(await _console.ForceConcludeAsync("stock", null, T0.AddMinutes(1), Ct));
+        var before = _connection.ExecuteScalar<int>("SELECT count(*) FROM conversation_participants WHERE conversation_id = 'stock';");
+
+        Assert.True((await _console.MoveExchangesAsync("stock", "elsewhere", true, [inClosed], T0.AddMinutes(2), Ct)).Moved);
+
+        Assert.Equal(before, _connection.ExecuteScalar<int>("SELECT count(*) FROM conversation_participants WHERE conversation_id = 'stock';"));
+    }
+
+    [Fact]
+    public async Task A_move_out_counts_as_activity_in_the_source_too()
+    {
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+        var staying = await AskAsync(Orders, Inventory, "how many?");
+        await CloseAsync(staying, Inventory);
+        await CloseAsync(going, Billing);
+
+        var later = T0.AddDays(20);
+        Assert.True((await _console.MoveExchangesAsync("pricing", "tax-questions", true, [going], later, Ct)).Moved);
+
+        _ = await _console.PruneAsync(new RetentionPolicy(TimeSpan.FromDays(10), TimeSpan.FromDays(365)), later.AddDays(1), Ct);
+
+        Assert.Equal(2, _connection.ExecuteScalar<int>("SELECT count(*) FROM messages WHERE conversation_id = 'pricing';"));
+    }
+
+    [Fact]
+    public async Task A_delivered_notice_is_pruned_with_age_and_a_waiting_one_is_not()
+    {
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+        Assert.True((await MoveAsync("tax-questions", true, going)).Moved);
+        _ = await _broker.DrainInboxAsync(Billing, T0.AddMinutes(6), cancellationToken: Ct);
+
+        _ = await _console.PruneAsync(new RetentionPolicy(TimeSpan.FromDays(1), TimeSpan.FromDays(2)), T0.AddDays(5), Ct);
+
+        Assert.Equal(["orders@test"], _connection.Query<string>("SELECT agent FROM move_notices;"));
+    }
+
+    [Fact]
+    public async Task A_collection_carries_at_most_fifty_notices_and_counts_the_rest()
+    {
+        var conversations = Enumerable.Range(0, 53).Select(i => $"from-{i}").ToList();
+
+        foreach (var name in conversations)
+        {
+            var exchange = await AskAsync(Person, Billing, $"question {name}", name);
+
+            Assert.True((await _console.MoveExchangesAsync(name, name + "-moved", true, [exchange], T0, Ct)).Moved);
+        }
+
+        var first = await _broker.DrainInboxAsync(Billing, T0.AddMinutes(1), cancellationToken: Ct);
+
+        Assert.Equal(50, first.MoveNotices.Count);
+        Assert.Equal(3, first.MoveNoticesWaiting);
+        Assert.Equal(3, (await _broker.DrainInboxAsync(Billing, T0.AddMinutes(2), cancellationToken: Ct)).MoveNotices.Count);
+    }
+
+    [Fact]
+    public async Task Storage_refuses_moving_an_exchange_an_ownership_question_hangs_from()
+    {
+        var facilitator = new Facilitator(_connection, BrokerOptions.Default);
+        var parley = await new AgentRepository(_connection).EnsureFacilitatorAsync(ProjectName.Create("test"), cancellationToken: Ct);
+        var exchange = (await facilitator.AskAsync(parley, Orders, T0, Ct)).Exchange!.Value;
+
+        _connection.Execute("INSERT INTO conversations (id, state, opened_utc) VALUES ('plain', 'OPEN', '2026-11-03T09:00:00Z');");
+
+        // Any conversation at all, by a name that is not an ownership one: only the question can refuse this.
+        var failure = Assert.Throws<SqliteException>(() =>
+        {
+            using var transaction = _connection.BeginTransaction();
+
+            _connection.Execute("PRAGMA defer_foreign_keys = ON;", transaction: transaction);
+            _connection.Execute("UPDATE exchanges SET conversation_id = 'plain' WHERE id = @exchange;", new { exchange }, transaction);
+        });
+
+        Assert.Contains("ownership", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Purging_an_agent_takes_the_notices_about_exchanges_that_went_with_it()
     {
         var going = await AskAsync(Orders, Billing, "is it gross or net?");

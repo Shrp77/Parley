@@ -63,7 +63,7 @@ else if (Model.Preview is { Refused: null } preview)
                 <strong>@exchange.Requester.Value</strong> to <strong>@exchange.Receiver.Value</strong>,
                 @exchange.Messages message@(exchange.Messages == 1 ? null : "s")@(exchange.Open ? ", still open" : null):
                 @exchange.FirstWords
-                @if (exchange.AddedBecause is { Length: > 0 } because)
+                @if (Model.AddedBecause(exchange) is { Length: > 0 } because)
                 {
                     <br /><small>Added: @because</small>
                 }
@@ -103,7 +103,7 @@ else if (Model.Preview is { Refused: null } preview)
                     <option value="">Choose one</option>
                     @foreach (var conversation in Model.Destinations)
                     {
-                        <option value="@conversation.Id" selected="@(Model.Existing == conversation.Id)">@conversation.Id</option>
+                        <option value="@conversation.Id" selected="@(Model.Existing == conversation.Id)">@Parley.Client.Rendering.ConversationWording.Listed(conversation.Id, conversation.Parent)</option>
                     }
                 </select>
             }

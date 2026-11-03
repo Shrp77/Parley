@@ -141,6 +141,7 @@ public sealed class SurfaceTests
     [InlineData("ForceConcludeAsync", "Closing.cs", "Type the conversation's identifier")]
     [InlineData("CloseRequestAsync", "ClosingARequest.cs", "Close it without answering")]
     [InlineData("SpinOffAsync", "SpinningOff.cs", "Nothing is sent until you press Enter")]
+    [InlineData("AbandonSpinOffAsync", "SpinningOff.cs", "Nothing is sent until you press Enter")]
     [InlineData("MoveExchangesAsync", "Moving.cs", "A message can't leave its exchange")]
     [InlineData("PreviewMoveAsync", "Moving.cs", "A message can't leave its exchange")]
     [InlineData("PruneAsync", "Pruning.cs", "Type the project's name")]

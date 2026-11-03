@@ -34,7 +34,7 @@ CREATE TABLE conversation_move_exchanges (
 
 -- What one agent is told about one open exchange that moved, at its next collection.
 CREATE TABLE move_notices (
-  id            INTEGER PRIMARY KEY,
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
   agent         TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
   exchange_id   INTEGER NOT NULL,
   from_conversation TEXT NOT NULL,
@@ -69,7 +69,7 @@ Never changed by a move: any message's text, author, recipient, `created_utc`, `
 
 - `ConversationLinks(Parent?, How?, Children[])` on `ConversationExport`, and `Parent` on `ConversationSummary`.
 - `MoveRecord(Id, Source, Destination, MovedBy, MovedUtc, FirstMessage?, Messages, Exchanges[])`, on `ConversationExport`.
-- `MovePreview(Exchanges[], Files[], Refused?)`, each exchange: `(Id, Open, Requester, Receiver, Messages, FirstWords, AddedBecause?)`.
-- `MoveOutcome(Moved, Refused?, Exchanges, Messages, Destination)`.
+- `MovePreview(Exchanges[], FilesStaying[], Refused?)`, each exchange: `(Id, Open, Requester, Receiver, Messages, FirstWords, AddedBecause?)`.
+- `MoveOutcome(Refused?, Exchanges, Messages)`.
 - `SettledElsewhere(Exchange, SettledBy, Conversation)`, on `ConversationExport`.
-- `MoveNotice(Id, Exchange, From, To)`, on the agent's inbox.
+- `MoveNotice(Exchange, From, To)`, on the agent's inbox.

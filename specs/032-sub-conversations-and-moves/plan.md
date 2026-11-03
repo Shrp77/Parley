@@ -15,7 +15,7 @@ C# on .NET 10, SQLite through Dapper, gRPC, Razor Pages, Terminal.Gui v2, xUnit 
 ## Constitution check
 
 - **I. The spec is the product**: `SPEC.md` changes in the same work (T001). The rule that nothing can move an exchange is replaced, not excepted.
-- **II. No agent has authority over another**: only the person moves or links. The operations are on `Operators`. `SurfaceBoundaryTests` and `AgentsCannotSetTheirOwnLineTests` keep them off `Broker` and `Agents`.
+- **II. No agent has authority over another**: only the person moves or links. The operations are on `Operators`. `SurfaceBoundaryTests` keeps them off `Broker`, and `BrokerV1Tests.An_agent_cannot_reach_the_operator_surface` off `Agents`.
 - **III. Identity from the launch**: `moved_by` is the person's seat on the project, which the broker fills. No operation takes a name for who acted.
 - **IV. Terseness**: a move notice holds an exchange number and two conversation names, each already bounded at 64 characters. A note about files is a fixed sentence the adapter writes. Nothing an agent wrote crosses in a notice.
 - **Nothing times out, no network bind, credentials**: untouched.
@@ -25,7 +25,7 @@ C# on .NET 10, SQLite through Dapper, gRPC, Razor Pages, Terminal.Gui v2, xUnit 
 
 See [research.md](research.md). The ones that shape the work:
 
-1. **The link is recorded before the send, not after.** `spin_off` creates the conversation and its link in one transaction, and only then is the Request sent. A Request therefore can never be delivered unlinked, which replaces FR-007's fallback. An empty conversation left by a refused send is invisible (`ListAsync` shows nothing with no message, participant or file), and `spin_off` with the same names again succeeds, so a retry works.
+1. **The link is recorded before the send, not after.** `spin_off` creates the conversation and its link in one transaction, and only then is the Request sent. A Request therefore can never be delivered unlinked. If the Request reaches nobody, `abandon_spin_off` takes the link and the empty conversation back, so no record says something was started when nothing was said, and the name stays free.
 2. **The move is one transaction with foreign keys deferred.** Update `exchanges`, `messages`, `conversation_cycles` and `message_lengths`, reconcile participants, void polls, write records and notices. A miss fails at commit and rolls everything back.
 3. **Refusals live in the schema where they can.** A new trigger on `UPDATE OF conversation_id ON exchanges` refuses closed destinations, roadmap conversations in either direction, `owns-` names in either direction, and any exchange an ownership question hangs from. The broker's checks exist to give a sentence; the trigger is what holds.
 4. **Whole groups are enforced at the broker, not just drawn.** `move_exchanges` refuses a list that leaves part of a `request_group` behind. `preview_move` adds the rest and says so. A send to several agents has no group, because it is only drawn as one entry, so a surface passes every exchange of what was picked.
@@ -46,7 +46,7 @@ src/Parley.Store/Pruner.cs                       the idle rule reads moves
 src/Parley.Core/ConversationMove.cs              MoveRecord, ConversationLinks, MovePreview, MoveOutcome, MoveNotice
 src/Parley.Broker/OperatorConsole.cs             delegates
 src/Parley.Broker/Broker.cs, Inbox.cs, InboxHolds.cs    notices at collection
-src/Parley.Server/OperatorsService.cs, AgentsService.cs, Wire.cs
+src/Parley.Server/OperatorsService.cs, AgentsService.cs
 src/Parley.Mcp/ParleyTools.cs                    move_notices in parley_inbox
 src/Parley.Client/BrokerClient.cs, Quoting.cs, Rendering/Reading.cs, Views/ConversationsView.cs
 src/Parley.Web/Pages/Conversations/SpinOff.cshtml(.cs), Move.cshtml(.cs), _Side, _Conversation, Detail
@@ -64,4 +64,4 @@ SPEC.md, docs/operating.md, CLAUDE.md, plugins/parley prose
 - An agent sending during a move, from another connection: the message lands in one conversation, never lost.
 - A move starts no turn: `NudgeAsync` and channel nudges see nothing.
 - The FR-002 tick: browser memory of a conversation must not tick others on the spin-off page. A page of its own avoids that memory.
-- Nothing is delivered from the emptied or moved state to the wrong inbox: `SeatHold.Delivered` holds a stale conversation name in memory until next read; the surface that moved forgets those exchanges, and another surface draws the name it read until its next read (recorded, low).
+- `SeatHold.Delivered` keeps a moved message's old conversation name in memory. It is not forgotten, because the seat would then lose the Result it owes; a surface draws the old name until the next read (recorded, low).

@@ -12,16 +12,16 @@
         {
             <p>
                 @(Model.Links.How == Parley.Core.ConversationLinkKind.Move ? "Made by moving entries out of" : "Spun off from")
-                <a href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = parent })">@parent</a>
+                <a target="_top" href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = parent })">@parent</a>
             </p>
         }
         @if (Model.Links.Children.Count > 0)
         {
-            <p>Spun off from this one:</p>
+            <p>Started from this one:</p>
             <ul>
                 @foreach (var child in Model.Links.Children)
                 {
-                    <li><a href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = child })">@child</a></li>
+                    <li><a target="_top" href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = child })">@child</a></li>
                 }
             </ul>
         }

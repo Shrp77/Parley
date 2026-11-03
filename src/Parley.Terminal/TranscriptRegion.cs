@@ -405,8 +405,12 @@ internal sealed class TranscriptRegion : FrameView
         {
             // An emptied conversation says where everything went (SPEC.md §5.0).
             return export?.Moves is { Count: > 0 } moves
-                ? [.. moves.Select(move => new TranscriptLine(
-                    new string(' ', Reading.Indent) + Safe.Text(ConversationWording.MoveLine(move, conversationId)), LineKind.Annotation, null))]
+                ?
+                [
+                    .. Related(export),
+                    .. moves.Select(move => new TranscriptLine(
+                        new string(' ', Reading.Indent) + Safe.Text(ConversationWording.MoveLine(move, conversationId)), LineKind.Annotation, null)),
+                ]
                 : [new TranscriptLine(new string(' ', Reading.Indent) + Empty, LineKind.Annotation, null)];
         }
 
@@ -461,7 +465,7 @@ internal sealed class TranscriptRegion : FrameView
 
         if (export.Links is { Children.Count: > 0 } family)
         {
-            yield return new TranscriptLine(indent + Safe.Text("Spun off from this one: " + string.Join(", ", family.Children)), LineKind.Body, null);
+            yield return new TranscriptLine(indent + Safe.Text("Started from this one: " + string.Join(", ", family.Children)), LineKind.Body, null);
         }
     }
 
