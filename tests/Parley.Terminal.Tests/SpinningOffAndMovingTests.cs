@@ -131,6 +131,207 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
         Assert.Equal("room", listed.Parent);
     }
 
+    /// <summary>A conversation on screen with no seat in the project, the cursor on nothing.</summary>
+    private async Task<(Shell Shell, Driving.Session Driving)> ReadingWithNoSeatAsync()
+    {
+        var driving = Driving.Open(width: 140, height: 40);
+        var directory = new BrokerDirectory(
+            [new ProjectSettings(Walking.Alpha, "unused.db", _broker.Address, null)],
+            _ => GrpcChannel.ForAddress(_broker.Address));
+        var shell = new Shell(directory) { MailEvery = null, FollowEvery = null };
+
+        driving.Show(shell);
+        await shell.RefreshAsync(Ct);
+        await shell.Settled;
+
+        var broker = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await broker.StartAsync(Orders, T0, Ct);
+        Assert.True((await broker.RequestAsync(Orders, Billing, "model-a", """{"ask":"the disk is full"}""", T0.AddMinutes(1), Conversation, Ct)).Succeeded);
+
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+
+        _held = [driving, directory];
+
+        return (shell, driving);
+    }
+
+    [Fact]
+    public async Task Alt_b_on_a_drawn_conversation_asks_for_a_name_and_nothing_else_opens()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        Assert.True(shell.Transcript.Reach(message));
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Transcript));
+
+        await driving.PressThenSettleAsync(Key.B.WithAlt, () => shell.Settled);
+
+        _ = (FormDialog)driving.Find(SpinningOff.Title);
+        Assert.False(driving.Has(Moving.Title));
+        Assert.False(driving.Has(Shell.RelatedTitle));
+    }
+
+    [Fact]
+    public async Task Alt_v_on_a_drawn_conversation_opens_the_list_to_tick_and_nothing_else()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        Assert.True(shell.Transcript.Reach(message));
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Transcript));
+
+        await driving.PressThenSettleAsync(Key.V.WithAlt, () => shell.Settled);
+
+        _ = (TickDialog)driving.Find(Moving.Title);
+        Assert.False(driving.Has(SpinningOff.Title));
+        Assert.False(driving.Has(Shell.RelatedTitle));
+        Assert.NotEqual(Shell.NoRelated, shell.Said);
+    }
+
+    [Fact]
+    public async Task Alt_l_says_when_nothing_is_linked_and_otherwise_offers_what_is()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Transcript));
+
+        await driving.PressThenSettleAsync(Key.L.WithAlt, () => shell.Settled);
+
+        Assert.Equal(Shell.NoRelated, shell.Said);
+        Assert.False(driving.Has(Moving.Title));
+        Assert.False(driving.Has(Shell.RelatedTitle));
+
+        // Something left it, so there is somewhere to go now.
+        var seat = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await seat.StartAsync(shell.Held!.Seat.Name, T0, Ct);
+        Assert.True((await seat.RequestAsync(shell.Held!.Seat.Name, Billing, "model-a", """{"ask":"stays here"}""", T0.AddMinutes(2), Conversation, Ct)).Succeeded);
+
+        var exchange = (await Client.ExportAsync(Conversation, Ct)).Messages.Single(m => m.Id == message).ExchangeId;
+
+        Assert.True((await Client.MoveExchangesAsync(Conversation, "disk-cleanup", true, [exchange], Ct)).Moved);
+
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Transcript));
+
+        await driving.PressThenSettleAsync(Key.L.WithAlt, () => shell.Settled);
+
+        var choosing = (ChoiceDialog)driving.Find(Shell.RelatedTitle);
+
+        Assert.Contains("disk-cleanup", choosing.Choices.Source!.ToList().Cast<string>());
+        Assert.False(driving.Has(Moving.Title));
+    }
+
+    [Fact]
+    public async Task Alt_b_does_nothing_without_a_seat_though_alt_v_on_the_same_screen_does()
+    {
+        var (shell, driving) = await ReadingWithNoSeatAsync();
+        using var held = shell;
+
+        Assert.Null(shell.Held);
+        Assert.Equal(Conversation, shell.Transcript.Open);
+
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Transcript));
+
+        await driving.PressThenSettleAsync(Key.B.WithAlt, () => shell.Settled);
+
+        Assert.False(driving.Has(SpinningOff.Title));
+
+        // The same key table on the same screen and focus: it was the seat that stopped it.
+        await driving.PressThenSettleAsync(Key.V.WithAlt, () => shell.Settled);
+
+        _ = (TickDialog)driving.Find(Moving.Title);
+    }
+
+    [Fact]
+    public async Task The_persons_own_message_ticks_nobody_in_a_spin_off()
+    {
+        var (shell, driving, _) = await SeatedAsync();
+        using var held = shell;
+
+        var seat = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await seat.StartAsync(shell.Held!.Seat.Name, T0, Ct);
+
+        var own = await seat.RequestAsync(shell.Held!.Seat.Name, Billing, "model-a", """{"ask":"my own words"}""", T0.AddMinutes(2), Conversation, Ct);
+
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+
+        Assert.True(shell.Transcript.Reach(own.Request!.Id));
+
+        await shell.SpinOff();
+
+        var form = (FormDialog)driving.Find(SpinningOff.Title);
+
+        form.Fill(0, "disk-cleanup");
+        form.Finish(taken: true);
+        await shell.Settled;
+
+        Assert.Equal("disk-cleanup", shell.Transcript.Open);
+        Assert.Contains("> my own words", shell.Line.Written, StringComparison.Ordinal);
+        Assert.Empty(shell.Drafting!.Pairs);
+
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Line));
+        shell.NewKeyDownEvent(Key.Enter);
+        await shell.Settled;
+
+        Assert.Empty((await Client.ExportAsync("disk-cleanup", Ct)).Messages);
+    }
+
+    [Fact]
+    public async Task The_review_says_what_stays_behind_and_when_they_cannot_come_back_and_a_follow_up_is_left_unless_ticked()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        var seat = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await seat.StartAsync(shell.Held!.Seat.Name, T0, Ct);
+
+        var followUp = await seat.RequestAsync(shell.Held!.Seat.Name, Billing, "model-a", """{"ask":"a follow-up"}""", T0.AddMinutes(2), Conversation, Ct);
+
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+
+        Assert.True(shell.Transcript.Reach(message));
+
+        await shell.MoveEntries();
+        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        var reviewing = (TickDialog)driving.Find(Moving.ReviewTitle);
+
+        Assert.Contains($"you can move them back unless {Conversation} has closed", reviewing.Described, StringComparison.Ordinal);
+        Assert.Contains("Anything asked as a result stays behind unless you ticked it", reviewing.Described, StringComparison.Ordinal);
+        Assert.Contains("agents aren't woken", reviewing.Described, StringComparison.Ordinal);
+
+        var row = Assert.Single(reviewing.Rows.Source!.ToList().Cast<string>());
+
+        Assert.Contains("the disk is full", row, StringComparison.Ordinal);
+
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        var choosing = (ChoiceDialog)driving.Find(Moving.WhereTitle);
+
+        driving.Row(choosing.Choices, Moving.New);
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        foreach (var key in "disk-cleanup")
+        {
+            driving.Find(Moving.NameTitle).NewKeyDownEvent(new Key(key));
+        }
+
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        Assert.Equal(message, Assert.Single((await Client.ExportAsync("disk-cleanup", Ct)).Messages).Id);
+        Assert.Equal(followUp.Request!.Id, Assert.Single((await Client.ExportAsync(Conversation, Ct)).Messages).Id);
+    }
+
     [Fact]
     public async Task A_spin_off_cancelled_at_the_name_does_nothing()
     {
@@ -392,6 +593,24 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
         var problem = SpinningOff.NameProblem(name, Conversation, new ConversationExport([], []));
 
         Assert.Contains(says, problem, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_destroyed_name_says_it_was_destroyed_and_a_name_holding_work_says_it_is_taken()
+    {
+        var message = new Message(1, 1, MessageType.Request, Orders, Billing, "model-a", """{"ask":"x"}""", "free", T0, null);
+
+        Assert.Contains(
+            "was destroyed",
+            SpinningOff.NameProblem("gone", Conversation, new ConversationExport([], [], new DestroyedConversation("gone", T0, 1, []))),
+            StringComparison.Ordinal);
+
+        // Either half of what a conversation holds says so alone: retention can leave an exchange with its messages pruned.
+        Assert.Contains("already", SpinningOff.NameProblem("free", Conversation, new ConversationExport([message], [])), StringComparison.Ordinal);
+        Assert.Contains(
+            "already",
+            SpinningOff.NameProblem("free", Conversation, new ConversationExport([], [new ExchangeSnapshot(1, ExchangeState.Closed, T0, T0)])),
+            StringComparison.Ordinal);
     }
 
     [Fact]

@@ -425,6 +425,115 @@ public sealed class SpinOffAndMovePagesTests
     }
 
     [Fact]
+    public async Task The_panels_move_link_goes_to_the_move_page_for_this_project_and_conversation()
+    {
+        using var console = Console();
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At($"/Conversations/Detail?project={Project}&id=shared"), Ct);
+        var link = Regex.Match(page, """<a [^>]*id="move-start"[^>]*>""", RegexOptions.None, TimeSpan.FromSeconds(2));
+
+        Assert.True(link.Success);
+
+        var href = WebUtility.HtmlDecode(Regex.Match(link.Value, """href="([^"]+)""", RegexOptions.None, TimeSpan.FromSeconds(2)).Groups[1].Value);
+
+        Assert.Equal(Move(), href);
+        Assert.Contains("Move entries out of shared", await client.GetStringAsync(At(href), Ct), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task What_was_picked_has_no_note_and_what_was_added_says_why()
+    {
+        // FR-009. The row picked says nothing, because nobody needs telling why what they chose is going.
+        using var console = new TranscriptConsole();
+        console.Broker.Request(1, Orders, Billing, "Same words.");
+        console.Broker.Request(2, Orders, "inventory@test", "Same words.");
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At(Move("&x=1")), Ct);
+        var rows = Regex.Matches(page, "<li>.*?</li>", RegexOptions.Singleline, TimeSpan.FromSeconds(2)).Select(row => row.Value).Where(row => row.Contains("the first words", StringComparison.Ordinal)).ToList();
+
+        Assert.Equal(2, rows.Count);
+        Assert.DoesNotContain("Added:", rows[0], StringComparison.Ordinal);
+        Assert.Contains("Added:", rows[1], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_post_to_an_existing_conversation_moves_there_and_starts_nothing_new()
+    {
+        using var console = Console();
+        using var client = NoRedirects(console);
+
+        var (response, _) = await PostAsync(client, Move("&x=1"), ("Exchanges", "1"), ("Where", "existing"), ("Existing", "other-work"), ("NewName", "not-this"));
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Contains("id=other-work", response.Headers.Location!.ToString(), StringComparison.Ordinal);
+
+        var asked = Assert.Single(console.Broker.MovesAsked);
+
+        Assert.Equal(("shared", "other-work", false), (asked.Source, asked.Destination, asked.NewConversation));
+    }
+
+    [Fact]
+    public async Task An_existing_conversation_not_chosen_moves_nothing()
+    {
+        using var console = Console();
+        using var client = console.CreateClient();
+
+        var (_, body) = await PostAsync(client, Move("&x=1"), ("Exchanges", "1"), ("Where", "existing"), ("Existing", ""), ("NewName", "not-this"));
+
+        Assert.Contains("No conversation was chosen", body, StringComparison.Ordinal);
+        Assert.Empty(console.Broker.MovesAsked);
+    }
+
+    [Fact]
+    public async Task A_picked_exchange_that_has_since_moved_says_so_and_offers_no_way_to_move()
+    {
+        using var console = Console();
+        console.Broker.PreviewRefusal = "Exchange 1 is not in shared. It may have moved already, so look at the conversation again.";
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At(Move("&x=1")), Ct);
+
+        Assert.Contains("It may have moved already", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("method=\"post\" class=\"move-form\"", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("This will move", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_move_page_says_a_follow_up_stays_behind_unless_it_is_picked()
+    {
+        using var console = Console();
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At(Move("&x=1")), Ct);
+
+        Assert.Contains("stays behind unless you pick it too", page, StringComparison.Ordinal);
+        Assert.Contains("name=\"Exchanges\" value=\"1\"", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("name=\"Exchanges\" value=\"2\"", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_roadmap_items_conversation_and_an_ownership_conversation_are_not_offered_as_destinations()
+    {
+        using var console = Console();
+        console.Broker.AlsoListed.Add(new Wire.ConversationSummary { ConversationId = "plain-work", HasOpenExchange = true });
+        console.Broker.AlsoListed.Add(new Wire.ConversationSummary { ConversationId = "owns-billing", HasOpenExchange = true });
+        console.Broker.AlsoListed.Add(new Wire.ConversationSummary
+        {
+            ConversationId = "work-item", HasOpenExchange = true, Item = new Wire.RoadmapItemRef { ItemNumber = 1 },
+        });
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At(Move("&x=1")), Ct);
+
+        // The first row is the one the filters leave, so the list is known to be read.
+        Assert.Contains("<option value=\"plain-work\"", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("<option value=\"owns-billing\"", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("<option value=\"work-item\"", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_conversation_with_no_parent_lists_as_its_name_alone()
     {
         using var console = Console();

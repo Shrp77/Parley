@@ -124,6 +124,46 @@ public sealed class ConversationWordingTests
         Assert.Equal([3L], MovePicking.WithSendsToSeveral(messages, [3]));
     }
 
+    private static Message Asked(long id, string from, string to, string words) => new(
+        id, id, MessageType.Request, AgentName.Create(from), AgentName.Create(to), "model", $$"""{"ask":"{{words}}"}""", "pricing", At, null);
+
+    [Fact]
+    public void Different_words_to_different_agents_are_two_entries_though_they_sit_side_by_side()
+    {
+        var messages = new[] { Asked(1, "orders@test", "billing@test", "gross?"), Asked(2, "orders@test", "inventory@test", "how many?") };
+
+        Assert.Equal(2, MovePicking.Turns(messages).Count);
+        Assert.Equal([1L], MovePicking.WithSendsToSeveral(messages, [1]));
+    }
+
+    [Fact]
+    public void The_same_words_from_a_different_sender_are_two_entries()
+    {
+        var messages = new[] { Asked(1, "orders@test", "billing@test", "same"), Asked(2, "inventory@test", "human-user@test", "same") };
+
+        Assert.Equal(2, MovePicking.Turns(messages).Count);
+        Assert.Equal([2L], MovePicking.WithSendsToSeveral(messages, [2]));
+    }
+
+    [Fact]
+    public void A_recipient_asked_twice_in_the_same_words_starts_a_new_entry()
+    {
+        // The third goes to somebody the entry already holds, which is the same words said again and not one send.
+        var toTheSecond = new[]
+        {
+            Asked(1, "orders@test", "billing@test", "same"), Asked(2, "orders@test", "inventory@test", "same"), Asked(3, "orders@test", "inventory@test", "same"),
+        };
+        var toTheFirst = new[]
+        {
+            Asked(1, "orders@test", "billing@test", "same"), Asked(2, "orders@test", "inventory@test", "same"), Asked(3, "orders@test", "billing@test", "same"),
+        };
+
+        Assert.Equal([2, 1], MovePicking.Turns(toTheSecond).Select(turn => turn.Count));
+        Assert.Equal([1L, 2L], MovePicking.WithSendsToSeveral(toTheSecond, [1]));
+        Assert.Equal([3L], MovePicking.WithSendsToSeveral(toTheSecond, [3]));
+        Assert.Equal([2, 1], MovePicking.Turns(toTheFirst).Select(turn => turn.Count));
+    }
+
     [Fact]
     public void A_transcript_read_with_no_conversation_named_is_as_it_always_was()
     {

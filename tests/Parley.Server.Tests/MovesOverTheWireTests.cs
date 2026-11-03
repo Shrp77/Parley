@@ -130,6 +130,86 @@ public sealed class MovesOverTheWireTests
     }
 
     [Fact]
+    public async Task An_export_names_the_conversation_the_other_half_of_a_settled_pair_is_now_in()
+    {
+        var person = Parley.Core.PersonSeat.On(Parley.Core.ProjectName.Create("test")).Value;
+
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var seat = await AttachedClient.AttachAsync(broker, person, cancellationToken: Ct, adapter: Parley.Core.PersonSeat.Adapter);
+        await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
+        var operators = broker.ConnectAsOperator();
+
+        var question = Assert.Single((await orders.Client.RequestAsync(Requests.Open(Orders, person, "which rate?", "pricing"), cancellationToken: Ct)).Outcomes).ExchangeId;
+        var line = Assert.Single((await seat.Client.RequestAsync(Requests.Open(person, Orders, "drop the old rate", "pricing"), cancellationToken: Ct)).Outcomes).ExchangeId;
+
+        _ = await orders.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Orders }, cancellationToken: Ct);
+
+        var reply = Requests.Result(Orders, line);
+        reply.Settles.Add(question);
+        Assert.Equal([question], (await orders.Client.ResultAsync(reply, cancellationToken: Ct)).Settled);
+
+        var move = new Wire.MoveExchangesRequest { Source = "pricing", Destination = "tax-questions", NewConversation = true };
+        move.Exchanges.Add(question);
+        Assert.Equal(string.Empty, (await operators.MoveExchangesAsync(move, cancellationToken: Ct)).Refused);
+
+        var here = Assert.Single((await operators.ExportAsync(new Wire.ExportRequest { ConversationId = "pricing" }, cancellationToken: Ct)).SettledElsewhere);
+        var there = Assert.Single((await operators.ExportAsync(new Wire.ExportRequest { ConversationId = "tax-questions" }, cancellationToken: Ct)).SettledElsewhere);
+
+        Assert.Equal((question, line, "tax-questions"), (here.ExchangeId, here.SettledBy, here.ConversationId));
+        Assert.Equal((question, line, "pricing"), (there.ExchangeId, there.SettledBy, there.ConversationId));
+    }
+
+    [Fact]
+    public async Task A_move_starts_no_turn_and_posts_no_notice()
+    {
+        var patience = TimeSpan.FromSeconds(5);
+
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, "test", ["billing"], Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct, startedBy: node);
+        var operators = broker.ConnectAsOperator();
+
+        var exchange = Assert.Single((await orders.Client.RequestAsync(Requests.Open(Orders, Billing, "net or gross?", "pricing"), cancellationToken: Ct)).Outcomes).ExchangeId;
+
+        Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, (await node.WaitForCommandAsync(patience)).CommandCase);
+
+        // Collected, so whatever asks for this agent next asks for a new turn, and it holds work still open that a move will take.
+        _ = await billing.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Billing }, cancellationToken: Ct);
+
+        int noticed;
+
+        lock (billing.Notices)
+        {
+            noticed = billing.Notices.Count;
+        }
+
+        var move = new Wire.MoveExchangesRequest { Source = "pricing", Destination = "tax-questions", NewConversation = true };
+        move.Exchanges.Add(exchange);
+        Assert.Equal(string.Empty, (await operators.MoveExchangesAsync(move, cancellationToken: Ct)).Refused);
+
+        // A Request after it is a fence, not a sleep: a stream is in order, so what a move asked for would come first.
+        _ = await orders.Client.RequestAsync(Requests.Open(Orders, Billing, "and the rest?", "tax-questions"), cancellationToken: Ct);
+
+        var next = await node.WaitForCommandAsync(patience);
+
+        Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, next.CommandCase);
+        Assert.Contains(Orders, next.Turn.Because, StringComparison.Ordinal);
+
+        _ = await billing.WaitForNoticeAsync(patience, notice => notice.MessagesWaiting > 0 && Since(billing, noticed).Contains(notice));
+
+        Assert.All(Since(billing, noticed), notice => Assert.True(notice.MessagesWaiting > 0, "a notice with nothing waiting came of the move"));
+    }
+
+    private static List<Wire.Notice> Since(AttachedClient client, int count)
+    {
+        lock (client.Notices)
+        {
+            return [.. client.Notices.Skip(count)];
+        }
+    }
+
+    [Fact]
     public void The_handler_for_a_move_nudges_nobody()
     {
         // Every other operation that changes an agent's work nudges it. A move must not (SPEC.md §5.0), and what stops the

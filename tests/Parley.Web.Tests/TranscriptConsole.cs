@@ -77,6 +77,12 @@ public sealed class ScriptedExport : HttpMessageHandler
     /// <summary>What a move answers, when it should refuse.</summary>
     public string MoveRefusal { get; set; } = string.Empty;
 
+    /// <summary>What a preview answers, when it should refuse.</summary>
+    public string PreviewRefusal { get; set; } = string.Empty;
+
+    /// <summary>Conversations every listing carries after <c>shared</c>.</summary>
+    public List<Wire.ConversationSummary> AlsoListed { get; } = [];
+
     /// <summary>Split settled pairs every export carries.</summary>
     public List<Wire.SettledElsewhere> SettledElsewhere { get; } = [];
 
@@ -247,6 +253,7 @@ public sealed class ScriptedExport : HttpMessageHandler
 
         row.Participants.AddRange(Edges.SelectMany(e => new[] { e.Waiter, e.WaitedOn }).Distinct());
         reply.Conversations.Add(row);
+        reply.Conversations.AddRange(AlsoListed);
 
         return reply;
     }
@@ -278,6 +285,11 @@ public sealed class ScriptedExport : HttpMessageHandler
 
     private Wire.PreviewMoveReply Preview(Wire.PreviewMoveRequest asked)
     {
+        if (PreviewRefusal.Length > 0)
+        {
+            return new Wire.PreviewMoveReply { Refused = PreviewRefusal };
+        }
+
         var reply = new Wire.PreviewMoveReply { FilesStaying = { "deck.md" } };
 
         reply.Exchanges.AddRange(asked.Exchanges.Select(id => new Wire.MovePreviewExchange

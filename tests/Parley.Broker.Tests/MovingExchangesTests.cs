@@ -539,6 +539,179 @@ public sealed class MovingExchangesTests : IDisposable
     }
 
     [Fact]
+    public async Task A_conversation_everything_moved_out_of_to_an_existing_one_cannot_be_called_a_spin_off()
+    {
+        // No link is left behind by a move to something that already existed, and no participant: only the record says so.
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+        _ = await AskAsync(Orders, Inventory, "how many?", "stock");
+
+        Assert.True((await MoveAsync("stock", false, going)).Moved);
+        Assert.Empty((await _console.ListConversationsAsync(cancellationToken: Ct)).Single(c => c.Id == "pricing").Participants);
+        Assert.Empty((await _console.ExportAsync("pricing", Ct)).Links!.Children);
+
+        Assert.Contains("already a conversation called pricing", await _console.SpinOffAsync("stock", "pricing", T0, Ct), StringComparison.Ordinal);
+        Assert.Null((await _console.ExportAsync("pricing", Ct)).Links!.Parent);
+    }
+
+    [Fact]
+    public async Task A_stub_entries_passed_through_is_not_a_stub_any_more()
+    {
+        // In and straight back out: empty again, with no exchange, file or participant, and only the records of the moves to say it held anything.
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+        Assert.Null(await _console.SpinOffAsync("pricing", "through", T0, Ct));
+
+        Assert.True((await MoveAsync("through", false, going)).Moved);
+        Assert.True((await _console.MoveExchangesAsync("through", "pricing", false, [going], T0.AddMinutes(6), Ct)).Moved);
+
+        Assert.Contains("already a conversation called through", await _console.SpinOffAsync("pricing", "through", T0, Ct), StringComparison.Ordinal);
+        Assert.False(await _console.AbandonSpinOffAsync("pricing", "through", Ct));
+    }
+
+    [Fact]
+    public async Task Taking_back_an_empty_stub_with_the_wrong_parent_leaves_it_and_the_right_parent_takes_it()
+    {
+        _ = await AskAsync(Orders, Billing, "is it gross or net?");
+        _ = await AskAsync(Orders, Inventory, "how many?", "stock");
+        Assert.Null(await _console.SpinOffAsync("pricing", "never-sent", T0, Ct));
+
+        Assert.False(await _console.AbandonSpinOffAsync("stock", "never-sent", Ct));
+
+        Assert.Equal("pricing", (await _console.ExportAsync("never-sent", Ct)).Links!.Parent);
+        Assert.Equal(1, _connection.ExecuteScalar<int>("SELECT count(*) FROM conversations WHERE id = 'never-sent';"));
+
+        Assert.True(await _console.AbandonSpinOffAsync("pricing", "never-sent", Ct));
+
+        Assert.Equal(0, _connection.ExecuteScalar<int>("SELECT count(*) FROM conversations WHERE id = 'never-sent';"));
+        Assert.Empty((await _console.ExportAsync("pricing", Ct)).Links!.Children);
+    }
+
+    [Fact]
+    public async Task A_preview_does_not_list_a_file_in_another_conversation_as_staying()
+    {
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+        _ = await AskAsync(Orders, Inventory, "how many?", "stock");
+        PlaceFile("stock", Orders);
+
+        var preview = await _console.PreviewMoveAsync("pricing", [going], Ct);
+
+        Assert.Null(preview.Refused);
+        Assert.Empty(preview.FilesStaying);
+        Assert.Equal(["notes.md"], (await _console.PreviewMoveAsync("stock", [.. (await _console.ExportAsync("stock", Ct)).Exchanges.Select(e => e.ExchangeId)], Ct)).FilesStaying);
+    }
+
+    [Fact]
+    public async Task Asking_again_for_a_stub_that_has_since_had_work_put_in_it_is_refused()
+    {
+        _ = await AskAsync(Orders, Billing, "is it gross or net?");
+        Assert.Null(await _console.SpinOffAsync("pricing", "disk-cleanup", T0, Ct));
+        _ = await AskAsync(Person, Orders, "what filled the disk?", "disk-cleanup");
+
+        Assert.Contains("already a conversation called disk-cleanup", await _console.SpinOffAsync("pricing", "disk-cleanup", T0, Ct), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_ownership_conversation_is_refused_both_ways_with_a_sentence_rather_than_an_exception()
+    {
+        // Storage refuses these too, and that surfaces as an exception. The sentence is what a person is meant to read.
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+        _connection.Execute("INSERT INTO conversations (id, state, opened_utc) VALUES ('owns-billing', 'OPEN', '2026-11-03T09:00:00Z');");
+
+        Assert.Contains("is an ownership conversation", (await MoveAsync("owns-billing", false, going)).Refused, StringComparison.Ordinal);
+        Assert.Contains("is an ownership conversation", (await _console.MoveExchangesAsync("owns-billing", "out", true, [going], T0, Ct)).Refused, StringComparison.Ordinal);
+        Assert.Contains("is an ownership conversation", (await _console.PreviewMoveAsync("owns-billing", [going], Ct)).Refused, StringComparison.Ordinal);
+        Assert.Equal("pricing", Row("SELECT conversation_id FROM exchanges WHERE id = @going;", new { going }));
+    }
+
+    [Fact]
+    public async Task A_new_name_reserved_for_a_roadmap_item_is_refused_and_says_so()
+    {
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+        _connection.Execute(
+            """
+            PRAGMA foreign_keys = OFF;
+            INSERT INTO roadmap_item_conversations (item_id, conversation_id) VALUES (1, 'rm1-1');
+            PRAGMA foreign_keys = ON;
+            """);
+
+        Assert.Contains("reserved for a roadmap item", (await MoveAsync("rm1-1", true, going)).Refused, StringComparison.Ordinal);
+        Assert.Contains("reserved for a roadmap item", await _console.SpinOffAsync("pricing", "rm1-1", T0, Ct), StringComparison.Ordinal);
+        Assert.Equal(0, _connection.ExecuteScalar<int>("SELECT count(*) FROM conversations WHERE id = 'rm1-1';"));
+    }
+
+    [Fact]
+    public async Task A_preview_of_an_exchange_that_has_since_moved_says_so_and_lists_nothing()
+    {
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+        _ = await AskAsync(Orders, Inventory, "how many?");
+        Assert.True((await MoveAsync("tax-questions", true, going)).Moved);
+
+        var preview = await _console.PreviewMoveAsync("pricing", [going], Ct);
+
+        Assert.Contains("may have moved already", preview.Refused, StringComparison.Ordinal);
+        Assert.Empty(preview.Exchanges);
+    }
+
+    [Fact]
+    public async Task A_move_record_says_the_first_message_that_moved_and_how_many_did()
+    {
+        // The note is drawn where the entries were, by this record, so the first moved has to be the first and not the last.
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+        var first = _connection.ExecuteScalar<long>("SELECT min(id) FROM messages WHERE exchange_id = @going;", new { going });
+        _ = await AskAsync(Orders, Inventory, "how many?");
+        _ = await _broker.ClarifyAsync(going, Billing, "model-a", """{"text":"which ledger?"}""", T0.AddMinutes(1), Ct);
+
+        Assert.True((await MoveAsync("tax-questions", true, going)).Moved);
+
+        var record = Assert.Single((await _console.ExportAsync("tax-questions", Ct)).Moves!);
+
+        Assert.Equal(first, record.FirstMessage);
+        Assert.Equal(2, record.Messages);
+        Assert.Equal([going], record.Exchanges);
+    }
+
+    [Fact]
+    public async Task A_move_that_fails_part_way_changes_nothing_at_all()
+    {
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+        _ = await AskAsync(Orders, Inventory, "how many?");
+        _ = await _broker.ClarifyAsync(going, Billing, "model-a", """{"text":"which ledger?"}""", T0.AddMinutes(1), Ct);
+        _connection.Execute(
+            "INSERT INTO conversation_cycles (exchange_id, conversation_id, path, recorded_utc) VALUES (@going, 'pricing', 'a,b', '2026-11-03T09:00:00Z');",
+            new { going });
+
+        var before = EveryRowAMoveTouches();
+
+        // The notices are the last thing a move writes, so everything else has been done by the time this refuses.
+        _connection.Execute(
+            "CREATE TEMP TRIGGER tr_test_fails_the_move BEFORE INSERT ON main.move_notices BEGIN SELECT RAISE(ABORT, 'the test failed this'); END;");
+
+        await Assert.ThrowsAnyAsync<Exception>(() => MoveAsync("tax-questions", true, going));
+
+        Assert.Equal(before, EveryRowAMoveTouches());
+
+        _connection.Execute("DROP TRIGGER tr_test_fails_the_move;");
+
+        // The same move with nothing in its way goes, so it was the failure that stopped it.
+        Assert.True((await MoveAsync("tax-questions", true, going)).Moved);
+        Assert.NotEqual(before, EveryRowAMoveTouches());
+    }
+
+    private List<string> EveryRowAMoveTouches()
+    {
+        string[] tables =
+        [
+            "conversations", "conversation_links", "conversation_moves", "conversation_move_exchanges", "conversation_participants",
+            "conversation_cycles", "exchanges", "messages", "message_lengths", "move_notices",
+        ];
+
+        return
+        [
+            .. tables.SelectMany(table => _connection.Query($"SELECT * FROM {table} ORDER BY 1, 2;").Select(row =>
+                table + ": " + string.Join("|", ((IDictionary<string, object>)row).Select(cell => cell.Key + "=" + cell.Value)))),
+        ];
+    }
+
+    [Fact]
     public async Task A_length_record_takes_its_messages_place_in_the_broker_order()
     {
         var going = await AskAsync(Orders, Billing, "is it gross or net?");

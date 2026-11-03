@@ -144,6 +144,49 @@ public sealed class FollowingTests
         Assert.Equal(2, shell.Transcript.Rows[shell.Transcript.List.SelectedItem!.Value]);
     }
 
+    private static MoveRecord Went(string to) =>
+        new(1, Conversation, to, "human-user@test", DateTimeOffset.UnixEpoch, null, 1, [1]);
+
+    [Fact]
+    public async Task Everything_below_the_cursor_going_with_notes_at_the_end_leaves_the_reader_on_the_message_before_them()
+    {
+        // With nothing after the last message the row held inside the list lands on it anyway, so it takes notes after it to
+        // say whether the reader was put on the message or only held inside what is left.
+        using var driving = Driving.Open(width: 100, height: 30);
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+        var all = Numbered(5);
+
+        await ReadingAsync(driving, shell, Holding(all) with { Moves = [Went("to-a"), Went("to-b")] });
+
+        Assert.True(shell.Transcript.Reach(4));
+        Assert.True(shell.Transcript.Follow(Conversation, "alpha", Holding(all[0], all[1]) with { Moves = [Went("to-a"), Went("to-b")] }));
+
+        Assert.Equal(2, shell.Transcript.Rows[shell.Transcript.List.SelectedItem!.Value]);
+    }
+
+    [Fact]
+    public async Task A_note_after_the_last_message_keeps_its_distance_from_it_when_rows_go_from_above()
+    {
+        using var driving = Driving.Open(width: 100, height: 40);
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+        var all = Numbered(5);
+        MoveRecord[] notes = [Went("to-a"), Went("to-b"), Went("to-c")];
+
+        await ReadingAsync(driving, shell, Holding(all) with { Moves = notes });
+
+        var row = shell.Transcript.Drawn.ToList().FindIndex(line => line.Contains("to-b", StringComparison.Ordinal));
+
+        Assert.True(row >= 0);
+
+        shell.Transcript.List.SelectedItem = row;
+
+        Assert.True(shell.Transcript.Follow(Conversation, "alpha", Holding([.. all.Skip(2)]) with { Moves = notes }));
+
+        Assert.Contains("to-b", shell.Transcript.Drawn[shell.Transcript.List.SelectedItem!.Value], StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task A_reader_who_stops_following_by_one_row_is_not_sent_to_the_top()
     {
