@@ -386,12 +386,64 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
 
     [Theory]
     [InlineData("owns-orders", "facilitator")]
-    [InlineData("room", "already a conversation")]
+    [InlineData("room", "its own parent")]
     public void A_name_the_broker_would_refuse_is_said_at_once(string name, string says)
     {
         var problem = SpinningOff.NameProblem(name, Conversation, new ConversationExport([], []));
 
         Assert.Contains(says, problem, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Destroying_what_settled_a_question_elsewhere_says_why_and_destroys_nothing()
+    {
+        var (shell, driving, _) = await SeatedAsync();
+        using var held = shell;
+
+        var seat = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await seat.StartAsync(shell.Held!.Seat.Name, T0, Ct);
+
+        var persons = await seat.RequestAsync(shell.Held!.Seat.Name, Billing, "model-a", """{"ask":"drop the old rate"}""", T0.AddMinutes(2), "pricing", Ct);
+        var question = await seat.RequestAsync(Billing, shell.Held!.Seat.Name, "model-a", """{"ask":"which rate?"}""", T0.AddMinutes(3), "pricing", Ct);
+
+        _ = await seat.ResultAsync(
+            persons.Exchange!.Id,
+            Billing,
+            "model-a",
+            $$"""{"outcomes":[{"id":"{{PayloadShape.WholeRequest}}","outcome":"done","text":"done"}]}""",
+            T0.AddMinutes(4),
+            Ct,
+            [question.Exchange!.Id]);
+
+        Assert.True((await Client.MoveExchangesAsync("pricing", "tax-questions", true, [persons.Exchange!.Id], Ct)).Moved);
+
+        await Walking.GoAsync(shell, Viewing.Project);
+        await shell.Settled;
+
+        var at = shell.Conversations.List.Source!.ToList().Cast<string>().ToList().FindIndex(row => row.Contains("tax-questions", StringComparison.Ordinal));
+
+        Assert.True(at >= 0);
+
+        shell.Conversations.List.SelectedItem = at;
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Conversations));
+
+        await shell.DestroyConversation();
+
+        var choosing = (ChoiceDialog)driving.Find(Destroying.Title);
+
+        driving.Row(choosing.Choices, Destroying.Destroy);
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        var typing = (TextDialog)driving.Find(Destroying.Title);
+
+        driving.Type("tax-questions");
+        typing.Finish(taken: true);
+        await shell.Settled;
+
+        Assert.Contains("Nothing was destroyed", shell.Said, StringComparison.Ordinal);
+        Assert.Contains("Destroy pricing first", shell.Said, StringComparison.Ordinal);
+        Assert.NotEmpty((await Client.ExportAsync("tax-questions", Ct)).Messages);
     }
 
     [Fact]

@@ -145,6 +145,30 @@ public sealed class FollowingTests
     }
 
     [Fact]
+    public async Task A_reader_who_stops_following_by_one_row_is_not_sent_to_the_top()
+    {
+        using var driving = Driving.Open(width: 100, height: 30);
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+        var all = Numbered(40);
+
+        await ReadingAsync(driving, shell, Holding(all));
+
+        var list = shell.Transcript.List;
+        var view = list.Viewport.Y;
+
+        Assert.True(view > 0);
+
+        list.SelectedItem = list.Source!.Count - 2;
+        Assert.False(shell.Transcript.Tailing);
+
+        Assert.True(shell.Transcript.Follow(Conversation, "alpha", Holding([.. all, Answer(41, "the last answer")])));
+        driving.App.LayoutAndDraw(true);
+
+        Assert.Equal(view, list.Viewport.Y);
+    }
+
+    [Fact]
     public async Task A_move_taking_rows_from_above_leaves_the_view_on_the_same_message()
     {
         // The cursor is not all a reader has: somebody who wheeled up is reading what is at the top of the view.

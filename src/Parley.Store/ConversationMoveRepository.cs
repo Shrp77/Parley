@@ -311,10 +311,12 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
         await RunAsync(
             """
             UPDATE message_lengths
-               SET position = (SELECT count(*) FROM message_lengths other
-                                WHERE other.conversation_id = message_lengths.conversation_id
-                                  AND other.message_id <= message_lengths.message_id)
-             WHERE conversation_id IN (@Source, @Destination);
+               SET position = ranked.place
+              FROM (SELECT message_id,
+                           row_number() OVER (PARTITION BY conversation_id ORDER BY message_id) AS place
+                      FROM message_lengths
+                     WHERE conversation_id IN (@Source, @Destination)) ranked
+             WHERE message_lengths.message_id = ranked.message_id;
             """,
             new { Source = source, Destination = destination }).ConfigureAwait(false);
 

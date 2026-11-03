@@ -356,6 +356,9 @@ internal sealed class TranscriptRegion : FrameView
 
         var end = Math.Max(0, rows - view.Height);
 
+        // Kept, so a reader who stops following by moving the cursor within what is on screen stays where they are.
+        _top = end;
+
         if (view.Y == end)
         {
             return;
@@ -896,13 +899,14 @@ internal sealed class TranscriptRegion : FrameView
         }
 
         // A row of a note or a heading keeps its distance from the message it sits above, or else below.
-        var unowned = before[row] is null;
+        var nextOwned = before.FindIndex(row, id => id is not null);
+        var lastOwned = before.FindLastIndex(row, id => id is not null);
 
         for (var at = row + 1; at < before.Count; at++)
         {
             if (before[at] is { } later && first.TryGetValue(later, out var found))
             {
-                return Math.Clamp(unowned && !before.Skip(row).Take(at - row).Any(id => id is not null) ? found - (at - row) : found, 0, last);
+                return Math.Clamp(at == nextOwned ? found - (at - row) : found, 0, last);
             }
         }
 
@@ -910,7 +914,7 @@ internal sealed class TranscriptRegion : FrameView
         {
             if (before[at] is { } earlier && first.TryGetValue(earlier, out var found))
             {
-                return Math.Clamp(found + rows[earlier] - 1 + (unowned && !before.Skip(at + 1).Take(row - at).Any(id => id is not null) ? row - at : 0), 0, last);
+                return Math.Clamp(found + rows[earlier] - 1 + (at == lastOwned ? row - at : 0), 0, last);
             }
         }
 

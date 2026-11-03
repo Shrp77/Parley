@@ -14,6 +14,10 @@ public enum DestroyVerdict
 
     /// <summary>It is gone, and so is everything that belonged to it.</summary>
     Gone = 1,
+
+    /// <summary>Nothing went: an exchange here settled one a move has since put in another conversation.</summary>
+    /// <remarks>The settled one's record has to name what settled it, and storage holds it to that (SPEC.md §5.6).</remarks>
+    SettlesElsewhere = 2,
 }
 
 /// <summary>
@@ -24,6 +28,7 @@ public enum DestroyVerdict
 /// What was deleted, per table, worst first. Empty when <paramref name="Verdict"/> is
 /// <see cref="DestroyVerdict.NoSuchConversation"/>.
 /// </param>
+/// <param name="SettlesIn">The other conversation, when the verdict is <see cref="DestroyVerdict.SettlesElsewhere"/>.</param>
 /// <remarks>
 /// <para>
 /// <b>Per table rather than as a total</b>, for the reason <see cref="PurgeToll"/> records: a
@@ -42,11 +47,24 @@ public enum DestroyVerdict
 /// that drifts from the first the moment a verdict is added.
 /// </para>
 /// </remarks>
-public sealed record DestroyOutcome(DestroyVerdict Verdict, IReadOnlyList<PurgeToll> Destroyed)
+public sealed record DestroyOutcome(DestroyVerdict Verdict, IReadOnlyList<PurgeToll> Destroyed, string? SettlesIn = null)
 {
     /// <summary>There was no such conversation.</summary>
     public static DestroyOutcome NoSuchConversation { get; } =
         new(DestroyVerdict.NoSuchConversation, []);
+
+    /// <summary>Reports a destroy refused because of a settled pair split by a move.</summary>
+    /// <param name="other">The conversation holding the exchange that was settled.</param>
+    /// <returns>A refusal that destroyed nothing.</returns>
+    public static DestroyOutcome Settles(string other) => new(DestroyVerdict.SettlesElsewhere, [], other);
+
+    /// <summary>What a person is told about a refusal, or <see langword="null"/> when the destroy was not refused.</summary>
+    /// <param name="conversation">The conversation that was to be destroyed.</param>
+    /// <returns>A sentence saying why and the two ways on.</returns>
+    public string? Refusal(string conversation) => Verdict == DestroyVerdict.SettlesElsewhere
+        ? $"Nothing was destroyed: something in {conversation} settled a question that is now in {SettlesIn}. "
+          + $"Destroy {SettlesIn} first, or move that question to {conversation} and destroy them together."
+        : null;
 
     /// <summary>
     /// Reports a conversation that was destroyed, and what went with it.

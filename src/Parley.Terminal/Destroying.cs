@@ -214,6 +214,13 @@ internal static class Destroying
             return;
         }
 
+        if (destroyed.Refusal(row.Id) is { } refused)
+        {
+            await done(Safe.Text(refused)).ConfigureAwait(false);
+
+            return;
+        }
+
         // Per table rather than as a total, because a total is the one number that carries no
         // warning -- and this report is the only account of those rows that will ever exist.
         var toll = destroyed.Destroyed.Count == 0

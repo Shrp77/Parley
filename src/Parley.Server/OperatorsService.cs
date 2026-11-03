@@ -248,7 +248,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
         await DeleteFoldersWhoseRowsWentAsync(files, folder is null ? [] : [folder]).ConfigureAwait(false);
 
-        var reply = new Wire.DestroyReply { Verdict = Conversions.Out(outcome.Verdict) };
+        var reply = new Wire.DestroyReply { Verdict = Conversions.Out(outcome.Verdict), SettlesIn = outcome.SettlesIn ?? string.Empty };
         reply.Destroyed.AddRange(outcome.Destroyed.Select(t => new Wire.PurgeToll { Table = t.Table, Rows = t.Rows }));
 
         return reply;

@@ -675,6 +675,50 @@ public sealed class MovingExchangesTests : IDisposable
     }
 
     [Fact]
+    public async Task A_conversation_holding_what_settled_a_question_elsewhere_refuses_to_be_destroyed_and_says_where()
+    {
+        var (persons, _) = await SettledPairAsync();
+
+        Assert.True((await MoveAsync("tax-questions", true, persons)).Moved);
+
+        var before = _connection.ExecuteScalar<long>("SELECT count(*) FROM messages;");
+        var refused = await _console.DestroyConversationAsync("tax-questions", T0.AddMinutes(10), Ct);
+
+        Assert.Equal(DestroyVerdict.SettlesElsewhere, refused.Verdict);
+        Assert.Equal("pricing", refused.SettlesIn);
+        Assert.Contains("Destroy pricing first", refused.Refusal("tax-questions"), StringComparison.Ordinal);
+        Assert.Empty(refused.Destroyed);
+        Assert.Equal(before, _connection.ExecuteScalar<long>("SELECT count(*) FROM messages;"));
+
+        // Both ways on work, and nothing is left dangling.
+        Assert.Equal(DestroyVerdict.Gone, (await _console.DestroyConversationAsync("pricing", T0.AddMinutes(11), Ct)).Verdict);
+        Assert.Equal(DestroyVerdict.Gone, (await _console.DestroyConversationAsync("tax-questions", T0.AddMinutes(12), Ct)).Verdict);
+        Assert.Empty(_connection.Query("PRAGMA foreign_key_check;"));
+    }
+
+    [Fact]
+    public async Task A_settled_pair_moved_together_can_be_destroyed()
+    {
+        var (persons, question) = await SettledPairAsync();
+
+        Assert.True((await MoveAsync("tax-questions", true, persons)).Moved);
+        Assert.Equal(DestroyVerdict.SettlesElsewhere, (await _console.DestroyConversationAsync("tax-questions", T0.AddMinutes(10), Ct)).Verdict);
+        Assert.True((await MoveAsync("tax-questions", false, question)).Moved);
+        Assert.Equal(DestroyVerdict.Gone, (await _console.DestroyConversationAsync("tax-questions", T0.AddMinutes(12), Ct)).Verdict);
+    }
+
+    private async Task<(long Persons, long Question)> SettledPairAsync()
+    {
+        var persons = await AskAsync(Person, Orders, "drop the old rate");
+        var question = await AskAsync(Orders, Person, "which rate?");
+
+        _ = await _broker.ResultAsync(
+            persons, Orders, "model-a", $$"""{"outcomes":[{"id":"{{PayloadShape.WholeRequest}}","outcome":"done","text":"done"}]}""", T0.AddMinutes(1), Ct, [question]);
+
+        return (persons, question);
+    }
+
+    [Fact]
     public async Task A_settled_pair_split_by_a_move_is_still_said_from_both_sides()
     {
         // The person asks; the agent's own question to the person is settled by what the person said.

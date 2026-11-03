@@ -952,11 +952,13 @@ message ConversationRequest {
 message DestroyReply {
   DestroyVerdict verdict = 1;
   repeated PurgeToll destroyed = 2;
+  string settles_in = 3;
 }
 
 enum DestroyVerdict {
   DESTROY_VERDICT_NO_SUCH_CONVERSATION = 0;
   DESTROY_VERDICT_GONE = 1;
+  DESTROY_VERDICT_SETTLES_ELSEWHERE = 2;
 }
 
 message StartRequest {

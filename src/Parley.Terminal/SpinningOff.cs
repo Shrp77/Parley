@@ -41,9 +41,17 @@ internal static class SpinningOff
             return $"the name {name} is reserved for a roadmap item.";
         }
 
-        var held = string.Equals(name, parent, StringComparison.Ordinal)
-            || there.Destroyed is not null
-            || there.Exchanges.Count > 0
+        if (string.Equals(name, parent, StringComparison.Ordinal))
+        {
+            return "a conversation cannot be its own parent.";
+        }
+
+        if (there.Destroyed is not null)
+        {
+            return $"a conversation called {name} was destroyed, and that name stays taken.";
+        }
+
+        var held = there.Exchanges.Count > 0
             || there.Messages.Count > 0
             || there.Moves is { Count: > 0 }
             || there.Links is { Children.Count: > 0 }

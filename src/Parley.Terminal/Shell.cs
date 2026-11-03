@@ -4946,7 +4946,7 @@ internal sealed partial class Shell : Window
 
                 await GoAsync(ViewPlace.Into(project.Name).Into(name)).ConfigureAwait(false);
 
-                // Beginning with a line break, so it reads as words and cannot be taken for a command.
+                // Words, never a command: a command begins with a slash, and a quote begins with a line break and a name.
                 Line.Rewrite(now => string.IsNullOrWhiteSpace(now) ? quote : now);
 
                 Line.ShowFromTheTop();

@@ -559,7 +559,9 @@ operation moves an exchange or names where one goes.
   conversation is allowed and does not reopen it. An emptied conversation stays as it was, open or
   closed, with its record of what left.
 - **An exchange that settled another stays linked to it** when only one of them moves (§5.6). A new
-  settlement is still only within one conversation.
+  settlement is still only within one conversation. The settled one has to name what settled it, so a
+  conversation holding the settling half can't be destroyed while the other half is elsewhere: `destroy` refuses
+  and says so, and the person destroys the other conversation first or moves the pair together.
 
 A move can be undone by moving the exchanges back, unless the conversation they came from has closed, and both
 moves stay on record.

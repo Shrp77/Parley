@@ -185,7 +185,8 @@ timezone, sortable either way.
   because an archived conversation goes on receiving messages, and a message does not un-archive
   it.
 - **Destroy** deletes a conversation and every participant's half of it. It is described first,
-  and keeping is offered first.
+  and keeping is offered first. It's refused, and says so, when something in the conversation settled a question a move
+  has since put in another: destroy that one first, or move the question back and destroy them together.
 - **Export** writes a conversation whole to a file you own.
 - **Close** ends a conversation. You can do this when the participants have not agreed. You give
   a reason, and it is recorded.
