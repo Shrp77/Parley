@@ -223,6 +223,15 @@
                                     <textarea id="c-@item.Message.ExchangeId" name="Clarification" rows="2" required>@(Model.Kept(item.Message.ExchangeId) ? Model.Clarification : null)</textarea>
                                     <button type="submit">@(item.OwesReply ? "Reply" : "Ask")</button>
                                 </form>
+                                @* For a question gone stale or answered elsewhere. Nothing is said on the person's behalf: the
+                                   broker writes that they closed it, and the conversation stays open. *@
+                                <form method="post" asp-page-handler="Close" class="reply">
+                                    <input type="hidden" name="For" value="@projectName" />
+                                    <input type="hidden" name="Exchange" value="@item.Message.ExchangeId" />
+                                    <label for="x-@item.Message.ExchangeId">Close without answering. Reason (optional; they are told it)</label>
+                                    <input id="x-@item.Message.ExchangeId" name="Clarification" maxlength="1000" />
+                                    <button type="submit" class="quiet">Close without answering</button>
+                                </form>
                             }
                         </article>
                     </div>

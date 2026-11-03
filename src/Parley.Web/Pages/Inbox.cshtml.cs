@@ -230,6 +230,42 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats, Parley
         return Page();
     }
 
+    /// <summary>Closes one Request without answering it.</summary>
+    /// <returns>The page, saying what happened.</returns>
+    /// <remarks>The question may be stale, or answered elsewhere. The conversation stays open and the other side is told.</remarks>
+    public async Task<IActionResult> OnPostCloseAsync()
+    {
+        var (seat, hold, _) = Seated();
+
+        if (seat is null || hold is null || directory.Find(For) is not { } project)
+        {
+            return RedirectToPage("/Inbox");
+        }
+
+        var read = await BrokerDirectory.ReadAsync(async () =>
+            await new BrokerClient(directory.ClientFor(project))
+                .CloseRequestAsync(
+                    Exchange,
+                    string.IsNullOrWhiteSpace(Clarification) ? null : Clarification,
+                    HttpContext.RequestAborted)
+                .ConfigureAwait(false)).ConfigureAwait(false);
+
+        if (read is { Reachable: true, Value: true })
+        {
+            hold.Forget(Exchange);
+        }
+
+        Outcome = !read.Reachable
+            ? read.Problem
+            : read.Value ? "Closed, and they have been told." : "That request is not open, so nothing changed.";
+
+        Me = seat;
+
+        await LoadAsync().ConfigureAwait(false);
+
+        return Page();
+    }
+
     /// <summary>The seat this person holds in the project a form named.</summary>
     /// <returns>The seat, the hold and a voice, or nulls when there is none.</returns>
     private (Seat? Seat, SeatHold? Hold, SeatVoice? Voice) Seated()

@@ -411,6 +411,16 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     }
 
     /// <inheritdoc/>
+    public async Task<bool> CloseRequestAsync(long exchangeId, string? reason = null, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.CloseRequestAsync(
+            new Wire.CloseRequestRequest { ExchangeId = exchangeId, Reason = reason ?? string.Empty },
+            cancellationToken: cancellationToken);
+
+        return reply.Changed;
+    }
+
+    /// <inheritdoc/>
     public async Task<PruneResult> PruneAsync(CancellationToken cancellationToken = default)
     {
         var reply = await _operators.PruneAsync(new Wire.Empty(), cancellationToken: cancellationToken);

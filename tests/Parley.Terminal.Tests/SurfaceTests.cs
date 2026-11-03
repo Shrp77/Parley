@@ -139,6 +139,7 @@ public sealed class SurfaceTests
 
     [Theory]
     [InlineData("ForceConcludeAsync", "Closing.cs", "Type the conversation's identifier")]
+    [InlineData("CloseRequestAsync", "ClosingARequest.cs", "Close it without answering")]
     [InlineData("PruneAsync", "Pruning.cs", "Type the project's name")]
     [InlineData("RemoveFilesAsync", "FilesRemoving.cs", "whichever agent placed them")]
     [InlineData("PruneFilesAsync", "FilesPruning.cs", "Type the project's name")]

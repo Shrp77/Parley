@@ -100,6 +100,27 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     }
 
     /// <inheritdoc/>
+    public override async Task<Wire.DidItReply> CloseRequest(Wire.CloseRequestRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason;
+
+        var closed = await Console(
+            (console, now, ct) => console.CloseRequestAsync(request.ExchangeId, reason, now, ct),
+            context).ConfigureAwait(false);
+
+        if (closed is not null)
+        {
+            await _runtime.NudgeAsync(closed.Requester, context.CancellationToken).ConfigureAwait(false);
+            await _runtime.NudgeAsync(closed.Receiver, context.CancellationToken).ConfigureAwait(false);
+        }
+
+        return new Wire.DidItReply { Changed = closed is not null };
+    }
+
+    /// <inheritdoc/>
     public override async Task<Wire.DidItReply> Archive(Wire.ConversationRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);

@@ -88,6 +88,20 @@ public sealed class OperatorConsole
             conversationId, reason, nowUtc, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Closes one open Request the person is a party to, without an answer (§10.2).</summary>
+    /// <param name="exchange">The exchange.</param>
+    /// <param name="reason">Why, if the person said. The other side is told it.</param>
+    /// <param name="nowUtc">The instant of closure.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>The exchange, if this call closed it.</returns>
+    public async Task<Exchange?> CloseRequestAsync(
+        long exchange,
+        string? reason,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default) =>
+        await _conversations.CloseRequestAsync(exchange, reason, nowUtc, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
     /// <summary>Withdraws an agent's registration (§10.2).</summary>
     /// <param name="agent">The agent to retire.</param>
     /// <param name="cancellationToken">Cancels the write.</param>

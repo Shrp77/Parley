@@ -321,6 +321,7 @@ internal sealed partial class Shell : IKeyTable<Shell>
         // pane still shows a transcript; it simply has no voice to use in it.
         new(KeyContext.Transcript, 'a', Participation.ResultTitle, s => s.SendResult(), s => s.Held is not null),
         new(KeyContext.Transcript, 'q', Participation.ClarifyTitle, s => s.Clarify(), s => s.Held is not null),
+        new(KeyContext.Transcript, 'j', ClosingARequest.Title, s => s.CloseRequest(), s => s.Held is not null),
         new(KeyContext.Transcript, 'k', Participation.RequestTitle, s => s.SendRequest(), s => s.Held is not null, Owing.Requesting),
 
         // **Copying does not need a seat**: reading a conversation and taking a copy of what you read are the same act,
