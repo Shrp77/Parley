@@ -4,6 +4,30 @@
     waiting comes first because the tree can be taller than the window, and below it the list was on the page but never
     on the screen. Empty for a destroyed conversation, which has nobody left to write to.
 *@
+@if (Model.Links.Parent is not null || Model.Links.Children.Count > 0)
+{
+    @* Names only, so it still reads when the other side was destroyed. *@
+    <nav class="convo-links" aria-label="Related conversations">
+        @if (Model.Links.Parent is { } parent)
+        {
+            <p>
+                @(Model.Links.How == Parley.Core.ConversationLinkKind.Move ? "Made by moving entries out of" : "Spun off from")
+                <a href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = parent })">@parent</a>
+            </p>
+        }
+        @if (Model.Links.Children.Count > 0)
+        {
+            <p>Spun off from this one:</p>
+            <ul>
+                @foreach (var child in Model.Links.Children)
+                {
+                    <li><a href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = child })">@child</a></li>
+                }
+            </ul>
+        }
+    </nav>
+}
+
 @if (Model.Destroyed is null)
 {
     @if (Model.WaitingHere.Count > 0)

@@ -403,7 +403,11 @@ internal sealed class TranscriptRegion : FrameView
 
         if (export is null || export.Messages.Count == 0)
         {
-            return [new TranscriptLine(new string(' ', Reading.Indent) + Empty, LineKind.Annotation, null)];
+            // An emptied conversation says where everything went (SPEC.md §5.0).
+            return export?.Moves is { Count: > 0 } moves
+                ? [.. moves.Select(move => new TranscriptLine(
+                    new string(' ', Reading.Indent) + Safe.Text(ConversationWording.MoveLine(move, conversationId)), LineKind.Annotation, null))]
+                : [new TranscriptLine(new string(' ', Reading.Indent) + Empty, LineKind.Annotation, null)];
         }
 
         return Lay(conversationId, project, export);
@@ -437,9 +441,29 @@ internal sealed class TranscriptRegion : FrameView
         // recoverable from nowhere else, drawn to be noticed. The zone this surface renders times in is a
         // note about the rendering.
         new TranscriptLine(new string(' ', Reading.Indent) + LocalTime.Note(), LineKind.Body, null),
+        .. Related(export),
         new TranscriptLine(string.Empty, LineKind.Blank, null),
-        .. Reading.Lines(export),
+        .. Reading.Lines(export, conversation: conversationId),
     ];
+
+    /// <summary>The conversation's parent and children, under its heading (SPEC.md §5.0).</summary>
+    private static IEnumerable<TranscriptLine> Related(ConversationExport export)
+    {
+        var indent = new string(' ', Reading.Indent);
+
+        if (export.Links is { Parent: { } parent } links)
+        {
+            yield return new TranscriptLine(
+                indent + Safe.Text((links.How == ConversationLinkKind.Move ? "Made by moving entries out of " : "Spun off from ") + parent),
+                LineKind.Body,
+                null);
+        }
+
+        if (export.Links is { Children.Count: > 0 } family)
+        {
+            yield return new TranscriptLine(indent + Safe.Text("Spun off from this one: " + string.Join(", ", family.Children)), LineKind.Body, null);
+        }
+    }
 
     /// <summary>Puts one line on screen, and nothing else.</summary>
     /// <param name="said">What it says.</param>

@@ -18,18 +18,47 @@
 }
 else if (Model.Messages.Count == 0)
 {
-    @* Who to write to is still offered, in the panel: a conversation that has no messages yet is how one begins. *@
-    <p>Nothing was recorded under this identifier.</p>
+    @* Who to write to is still offered, in the panel: a conversation that has no messages yet is how one begins. An
+       emptied one says where everything went. *@
+    @if (Model.Moves.Count > 0)
+    {
+        <ul class="moved-notes">
+            @foreach (var move in Model.Moves)
+            {
+                <li class="moved-note">
+                    @Parley.Client.Rendering.ConversationWording.MoveLine(move, Model.Id!)
+                    <a href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = Parley.Client.Rendering.ConversationWording.OtherSide(move, Model.Id!) })">Open @Parley.Client.Rendering.ConversationWording.OtherSide(move, Model.Id!)</a>
+                </li>
+            }
+        </ul>
+    }
+    else
+    {
+        <p>Nothing was recorded under this identifier.</p>
+    }
 }
 else
 {
     <div class="conversation">
     <ol class="transcript">
-        @{ var day = default(DateOnly?); }
+        @{
+            var day = default(DateOnly?);
+            var movesToNote = new Queue<Parley.Core.MoveRecord>(Model.Moves.Where(m => m.FirstMessage is not null).OrderBy(m => m.FirstMessage));
+        }
         @foreach (var turn in Model.Turns())
         {
             var message = turn[0];
             var said = Payload.Read(message.PayloadJson);
+
+            @* A move's note sits where the entries are, or were: by its earliest message's place in the broker's order. *@
+            while (movesToNote.Count > 0 && movesToNote.Peek().FirstMessage <= message.Id)
+            {
+                var move = movesToNote.Dequeue();
+                <li class="moved-note">
+                    @Parley.Client.Rendering.ConversationWording.MoveLine(move, Model.Id!)
+                    <a href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = Parley.Client.Rendering.ConversationWording.OtherSide(move, Model.Id!) })">Open @Parley.Client.Rendering.ConversationWording.OtherSide(move, Model.Id!)</a>
+                </li>
+            }
             var on = DateOnly.FromDateTime(
                 TimeZoneInfo.ConvertTime(message.CreatedUtc, TimeZoneInfo.Local).DateTime);
             var ghost = turn.All(Model.ClosedUnfinished);
@@ -128,6 +157,9 @@ else
                             <span> · exchange @message.ExchangeId, @state</span>
                         }
                         <span> · written by @message.ResponderModel</span>
+                        <span> · <a class="spin-off" href="@Url.Page("/Conversations/SpinOff", new { project = Model.Project, id = Model.Id, from = message.Id })">Spin off</a></span>
+                        @* Shown only while picking, by the page's script. Every exchange of a send to several goes together. *@
+                        <label class="move-pick"><input type="checkbox" data-exchanges="@string.Join(' ', turn.Select(m => m.ExchangeId))" aria-label="Move this entry" /> Move</label>
                     </p>
                     @if (turn.FirstOrDefault(Model.AwaitsReply) is { } waiting)
                     {
@@ -154,6 +186,17 @@ else
                     }
                 </div>
             </li>
+        }
+        @foreach (var move in movesToNote.Concat(Model.Moves.Where(m => m.FirstMessage is null)))
+        {
+            <li class="moved-note">
+                @Parley.Client.Rendering.ConversationWording.MoveLine(move, Model.Id!)
+                <a href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = Parley.Client.Rendering.ConversationWording.OtherSide(move, Model.Id!) })">Open @Parley.Client.Rendering.ConversationWording.OtherSide(move, Model.Id!)</a>
+            </li>
+        }
+        @foreach (var pair in Model.SettledAcross)
+        {
+            <li class="moved-note">@Parley.Client.Rendering.ConversationWording.SettledLine(pair)</li>
         }
     </ol>
 

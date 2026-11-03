@@ -416,6 +416,15 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         reply.RoadmapNotices.AddRange(inbox.RoadmapNotices.Select(Conversions.Out));
         reply.RoadmapNoticesWaiting = inbox.RoadmapNoticesWaiting;
 
+        // That the person moved an open exchange of the caller's (SPEC.md section 5.0). Not a reason to wake anything either.
+        reply.MoveNotices.AddRange(inbox.MoveNotices.Select(n => new Wire.MoveNotice
+        {
+            ExchangeId = n.Exchange,
+            FromConversation = n.From,
+            ToConversation = n.To,
+        }));
+        reply.MoveNoticesWaiting = inbox.MoveNoticesWaiting;
+
         return reply;
     }
 

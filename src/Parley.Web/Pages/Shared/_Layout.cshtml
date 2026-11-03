@@ -956,6 +956,29 @@
         .waiting-on-you ol, .waiting-elsewhere ol { margin: 0.2rem 0 0; padding-left: 1.2rem; display: grid; gap: 0.25rem; }
         .waiting-on-you a[aria-current] { font-weight: 700; }
 
+        .convo-links { font-size: 0.85rem; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); padding: 0.5rem 0.8rem; overflow-wrap: anywhere; }
+        .convo-links p { margin: 0.1rem 0; }
+        .convo-links ul { margin: 0.1rem 0 0; padding-left: 1.1rem; }
+
+        /* The console speaking about the conversation, so quiet and centred like a day marker. */
+        .moved-note, .moved-notes li { align-self: center; list-style: none; margin: 0.6rem 0; padding: 0.3rem 0.9rem; font-size: 0.8rem; color: var(--ink-soft); background: var(--quiet-wash); border-radius: 999px; overflow-wrap: anywhere; }
+        .moved-notes { margin: 0; padding: 0; }
+
+        /* Told apart from the name it follows, so it reads as what the console says about it. */
+        .spinoff-of { font-weight: 400; color: var(--ink-soft); }
+
+        .move-pick { display: none; align-items: center; gap: 0.25rem; margin-left: 0.5rem; }
+        .picking .move-pick { display: inline-flex; }
+        .picking .spin-off { display: none; }
+        .move-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.5rem 0.8rem; background: var(--card); border: 1px solid var(--accent); border-radius: var(--radius); font-size: 0.85rem; }
+        .move-bar[hidden] { display: none; }
+        .move-form { max-width: 60rem; }
+        .move-form textarea { width: 100%; }
+        .move-form input[type="text"] { width: min(30rem, 100%); }
+        .move-to { display: grid; gap: 0.4rem; border: 1px solid var(--rule); border-radius: var(--radius); padding: 0.8rem 1rem; justify-items: start; }
+        .move-list { padding-left: 1.2rem; display: grid; gap: 0.5rem; overflow-wrap: anywhere; }
+        .move-actions { display: flex; align-items: center; gap: 1rem; }
+
         /* A closed panel: a strip the height of the window, with the name running down it. Only where there are columns to
            close; below that the panel is simply at the top of the page. */
         .panel-strip { display: none; }

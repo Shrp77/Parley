@@ -197,7 +197,7 @@ internal sealed class ConversationsRegion : FrameView
     /// <c>rm1-3</c> alone says nothing.
     /// </remarks>
     private static string Line(ConversationSummary conversation) =>
-        $"{Safe.Text(conversation.Id)}  "
+        $"{Safe.Text(Parley.Client.Rendering.ConversationWording.Listed(conversation.Id, conversation.Parent))}  "
         + (conversation.Item is { } item ? $"[{Safe.Text(Parley.Client.Roadmaps.ItemWording.Belongs(item))}]  " : string.Empty)
         + $"({string.Join(", ", conversation.Participants.Select(p => Safe.Text(p.Value)))})  "
         + $"{conversation.Messages.ToString(CultureInfo.InvariantCulture)} messages  "

@@ -194,6 +194,15 @@ timezone, sortable either way.
   the web console, *Reply to this* sets the box to answer that message, and on an agent's request
   you can leave it open or close it with an outcome. The Inbox lists what waits across every
   conversation and links to each message.
+- **Spin off a conversation** (`Alt+b` in a conversation, or **Spin off** on a message). A new conversation, linked to the
+  one you were reading, with that message quoted for you to edit. Nothing exists or is sent until you send. An agent gets
+  exactly what you sent and no access to the other conversation. Lists show it as `name - spinoff from parent`. Closing or
+  destroying one never touches the other.
+- **Move entries to another conversation** (`Alt+v` in a conversation, or **Move entries** in the panel). A message can't
+  leave its exchange, so a whole exchange goes, with every part of a request to a role. You see everything that would go
+  before you confirm. Work still open carries on in the new place: its agents aren't woken, and are told at their next
+  collection. Both conversations say what moved, and you can move it back. Files stay where they are. Closed destinations,
+  roadmap items' conversations and ownership conversations are refused.
 - **Close a request without answering** (`Alt+j` in a conversation, or the button on the message)
   ends one question that is waiting on you, when it has gone stale or been answered elsewhere. The
   conversation stays open. The agent is told it was closed, with your reason if you give one.

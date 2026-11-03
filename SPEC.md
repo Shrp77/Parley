@@ -1,6 +1,6 @@
 ﻿# Parley Protocol Specification
 
-**Version:** 0.11
+**Version:** 0.12
 **Status:** Unstable. Breaking changes expected before 1.0.
 **License:** Apache-2.0
 
@@ -94,7 +94,8 @@ language they are written in.
 10. **A request carries its conversation, and so does everything it causes.** A line of work
     that begins with one request stays in one conversation however far it travels: an agent
     asking another, that one asking a third, a question coming back to the first. The broker
-    attaches the conversation; an agent does not choose it (principle 2.4).
+    attaches the conversation; an agent does not choose it (principle 2.4). Only the person may
+    move an exchange to another conversation (§5.0), and everything it causes from then on goes there.
     - An agent holding requests from one conversation sends every request it makes into that
       conversation, naming nothing.
     - An agent holding requests from several conversations names which one each new request
@@ -524,9 +525,52 @@ holds — a Request it has received and not yet sent a Result for:
   a participant in by naming it. This is how a person starts work, and how an agent that is
   not in the middle of anything raises something new.
 
-A Clarify or a Result always takes its exchange's conversation. Nothing can move an exchange
-from one conversation to another: once an exchange carries a message, the composite foreign key
-in §9.2 refuses the update that would move it.
+A Clarify or a Result always takes its exchange's conversation, as it stands when it is written.
+
+**Only the person moves an exchange** (`move_exchanges`, §10.2). A topic can turn out not to belong
+where it was raised, and the person is the one who follows the whole line of work, so the person may
+take exchanges out of a conversation into a new one or an open one. What this section refuses an agent
+is the point: a line of work an agent could split is one the person can no longer follow, so no agent
+operation moves an exchange or names where one goes.
+
+- **The unit is the whole exchange, messages and all.** A message cannot leave its exchange, or a
+  question would read in one conversation and its answer in another. The exchanges of a Request to a
+  role (§5.5) go together, so the count of who has answered stays true. Nothing else is pulled along:
+  no record says which exchange caused which, so an agent's follow-up stays unless the person picks it.
+- **All or none, and nothing about a message changes** but which conversation holds it: not its words,
+  author, recipient, time, delivery or place in the broker's order. A moved message sits among the
+  destination's own in that order.
+- **Open exchanges move too.** The work carries on in the destination. Each agent party to an open
+  exchange that moved is told at its next collection (§10.1): the exchange and its old and new
+  conversation. That is a notice and not a message, so it is owed nothing and it wakes nobody. A party
+  to a finished exchange is not told, because nothing it does depends on it. What an agent holds is read
+  from where its exchanges are now, so the rules above apply to the result, and one left holding
+  requests in two conversations names which, as any such agent does.
+- **Neither conversation hides it.** The broker records each move (§9.2): which exchanges, from where, to
+  where, when and by whom, with no message text. Both conversations show it where the entries were, and
+  `export` carries it. An export taken before a move no longer matches, and the record is what explains why.
+- **Membership follows** (below). A poll running in either conversation is voided, as new activity
+  voids one, because who would be asked has changed.
+- **Files stay.** A placed file keeps its conversation (§9.5), so a file named in a moved exchange is
+  still fetched under the conversation it was placed in.
+- **What is refused.** A closed or destroyed destination, because a closed conversation stays closed.
+  A roadmap item's conversation or an ownership conversation, in either direction, because each has
+  rules of its own about who opens it and what closes it (§5.7, principle 2.11). A move out of a closed
+  conversation is allowed and does not reopen it. An emptied conversation stays as it was, open or
+  closed, with its record of what left.
+- **An exchange that settled another stays linked to it** when only one of them moves (§5.6). A new
+  settlement is still only within one conversation.
+
+A move can be undone by moving the exchanges back, and both moves stay on record.
+
+**A conversation may have a parent** (`spin_off`, §10.2). A person who wants a focused conversation about
+something raised in another starts one from it, and the broker records the link before anything is sent,
+so a Request can never arrive in a spin-off with no link behind it. A conversation made by a move has its
+source as its parent too. A conversation has at most one parent and any number of children, to any depth.
+The link is the person's map and nothing else: it gives no agent any access to the other conversation, no
+agent operation reads or sets it, and nothing cascades along it. Closing or destroying one conversation
+closes or destroys no other. It outlives either side being destroyed, holding only names. What the first
+message says is what the person left in the box, so what an agent knows of the parent is what that says.
 
 **A placed file takes its conversation by the same rule** (§9.5). An agent names a conversation only
 where it would have to for a Request, a closed conversation is refused, and an agent holding no request
@@ -542,12 +586,12 @@ broker. Names are opaque to the protocol and follow the character rules of §9.2
 
 Messages carry the conversation identifier as well as their exchange. That repeats a fact the
 exchange already holds, and it survives only because the composite key of §9.2 makes the copy
-incapable of disagreeing: somebody asking what became of a piece of work is usually asking
+incapable of disagreeing, which a move keeps true by changing both in one transaction: somebody asking what became of a piece of work is usually asking
 because something went wrong, and a join through the very table under suspicion is a poor
 answer.
 
 **Membership is derived.** A participant is anyone party to an exchange in the conversation, or that
-placed a file in it.
+placed a file in it. After a move, an agent with neither left in a conversation stops being its participant.
 `orders` asks `billing` to stop recomputing a price; `billing` asks `inventory` which price
 it reports; `inventory` asks `orders` a question back. Three participants, one conversation.
 
@@ -1273,7 +1317,8 @@ in part.
 9. **Stay in the conversation.** Everything a Request causes stays in its conversation
     (principle 2.10). Held by the broker, which assigns the conversation from what you hold and
     refuses a Request that tries to start or name another (§5.0) — so this is a rule an agent
-    cannot break rather than one it must remember.
+    cannot break rather than one it must remember. The person may move an exchange you hold, and
+    you are told at your next collection; carry on, and your replies go where the exchange now is.
 10. **Resolve blockers by talking to whoever can resolve them.** Missing information: work out
     who can provide it and ask them; if no agent in the project can, ask the person — the
     participant whose role is `human-user` — and wait for their answer, however long they are
@@ -1837,8 +1882,8 @@ CREATE TABLE messages (
   -- Repeats the exchange's conversation, and the composite foreign key below is what stops the
   -- copy becoming a second opinion. What it buys is that the message log answers "what happened
   -- in this conversation" on its own, at the moment somebody is looking because something went
-  -- wrong. It also makes an exchange's conversation immutable once a message exists in it: the
-  -- update that would move it is refused while children reference the old value (§5.0).
+  -- wrong. It also means an exchange and its messages can only change conversation together: a
+  -- move defers the key and updates both in one transaction, and a miss fails at commit (§5.0).
   conversation_id TEXT    NOT NULL REFERENCES conversations(id),
   created_utc     TEXT    NOT NULL,
   dedup_bucket    INTEGER GENERATED ALWAYS AS (unixepoch(created_utc) / 60) STORED,
@@ -2698,6 +2743,70 @@ CREATE TABLE roadmap_notices (
 ) STRICT;
 
 CREATE INDEX ix_roadmap_notices_collection ON roadmap_notices(agent, delivered_utc);
+
+-- A conversation's parent and how it came about (§5.0). No key to conversations: it outlives either
+-- side being destroyed, and holds only names.
+CREATE TABLE conversation_links (
+  child      TEXT NOT NULL PRIMARY KEY,
+  parent     TEXT NOT NULL,
+  how        TEXT NOT NULL CHECK (how IN ('spinoff', 'move')),
+  linked_utc TEXT NOT NULL CHECK (unixepoch(linked_utc) IS NOT NULL),
+  CHECK (child <> parent)
+) STRICT;
+
+CREATE INDEX ix_conversation_links_parent ON conversation_links(parent);
+
+-- One act of moving (§5.0). Names and numbers, never text, and kept as the link is. `first_message` is
+-- where a transcript draws the note; null when none of what moved still had a message.
+CREATE TABLE conversation_moves (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  source        TEXT    NOT NULL,
+  destination   TEXT    NOT NULL,
+  moved_by      TEXT    NOT NULL,
+  moved_utc     TEXT    NOT NULL CHECK (unixepoch(moved_utc) IS NOT NULL),
+  first_message INTEGER,
+  messages      INTEGER NOT NULL CHECK (messages >= 0),
+  CHECK (source <> destination)
+) STRICT;
+
+CREATE INDEX ix_conversation_moves_source ON conversation_moves(source);
+CREATE INDEX ix_conversation_moves_destination ON conversation_moves(destination);
+
+-- Which exchanges went. No key to exchanges: a purge may remove one and the record stays.
+CREATE TABLE conversation_move_exchanges (
+  move_id     INTEGER NOT NULL REFERENCES conversation_moves(id) ON DELETE CASCADE,
+  exchange_id INTEGER NOT NULL,
+  PRIMARY KEY (move_id, exchange_id)
+) STRICT;
+
+-- What one agent is told about one open exchange that moved. Not a message: it opens nothing, is owed
+-- nothing and wakes nobody, as a roadmap notice does not. Both names are bounded by §9.2's rule for a name.
+CREATE TABLE move_notices (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent             TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
+  exchange_id       INTEGER NOT NULL,
+  from_conversation TEXT    NOT NULL,
+  to_conversation   TEXT    NOT NULL,
+  created_utc       TEXT    NOT NULL CHECK (unixepoch(created_utc) IS NOT NULL),
+  delivered_utc     TEXT    CHECK (delivered_utc IS NULL OR unixepoch(delivered_utc) IS NOT NULL)
+) STRICT;
+
+CREATE INDEX ix_move_notices_collection ON move_notices(agent, delivered_utc);
+
+-- Held here so a code path cannot route around it (§9.3). The broker refuses these first, with a sentence.
+CREATE TRIGGER tr_a_moved_exchange_may_go_there
+BEFORE UPDATE OF conversation_id ON exchanges
+WHEN NEW.conversation_id IS NOT OLD.conversation_id
+BEGIN
+  SELECT RAISE(ABORT, 'a closed conversation stays closed')
+   WHERE (SELECT state FROM conversations WHERE id = NEW.conversation_id) = 'CLOSED';
+  SELECT RAISE(ABORT, 'a roadmap item''s conversation takes part in no move')
+   WHERE EXISTS (SELECT 1 FROM roadmap_item_conversations
+                  WHERE conversation_id IN (OLD.conversation_id, NEW.conversation_id));
+  SELECT RAISE(ABORT, 'an ownership conversation takes part in no move')
+   WHERE OLD.conversation_id GLOB 'owns-*' OR NEW.conversation_id GLOB 'owns-*'
+      OR EXISTS (SELECT 1 FROM ownership_questions WHERE exchange_id = OLD.id);
+END;
 ```
 
 ### 9.3 Invariants enforced by storage
@@ -2709,6 +2818,8 @@ survives bugs in the broker.
 the document defines while the schema refuses it is a divergence that surfaces on the one write
 that needed it; an enumeration written as prose has already decayed.
 
+- **A moved exchange goes only where it may.** `tr_a_moved_exchange_may_go_there` refuses a closed
+  destination and a roadmap item's or an ownership conversation in either direction (§5.0).
 - **A Request carries an ask.** The trigger above. It is the whole of a Request's shape (§5.1), and
   an empty one is refused rather than discouraged — a message with nothing in it is a turn spent on
   nothing at the other end.
@@ -2845,6 +2956,10 @@ grows the blast radius of a leaked database forever with it.
 Retention is nonetheless **configurable**, because the operator uses in §10.2 are real and the
 isolation guarantee does not depend on the log being short. Two rules prune, and a floor overrides
 both.
+
+A move counts as activity in both conversations for the idle rule, so entries moved somewhere new are
+not released before the person has read them there, though no message's time changes (§5.0). Links, move
+records and undelivered move notices are not pruned; a delivered move notice is, as a roadmap notice is.
 
 **The floor.** Regardless of configuration, the idle rule never removes a message while it is:
 
@@ -3207,8 +3322,8 @@ other could.
 |---|---|
 | `registry()` | The whole registry, including the workspace directory each agent works in, and — beside the line each agent states — the line a person has accepted for it, when one has been accepted and differs. Both halves travel because "accepted but not yet read by peers" is those two differing rather than a flag anybody maintains (see `record_ownership` below): an agent's own line is refreshed from its launch environment on every attach (§12.3), so the two agree again on its next start with nothing to clear. A surface showing the line therefore has what it needs to say which is which. Each row's adapter says **whether it is the facilitator** (principle 2.11) — `parley-facilitator`, which storage ties to the reserved role in both directions, so no second field states it — and a surface shows that row as Parley rather than among agents or seats. Each row also says **how the accepted line was arrived at** (`record_ownership`'s source), so a surface can show a line accepted automatically apart from one a person decided. And each row carries the agent's **turn standing** (§11.6): whether its turns are reported at all, whether a turn is running and since when, and how its last turn ended — when, whether cleanly, and how many tool calls were refused for want of permission — so a surface can say *working* only while a turn runs and *stopped* when one ended with work still owed, and says neither for an agent whose turns nobody reports. Each row also says whether a running agent is **open outside Parley** (§11.7), so a surface can say that Parley cannot give it turns. Deliberately not named `agents`: §10.1 has an `agents()` an agent may call, and that one withholds the workspace. Two operations differing only in what they disclose, sharing a name across this boundary, is the mistake this section opens by warning about — so the name differs, as `force_conclude` differs from `conclude`. |
 | `implements()` | Which protocol version this broker speaks. First, and asked before anything else: without it a client cannot tell a broker of the wrong version from one that is switched off, and those two want different words in front of a person. It also says **which build is serving** and **how the store it serves differs from the shape that build expects**, because two things the protocol number cannot say are whether the programs on a machine are from one release and whether a store made by an earlier build has what has been added since. Both may be empty, and empty means *not said* and never *fine*; a surface warns about a build whose major and minor differ from its own, and about any difference in the store's shape. |
-| `export(conversation_id)` | Emit every message in a conversation, and the state of every exchange those messages belong to. The one query that reads across agents, which is why it is here and not in §10.1. The states travel with the messages rather than in a second call, because a reader wants both at one instant and two calls can disagree. **For a conversation that was destroyed, it returns the record §14 left instead of nothing** — an empty answer cannot be told from a store that lost something, and that is the whole reason the record exists. **It also names the roadmap item the conversation belongs to**, by the broker's reservation and by nothing in any message (§5.7), so a surface holding only a conversation can offer its roadmap. |
-| `conversations(participant?, since?, until?, archived?, page)` | Which conversations this broker holds, most recent activity first: the identifier, the participants derived from their exchanges, how many messages each carries, when it was first and last active, whether anything in it is still open, whether it is archived, and the roadmap item it belongs to when it is a reserved item conversation (§5.7), marked as having belonged to one once the item was removed. Archived ones are omitted unless `archived` asks for them, and the count of those omitted is returned either way — an archived conversation may go on receiving messages, so a caller that could not tell it was there would be hiding traffic rather than filing it. Paged, and the broker bounds the page whatever is asked for. |
+| `export(conversation_id)` | Emit every message in a conversation, the state of every exchange those messages belong to, its parent and children, every move in or out of it, and any settled pair split across it and another (§5.0). The one query that reads across agents, which is why it is here and not in §10.1. The states travel with the messages rather than in a second call, because a reader wants both at one instant and two calls can disagree. **For a conversation that was destroyed, it returns the record §14 left instead of nothing** — an empty answer cannot be told from a store that lost something, and that is the whole reason the record exists. **It also names the roadmap item the conversation belongs to**, by the broker's reservation and by nothing in any message (§5.7), so a surface holding only a conversation can offer its roadmap. |
+| `conversations(participant?, since?, until?, archived?, page)` | Which conversations this broker holds, most recent activity first: the identifier, the participants derived from their exchanges, how many messages each carries, when it was first and last active, whether anything in it is still open, whether it has closed, its parent (§5.0), whether it is archived, and the roadmap item it belongs to when it is a reserved item conversation (§5.7), marked as having belonged to one once the item was removed. Archived ones are omitted unless `archived` asks for them, and the count of those omitted is returned either way — an archived conversation may go on receiving messages, so a caller that could not tell it was there would be hiding traffic rather than filing it. Paged, and the broker bounds the page whatever is asked for. |
 | `prune()` | Apply the retention policy immediately rather than waiting for the next retention pass, and report what it removed, what the floor kept, and the idle period and age cap it applied. |
 | `refusals()` | Report what the hard limit of rule 8.4 refused: how often, how far over, per agent and message type. Counts only; no refused text is kept. |
 | `message_lengths()` | Report how long messages have been: how many, the median, the longest and how many passed the soft limit of rule 8.4; overall, by message type, by agent, and by position in a conversation so that a drift shows. Lengths only, from a record retention does not touch. |
@@ -3226,6 +3341,9 @@ other could.
 | `reply_to_asked_back(agent, text)` | Send a person's reply to an agent that asked the facilitator a question back instead of answering. Sent on the facilitator's exchange, attributed `parley:person` (§5), and held to rule 8.4's cap. Refused when that agent's question is not asked back. |
 | `discard_answer(agent)` | Discard an answer that is waiting. Nothing is written, and the agent keeps whatever line it had. The agent is not asked again unless a person asks. |
 | `close_request(exchange, reason?)` | Close one open Request the person is a party to, without an answer: the question has gone stale or been answered elsewhere. The exchange ends `closed` and its conversation stays open. Both sides are sent the broker's `closed` Result, with the reason when one is given. Any other exchange is refused: between agents a Request is closed by its receiver, or with its conversation. |
+| `spin_off(parent, child)` | Open a new conversation `child` with `parent` as its parent (§5.0). Sends nothing. Refused when `parent` does not exist or was destroyed, or `child` is not a valid name, was destroyed, is reserved for a roadmap item, begins `owns-`, or already exists with anything in it or a different parent. Repeating it for a still-empty child with the same parent succeeds, so a send that was refused can be tried again. |
+| `preview_move(source, exchanges)` | Say what moving those exchanges would take, changing nothing: each exchange with whether it is open, its parties, its message count and its first words, including any added because it shares a group (§5.5), and the files that stay. |
+| `move_exchanges(source, destination, new, exchanges)` | Move whole exchanges to another conversation, all or none (§5.0). `new` says the destination must not exist yet, and makes the source its parent. Refused, with a sentence, for an exchange not in the source, part of a group left behind, an empty list, the same conversation twice, a destroyed or closed destination, a roadmap item's or an ownership conversation either way, or a new name that is taken or invalid. Wakes nobody; each agent party to an open exchange that moved is told at its next collection. |
 | `force_conclude(conversation, reason?)` | Close a conversation now, regardless of its participants' votes. Every exchange still open in it ends `closed`, and every participant holding one is told, with the reason when one is given. |
 | `archive(conversation)` | Put a conversation out of the way. It stops appearing in `conversations()` unless the caller asks for archived ones, and nothing else about it changes: messages are still delivered, exchanges still open and close, and no agent is told. A view decision, made durable so every operator and every client sees the same one. |
 | `unarchive(conversation)` | Reverse it. |
@@ -4220,7 +4338,9 @@ that asks for confirmation without naming it has not warned anybody. Closing fir
 afterwards is how an operator ends work and removes its record without leaving anybody waiting.
 
 **What survives is a record of facts and none of the content.** The conversation's identifier, when it
-was destroyed, how many messages went, and which agents were party to it. No message text, no payloads:
+was destroyed, how many messages went, and which agents were party to it, along with any links and move
+records that name it (§5.0), which hold names and numbers. A move notice about an exchange that ceased to
+exist goes with it. No message text, no payloads:
 §9.4 opens by saying Parley is a channel rather than a store and argues that a log kept past its
 usefulness grows the blast radius of a leaked database, and keeping content past a destroy is that
 argument's exact inverse.
@@ -4643,7 +4763,7 @@ decided is removed and its number is not reused, so the list has gaps.
 
 ## 18. Protocol version
 
-The protocol version is **0.11** and the storage schema version is **5**.
+The protocol version is **0.12** and the storage schema version is **6**.
 
 The version is `major.minor` and has no patch level, because a protocol change is either visible
 across the boundary or is not a protocol change at all. **While the major is zero, the minor

@@ -85,6 +85,28 @@ public static class Transcript
                 .ToString();
         }
 
+        // What a reader of this file needs to see why it differs from one taken earlier (SPEC.md §5.0). Conversation names
+        // cannot hold a line break, and a move record holds no words.
+        if (export.Links is { Parent: { } parent })
+        {
+            heading.Append(CultureInfo.InvariantCulture, $"Parent conversation: {OneLine(parent)}").AppendLine();
+        }
+
+        foreach (var child in export.Links?.Children ?? [])
+        {
+            heading.Append(CultureInfo.InvariantCulture, $"Sub-conversation: {OneLine(child)}").AppendLine();
+        }
+
+        foreach (var move in export.Moves ?? [])
+        {
+            heading.AppendLine(OneLine(ConversationWording.MoveRecordLine(move)));
+        }
+
+        foreach (var pair in export.SettledElsewhere ?? [])
+        {
+            heading.AppendLine(OneLine(ConversationWording.SettledLine(pair)));
+        }
+
         var participants = Visibility.Participants(messages);
 
         // Assigned rather than ToDictionary'd. A broker that returned the same exchange twice is

@@ -111,6 +111,15 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
         }
     }
 
+    /// <summary>This conversation's parent and children (SPEC.md §5.0).</summary>
+    public ConversationLinks Links { get; private set; } = ConversationLinks.None;
+
+    /// <summary>Every move in or out of this conversation, oldest first (SPEC.md §5.0).</summary>
+    public IReadOnlyList<MoveRecord> Moves { get; private set; } = [];
+
+    /// <summary>Settled pairs split across this and another conversation (SPEC.md §5.6).</summary>
+    public IReadOnlyList<SettledElsewhere> SettledAcross { get; private set; } = [];
+
     /// <summary>What is waiting on the person in this project's other conversations, oldest first.</summary>
     public IReadOnlyList<Delivered> Elsewhere { get; private set; } = [];
 
@@ -816,6 +825,9 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
         Messages = read.Value?.Messages ?? [];
         Destroyed = read.Value?.Destroyed;
         Item = read.Value?.Item;
+        Links = read.Value?.Links ?? ConversationLinks.None;
+        Moves = read.Value?.Moves ?? [];
+        SettledAcross = read.Value?.SettledElsewhere ?? [];
         Participants = Visibility.Participants(Messages);
         Exchanges = Snapshots(read.Value?.Exchanges ?? []);
         Problem = read.Problem;

@@ -298,6 +298,19 @@ internal sealed partial class Shell : Window
                 return;
             }
 
+            // **The link first**, so a Request never reaches a spin-off with no link behind it. Refused, nothing is sent
+            // and the words stay.
+            if (_spinningOff is { } spinning
+                && spinning.Project == place.Name.Value
+                && spinning.Conversation == conversation
+                && await SpinningOff.LinkAsync(new BrokerClient(_directory.ClientFor(place)), spinning.Parent, conversation, token)
+                    .ConfigureAwait(false) is { } refused)
+            {
+                Said = $"Nothing was sent: {refused}";
+
+                return;
+            }
+
             var sent = await voice.SendAsync(hold, draft, conversation, token).ConfigureAwait(false);
 
             Said = sent.Says;
@@ -308,6 +321,8 @@ internal sealed partial class Shell : Window
             {
                 return;
             }
+
+            _spinningOff = null;
 
             // Only what was sent leaves the box: what was typed after Enter is the start of the next thought, and is the
             // person's own, so a command in it runs.
@@ -4779,6 +4794,117 @@ internal sealed partial class Shell : Window
         return Task.CompletedTask;
     }
 
+    /// <summary>Starts a new conversation from the message under the cursor, with it quoted in the box.</summary>
+    /// <returns>When the dialog has been opened.</returns>
+    /// <remarks>
+    /// Read from the broker's record of that message, and only its author is ticked. A cursor on no message starts one
+    /// with an empty box. Nothing exists until the person sends: the link is recorded by <see cref="SendLine"/>.
+    /// </remarks>
+    internal Task SpinOff()
+    {
+        if (App is not { } app || Current is not { } project || Transcript.Open is not { } parent)
+        {
+            return Task.CompletedTask;
+        }
+
+        var under = Transcript.Under;
+        var client = new BrokerClient(_directory.ClientFor(project));
+
+        var form = new FormDialog(
+            SpinningOff.Title,
+            [
+                new FormField(
+                    SpinningOff.Door + " Conversation name — " + ConversationName.Rule,
+                    Participation.Suggested(),
+                    Participation.ConversationProblem,
+                    Correct: ConversationName.Correct,
+                    Corrected: ConversationName.WasCorrected),
+            ]);
+
+        var token = Prompting.Open(app, form);
+
+        form.Done += (_, values) =>
+        {
+            Prompting.Close(app, token);
+
+            if (values is null)
+            {
+                Said = string.Empty;
+
+                return;
+            }
+
+            var name = values[0].Trim();
+
+            Queue(async reading =>
+            {
+                var export = await client.ExportAsync(parent, reading).ConfigureAwait(false);
+                var message = under is { } id ? export.Messages.FirstOrDefault(m => m.Id == id) : null;
+                var quote = message is null ? string.Empty : Parley.Client.Rendering.Quoting.Of(message, parent);
+
+                _pending = (project.Name.Value, name, message is null || PersonSeat.Is(message.From) ? [] : [message.From]);
+                _spinningOff = (project.Name.Value, name, parent);
+
+                await GoAsync(ViewPlace.Into(project.Name).Into(name)).ConfigureAwait(false);
+
+                // Marked as a quote in the same turn of the loop that writes it, so Enter sends it as words and never
+                // runs it as a command, as an item's words are.
+                Line.Rewrite(now =>
+                {
+                    if (!string.IsNullOrWhiteSpace(now))
+                    {
+                        return now;
+                    }
+
+                    _itemWords = quote.Length == 0 ? null : quote;
+
+                    return quote;
+                });
+
+                Focus(Panes.ToList().IndexOf(Line));
+            });
+        };
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Moves entries of the conversation on screen to another, starting from the one under the cursor.</summary>
+    /// <returns>When the work to open the dialog has been queued.</returns>
+    internal Task MoveEntries()
+    {
+        if (App is not { } app || Current is not { } project || Transcript.Open is not { } source)
+        {
+            return Task.CompletedTask;
+        }
+
+        var under = Transcript.Under;
+        var client = new BrokerClient(_directory.ClientFor(project));
+
+        Queue(async token =>
+        {
+            var export = await client.ExportAsync(source, token).ConfigureAwait(false);
+            var exchange = under is { } id ? export.Messages.FirstOrDefault(m => m.Id == id)?.ExchangeId : null;
+
+            await Moving.OpenAsync(app, client, source, exchange, Queue, async (said, destination, exchanges) =>
+            {
+                Said = said;
+
+                if (destination is not null)
+                {
+                    // What this seat held of them names the old conversation. The next read gets the new one.
+                    foreach (var moved in exchanges)
+                    {
+                        Held?.Forget(moved);
+                    }
+
+                    await GoAsync(ViewPlace.Into(project.Name).Into(destination)).ConfigureAwait(false);
+                }
+            }, token).ConfigureAwait(false);
+        });
+
+        return Task.CompletedTask;
+    }
+
     /// <summary>Closes a Request waiting on the person, without answering it.</summary>
     /// <returns>When the dialog has been opened.</returns>
     /// <remarks>
@@ -5482,6 +5608,9 @@ internal sealed partial class Shell : Window
     /// the room shows them as its participants meanwhile. Once the conversation has any message the record is ignored.
     /// </remarks>
     private (string Project, string Conversation, IReadOnlyList<AgentName> Peers)? _pending;
+
+    // A spin-off not yet sent: the link is recorded when its first words are, and not before (SPEC.md §5.0).
+    private (string Project, string Conversation, string Parent)? _spinningOff;
 
     /// <summary>Asks for a conversation's name, then opens it empty with the box focused.</summary>
     /// <param name="peers">Who it is for.</param>

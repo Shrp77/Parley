@@ -291,6 +291,11 @@ message InboxReply {
   repeated RoadmapNotice roadmap_notices = 5;
   int32 roadmap_notices_waiting = 6;
 
+  // Section 5.0. Open exchanges of this agent's that the person moved. Not messages: nothing is owed back and nothing
+  // is woken. At most 50 in one collection; the rest are counted here.
+  repeated MoveNotice move_notices = 20;
+  int32 move_notices_waiting = 21;
+
   // Section 10.1. Messages still waiting: a collection carries about 64,000 characters of messages and never fewer
   // than one, or fewer when `limit` says so, and the rest wait for the next collection, counted here.
   int32 messages_waiting = 7;
@@ -759,6 +764,12 @@ service Operators {
   // and every participant holding one is sent the broker's closed Result in the same write.
   rpc ForceConclude(ForceConcludeRequest) returns (DidItReply);
   rpc CloseRequest(CloseRequestRequest) returns (DidItReply);
+
+  // Section 5.0. Only the person links or moves: an agent that could split a line of work is what that section refuses.
+  // A move wakes nobody; an agent party to an open exchange that moved is told at its next collection.
+  rpc SpinOff(SpinOffRequest) returns (SpinOffReply);
+  rpc PreviewMove(PreviewMoveRequest) returns (PreviewMoveReply);
+  rpc MoveExchanges(MoveExchangesRequest) returns (MoveExchangesReply);
   rpc Retire(AgentRequest) returns (DidItReply);
   rpc Reinstate(AgentRequest) returns (DidItReply);
   rpc Purge(AgentRequest) returns (PurgeReply);
@@ -847,6 +858,66 @@ message AgentRequest {
 
 message DidItReply {
   bool changed = 1;
+}
+
+message SpinOffRequest {
+  string parent = 1;
+  string child = 2;
+}
+
+message SpinOffReply {
+  string refused = 1;                 // empty when the link is recorded
+}
+
+message PreviewMoveRequest {
+  string source = 1;
+  repeated int64 exchanges = 2;
+}
+
+message MovePreviewExchange {
+  int64 exchange_id = 1;
+  bool open = 2;
+  string requester = 3;
+  string receiver = 4;
+  int32 messages = 5;
+  string first_words = 6;
+  string added_because = 7;           // empty when it was picked
+}
+
+message PreviewMoveReply {
+  repeated MovePreviewExchange exchanges = 1;
+  repeated string files_staying = 2;
+  string refused = 3;                 // empty when it can be done
+}
+
+message MoveExchangesRequest {
+  string source = 1;
+  string destination = 2;
+  bool new_conversation = 3;          // the destination must not exist yet, and takes the source as its parent
+  repeated int64 exchanges = 4;
+}
+
+message MoveExchangesReply {
+  string refused = 1;                 // empty when it was done
+  int32 exchanges = 2;
+  int32 messages = 3;
+}
+
+message MoveRecord {
+  int64 id = 1;
+  string source = 2;
+  string destination = 3;
+  string moved_by = 4;
+  string moved_utc = 5;
+  int64 first_message = 6;            // 0 when none of what moved still had a message
+  int32 messages = 7;
+  repeated int64 exchanges = 8;
+}
+
+message SettledElsewhere {
+  int64 exchange_id = 1;
+  int64 settled_by = 2;
+  string conversation_id = 3;
 }
 
 message CloseRequestRequest {
@@ -1062,6 +1133,13 @@ message ExportReply {
 
   // The roadmap item this conversation belongs to, by the broker's reservation and by nothing in any message.
   optional RoadmapItemRef item = 4;
+
+  // Section 5.0. Names and numbers, never message text, so they outlive what they describe.
+  string parent = 5;                  // empty when it has none
+  bool parent_by_move = 6;
+  repeated string children = 7;
+  repeated MoveRecord moves = 8;
+  repeated SettledElsewhere settled_elsewhere = 9;
 }
 
 // Facts and no content (section 9.4). There is no field to put message text in.
@@ -1116,6 +1194,8 @@ message ConversationSummary {
   bool has_open_exchange = 6;
   bool archived = 7;
   optional RoadmapItemRef item = 8;   // section 5.7: set when it is a reserved item conversation
+  string parent = 9;                  // section 5.0: empty when it has none
+  bool closed = 10;
 }
 
 message WaitingReply {
@@ -1416,6 +1496,12 @@ message ProposeRoadmapRequest {
 message ProposeRoadmapReply {
   int64 proposal_id = 1;              // 0 when refused
   string problem = 2;                 // empty when it was stored
+}
+
+message MoveNotice {
+  int64 exchange_id = 1;
+  string from_conversation = 2;
+  string to_conversation = 3;
 }
 
 message RoadmapNotice {

@@ -33,11 +33,11 @@ public sealed class MigrationDiscoveryTests
     /// stores hold and which is never edited (<c>SchemaOneIsFrozenTests</c>); <c>002</c> rebuilds the
     /// proposals table so an id is never used twice, and judges an item's opening by its exchanges.
     /// <c>003</c> adds file problems, <c>004</c> marks when an agent was first asked what it owns and first refreshed,
-    /// and <c>005</c> raises a message's limit and records every message's length.
-    /// **The next change to the schema is migration 006**, and this number moving to 6 is how that is noticed.
+    /// <c>005</c> raises a message's limit and records every message's length, and <c>006</c> adds conversation links and
+    /// moves. **The next change to the schema is migration 007**, and this number moving to 7 is how that is noticed.
     /// </para>
     /// </remarks>
-    private const int Expected = 5;
+    private const int Expected = 6;
 
     [Fact]
     public void Every_migration_in_the_folder_is_embedded_and_reachable()

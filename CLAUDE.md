@@ -10,17 +10,17 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.51.3, protocol 0.11, schema 5. Nothing has been released, but **live stores hold work
+- Version 0.52.0, protocol 0.12, schema 6. Nothing has been released, but **live stores hold work
   in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
   `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
   upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
   -Hidden`, never `-Reset`. `-Force` ends the broker and every `parley-mcp`, so every tool on a
   machine is one build: **the wire, enums and protocol still change freely**, with no
   compatibility caveats.
-- Features 019–026 and 028–031 are merged; the last is `specs/030-who-is-working/`. Feature 027, session-owned
-  delivery, is next and not committed yet; its plan predates the rule above and must move its schema change into
-  migration 006 (003 holds file problems, 004 when an agent was first asked what it owns and first refreshed, 005
-  a message's limit and the record of its length).
+- Features 019–026 and 028–031 are merged. Feature 032 is in progress on its branch: `specs/032-sub-conversations-and-moves/`.
+  Feature 027, session-owned delivery, is not committed yet; its plan predates the rule above and must move its schema
+  change into migration 007 (003 holds file problems, 004 when an agent was first asked what it owns and first refreshed,
+  005 a message's limit and the record of its length, 006 conversation links, moves and move notices).
 - A person speaks to an agent only with a Request. An agent's row menu in the terminal has one
   ownership entry, *What this agent is responsible for* (`Alt+n`).
 - Design work runs through Spec Kit: `/speckit-specify`, `/speckit-plan`, `/speckit-tasks`
@@ -345,6 +345,10 @@ implementation detail, and needs to be argued.
 
 Decided and built. The reasoning is in `SPEC.md`, the feature's `research.md` and git.
 
+- **Only the person moves an exchange** (`move_exchanges`, SPEC §5.0), in `ConversationMoveRepository` and nowhere else. A
+  whole exchange goes, all or none, and a Request to a role goes whole. A move wakes nobody, so its handler must not nudge;
+  an agent on open work is told by a move notice at its next collection. A spin-off's link (`spin_off`) is recorded before
+  its first Request is sent. A list's ` - spinoff from <parent>` is display only: `row.Id` stays the name.
 - **A deployment is a root with a folder per project** under `<root>/projects/`, holding
   `project.json` and `parley.db`. Naming a project creates it. There is no `--db`, `--listen`
   or `PARLEY_DB`. Ports come from a band (19100–19355) claimed under an exclusive hold on

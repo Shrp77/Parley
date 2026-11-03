@@ -323,6 +323,10 @@ internal sealed partial class Shell : IKeyTable<Shell>
         new(KeyContext.Transcript, 'q', Participation.ClarifyTitle, s => s.Clarify(), s => s.Held is not null),
         new(KeyContext.Transcript, 'j', ClosingARequest.Title, s => s.CloseRequest(), s => s.Held is not null),
         new(KeyContext.Transcript, 'z', NextWaitingTitle, s => s.NextWaiting(), s => s.Room.Outstanding.Count > 0),
+
+        // **Both are the person's own, and both start from what is under the cursor** (SPEC.md §5.0).
+        new(KeyContext.Transcript, 'b', SpinningOff.Title, s => s.SpinOff(), s => s.Held is not null && s.Transcript.Open is not null),
+        new(KeyContext.Transcript, 'v', Moving.Title, s => s.MoveEntries(), s => s.Transcript.Open is not null),
         new(KeyContext.Transcript, 'k', Participation.RequestTitle, s => s.SendRequest(), s => s.Held is not null, Owing.Requesting),
 
         // **Copying does not need a seat**: reading a conversation and taking a copy of what you read are the same act,

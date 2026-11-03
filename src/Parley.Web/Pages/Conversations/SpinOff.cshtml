@@ -1,0 +1,58 @@
+@page
+@model Parley.Web.Pages.Conversations.SpinOffModel
+@{
+    ViewData["Title"] = "Spin off a conversation";
+    ViewData["Project"] = Model.Project;
+}
+
+<h1>Spin off from @Model.Id</h1>
+<p class="lede">
+    A new conversation, linked to this one. Nothing exists and nothing is sent until you press Send. The agent gets exactly
+    what is in the box, and can't read @Model.Id unless it already takes part.
+</p>
+
+@if (Model.Problem is { Length: > 0 } problem)
+{
+    <p class="unreachable" role="alert">@problem</p>
+}
+
+@if (Model.Sent.Count > 0)
+{
+    <ul class="sent" role="status">
+        @foreach (var (agent, outcome) in Model.Sent)
+        {
+            <li><strong>@agent</strong> @outcome</li>
+        }
+    </ul>
+    <p><a href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = Model.Name })">Open @Model.Name</a></p>
+}
+
+<form method="post" class="move-form">
+    <p>
+        <label for="name">What it is called</label><br />
+        <input id="name" name="Name" type="text" required autocomplete="off" spellcheck="false" maxlength="@Parley.Client.ConversationName.Longest"
+               pattern="@Parley.Client.ConversationName.Pattern" title="@Parley.Client.ConversationName.Rule" value="@Model.Name" />
+        <br /><small>@Parley.Client.ConversationName.Rule</small>
+    </p>
+
+    <fieldset class="move-to">
+        <legend>Who it goes to</legend>
+        @foreach (var agent in Model.Agents)
+        {
+            <label>
+                <input type="checkbox" name="Targets" value="@agent.Value" checked="@Model.Targets.Contains(agent.Value, StringComparer.Ordinal)" />
+                @agent.Value
+            </label>
+        }
+    </fieldset>
+
+    <p>
+        <label for="says">What you want to say</label><br />
+        <textarea id="says" name="Says" rows="12" required>@Model.Says</textarea>
+    </p>
+
+    <p class="move-actions">
+        <button type="submit">Send</button>
+        <a href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = Model.Id })">Cancel</a>
+    </p>
+</form>

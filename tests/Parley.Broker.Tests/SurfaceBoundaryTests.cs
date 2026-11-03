@@ -98,6 +98,9 @@ public sealed class SurfaceBoundaryTests
         [
             nameof(OperatorConsole.ForceConcludeAsync),
             nameof(OperatorConsole.CloseRequestAsync),
+            nameof(OperatorConsole.SpinOffAsync),
+            nameof(OperatorConsole.PreviewMoveAsync),
+            nameof(OperatorConsole.MoveExchangesAsync),
             nameof(OperatorConsole.RetireAsync),
             nameof(OperatorConsole.ReinstateAsync),
 

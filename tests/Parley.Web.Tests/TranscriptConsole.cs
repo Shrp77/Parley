@@ -68,6 +68,24 @@ public sealed class ScriptedExport : HttpMessageHandler
     /// <summary>The registry rows every <c>DescribeRegistry</c> returns; empty unless a test needs the project's agents.</summary>
     public List<Wire.RegistryRow> Registry { get; } = [];
 
+    /// <summary>Spin-offs asked for.</summary>
+    public List<Wire.SpinOffRequest> SpinOffs { get; } = [];
+
+    /// <summary>Moves asked for.</summary>
+    public List<Wire.MoveExchangesRequest> MovesAsked { get; } = [];
+
+    /// <summary>What a move answers, when it should refuse.</summary>
+    public string MoveRefusal { get; set; } = string.Empty;
+
+    /// <summary>The move records every export carries.</summary>
+    public List<Wire.MoveRecord> Moves { get; } = [];
+
+    /// <summary>The parent every export and listed conversation names.</summary>
+    public string Parent { get; set; } = string.Empty;
+
+    /// <summary>The children every export names.</summary>
+    public List<string> Children { get; } = [];
+
     /// <summary>How many exports were asked for.</summary>
     public int Exports { get; private set; }
 
@@ -144,7 +162,7 @@ public sealed class ScriptedExport : HttpMessageHandler
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        _ = request.Content is null ? [] : await request.Content.ReadAsByteArrayAsync(cancellationToken);
+        var sent = request.Content is null ? [] : await request.Content.ReadAsByteArrayAsync(cancellationToken);
 
         IMessage? reply;
 
@@ -156,6 +174,9 @@ public sealed class ScriptedExport : HttpMessageHandler
                 "/parley.v1.Operators/DescribeRegistry" => Rows(),
                 "/parley.v1.Operators/DescribeWaiting" => Waiting(),
                 "/parley.v1.Operators/ListConversations" => Conversations(),
+                "/parley.v1.Operators/PreviewMove" => Preview(Wire.PreviewMoveRequest.Parser.ParseFrom(sent.AsSpan(5))),
+                "/parley.v1.Operators/MoveExchanges" => Moved(Wire.MoveExchangesRequest.Parser.ParseFrom(sent.AsSpan(5))),
+                "/parley.v1.Operators/SpinOff" => Spun(Wire.SpinOffRequest.Parser.ParseFrom(sent.AsSpan(5))),
                 "/parley.v1.Operators/Prune" => new Wire.PruneReply
                 {
                     Removed = 2,
@@ -202,7 +223,7 @@ public sealed class ScriptedExport : HttpMessageHandler
     private Wire.ListConversationsReply Conversations()
     {
         var reply = new Wire.ListConversationsReply();
-        var row = new Wire.ConversationSummary { ConversationId = "shared", HasOpenExchange = true };
+        var row = new Wire.ConversationSummary { ConversationId = "shared", HasOpenExchange = true, Parent = Parent };
 
         row.Participants.AddRange(Edges.SelectMany(e => new[] { e.Waiter, e.WaitedOn }).Distinct());
         reply.Conversations.Add(row);
@@ -227,7 +248,43 @@ public sealed class ScriptedExport : HttpMessageHandler
 
         reply.Messages.AddRange(Messages);
         reply.Exchanges.AddRange(Exchanges);
+        reply.Moves.AddRange(Moves);
+        reply.Parent = Parent;
+        reply.Children.AddRange(Children);
 
         return reply;
+    }
+
+    private Wire.PreviewMoveReply Preview(Wire.PreviewMoveRequest asked)
+    {
+        var reply = new Wire.PreviewMoveReply { FilesStaying = { "deck.md" } };
+
+        reply.Exchanges.AddRange(asked.Exchanges.Select(id => new Wire.MovePreviewExchange
+        {
+            ExchangeId = id,
+            Open = true,
+            Requester = "orders@test",
+            Receiver = "billing@test",
+            Messages = 1,
+            FirstWords = "the first words",
+        }));
+
+        return reply;
+    }
+
+    private Wire.MoveExchangesReply Moved(Wire.MoveExchangesRequest asked)
+    {
+        MovesAsked.Add(asked);
+
+        return string.IsNullOrEmpty(MoveRefusal)
+            ? new Wire.MoveExchangesReply { Exchanges = asked.Exchanges.Count, Messages = asked.Exchanges.Count }
+            : new Wire.MoveExchangesReply { Refused = MoveRefusal };
+    }
+
+    private Wire.SpinOffReply Spun(Wire.SpinOffRequest asked)
+    {
+        SpinOffs.Add(asked);
+
+        return new Wire.SpinOffReply();
     }
 }

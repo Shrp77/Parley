@@ -100,6 +100,66 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     }
 
     /// <inheritdoc/>
+    public override async Task<Wire.SpinOffReply> SpinOff(Wire.SpinOffRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var refused = await Console(
+            (console, now, ct) => console.SpinOffAsync(request.Parent, request.Child, now, ct),
+            context).ConfigureAwait(false);
+
+        return new Wire.SpinOffReply { Refused = refused ?? string.Empty };
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.PreviewMoveReply> PreviewMove(Wire.PreviewMoveRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var preview = await Console(
+            (console, _, ct) => console.PreviewMoveAsync(request.Source, [.. request.Exchanges], ct),
+            context).ConfigureAwait(false);
+
+        var reply = new Wire.PreviewMoveReply { Refused = preview.Refused ?? string.Empty };
+
+        reply.FilesStaying.AddRange(preview.FilesStaying);
+        reply.Exchanges.AddRange(preview.Exchanges.Select(e => new Wire.MovePreviewExchange
+        {
+            ExchangeId = e.Id,
+            Open = e.Open,
+            Requester = e.Requester.Value,
+            Receiver = e.Receiver.Value,
+            Messages = e.Messages,
+            FirstWords = e.FirstWords,
+            AddedBecause = e.AddedBecause ?? string.Empty,
+        }));
+
+        return reply;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Nudges nobody, unlike every other operation that changes an agent's work: a move wakes no agent (§5.0).</remarks>
+    public override async Task<Wire.MoveExchangesReply> MoveExchanges(Wire.MoveExchangesRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var moved = await Console(
+            (console, now, ct) => console.MoveExchangesAsync(
+                request.Source, request.Destination, request.NewConversation, [.. request.Exchanges], now, ct),
+            context).ConfigureAwait(false);
+
+        return new Wire.MoveExchangesReply
+        {
+            Refused = moved.Refused ?? string.Empty,
+            Exchanges = moved.Exchanges,
+            Messages = moved.Messages,
+        };
+    }
+
+    /// <inheritdoc/>
     public override async Task<Wire.DidItReply> CloseRequest(Wire.CloseRequestRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -631,6 +691,38 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             reply.Item = Conversions.Out(item);
         }
 
+        if (exported.Links is { } links)
+        {
+            reply.Parent = links.Parent ?? string.Empty;
+            reply.ParentByMove = links.How == ConversationLinkKind.Move;
+            reply.Children.AddRange(links.Children);
+        }
+
+        reply.Moves.AddRange((exported.Moves ?? []).Select(m =>
+        {
+            var move = new Wire.MoveRecord
+            {
+                Id = m.Id,
+                Source = m.Source,
+                Destination = m.Destination,
+                MovedBy = m.MovedBy,
+                MovedUtc = m.MovedUtc.ToString("O", CultureInfo.InvariantCulture),
+                FirstMessage = m.FirstMessage ?? 0,
+                Messages = m.Messages,
+            };
+
+            move.Exchanges.AddRange(m.Exchanges);
+
+            return move;
+        }));
+
+        reply.SettledElsewhere.AddRange((exported.SettledElsewhere ?? []).Select(s => new Wire.SettledElsewhere
+        {
+            ExchangeId = s.Exchange,
+            SettledBy = s.SettledBy,
+            ConversationId = s.Conversation,
+        }));
+
         reply.Messages.AddRange(exported.Messages.Select(Conversions.Out));
 
         reply.Exchanges.AddRange(exported.Exchanges.Select(e => new Wire.ExchangeSnapshot
@@ -864,7 +956,9 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
                 FirstActivityUtc = summary.FirstActivityUtc.ToString("O", CultureInfo.InvariantCulture),
                 LastActivityUtc = summary.LastActivityUtc.ToString("O", CultureInfo.InvariantCulture),
                 HasOpenExchange = summary.HasOpenExchange,
-                Archived = summary.Archived
+                Archived = summary.Archived,
+                Parent = summary.Parent ?? string.Empty,
+                Closed = summary.Closed
             };
 
             if (summary.Item is { } item)

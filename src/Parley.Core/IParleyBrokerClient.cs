@@ -208,6 +208,31 @@ public interface IParleyBrokerClient
     /// <remarks>Its conversation stays open. Both sides are sent the broker's <c>closed</c> Result in the same write.</remarks>
     Task<bool> CloseRequestAsync(long exchangeId, string? reason = null, CancellationToken cancellationToken = default);
 
+    /// <summary>Opens a new conversation with a parent, sending nothing (SPEC.md §5.0, <c>spin_off</c>).</summary>
+    /// <param name="parent">The conversation it comes from.</param>
+    /// <param name="child">The new conversation's name.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Why it was refused, or <see langword="null"/> when the link is recorded.</returns>
+    /// <remarks>Called before the first Request, so a Request never reaches a spin-off with no link behind it.</remarks>
+    Task<string?> SpinOffAsync(string parent, string child, CancellationToken cancellationToken = default);
+
+    /// <summary>Says what moving some exchanges would take, changing nothing (SPEC.md §5.0, <c>preview_move</c>).</summary>
+    /// <param name="source">The conversation they are in.</param>
+    /// <param name="exchanges">The exchanges picked.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Every exchange that would go, and the files that stay.</returns>
+    Task<MovePreview> PreviewMoveAsync(string source, IReadOnlyCollection<long> exchanges, CancellationToken cancellationToken = default);
+
+    /// <summary>Moves whole exchanges to another conversation, all or none (SPEC.md §5.0, <c>move_exchanges</c>).</summary>
+    /// <param name="source">The conversation they are in.</param>
+    /// <param name="destination">Where they go.</param>
+    /// <param name="isNew">Whether the destination must not exist yet, and takes the source as its parent.</param>
+    /// <param name="exchanges">Every exchange that goes, as the preview listed them.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>How many moved, or why none did.</returns>
+    Task<MoveOutcome> MoveExchangesAsync(
+        string source, string destination, bool isNew, IReadOnlyCollection<long> exchanges, CancellationToken cancellationToken = default);
+
     /// <summary>Apply the retention policy now rather than waiting for the sweep.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>What was removed, and what the floor held back.</returns>

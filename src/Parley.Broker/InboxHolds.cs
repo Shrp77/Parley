@@ -14,13 +14,15 @@ public sealed class InboxHold
         IReadOnlyList<long> messages,
         IReadOnlyList<long> requests,
         IReadOnlyList<string> fileNotices,
-        IReadOnlyList<string> roadmapNotices)
+        IReadOnlyList<string> roadmapNotices,
+        IReadOnlyList<long> moveNotices)
     {
         Agent = agent;
         Messages = messages;
         Requests = requests;
         FileNotices = fileNotices;
         RoadmapNotices = roadmapNotices;
+        MoveNotices = moveNotices;
     }
 
     /// <summary>Gets the agent that collected.</summary>
@@ -37,6 +39,9 @@ public sealed class InboxHold
 
     /// <summary>Gets the keys of the roadmap notices handed over.</summary>
     public IReadOnlyList<string> RoadmapNotices { get; }
+
+    /// <summary>Gets the identifiers of the move notices handed over.</summary>
+    public IReadOnlyList<long> MoveNotices { get; }
 }
 
 /// <summary>Every collection in flight: handed over, not yet acknowledged (SPEC.md §6).</summary>
@@ -81,8 +86,8 @@ public sealed class InboxHolds
 
     /// <summary>What collections in flight hold for an agent.</summary>
     /// <param name="agent">The agent.</param>
-    /// <returns>The held messages, gone-notice keys and roadmap notices.</returns>
-    internal (HashSet<long> Messages, HashSet<string> FileNotices, HashSet<string> RoadmapNotices) HeldFor(AgentName agent)
+    /// <returns>The held messages, gone-notice keys, roadmap notices and move notices.</returns>
+    internal (HashSet<long> Messages, HashSet<string> FileNotices, HashSet<string> RoadmapNotices, HashSet<long> MoveNotices) HeldFor(AgentName agent)
     {
         lock (_gate)
         {
@@ -91,7 +96,8 @@ public sealed class InboxHolds
             return (
                 [.. mine.SelectMany(h => h.Messages)],
                 [.. mine.SelectMany(h => h.FileNotices)],
-                [.. mine.SelectMany(h => h.RoadmapNotices)]);
+                [.. mine.SelectMany(h => h.RoadmapNotices)],
+                [.. mine.SelectMany(h => h.MoveNotices)]);
         }
     }
 }

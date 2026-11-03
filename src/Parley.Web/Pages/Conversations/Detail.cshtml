@@ -83,9 +83,19 @@
                         <a href="@Url.Page("/Conversations/Detail", "Raw", new { project = Model.Project, id = Model.Id })" download title="The messages and exchanges as the broker holds them, the destroyed record and the roadmap item, as JSON for another program">Export JSON</a>
                     </div>
                 </details>
+                <a class="file-button" target="_top" href="@Url.Page("/Conversations/SpinOff", new { project = Model.Project, id = Model.Id })" title="Start a new conversation linked to this one">Spin off</a>
+                @* With a script this picks entries in place. Without one, the page it leads to lists them. *@
+                <a class="file-button" id="move-start" target="_top" href="@Url.Page("/Conversations/Move", new { project = Model.Project, id = Model.Id })" title="Move entries to another conversation">Move entries</a>
                 @* Only with a script, which is what can close it and remember that. *@
                 <button type="button" id="panel-close" class="file-button" title="Close this panel" aria-label="Close this panel" hidden><span class="icon" aria-hidden="true">chevron_left</span></button>
             </div>
+        </div>
+
+        @* What has been picked to move, while picking. *@
+        <div class="move-bar" id="move-bar" role="group" aria-label="Moving entries" hidden>
+            <span id="move-count" role="status">Tick what you want to move.</span>
+            <button type="button" id="move-go" disabled>Continue</button>
+            <button type="button" id="move-cancel" class="quiet">Cancel</button>
         </div>
 
         @if (Model.Problem is not { Length: > 0 } && Model.Destroyed is null && Model.Messages.Count > 0)
@@ -1121,6 +1131,75 @@ else
 
             reveal();
             show();
+        })();
+
+        // Picking entries to move, in place. Picking changes nothing: what was ticked is sent to the Move page, which says
+        // what would go and asks. The tick boxes are in the followed region and are replaced every few seconds, so what is
+        // picked is held here and put back.
+        (function () {
+            var start = document.getElementById("move-start");
+            var bar = document.getElementById("move-bar");
+            var page = document.getElementById("convo-page");
+            var go = document.getElementById("move-go");
+            var said = document.getElementById("move-count");
+
+            if (!start || !bar || !page || !document.getElementById("followed")) { return; }
+
+            var picked = {};
+
+            function boxes() { return [].slice.call(document.querySelectorAll(".move-pick input")); }
+
+            function exchanges() {
+                var all = {};
+
+                boxes().forEach(function (b) {
+                    if (picked[b.getAttribute("data-exchanges")]) {
+                        b.getAttribute("data-exchanges").split(" ").forEach(function (x) { all[x] = true; });
+                    }
+                });
+
+                return Object.keys(all);
+            }
+
+            function show() {
+                boxes().forEach(function (b) { b.checked = !!picked[b.getAttribute("data-exchanges")]; });
+
+                var many = exchanges().length;
+
+                go.disabled = many === 0;
+                said.textContent = many === 0 ? "Tick what you want to move." : many === 1 ? "1 exchange picked." : many + " exchanges picked.";
+            }
+
+            function picking(on) {
+                page.classList.toggle("picking", on);
+                bar.hidden = !on;
+
+                if (!on) { picked = {}; }
+
+                show();
+            }
+
+            start.addEventListener("click", function (e) { e.preventDefault(); picking(true); });
+            document.getElementById("move-cancel").addEventListener("click", function () { picking(false); });
+
+            document.addEventListener("change", function (e) {
+                var box = e.target;
+
+                if (!box.closest || !box.closest(".move-pick")) { return; }
+
+                if (box.checked) { picked[box.getAttribute("data-exchanges")] = true; } else { delete picked[box.getAttribute("data-exchanges")]; }
+
+                show();
+            });
+
+            go.addEventListener("click", function () {
+                var to = new URL(start.href, location.href);
+
+                exchanges().forEach(function (x) { to.searchParams.append("x", x); });
+                window.top.location.assign(to.href);
+            });
+
+            document.addEventListener("parley:followed", show);
         })();
 
         // What is waiting on the person in the project's other conversations. A separate, slower read than following: it
