@@ -131,6 +131,14 @@ copies the whole conversation and `Alt+m` copies the message the cursor is on.
 
 The web console says the same things on a conversation's page.
 
+**To see who is working across a project,** look at the agents list. On the terminal it groups agents
+under *working* (with how long), *stopped on a refused permission*, *idle* and the rest, and updates
+every few seconds. On the web console's Agents tab, working agents come first, under a *Working now*
+line, and the page updates every 10 seconds. *Idle* means attached with no turn running. *Running*
+on its own means attached, and nobody reports whether it is in a turn, so Parley will not guess.
+These lists show who is working and for how long, not on which conversation: Parley does not record
+which conversation a turn is for.
+
 **A stop caused by a refused permission is flagged at once,** in Health (`Alt+y`) and on the
 console's health page, instead of after the usual four hours. Only a person can get the agent past
 it, by allowing the command in that repository's Claude Code permission settings and starting the

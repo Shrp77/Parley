@@ -68,7 +68,16 @@ public static class Standing
     /// <summary>It is retired, by a person or because its workspace was found gone.</summary>
     public const string Retired = "retired";
 
-    /// <summary>It is attached to the broker now.</summary>
+    /// <summary>A turn is running for it now (SPEC.md §11.6).</summary>
+    public const string Working = "working";
+
+    /// <summary>Its last turn had a tool call refused for want of permission, and only a person can get it past that.</summary>
+    public const string StoppedRefused = "stopped on a refused permission";
+
+    /// <summary>It is attached with no turn running, and its turns are reported, so that is known.</summary>
+    public const string Ready = "idle";
+
+    /// <summary>It is attached to the broker now, and nobody reports whether it is in a turn.</summary>
     public const string Running = "running";
 
     /// <summary>Registered before, not attached now, and this machine may start it.</summary>
@@ -159,6 +168,7 @@ public static class Standing
                 // peer asking them needs.
                 seat ? (agent.Presence == AgentPresence.Here ? Here : Away)
                     : agent.OpenOutside && !retired ? Outside
+                    : !retired && FromTurns(agent, running) is { } turn ? turn
                     : Phrase(retired, running, agent.Presence, startable, everRun: true),
                 running,
                 EverRun: true,
@@ -195,6 +205,32 @@ public static class Standing
         }
 
         return [.. rows.OrderBy(row => row.Name, StringComparer.Ordinal)];
+    }
+
+    /// <summary>What its turns say about an agent, when anybody reports them.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="running">Whether it is attached.</param>
+    /// <returns>The phrase, or null when its turns say nothing and its presence decides.</returns>
+    private static string? FromTurns(AgentRecord agent, bool running)
+    {
+        var turns = agent.Turns ?? TurnStanding.Unreported;
+
+        if (!turns.Reported)
+        {
+            return null;
+        }
+
+        if (turns.RunningSince is not null)
+        {
+            return Working;
+        }
+
+        if (turns.LastEnded is not null && turns.LastPermissionDenials > 0)
+        {
+            return StoppedRefused;
+        }
+
+        return running ? Ready : null;
     }
 
     /// <summary>The phrase for one agent.</summary>

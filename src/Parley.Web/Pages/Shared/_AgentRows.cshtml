@@ -9,6 +9,11 @@
         <a href="/Projects/Settings?project=@Model.Project">Open its settings</a></p>
 }
 
+@if (Model.Rows.Where(r => r.Now.Working).Select(r => r.Agent.Name.Role).ToList() is { Count: > 0 } working)
+{
+    <p class="dgrid-empty" data-working="@Model.Project" role="status"><strong>Working now in @Model.Project:</strong> @string.Join(", ", working)</p>
+}
+
 @foreach (var row in Model.Rows)
 {
     var who = row.Agent.Name;
@@ -21,7 +26,7 @@
         </span>
         <span role="cell">@@@who.Machine</span>
         <span role="cell"><a href="/Projects/Agents?project=@row.Project">@row.Project</a></span>
-        <span role="cell">@row.State</span>
+        <span role="cell">@row.Now.Words</span>
     </summary>
     <div class="dgrid-detail">
         <dl class="facts">

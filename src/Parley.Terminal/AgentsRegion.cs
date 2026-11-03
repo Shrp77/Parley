@@ -491,6 +491,9 @@ internal sealed class AgentsRegion : FrameView
     private static int Rank(string heading) => heading switch
     {
         Seats => 0,
+        Standing.Working => 1,
+        Standing.StoppedRefused => 1,
+        Standing.Ready => 2,
         Standing.Running => 2,
         Standing.NeverRun => 3,
         Standing.Idle => 4,
@@ -531,7 +534,20 @@ internal sealed class AgentsRegion : FrameView
         var at = row.Name.IndexOf('@', StringComparison.Ordinal);
         var role = at < 0 ? row.Name : row.Name[..at];
 
-        return ActivityOf(role) is { } doing ? $"  — {Safe.Text(doing)}" : string.Empty;
+        if (ActivityOf(role) is { } doing)
+        {
+            return $"  — {Safe.Text(doing)}";
+        }
+
+        // How long, on the row, because the heading already says what.
+        var turns = Registry.FirstOrDefault(record => record.Name.Value == row.Name)?.Turns;
+
+        return turns switch
+        {
+            { Reported: true, RunningSince: { } running } => "  — " + Activities.For(running, DateTimeOffset.UtcNow),
+            { Reported: true, LastPermissionDenials: > 0, LastEnded: { } ended } => "  — " + Activities.For(ended, DateTimeOffset.UtcNow),
+            _ => string.Empty,
+        };
     }
 
     /// <summary>What colour a row earns from where its agent stands.</summary>

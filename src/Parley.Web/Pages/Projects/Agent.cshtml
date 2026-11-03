@@ -46,7 +46,7 @@ else
         <tbody>
             <tr>
                 <th scope="row">State</th>
-                <td>@Roster.State(agent)</td>
+                <td>@Parley.Client.Views.Activities.Now(agent, DateTimeOffset.UtcNow).Words</td>
             </tr>
             <tr>
                 <th scope="row">Tier</th>

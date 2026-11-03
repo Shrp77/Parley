@@ -654,6 +654,8 @@ internal sealed partial class Shell : Window
     private CancellationTokenSource? _watchingMail;
     private long _lastWaitingReached;
     private int _mailQueued;
+    private int _agentsQueued;
+    private string? _agentsSaid;
 
     private bool _stacked;
 
@@ -3590,12 +3592,59 @@ internal sealed partial class Shell : Window
                     Queue(MailOnceAsync);
                 }
 
+                if (Interlocked.CompareExchange(ref _agentsQueued, 1, 0) == 0)
+                {
+                    Queue(AgentsOnceAsync);
+                }
+
                 await Task.Delay(every, stop).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
         {
             // The seat was let go, or the surface is closing. This is how it ends.
+        }
+    }
+
+    /// <summary>Reads the project's agents again, so the list says who is working now.</summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>When the list has been drawn, if anything changed.</returns>
+    /// <remarks>
+    /// On the mail watch's interval rather than a timer of its own: a seat is held whenever a project is open. Drawn only
+    /// when what the list says has changed, and never over a list from a failed read, so a broker restarting does not
+    /// empty the pane. Checks the project is still in view after the read, as anything drawing from a read does.
+    /// </remarks>
+    private async Task AgentsOnceAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (Current is not { } project)
+            {
+                return;
+            }
+
+            var registry = await BrokerDirectory.ReadAsync(async () =>
+                await new BrokerClient(_directory.ClientFor(project)).RegistryAsync(cancellationToken).ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            if (registry.Value is not { } agents || Current?.Name != project.Name)
+            {
+                return;
+            }
+
+            var says = string.Join(
+                '\n',
+                agents.Select(agent => agent.Name.Value + " " + Activities.Now(agent, DateTimeOffset.UtcNow).Words));
+
+            if (!string.Equals(says, _agentsSaid, StringComparison.Ordinal))
+            {
+                _agentsSaid = says;
+                Agents.Show(agents, Catalogue(), null);
+            }
+        }
+        finally
+        {
+            Volatile.Write(ref _agentsQueued, 0);
         }
     }
 

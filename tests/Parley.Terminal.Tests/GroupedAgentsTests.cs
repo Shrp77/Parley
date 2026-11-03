@@ -35,6 +35,28 @@ public sealed class GroupedAgentsTests
             true, AgentStatus.Active, null, AgentPresence.Running);
 
     [Fact]
+    public void Agents_in_a_turn_are_listed_first_under_working_with_how_long()
+    {
+        var region = new AgentsRegion();
+        var since = DateTimeOffset.UtcNow.AddMinutes(-4).AddSeconds(-5);
+
+        region.Show(
+            [
+                Agent("billing@test") with { Turns = new TurnStanding(true, null, since, true, 0) },
+                Agent("orders@test") with { Turns = new TurnStanding(true, since, null, false, 0) },
+            ],
+            NodeCatalogue.Empty,
+            null);
+
+        var rows = Drawn.Rows(region.List).Select(row => row.TrimEnd()).ToList();
+
+        Assert.Equal("working", rows[0]);
+        Assert.StartsWith("  orders@test  — 4m", rows[1], StringComparison.Ordinal);
+        Assert.Contains("idle", rows);
+        Assert.True(rows.IndexOf("idle") > rows.IndexOf("working"));
+    }
+
+    [Fact]
     public void A_row_carries_the_name_and_the_heading_carries_the_state()
     {
         var region = new AgentsRegion();

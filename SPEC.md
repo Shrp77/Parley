@@ -3541,6 +3541,11 @@ process its machine's node started (§11.7), or, when it is not running at all, 
 **One opened outside Parley is unknown**: no node gives it a turn, so nothing reports one, and what the node
 last reported for that name describes a different process.
 
+**A list of agents says who is working.** Where turns are reported, an agent is *working* for as long as a
+turn has run, *stopped* when its last turn had a tool call refused for want of permission, and *idle* when
+attached with no turn running. Where they are not, it reads by its presence alone. A turn report does not say
+which conversation the turn is for, so a list says who and for how long, and not on what.
+
 **A report is accepted only for an agent on the reporting node's machine, from a node that is joined.**
 Anything else is ignored and nothing is stored. §16 concedes that anything able to reach a broker can
 claim to be anything; refusing a node's claim about another machine's agent costs one comparison.

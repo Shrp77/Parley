@@ -21,8 +21,9 @@ public sealed record ProjectRowState(ProjectSettings Project, ProjectHealth? Hea
 /// <summary>One agent as the grid draws it.</summary>
 /// <param name="Project">The project it is registered in.</param>
 /// <param name="Agent">The agent.</param>
-/// <param name="State">What it is doing, in words.</param>
-public sealed record AgentRow(string Project, AgentRecord Agent, string State);
+/// <param name="State">Its presence, which the filter chooses by.</param>
+/// <param name="Now">What it is doing now, which the row says.</param>
+public sealed record AgentRow(string Project, AgentRecord Agent, string State, Parley.Client.Views.AgentNow Now);
 
 /// <summary>What one project's agents are, as a fragment of the agents grid draws them.</summary>
 /// <param name="Project">The project.</param>
@@ -93,9 +94,13 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
     /// <summary>The projects the text filter leaves in.</summary>
     public IReadOnlyList<ProjectSettings> ShownProjects => [.. Projects.Where(Matches)];
 
+    /// <summary>The filter's word for an agent with a turn running.</summary>
+    private const string WorkingState = "working";
+
     /// <summary>The states an agent can be shown in, for the filter.</summary>
     public static IReadOnlyList<string> States { get; } =
     [
+        WorkingState,
         .. Enum.GetValues<AgentPresence>()
             .Where(presence => presence is not (AgentPresence.Here or AgentPresence.Away))
             .Select(presence => presence.ToString().ToLowerInvariant()),
@@ -115,7 +120,7 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
 
     private bool Matches(AgentRow row)
     {
-        if (!string.IsNullOrEmpty(State) && State != row.State)
+        if (!string.IsNullOrEmpty(State) && State != row.State && !(State == WorkingState && row.Now.Working))
         {
             return false;
         }
@@ -365,10 +370,12 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
 
         var rows = registry.Value
             .Where(agent => !agent.Facilitator && agent.Name.Role != "human-user")
-            .OrderBy(agent => agent.Name.Machine, StringComparer.Ordinal)
-            .ThenBy(agent => agent.Name.Role, StringComparer.Ordinal)
-            .Select(agent => new AgentRow(project.Name.Value, agent, Roster.State(agent)))
+            .Select(agent => new AgentRow(
+                project.Name.Value, agent, Roster.State(agent), Parley.Client.Views.Activities.Now(agent, DateTimeOffset.UtcNow)))
             .Where(Matches)
+            .OrderBy(row => row.Now.Rank)
+            .ThenBy(row => row.Agent.Name.Machine, StringComparer.Ordinal)
+            .ThenBy(row => row.Agent.Name.Role, StringComparer.Ordinal)
             .ToList();
 
         return Partial("_AgentRows", new AgentGroup(project.Name.Value, rows, Unread: false));
