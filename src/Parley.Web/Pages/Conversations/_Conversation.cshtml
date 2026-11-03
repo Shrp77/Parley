@@ -1,6 +1,6 @@
 ﻿@model Parley.Web.Pages.Conversations.DetailModel
-@* The part of a conversation's page that changes as the conversation goes: the roster, the messages
-   and the timeline. A partial of its own because two things render it and they must not differ --
+@* The part of a conversation's page that changes as the conversation goes: the messages and the
+   timeline, with the panel's half in _Side. A partial of its own because two things render it and they must not differ --
    the page, and the Follow handler a following page asks every few seconds. A copy of this markup
    in the handler would be a transcript that read one way on arrival and another a few seconds
    later. *@
@@ -18,63 +18,12 @@
 }
 else if (Model.Messages.Count == 0)
 {
-    @* Still offers who to write to: a conversation that has no messages yet is how one begins, and the tree is
-       what the composer addresses. *@
-    <div class="conversation">
-        <div class="side">
-            <partial name="_Recipients" model="Model" />
-        </div>
-        <p>Nothing was recorded under this identifier.</p>
-    </div>
+    @* Who to write to is still offered, in the panel: a conversation that has no messages yet is how one begins. *@
+    <p>Nothing was recorded under this identifier.</p>
 }
 else
 {
     <div class="conversation">
-    @* A participant is derived from the traffic (§5.0), so one may have been retired or purged since it spoke --
-       the registry's word is asked for, and its absence is reported rather than filled in. *@
-    @* **One column for everything beside the transcript.** `.conversation` is a three-column grid -- this, the
-       transcript, the rail -- so each of these as a child of its own took a cell and pushed the transcript into
-       a narrow one beneath the first roster. They stack here instead. *@
-    <div class="side">
-    <partial name="_Recipients" model="Model" />
-
-    <p class="roster-legend">@Parley.Client.Rendering.RoomRoster.ParticipantLegend</p>
-
-    @if (Model.WaitingOnYou.Count > 0)
-    {
-        @* What is waiting on the person, each agent once with how many of its questions, and each question a link to
-           where it was asked -- the terminal's room list, from the same derivation. The words are the
-           agent's and are escaped like every other agent-written text. *@
-        <section class="waiting-on-you" aria-label="Waiting on you">
-            <h2>Waiting on you</h2>
-            <p><button type="button" id="next-waiting" class="quiet">Go to the next one</button></p>
-            <ul>
-                @foreach (var on in Model.WaitingOnYou)
-                {
-                    <li>
-                        <strong>@on.Peer.Value</strong> (@on.Questions.Count)
-                        <ol>
-                            @foreach (var question in on.Questions)
-                            {
-                                <li>
-                                    @if (question.At is { } at)
-                                    {
-                                        <a href="@($"#m{at}")" target="_self" data-waiting>@Parley.Web.Pages.Conversations.DetailModel.Start(question)</a>
-                                    }
-                                    else
-                                    {
-                                        @Parley.Web.Pages.Conversations.DetailModel.Start(question)
-                                    }
-                                </li>
-                            }
-                        </ol>
-                    </li>
-                }
-            </ul>
-        </section>
-    }
-    </div>
-
     <ol class="transcript">
         @{ var day = default(DateOnly?); }
         @foreach (var turn in Model.Turns())

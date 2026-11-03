@@ -73,6 +73,78 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// </remarks>
     public IReadOnlyList<WaitingOn> WaitingOnYou { get; private set; } = [];
 
+    /// <summary>What the page lists as waiting on the person: <see cref="WaitingOnYou"/>, and every message it marks.</summary>
+    /// <remarks>
+    /// <see cref="AwaitsReply"/> reads the transcript and <see cref="WaitingOnYou"/> reads the wait-for graph, and they can
+    /// disagree. A message that says <i>Waiting on you</i> and is missing from the list could not be gone to, so a marked
+    /// message is always listed. Which of the two is right about such a message is an open question for the owner.
+    /// </remarks>
+    public IReadOnlyList<WaitingOn> WaitingHere
+    {
+        get
+        {
+            var listed = WaitingOnYou.SelectMany(on => on.Questions).Select(question => question.Exchange).ToHashSet();
+            var marked = Messages
+                .Where(message => AwaitsReply(message) && !listed.Contains(message.ExchangeId))
+                .GroupBy(message => message.From)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.Select(message => new WaitingQuestion(
+                        message.ExchangeId, message.CreatedUtc, message.Id, PayloadShape.Spoken(message.PayloadJson))).ToList());
+
+            if (marked.Count == 0)
+            {
+                return WaitingOnYou;
+            }
+
+            return
+            [
+                .. WaitingOnYou
+                    .Select(on => marked.TryGetValue(on.Peer, out var more)
+                        ? new WaitingOn(on.Peer, [.. on.Questions.Concat(more).OrderBy(question => question.Exchange)])
+                        : on)
+                    .Concat(marked
+                        .Where(pair => WaitingOnYou.All(on => on.Peer != pair.Key))
+                        .Select(pair => new WaitingOn(pair.Key, pair.Value)))
+                    .OrderBy(on => on.Peer.Value, StringComparer.Ordinal),
+            ];
+        }
+    }
+
+    /// <summary>What is waiting on the person in this project's other conversations, oldest first.</summary>
+    public IReadOnlyList<Delivered> Elsewhere { get; private set; } = [];
+
+    /// <summary>What is waiting on the person in the project's other conversations, for a page to show beside this one.</summary>
+    /// <returns>The list, 503 when the broker could not be read, or 404 for a project this console does not know.</returns>
+    /// <remarks>
+    /// Its own handler, read far less often than <see cref="OnGetFollowAsync"/>: it exports every open conversation the
+    /// person is in. A partial with no frame, so it keeps no seat, and it reads what is owed without collecting anything,
+    /// so unlike opening the Inbox it marks nothing delivered.
+    /// </remarks>
+    public async Task<IActionResult> OnGetWaitingElsewhereAsync()
+    {
+        if (directory.Find(Project) is not { } project || string.IsNullOrWhiteSpace(Id))
+        {
+            return NotFound();
+        }
+
+        var read = await BrokerDirectory.ReadAsync(async () =>
+            await PersonOwes.ReadAsync(
+                new BrokerClient(directory.ClientFor(project)), PersonSeat.On(project.Name), HttpContext.RequestAborted)
+                .ConfigureAwait(false)).ConfigureAwait(false);
+
+        if (read.Value is not { } owed)
+        {
+            return Unavailable(read.Problem);
+        }
+
+        Elsewhere = [.. owed.Where(item => !string.Equals(item.Message.ConversationId, Id, StringComparison.Ordinal))];
+
+        Response.Headers.CacheControl = "no-store";
+
+        return Partial("_WaitingElsewhere", this);
+    }
+
     /// <summary>The start of a question, short enough for one line of the list.</summary>
     /// <param name="question">The question.</param>
     /// <returns>Up to a hundred characters, on one line, with an ellipsis when cut.</returns>
@@ -80,7 +152,17 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     {
         ArgumentNullException.ThrowIfNull(question);
 
-        var flat = string.Join(' ', question.Asked.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return Start(question.Asked);
+    }
+
+    /// <summary>The start of something an agent said, short enough for one line of a list.</summary>
+    /// <param name="asked">What it said.</param>
+    /// <returns>Up to a hundred characters, on one line, with an ellipsis when cut.</returns>
+    public static string Start(string asked)
+    {
+        ArgumentNullException.ThrowIfNull(asked);
+
+        var flat = string.Join(' ', asked.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
         return flat.Length <= 100
             ? flat
@@ -331,7 +413,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
 
         Response.Headers.CacheControl = "no-store";
 
-        return Problem is null ? Partial("_Followed", this) : Unavailable(Problem);
+        return Problem is null ? Partial("_Follow", this) : Unavailable(Problem);
     }
 
     /// <summary>The transcript as text, with its annotations intact.</summary>

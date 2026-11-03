@@ -1,0 +1,26 @@
+@model Parley.Web.Pages.Conversations.DetailModel
+@* What is waiting on the person in this project's other conversations. Agent-written words and conversation names are
+   encoded here, and the page's script moves this in as parsed nodes. *@
+<section id="elsewhere-list" class="waiting-elsewhere" aria-label="Waiting on you in other conversations">
+    @if (Model.Elsewhere.Count > 0)
+    {
+        <details id="elsewhere-open" open>
+            <summary><h2>In other conversations <span class="waiting-count">@Model.Elsewhere.Count</span></h2></summary>
+            <ul>
+                @foreach (var conversation in Model.Elsewhere.GroupBy(item => item.Message.ConversationId, StringComparer.Ordinal))
+                {
+                    <li>
+                        <strong>@conversation.Key</strong> (@conversation.Count())
+                        <ol>
+                            @foreach (var item in conversation)
+                            {
+                                var to = Url.Page("/Conversations/Detail", new { project = Model.Project, id = conversation.Key }) + $"#m{item.Message.Id}";
+                                <li><a href="@to" data-elsewhere>@item.Message.From.Value: @Parley.Web.Pages.Conversations.DetailModel.Start(Parley.Core.PayloadShape.Spoken(item.Message.PayloadJson))</a></li>
+                            }
+                        </ol>
+                    </li>
+                }
+            </ul>
+        </details>
+    }
+</section>
