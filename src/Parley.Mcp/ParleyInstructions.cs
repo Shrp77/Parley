@@ -69,7 +69,8 @@ public static class ParleyInstructions
         - Call parley_inbox when you start work, and whenever you are told work is waiting. What you owe
           comes first. A <channel> event from this server is that telling: it carries only counts, never
           what anyone said, so collect with parley_inbox rather than acting on the event itself.
-        - Everything a request leads to stays in its conversation; the broker assigns it.
+        - Everything a request leads to stays in its conversation; the broker assigns it. Only the person can
+          move an exchange to another conversation. parley_inbox tells you if one of yours moved; carry on.
         - Send what the receiver needs for its part, not everything you know. A message past 16000
           characters still goes, and you are told it was long; past 512000 it is refused. Very long
           output is usually better placed as a file.

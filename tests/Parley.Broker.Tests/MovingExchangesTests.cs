@@ -476,6 +476,20 @@ public sealed class MovingExchangesTests : IDisposable
     }
 
     [Fact]
+    public async Task Purging_an_agent_takes_the_notices_about_exchanges_that_went_with_it()
+    {
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+        Assert.True((await MoveAsync("tax-questions", true, going)).Moved);
+        Assert.Equal(2, _connection.ExecuteScalar<int>("SELECT count(*) FROM move_notices;"));
+
+        await _console.RetireAsync(Billing, Ct);
+        _ = await _console.PurgeAsync(Billing, Ct);
+
+        Assert.Equal(0, _connection.ExecuteScalar<int>("SELECT count(*) FROM move_notices;"));
+        Assert.Single((await _console.ExportAsync("pricing", Ct)).Moves!);
+    }
+
+    [Fact]
     public async Task A_settled_pair_split_by_a_move_is_still_said_from_both_sides()
     {
         // The person asks; the agent's own question to the person is settled by what the person said.

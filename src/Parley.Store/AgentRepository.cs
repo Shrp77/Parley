@@ -1272,6 +1272,11 @@ public sealed class AgentRepository(SqliteConnection connection)
             "DELETE FROM ownership_questions WHERE conversation_id IN (SELECT id FROM doomed_conversations);")
             .ConfigureAwait(false);
 
+        // An exchange that ceases to exist is not news to its other party about where it went (SPEC.md §14).
+        await RazeAsync("move_notices",
+            "DELETE FROM move_notices WHERE exchange_id IN (SELECT id FROM doomed_exchanges);")
+            .ConfigureAwait(false);
+
         await RazeAsync("exchanges",
             "DELETE FROM exchanges WHERE id IN (SELECT id FROM doomed_exchanges);")
             .ConfigureAwait(false);
