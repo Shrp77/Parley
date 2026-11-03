@@ -47,6 +47,7 @@ else
            agent's and are escaped like every other agent-written text. *@
         <section class="waiting-on-you" aria-label="Waiting on you">
             <h2>Waiting on you</h2>
+            <p><button type="button" id="next-waiting" class="quiet">Go to the next one</button></p>
             <ul>
                 @foreach (var on in Model.WaitingOnYou)
                 {
@@ -58,7 +59,7 @@ else
                                 <li>
                                     @if (question.At is { } at)
                                     {
-                                        <a href="@($"#m{at}")" target="_self">@Parley.Web.Pages.Conversations.DetailModel.Start(question)</a>
+                                        <a href="@($"#m{at}")" target="_self" data-waiting>@Parley.Web.Pages.Conversations.DetailModel.Start(question)</a>
                                     }
                                     else
                                     {
@@ -94,6 +95,11 @@ else
                 <li class="day">@TimeZoneInfo.ConvertTime(message.CreatedUtc, TimeZoneInfo.Local).ToString("dddd, d MMMM yyyy")</li>
             }
 
+            @* A Request to several is one turn, and a link can name any of its messages, so each keeps an anchor. *@
+            @foreach (var also in turn.Skip(1))
+            {
+                <li id="@($"m{also.Id}")" hidden></li>
+            }
             <li id="@($"m{message.Id}")" data-agent="@message.From.Value" data-to="@string.Join(' ', turn.Select(m => m.To.Value))"
                 class="turn slot-@Palette.SlotFor(message.From)@(ghost ? " ghosted" : null)">
                 <div class="who" aria-hidden="true">@Palette.BadgeFor(message.From)</div>
@@ -174,11 +180,16 @@ else
                         }
                         <span> · written by @message.ResponderModel</span>
                     </p>
-                    @if (Model.AwaitsReply(message))
+                    @if (turn.FirstOrDefault(Model.AwaitsReply) is { } waiting)
                     {
                         @* The person chooses which question their words answer; the console never guesses (SPEC.md 5.6). *@
                         <p class="reply-line">
-                            <button type="button" class="reply-to" data-exchange="@message.ExchangeId" data-agent="@message.From.Value">Reply to this</button>
+                            <strong>Waiting on you</strong>
+                            <button type="button" class="reply-to" data-exchange="@waiting.ExchangeId" data-agent="@waiting.From.Value" data-request="@(waiting.Type == Parley.Core.MessageType.Request ? "1" : null)">Reply to this</button>
+                            @* A button rather than a form here: a form carries an antiforgery token that differs at every
+                               render, and this region is compared by digest, so it would be replaced every few seconds. The
+                               form it submits sits outside the region. *@
+                            <button type="button" class="close-request quiet" data-exchange="@waiting.ExchangeId">Close without answering</button>
                         </p>
                     }
                     @if (Model.SettledBy(message) is { Length: > 0 } settled)

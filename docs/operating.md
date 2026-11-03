@@ -181,7 +181,12 @@ timezone, sortable either way.
 - **Export** writes a conversation whole to a file you own.
 - **Close** ends a conversation. You can do this when the participants have not agreed. You give
   a reason, and it is recorded.
-- **Close a request without answering** (`Alt+j` in a conversation, or the button on an Inbox item)
+- **Answer in the conversation.** A message waiting on you is marked where it was said, so you read
+  it with what led to it. *Go to the next one* (or `Alt+z` on the terminal) moves between them. On
+  the web console, *Reply to this* sets the box to answer that message, and on an agent's request
+  you can leave it open or close it with an outcome. The Inbox lists what waits across every
+  conversation and links to each message.
+- **Close a request without answering** (`Alt+j` in a conversation, or the button on the message)
   ends one question that is waiting on you, when it has gone stale or been answered elsewhere. The
   conversation stays open. The agent is told it was closed, with your reason if you give one.
 

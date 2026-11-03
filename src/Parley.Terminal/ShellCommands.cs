@@ -322,6 +322,7 @@ internal sealed partial class Shell : IKeyTable<Shell>
         new(KeyContext.Transcript, 'a', Participation.ResultTitle, s => s.SendResult(), s => s.Held is not null),
         new(KeyContext.Transcript, 'q', Participation.ClarifyTitle, s => s.Clarify(), s => s.Held is not null),
         new(KeyContext.Transcript, 'j', ClosingARequest.Title, s => s.CloseRequest(), s => s.Held is not null),
+        new(KeyContext.Transcript, 'z', NextWaitingTitle, s => s.NextWaiting(), s => s.Room.Outstanding.Count > 0),
         new(KeyContext.Transcript, 'k', Participation.RequestTitle, s => s.SendRequest(), s => s.Held is not null, Owing.Requesting),
 
         // **Copying does not need a seat**: reading a conversation and taking a copy of what you read are the same act,

@@ -42,6 +42,52 @@ public sealed class WaitingOnYouOnThePageTests
     }
 
     [Fact]
+    public async Task A_request_waiting_on_the_person_can_be_answered_or_closed_where_it_was_asked()
+    {
+        using var console = Asked();
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+
+        // On the message, so the person stays in the conversation. Three questions to the person; the fourth is not theirs.
+        Assert.Equal(3, System.Text.RegularExpressions.Regex.Count(page, "class=\"reply-to\""));
+        Assert.Contains("data-exchange=\"1\" data-agent=\"" + Orders + "\" data-request=\"1\"", page, StringComparison.Ordinal);
+        Assert.Equal(3, System.Text.RegularExpressions.Regex.Count(page, "class=\"close-request quiet\""));
+        Assert.Contains("class=\"close-request quiet\" data-exchange=\"3\"", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("class=\"close-request quiet\" data-exchange=\"4\"", page, StringComparison.Ordinal);
+
+        // A form in the followed region would carry a new antiforgery token at each render, change the region's digest
+        // and have it replaced every few seconds, which moves the reader.
+        var followed = page[page.IndexOf("id=\"followed\"", StringComparison.Ordinal)..page.IndexOf("id=\"composer\"", StringComparison.Ordinal)];
+
+        Assert.DoesNotContain("__RequestVerificationToken", followed, StringComparison.Ordinal);
+
+        // A way to go from one to the next, and the outcomes a reply can close a Request with.
+        Assert.Contains("id=\"next-waiting\"", page, StringComparison.Ordinal);
+        Assert.Contains("data-waiting", Section(page), StringComparison.Ordinal);
+        Assert.Contains("id=\"reply-outcome\"", page, StringComparison.Ordinal);
+        Assert.Contains("Close it: Answered", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_message_to_the_person_in_a_turn_sent_to_several_keeps_its_anchor()
+    {
+        using var console = new TranscriptConsole();
+
+        console.Broker.Request(1, Orders, Billing, "Everyone: which rate?");
+        console.Broker.Request(2, Orders, Person, "Everyone: which rate?");
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Orders, WaitedOn = Person, ExchangeId = 2 });
+
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+
+        Assert.Contains("id=\"m2\"", page, StringComparison.Ordinal);
+        Assert.Contains("href=\"#m2\"", Section(page), StringComparison.Ordinal);
+        Assert.Contains("data-exchange=\"2\"", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Each_agent_is_listed_once_with_its_count_and_each_question_links_to_its_message()
     {
         using var console = Asked();

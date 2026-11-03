@@ -652,6 +652,7 @@ internal sealed partial class Shell : Window
     private int _followQueued;
     private string? _followFailed;
     private CancellationTokenSource? _watchingMail;
+    private long _lastWaitingReached;
     private int _mailQueued;
 
     private bool _stacked;
@@ -4685,6 +4686,46 @@ internal sealed partial class Shell : Window
                 });
             };
         };
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>What the key that goes to the next message waiting on the person is called.</summary>
+    internal const string NextWaitingTitle = "Go to the next message waiting on you";
+
+    /// <summary>Moves the cursor to the next message waiting on the person, oldest first and round again.</summary>
+    /// <returns>A completed task; nothing here reads the broker.</returns>
+    /// <remarks>
+    /// So the person stays in the conversation and reads each with what is around it. From what the room already holds,
+    /// which comes from the broker, so it covers what an earlier session collected.
+    /// </remarks>
+    internal Task NextWaiting()
+    {
+        var waiting = Room.Outstanding
+            .SelectMany(item => item.Questions)
+            .Where(question => question.At is not null)
+            .OrderBy(question => question.At)
+            .ToList();
+
+        if (waiting.Count == 0)
+        {
+            Said = "Nothing here is waiting on you.";
+
+            return Task.CompletedTask;
+        }
+
+        var next = waiting.Find(question => question.At > _lastWaitingReached) ?? waiting[0];
+
+        _lastWaitingReached = next.At!.Value;
+
+        if (Transcript.Reach(_lastWaitingReached))
+        {
+            Focus(Panes.ToList().IndexOf(Transcript));
+        }
+        else
+        {
+            Said = RoomRegion.Unreachable;
+        }
 
         return Task.CompletedTask;
     }
