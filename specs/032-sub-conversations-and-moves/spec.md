@@ -131,7 +131,7 @@ An exchange that is moved may still be open: an agent owes an answer, or the per
 - **FR-004**: What opens in the box MUST come from the broker's record of the named message. Words or recipients in a link MUST NOT be able to fill it, because an agent's message can contain live links.
 - **FR-005**: The ordinary limits and refusals for a person's Request MUST apply unchanged (§5.6, §7).
 - **FR-006**: The broker MUST record the link between the two conversations, and every surface showing either MUST show the link and lead to the other.
-- **FR-007**: If the person's Request is delivered and the link cannot be recorded, the surface MUST say so. It MUST NOT present the conversation as linked.
+- **FR-007**: The link MUST be recorded before anything is sent, so a Request can never be delivered unlinked. If it cannot be recorded, nothing MUST be sent and the surface MUST say why.
 
 **Move**
 
