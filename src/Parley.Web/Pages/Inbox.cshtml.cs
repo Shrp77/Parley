@@ -60,6 +60,29 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats, Parley
     /// <summary>What became of sending, or of clearing.</summary>
     public string? Outcome { get; private set; }
 
+    /// <summary>Whether a send was just refused, so what the person wrote goes back in its boxes.</summary>
+    private bool _refused;
+
+    /// <summary>Whether this exchange's form was just refused, and holds what the person wrote.</summary>
+    /// <param name="exchange">The exchange.</param>
+    /// <returns>Whether its row is opened and its boxes filled again.</returns>
+    /// <remarks>Refused or not, a page that came back with empty boxes would lose everything they typed.</remarks>
+    public bool Kept(long exchange) => _refused && exchange == Exchange;
+
+    /// <summary>What the person wrote in an item's box, when the send was refused.</summary>
+    /// <param name="exchange">The exchange.</param>
+    /// <param name="id">The item.</param>
+    /// <returns>Their words, or nothing.</returns>
+    public string? KeptText(long exchange, string id) =>
+        Kept(exchange) && Ids.IndexOf(id) is >= 0 and var at && at < Texts.Count ? Texts[at] : null;
+
+    /// <summary>The outcome the person chose for an item, when the send was refused.</summary>
+    /// <param name="exchange">The exchange.</param>
+    /// <param name="id">The item.</param>
+    /// <returns>Their choice, or nothing.</returns>
+    public string? KeptVerdict(long exchange, string id) =>
+        Kept(exchange) && Ids.IndexOf(id) is >= 0 and var at && at < Verdicts.Count ? Verdicts[at] : null;
+
     /// <summary>The project a form was submitted for.</summary>
     [BindProperty, FromForm]
     public string? For { get; set; }
@@ -165,6 +188,7 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats, Parley
             .ResultAsync(hold, Exchange, outcomes, HttpContext.RequestAborted)
             .ConfigureAwait(false);
 
+        _refused = !sent.Says.StartsWith("Sent.", StringComparison.Ordinal);
         Outcome = sent.Says;
         notices.Add(For ?? string.Empty, null, "Inbox", sent.Says, sent.Says.StartsWith("Sent.", StringComparison.Ordinal));
 
@@ -195,6 +219,7 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats, Parley
             .ClarifyAsync(hold, Exchange, Clarification, HttpContext.RequestAborted)
             .ConfigureAwait(false);
 
+        _refused = !sent.Says.StartsWith("Sent.", StringComparison.Ordinal);
         Outcome = sent.Says;
         notices.Add(For ?? string.Empty, null, "Inbox", sent.Says, sent.Says.StartsWith("Sent.", StringComparison.Ordinal));
 

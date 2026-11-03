@@ -38,6 +38,17 @@ public sealed class InboxTests
         Assert.DoesNotContain("Take delivery", Page, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void A_refused_send_puts_what_the_person_wrote_back_in_the_box()
+    {
+        // By reading the page rather than driving it: no console here holds a live seat with work owed. The boxes used to
+        // come back empty, so a reply over the limit lost everything typed. Conversations/Detail and the terminal keep it.
+        Assert.Contains("@Model.KeptText(item.Message.ExchangeId, id)</textarea>", Page, StringComparison.Ordinal);
+        Assert.Contains("Model.Clarification : null)</textarea>", Page, StringComparison.Ordinal);
+        Assert.Contains("open=\"@Model.Kept(item.Message.ExchangeId)\"", Page, StringComparison.Ordinal);
+        Assert.Contains("_refused = !sent.Says.StartsWith", Model, StringComparison.Ordinal);
+    }
+
     // `The_inbox_sends_nobody_who_has_not_joined` was here: it expected a redirect to Join. There is no
     // Join and the inbox is always about the person — `NoJoinOnTheWebTests` asserts the page answers with no name.
 

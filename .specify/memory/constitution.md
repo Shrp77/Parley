@@ -101,8 +101,8 @@ roster entry breaking, hiding or reordering its own line is **not** relaxed.
 
 **This is a reduction in this principle's protection and is recorded as one.** A cap censors the
 evidence that would justify it, so none is set. The lengths agents propose and the lengths people
-accept are recorded, so a bound can later be chosen the way the message cap's 8,000 was — from
-the size refusals report and SPEC.md §17 question 16 — rather than from judgement. **Until that evidence
+accept are recorded, so a bound can later be chosen from them and SPEC.md §17 question 16 rather
+than from judgement. **Until that evidence
 exists, a roster may be the largest thing an agent reads.** Move the number on that record, not
 because a statement did not fit.
 

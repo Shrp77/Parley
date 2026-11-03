@@ -31,6 +31,7 @@ public sealed class HealthReadTests
 
         await Attempt("flags", async () => await operators.DescribeFlagsAsync(new Wire.Empty(), cancellationToken: token));
         await Attempt("refusals", async () => await operators.DescribeRefusalsAsync(new Wire.Empty(), cancellationToken: token));
+        await Attempt("message lengths", async () => await operators.DescribeMessageLengthsAsync(new Wire.Empty(), cancellationToken: token));
         await Attempt("clarifications", async () => await operators.DescribeClarificationsAsync(new Wire.Empty(), cancellationToken: token));
         await Attempt("results", async () => await operators.DescribeResultsAsync(new Wire.Empty(), cancellationToken: token));
         await Attempt("waiting", async () => await operators.DescribeWaitingAsync(new Wire.Empty(), cancellationToken: token));

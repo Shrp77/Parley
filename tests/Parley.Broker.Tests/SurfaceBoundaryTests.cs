@@ -128,6 +128,7 @@ public sealed class SurfaceBoundaryTests
 
             nameof(OperatorConsole.PruneAsync),
             nameof(OperatorConsole.DescribeRefusalsAsync),
+            nameof(OperatorConsole.DescribeMessageLengthsAsync),
 
             // Deliberately not named for the agent operation it reports on. §10.2's protection
             // against an operator operation reaching an agent's tool set is that the names

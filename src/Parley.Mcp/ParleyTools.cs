@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.Text.Json.Nodes;
 using Grpc.Core;
 using ModelContextProtocol.Server;
@@ -143,7 +144,9 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 },
                 cancellationToken: cancellationToken);
 
-            return Held(reply.Waited, group ? RequestedRole(to, reply.Outcomes) : Requested(reply.Outcomes.Single()));
+            return Held(
+                reply.Waited,
+                Noted(json.Length, group ? RequestedRole(to, reply.Outcomes) : Requested(reply.Outcomes.Single())));
         }
         catch (RpcException failure)
         {
@@ -217,7 +220,9 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
             return Held(
                 outcome.Waited,
                 outcome.Ok
-                    ? WithSettled(new JsonObject { ["ok"] = true, ["turn_is_now_with"] = "the other party" }, outcome)
+                    ? Noted(
+                        json.Length,
+                        WithSettled(new JsonObject { ["ok"] = true, ["turn_is_now_with"] = "the other party" }, outcome))
                     : Refusal(outcome));
         }
         catch (RpcException failure)
@@ -309,7 +314,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 sent.Reply?.Waited == true,
                 sent.Refused
                 ?? (sent.Reply!.Ok
-                    ? WithSettled(new JsonObject { ["ok"] = true, ["closed"] = true }, sent.Reply)
+                    ? Noted(sent.Characters, WithSettled(new JsonObject { ["ok"] = true, ["closed"] = true }, sent.Reply))
                     : Refusal(sent.Reply)));
         }
         catch (RpcException failure)
@@ -325,7 +330,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     /// <param name="settles">The person's questions it says were settled, if any.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The broker's reply, or the refusal that stopped it being sent at all.</returns>
-    private async Task<(Wire.SayReply? Reply, JsonNode? Refused)> SendResultAsync(
+    private async Task<(Wire.SayReply? Reply, JsonNode? Refused, int Characters)> SendResultAsync(
         IReadOnlyList<ItemOutcome> outcomes,
         long exchangeId,
         string? responderModel,
@@ -336,7 +341,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 
         if (await TooLongAsync(json, MessageType.Result, cancellationToken).ConfigureAwait(false) is { } refused)
         {
-            return (null, refused);
+            return (null, refused, json.Length);
         }
 
         var request = new Wire.ResultRequest
@@ -351,7 +356,28 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 
         var reply = await _link.Agents.ResultAsync(request, cancellationToken: cancellationToken);
 
-        return (reply, null);
+        return (reply, null, json.Length);
+    }
+
+    /// <summary>Adds to a send's reply that the message passed the soft limit, when it did.</summary>
+    /// <param name="characters">How long the message was, as stored.</param>
+    /// <param name="reply">The reply.</param>
+    /// <returns>The reply.</returns>
+    /// <remarks>
+    /// Only the sender is told, and only after it went. It changes nothing about the message: the point is that a sender
+    /// that habitually sends long ones can see that it does (SPEC.md rule 8.4).
+    /// </remarks>
+    private static JsonNode Noted(int characters, JsonNode reply)
+    {
+        if (characters > MessageLimits.SoftPayloadCharacters && reply is JsonObject said)
+        {
+            said["long_message"] = string.Create(
+                CultureInfo.InvariantCulture,
+                $"That message is {characters} characters, past the soft limit of {MessageLimits.SoftPayloadCharacters}. "
+                + $"It was delivered whole.");
+        }
+
+        return reply;
     }
 
     /// <summary>What a send's reply says when it waited on the broker rewriting its store.</summary>
@@ -1542,9 +1568,9 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
             ["why"] =
                 $"That message is {payloadJson.Length} characters and the limit is " +
                 $"{MessageLimits.MaxPayloadCharacters}. What you send lands in another agent's context, so the " +
-                "cap is a rule of the protocol rather than a buffer size. Send what the receiver needs for its " +
-                "part — the contract, the interface, the version — rather than everything you know, or split " +
-                "the work into separate requests."
+                "limit is a rule of the protocol rather than a buffer size. Send what the receiver needs for its " +
+                "part — the contract, the interface, the version — or place the rest as a file with " +
+                "parley_file_place and name it."
         };
     }
 

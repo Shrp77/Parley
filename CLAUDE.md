@@ -10,16 +10,17 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.49.0, protocol 0.9, schema 4. Nothing has been released, but **live stores hold work
+- Version 0.50.0, protocol 0.10, schema 5. Nothing has been released, but **live stores hold work
   in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
   `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
   upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
   -Hidden`, never `-Reset`. `-Force` ends the broker and every `parley-mcp`, so every tool on a
   machine is one build: **the wire, enums and protocol still change freely**, with no
   compatibility caveats.
-- Features 019–026 are merged; the last is `specs/026-roadmaps/`. Feature 027, session-owned delivery, is
-  next and not committed yet; its plan predates the rule above and must move its schema change into
-  migration 005 (003 holds file problems, 004 when an agent was first asked what it owns and first refreshed).
+- Features 019–026 are merged, and `specs/028-soft-message-limit/` is in progress. Feature 027, session-owned
+  delivery, is not committed yet; its plan predates the rule above and must move its schema change into
+  migration 006 (003 holds file problems, 004 when an agent was first asked what it owns and first refreshed, 005
+  a message's limit and the record of its length).
 - A person speaks to an agent only with a Request. An agent's row menu in the terminal has one
   ownership entry, *What this agent is responsible for* (`Alt+n`).
 - Design work runs through Spec Kit: `/speckit-specify`, `/speckit-plan`, `/speckit-tasks`
@@ -289,17 +290,18 @@ implementation detail, and needs to be argued.
 
 - **The protocol is the product; the transport is disposable.** If a platform ships native
   cross-session messaging, Parley should run over it. Keep the transport behind an interface.
-- **Terseness is a security control.** The message cap (8,000 characters) is a
+- **Terseness is a security control.** A message's hard limit (512,000 characters) is a
   context-poisoning defence and lives in the schema so no code path can route around it;
-  changing it is a table rebuild. The number is provisional and moves on the evidence in
-  SPEC.md §17 question 16, not because a message did not fit.
+  changing it is a table rebuild. Past the soft limit (16,000) a message is delivered and its
+  sender told. The numbers are the owner's decision and a recorded reduction in the control;
+  every message's length is recorded so they can be judged (SPEC.md §17 question 16).
   - **Exception: `agents.owns` has no bound by default**. The constraint
     stays in storage and stands down at its top, so a deployment may reinstate one. The
     character class that stops a roster entry breaking, hiding or reordering its own line is
     not relaxed. This is a recorded reduction in the control: until evidence exists, a roster
     may be the largest thing an agent reads.
   - **Exception: roadmap text has no bound by default**. Nothing in a
-    roadmap is read by an agent; an item that is sent travels in a Request and keeps the cap.
+    roadmap is read by an agent; an item that is sent travels in a Request and keeps the limit.
     The line-breaking character class is not relaxed. Sizes are recorded so a bound can be
     set from evidence.
 - **No agent has authority over another.** No orchestrator, no lead. Two asymmetries exist

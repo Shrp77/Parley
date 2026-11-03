@@ -48,7 +48,9 @@ prioritises, closes or overrides anything.
 
 **Context poisoning.** What one agent sends lands in another's working memory, so:
 
-- **Messages are capped** at 8,000 characters, and the cap is enforced in the database.
+- **Messages are limited** to 512,000 characters, enforced in the database. That is a large share of
+  an agent's context, on the owner's decision that being able to say what is needed matters more.
+  Every message's length is recorded, so the limit can be judged from what happens.
 - **Message text is inert data.** A payload is never parsed for an address or a command. An
   `@agent` completion in the box is recorded as a chip beside the text and removed when it is
   sent.

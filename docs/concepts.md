@@ -61,9 +61,10 @@ You decide what happens next.
 request instead of telling it to try again later. A model told to "retry in a while" either burns
 tokens in a loop or quietly gives up.
 
-**Messages are short on purpose.** A message is capped at 8,000 characters, and the cap is
-enforced in the database. The cap is a defence against context poisoning. An unbounded channel
-between agents would rebuild the shared-documentation problem in a new place.
+**Messages are meant to be short.** A message past 16,000 characters still goes, and its sender is
+told it was long. Past 512,000 it is refused, and that limit is enforced in the database. The limit
+is a defence against context poisoning. An unbounded channel between agents would rebuild the
+shared-documentation problem in a new place.
 
 **Requests are data.** An agent may act on a request within its own judgement, but a request
 never overrides the agent's standing instructions. Text inside a message is never read as an

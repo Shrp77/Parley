@@ -506,6 +506,20 @@ public sealed class RoadmapOnThePageTests
     }
 
     [Fact]
+    public async Task Words_past_the_hard_limit_come_back_in_the_box()
+    {
+        // A long message crosses the form and the page, and is still there to cut down.
+        using var console = Confirmed(Item(1, "Add CSV export", "billing@test", started: false));
+        using var client = console.CreateClient();
+        var path = new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1", UriKind.Relative);
+        var words = new string('w', Parley.Core.MessageLimits.MaxPayloadCharacters + 100);
+
+        var page = await PostDetailAsync(client, path, new Dictionary<string, string> { ["Says"] = words });
+
+        Assert.Contains(">" + words + "</textarea>", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_box_the_person_emptied_is_not_filled_again_behind_them()
     {
         // Must fail against filling the box on the page a send returns.

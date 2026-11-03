@@ -4357,6 +4357,7 @@ internal sealed partial class Shell : Window
                 await client.WaitingAsync(cancellationToken).ConfigureAwait(false),
                 await client.ResultsAsync(cancellationToken).ConfigureAwait(false),
                 await client.RefusalsAsync(cancellationToken).ConfigureAwait(false),
+                await client.MessageLengthsAsync(cancellationToken).ConfigureAwait(false),
                 await client.ClarificationsAsync(cancellationToken).ConfigureAwait(false))).ConfigureAwait(false);
 
             if (!read.Reachable)

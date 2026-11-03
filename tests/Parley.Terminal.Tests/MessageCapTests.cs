@@ -106,6 +106,31 @@ public sealed class MessageCapTests : IAsyncDisposable
             StringComparison.Ordinal);
 
         Assert.Equal(0, Rows());
+
+        // The person's refusals are evidence like anybody else's.
+        using var counted = _connection.CreateCommand();
+
+        counted.CommandText = "SELECT refusals FROM size_refusals WHERE agent LIKE 'human-user@%'";
+
+        Assert.Equal(1L, counted.ExecuteScalar());
+    }
+
+    [Fact]
+    public async Task Twenty_thousand_characters_go_through_and_are_recorded_as_long()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var voice = await SeatedAsync(token);
+
+        var sent = await voice.RequestAsync(Recipient, Fill(20_000), Conversation, token);
+
+        Assert.StartsWith("Sent.", sent, StringComparison.Ordinal);
+        Assert.Equal(1, Rows());
+
+        using var recorded = _connection.CreateCommand();
+
+        recorded.CommandText = "SELECT characters FROM message_lengths";
+
+        Assert.True(Convert.ToInt32(recorded.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture) > 20_000);
     }
 
     /// <summary>How much of the ask fits once the rest of the Request is counted.</summary>

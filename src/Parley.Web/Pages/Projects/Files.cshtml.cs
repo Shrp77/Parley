@@ -43,7 +43,7 @@ public sealed class FilesModel(BrokerDirectory directory) : PageModel
     /// <summary>The largest request this page accepts, and so the largest file it can place.</summary>
     /// <remarks>
     /// <para>
-    /// <b>Not the message cap.</b> The 8,000 characters bound what an agent reads; a placed file's bytes never reach a
+    /// <b>Not a message's limit.</b> That bounds what an agent reads; a placed file's bytes never reach a
     /// model's context, and SPEC.md sets no size for a file. This bound is the console's own, on one browser upload.
     /// </para>
     /// <para>

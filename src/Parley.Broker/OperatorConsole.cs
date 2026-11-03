@@ -32,6 +32,7 @@ public sealed class OperatorConsole
     private readonly ExchangeRepository _exchanges;
     private readonly Pruner _pruner;
     private readonly SizeRefusalRepository _refusals;
+    private readonly MessageLengthRepository _lengths;
     private readonly ClarifyReportRepository _clarify;
     private readonly ResultsReportRepository _results;
     private readonly FlagRepository _flags;
@@ -49,6 +50,7 @@ public sealed class OperatorConsole
         _exchanges = new ExchangeRepository(connection);
         _pruner = new Pruner(connection);
         _refusals = new SizeRefusalRepository(connection);
+        _lengths = new MessageLengthRepository(connection);
         _clarify = new ClarifyReportRepository(connection);
         _results = new ResultsReportRepository(connection);
         _flags = new FlagRepository(connection);
@@ -207,6 +209,12 @@ public sealed class OperatorConsole
     /// <remarks>No refused text is stored anywhere, so none can be returned.</remarks>
     public async Task<IReadOnlyList<SizeRefusal>> DescribeRefusalsAsync(CancellationToken cancellationToken = default) =>
         await _refusals.GetAllAsync(cancellationToken).ConfigureAwait(false);
+
+    /// <summary>Reports how long messages have been (§10.2).</summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The report. Lengths only: the record it reads holds no words.</returns>
+    public async Task<MessageLengthReport> DescribeMessageLengthsAsync(CancellationToken cancellationToken = default) =>
+        await _lengths.ReadAsync(cancellationToken).ConfigureAwait(false);
 
     /// <summary>Reports what clarification cost (§10.2).</summary>
     /// <param name="cancellationToken">Cancels the reads.</param>
