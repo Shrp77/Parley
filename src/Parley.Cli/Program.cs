@@ -88,8 +88,9 @@ const string Help = """
                                                        the terminal
 
       parley up [--node-config <path>]                 run this machine's node: report it to
-                                                       the broker and start the agents on it
-                                                       when a question arrives
+                [--keep-trying]                        the broker and start the agents on it
+                                                       when a question arrives; --keep-trying
+                                                       waits for a broker it cannot reach
 
       parley enroll <dir> [--all | --none]             find the repositories under a directory,
                     [--describe]                       tick the ones to enroll, and configure and
@@ -165,6 +166,11 @@ const string Help = """
     the schema, which nothing else does. Pruning, in the terminal and the web UI, applies the policy
     the broker was started with, from PARLEY_RETENTION_IDLE_HOURS and PARLEY_RETENTION_MAX_AGE_HOURS
     on the broker's machine; it removes text permanently, so save a discussion first if you want it.
+
+    A machine that only runs agents holds no project. enroll, up and autostart install accept a project it
+    does not describe, given --broker with its address, once that broker says it serves that project:
+    `parley autostart install --project <p> --broker <address>` runs a node at logon and no broker, and
+    `parley autostart remove --all` takes every entry. Every other command still refuses such a project.
 
     up runs until you stop it. It tells the broker this machine is here, which is what makes the
     agents registered to it startable rather than stranded, and starts one when a question
@@ -1105,8 +1111,11 @@ if (verb == "autostart" && rest.Length == 1)
         Console.Out,
         Console.Error,
         CancellationToken.None,
-        hidden).ConfigureAwait(false);
+        hidden,
+        removeEverything: selectAllRepositories).ConfigureAwait(false);
 }
+
+var addressFromBlock = false;
 
 // **What a repository's own entry says about this machine** (SPEC.md §4.1.2), for the waiting hook, which must not hold a second
 // copy of the rule. An address in this machine's block wins over what was passed; with none, what was passed stands.
@@ -1124,6 +1133,7 @@ if (!string.IsNullOrWhiteSpace(launchKey))
     {
         brokerAddress = blockAddress;
         projectName = null;
+        addressFromBlock = true;
     }
 }
 
@@ -1131,10 +1141,10 @@ if (!string.IsNullOrWhiteSpace(launchKey))
 // prints the line to set for one terminal; the repository the command runs in, when its .mcp.json names exactly one
 // project this machine describes; and the only project on the machine. Otherwise it is refused and the projects listed.
 // `ProjectResolution.TrySelect` carries why this and not a saved current project.
-var projectFromVariable = Environment.GetEnvironmentVariable(EnrollmentPlan.ProjectVariable);
+var projectFromVariable = addressFromBlock ? null : Environment.GetEnvironmentVariable(EnrollmentPlan.ProjectVariable);
 var projectFromRepository = RepositoryProjects.Read(Environment.CurrentDirectory);
 
-// **Two verbs may name a project this machine does not describe, given an address, once the broker says it serves that project**
+// **Two verbs may name a project this machine does not describe, given an address, once that broker's registry says it is that project**
 // (SPEC.md §4.1.2): they are how a machine with only a tunnel comes to run an agent. Every other verb is refused below.
 var addressGiven = !string.IsNullOrWhiteSpace(brokerAddress)
     ? brokerAddress
@@ -1149,7 +1159,8 @@ if (verb is "enroll" or "up"
     && !string.IsNullOrWhiteSpace(namedHere)
     && !configuredProjects.Any(p => string.Equals(p.Name.Value, namedHere, StringComparison.Ordinal)))
 {
-    // A node told to keep trying asks for itself on every join: the tunnel may simply not be up yet.
+    // A node told to keep trying takes the name it was given: the tunnel may simply not be up yet, and its entry looked when
+    // it was installed.
     if (verb == "up" && keepTrying && ProjectName.TryCreate(namedHere, out var nameOnly))
     {
         reached = new ProjectSettings(nameOnly, string.Empty, BrokerEndpoint.Read(_ => addressGiven), null);
@@ -1169,10 +1180,12 @@ if (verb is "enroll" or "up"
     }
 }
 
-// A person inside a repository whose block names the broker need not repeat it.
+// A person inside a repository whose block names the broker need not repeat it. Not where the repository also names a project
+// this machine describes: that is the answer the selection below gives.
 if (reached is null
     && string.IsNullOrWhiteSpace(addressGiven)
     && string.IsNullOrWhiteSpace(namedHere)
+    && !projectFromRepository.Any(named => configuredProjects.Any(p => string.Equals(p.Name.Value, named, StringComparison.Ordinal)))
     && BrokerProject.AddressInRepository(Environment.CurrentDirectory) is { } inRepository)
 {
     brokerAddress = inRepository;
@@ -1417,9 +1430,6 @@ async Task<int> UpAsync()
             project?.Name.Value,
             null,
             token,
-
-            // An address named here rather than a project this machine holds.
-            byAddress: BrokerProject.ReachedByAddress(project) || !string.IsNullOrWhiteSpace(addressGiven),
             keepTrying: keepTrying)).ConfigureAwait(false);
 }
 

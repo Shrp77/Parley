@@ -25,6 +25,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ShiftingGroundTests : IAsyncDisposable
 {
     private readonly string _root =

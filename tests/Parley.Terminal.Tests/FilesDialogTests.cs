@@ -17,6 +17,7 @@ namespace Parley.Terminal.Tests;
 /// person takes, rather than a method only a test could call.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class FilesDialogTests : IAsyncDisposable
 {
     private const string Billing = FileLocationFixture.Billing;

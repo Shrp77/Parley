@@ -195,8 +195,7 @@ public sealed class BrokerLink : IAsyncDisposable
                 Owns = options.Owns ?? string.Empty,
                 ProtocolVersion = ProtocolVersion.Current,
                 LaunchToken = options.LaunchToken ?? string.Empty,
-                Identity = options.Identity.Known ? options.Identity.ToString() : string.Empty,
-                ExpectedProject = options.ExpectedProject ?? string.Empty
+                Identity = options.Identity.Known ? options.Identity.ToString() : string.Empty
             };
 
             var stream = agents.Attach(request, cancellationToken: cancellationToken);

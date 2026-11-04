@@ -22,6 +22,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class NameAsYouTypeTests
 {
     // **`Order Book` was `orderbook` and is `order-book` now**, which is the one thing about

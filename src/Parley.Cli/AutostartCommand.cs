@@ -58,6 +58,7 @@ public static class AutostartCommand
     /// <param name="output">Where to report what happened.</param>
     /// <param name="error">Where to report why it could not.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
+    /// <param name="removeEverything">Whether removing takes every node's entry as well, for an uninstall.</param>
     /// <param name="hidden">
     /// Whether an installed entry should tell the broker to let go of its console window. A logon
     /// entry starts a console program in the person's own session, so without this one appears on
@@ -75,7 +76,8 @@ public static class AutostartCommand
         TextWriter output,
         TextWriter error,
         CancellationToken cancellationToken = default,
-        bool hidden = false)
+        bool hidden = false,
+        bool removeEverything = false)
     {
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(error);
@@ -96,6 +98,8 @@ public static class AutostartCommand
                 root, project, nodeConfig, consoleOn, manifestToServe, output, error,
                 cancellationToken, hidden)
                 .ConfigureAwait(false),
+
+            "remove" when removeEverything => await RemoveEverythingAsync(output, error, cancellationToken).ConfigureAwait(false),
 
             "remove" => await RemoveAsync(project, output, error, cancellationToken).ConfigureAwait(false),
 
@@ -215,6 +219,19 @@ public static class AutostartCommand
             : [.. Directory.EnumerateFiles(folder, AutostartPlan.NodePrefix + "*")
                 .Select(file => Path.GetFileNameWithoutExtension(file))
                 .Order(StringComparer.Ordinal)];
+    }
+
+    private static async Task<int> RemoveEverythingAsync(TextWriter output, TextWriter error, CancellationToken cancellationToken)
+    {
+        foreach (var node in NodeLabels(AutostartPlan.Detect()))
+        {
+            if (await RemoveNodeAsync(node, cancellationToken).ConfigureAwait(false))
+            {
+                await output.WriteLineAsync($"Removed {node}.").ConfigureAwait(false);
+            }
+        }
+
+        return await RemoveAsync(null, output, error, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<bool> RemoveNodeAsync(string label, CancellationToken cancellationToken)
@@ -809,6 +826,13 @@ public static class AutostartCommand
         var enabled = !present || plan.Supervisor == Supervisor.ScheduledTask
             ? null
             : await EnabledAsync(plan, cancellationToken).ConfigureAwait(false);
+
+        if (!present && NodeLabels(plan.Supervisor).Count > 0)
+        {
+            await output.WriteLineAsync("There is no broker entry on this machine, which only runs agents.").ConfigureAwait(false);
+
+            return 0;
+        }
 
         await output.WriteLineAsync(
             (present, enabled) switch

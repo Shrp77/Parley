@@ -42,11 +42,31 @@ public sealed class IntegrationAttribute : Attribute, ITraitAttribute
     public IReadOnlyCollection<KeyValuePair<string, string>> GetTraits() => [new(TestCategory.Trait, Value)];
 }
 
+/// <summary>Marks an integration test as too slow for the smoke run: it runs in the full run, nightly.</summary>
+/// <remarks>
+/// <b>Marked by what is left out, so a new test is in the smoke run until somebody says otherwise.</b> The smoke run has five
+/// minutes (<c>scripts/test.ps1 -Category Smoke</c>), and these tests hold most of the full run's time in few classes. What marks
+/// one is its cost, from the full run's own timings, never its importance: one real path through each thing a person relies on
+/// stays in whatever it costs.
+/// </remarks>
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
+public sealed class SlowAttribute : Attribute, ITraitAttribute
+{
+    /// <summary>The trait's value.</summary>
+    public const string Value = "Slow";
+
+    /// <inheritdoc/>
+    public IReadOnlyCollection<KeyValuePair<string, string>> GetTraits() => [new(TestCategory.SpeedTrait, Value)];
+}
+
 /// <summary>The trait a category is recorded under.</summary>
 public static class TestCategory
 {
     /// <summary>The trait's name.</summary>
     public const string Trait = "Category";
+
+    /// <summary>The trait that leaves a test out of the smoke run.</summary>
+    public const string SpeedTrait = "Speed";
 }
 
 /// <summary>That every test class in this assembly says whether it is a unit or an integration test.</summary>

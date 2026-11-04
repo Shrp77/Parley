@@ -92,16 +92,11 @@ public static class NodeCommand
     /// identity, so one checkout is one process however many projects ask for it. Null makes its own, which
     /// is what a node running alone wants.
     /// </param>
-    /// <param name="byAddress">
-    /// Whether this machine reached the broker by an address it was given, rather than through a project it describes. The
-    /// broker is then asked which project it serves on every join (SPEC.md §4.1.2): a project named must be that one, and
-    /// with none named, that one decides which names are announced. Whatever now answers at an address may have changed
-    /// since the last join.
-    /// </param>
     /// <param name="keepTrying">
     /// Whether a broker that cannot be reached is waited for rather than the end of this node, keeping every agent it is
     /// running. For an entry nobody is watching: a person who typed the command wants to be told. A broker that answers and
-    /// refuses still ends it, because retrying cannot fix that.
+    /// refuses still ends it, because retrying cannot fix that, except that a second node may only be this machine's last
+    /// connection, which clears.
     /// </param>
     public static async Task<int> RunAsync(
         GrpcChannel channel,
@@ -111,7 +106,6 @@ public static class NodeCommand
         string? project = null,
         ConcurrentDictionary<AgentIdentity, ResidentAgent>? residents = null,
         CancellationToken cancellationToken = default,
-        bool byAddress = false,
         bool keepTrying = false)
     {
         ArgumentNullException.ThrowIfNull(channel);
@@ -158,7 +152,7 @@ public static class NodeCommand
         var rejoin = false;
         var refusals = 0;
         var outages = 0;
-        var wanted = project;
+        var secondNodeSaid = false;
 
         // From 2 seconds, doubling to 30, for as long as it takes: nothing times out, and a machine that comes up before its
         // tunnel is an ordinary start. Said once for each spell, because a line every 30 seconds is a line nobody reads.
@@ -180,31 +174,6 @@ public static class NodeCommand
         {
             while (true)
             {
-                if (byAddress)
-                {
-                    try
-                    {
-                        var served = (await nodes.ServedProjectAsync(new Wire.Empty(), cancellationToken: cancellationToken)
-                            .ResponseAsync.ConfigureAwait(false)).Project;
-
-                        if (wanted is not null && !string.Equals(wanted, served, StringComparison.Ordinal))
-                        {
-                            await output.WriteLineAsync(
-                                $"This node is for project '{wanted}', and the broker at {endpoint} serves project " +
-                                $"'{served}'. Check the address.").ConfigureAwait(false);
-
-                            return Config;
-                        }
-
-                        project = served;
-                    }
-                    catch (RpcException failure) when (keepTrying && IsAnOutage(failure) && !cancellationToken.IsCancellationRequested)
-                    {
-                        await WaitOutAsync().ConfigureAwait(false);
-                        continue;
-                    }
-                }
-
                 var request = new Wire.JoinRequest
                 {
                     Machine = NodeCatalogue.Machine,
@@ -264,6 +233,8 @@ public static class NodeCommand
                                 // name of whichever started it.
                                 var named = catalogue.NamesIn(project);
                                 var joined = new TurnReporter(nodes, request.Machine, output);
+
+                                secondNodeSaid = false;
 
                                 if (outages > 0)
                                 {
@@ -336,6 +307,24 @@ public static class NodeCommand
                 }
                 catch (RpcException failure) when (keepTrying && IsAnOutage(failure) && !cancellationToken.IsCancellationRequested)
                 {
+                    lost = true;
+                }
+                catch (RpcException failure) when (
+                    keepTrying && failure.StatusCode == StatusCode.AlreadyExists && !cancellationToken.IsCancellationRequested)
+                {
+                    // A broker that has not noticed this machine's last connection die, which a reboot or a dead tunnel
+                    // leaves behind for as long as it takes, reads exactly like a second node. Stopping for it would leave a
+                    // machine nobody is watching with no node at all, so this waits and says so. A real second node keeps
+                    // saying so too, in a log.
+                    if (!secondNodeSaid)
+                    {
+                        secondNodeSaid = true;
+                        await output.WriteLineAsync(failure.Status.Detail).ConfigureAwait(false);
+                        await output.WriteLineAsync(
+                            "If that is this machine's last connection it will clear, so this keeps trying. If another node "
+                            + "is running here, stop one of them.").ConfigureAwait(false);
+                    }
+
                     lost = true;
                 }
                 finally

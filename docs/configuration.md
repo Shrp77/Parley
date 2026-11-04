@@ -122,7 +122,7 @@ An agent's identity and settings come from its launch configuration. For Claude 
 |---|---|
 | `PARLEY_AGENT` | The agent's role: the name a project shows. Its identity is `parleyAgentId`, so changing the role renames the agent ([how](launch-configuration.md)). No tool can change either. |
 | `PARLEY_PROJECT` | The project to connect to. Use this on a machine that serves several. |
-| `PARLEY_BROKER` | A broker address, instead of a project. If both are set in the entry or the environment, the address wins and the server says so. In this machine's block, it means a tunnel to that project: the broker is checked, and one serving another project is refused. |
+| `PARLEY_BROKER` | A broker address, instead of a project. If both are set in the entry or the environment, the address wins and the server says so. In this machine's block, it is how this machine reaches its broker, so nothing is said. |
 | `PARLEY_OWNS` | The ownership line (see below). |
 | `PARLEY_RESPONDER` | Which model answers, recorded with its results. |
 | `PARLEY_WORKSPACE` | Where to look for the file first. With no `parleyMachines`, the repository's path, shown in the registry to operators. Peers never see it. |
@@ -297,10 +297,12 @@ parley autostart install --project acme --broker http://127.0.0.1:19100
 
 - **Installing** puts in `parley`, `parley-mcp` and the terminal. It starts no broker. Lines are accepted from a surface
   on the machine holding the file, so `--surfaces` can change which one, and `none` leaves you editing the file.
-- **Enrolling** asks the broker which project it serves, and writes the address into this machine's block.
+- **Enrolling** checks the name against the broker's registry, and writes the address into this machine's block. After that
+  the address is what counts: an agent joins whichever project answers there, so a wrong port shows as the agent in the
+  wrong project's roster.
 - **The autostart entry**, `parley-node-acme`, runs only a node, so the agent can be started when a request arrives. It
   keeps trying while the broker cannot be reached and keeps the agents it is running, so a tunnel that comes up after
-  the machine does is an ordinary start. If the broker answers and refuses it, it stops and says why in its log.
+  the machine does is an ordinary start. If the broker speaks another protocol version, it stops and says why in its log.
 
 **Keep the machine's session running.** The entry is user-level, because the node starts agents signed in as you. On
 Linux it stops at logout unless lingering is on, and installing the entry prints the command. Nothing turns it on for

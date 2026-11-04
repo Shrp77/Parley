@@ -30,6 +30,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ScrollingTests
 {
     /// <summary>The owner's shape: every agent in the project, and the row that tells them all.</summary>

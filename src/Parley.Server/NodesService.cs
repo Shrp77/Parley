@@ -256,10 +256,6 @@ public sealed class NodesService : Wire.Nodes.NodesBase
     }
 
     /// <inheritdoc/>
-    public override Task<Wire.ServedProjectReply> ServedProject(Wire.Empty request, ServerCallContext context) =>
-        Task.FromResult(new Wire.ServedProjectReply { Project = _runtime.Project.Value });
-
-    /// <inheritdoc/>
     public override async Task<Wire.DescribeNodeReply> Describe(
         Wire.DescribeNodeRequest request,
         ServerCallContext context)

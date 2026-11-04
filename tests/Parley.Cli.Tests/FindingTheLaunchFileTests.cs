@@ -66,6 +66,27 @@ public sealed class FindingTheLaunchFileTests : IDisposable
     }
 
     [Fact]
+    public void A_parent_outside_any_repository_is_not_this_launchs()
+    {
+        // `/tmp/.mcp.json` naming this role must not choose this agent's broker because somebody left it there.
+        System.IO.File.WriteAllText(Path.Combine(_root, ".mcp.json"), File);
+
+        var below = Directory.CreateDirectory(Path.Combine(_root, "scratch", "work")).FullName;
+
+        Assert.Null(LocatedLaunch.Find(null, "infra", "acme", below));
+    }
+
+    [Fact]
+    public void The_folder_it_started_in_counts_with_no_repository_around_it()
+    {
+        var here = Directory.CreateDirectory(Path.Combine(_root, "plain")).FullName;
+
+        System.IO.File.WriteAllText(Path.Combine(here, ".mcp.json"), File);
+
+        Assert.Equal(here, LocatedLaunch.Find(null, "infra", "acme", here)?.Folder);
+    }
+
+    [Fact]
     public void An_old_path_from_another_machine_is_passed_over()
     {
         var here = Checkout("infra");

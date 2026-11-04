@@ -7,6 +7,8 @@
 
 **Decided by the owner, 2026-11-04**:
 
+- The protocol does not learn about projects (SPEC.md §4.1). A project is a broker's way of grouping agents, and the address is the membership, so an adapter makes no check of which project it reached. An earlier draft added one to the wire and it was taken out.
+
 - One committed `.mcp.json` describes every machine. What is shared stays where it is. What differs goes in a block per machine.
 - Parley describes the difference between instances and does not enforce it. Each machine's ownership line says what that instance does, and the real limit is that machine's own permissions and credentials. There is no new protocol field for it.
 - A block holds no workspace. Each machine works its folder out from where the file sits, and a node starts an agent from the folder in that machine's own `node.json`, so a path in the block would only repeat one or the other.
@@ -44,7 +46,7 @@ The server does not run the broker. The person has set up a tunnel to the broker
 **Acceptance Scenarios**:
 
 1. **Given** a block naming a broker address and a shared entry naming a project, **When** the adapter starts, **Then** it connects to that address with no notice about two settings disagreeing, because the file now says this on purpose.
-2. **Given** the address reaches a broker serving a different project, **When** the adapter starts, **Then** it stops and names both projects, because an agent in the wrong deployment looks entirely normal from both ends of a message.
+2. **Given** the address reaches another project's broker, **When** the adapter starts, **Then** it joins that broker, because the address is the membership (§4.1). The agent shows in that project's roster.
 3. **Given** a machine that describes no projects and an address for the broker, **When** the person enrols the repository there, **Then** it succeeds under the project's name, writes that machine's block, and creates no project, store or broker on that machine.
 4. **Given** the node on that machine, **When** a Request arrives for its agent while none is running, **Then** the node starts it, as a node on the broker's own machine would.
 5. **Given** the tunnel is down, **When** the adapter starts, **Then** it reports that the broker at that address cannot be reached. The agent stays registered, and its open work stays flagged as waiting on an unreachable agent.
@@ -101,7 +103,7 @@ The server only runs agents. The person installs Parley there with no broker, te
 2. **Given** an agent-only install, **When** the person installs the node's autostart entry naming a project and an address, **Then** a node runs for that project, starts at each logon, and creates no project, store or port.
 3. **Given** a running node, **When** the broker becomes unreachable, **Then** the node keeps its running agents and keeps trying, and rejoins when the broker answers.
 4. **Given** a node started while the tunnel is not up yet, **When** the tunnel comes up, **Then** the node joins with no further action, so the order of the two at boot does not matter.
-5. **Given** the address reaches a broker serving another project, **When** the node tries to join, **Then** it stops, says so in its log and does not keep retrying, because that is a mistake rather than an outage.
+5. **Given** the address reaches another project's broker when the entry is installed, **When** the person installs it, **Then** it is refused, naming both, and nothing is installed.
 6. **Given** Linux with lingering off, **When** the entry is installed, **Then** the person is told the node stops at logout and is given the exact command that keeps it running. Nothing changes that setting for them. On Windows, the person is told the entry starts at logon and that a machine nobody logs in to needs someone to sign in.
 7. **Given** a node's autostart entry, **When** the tools are upgraded, **Then** the install stops the node, replaces the tools and starts it again.
 8. **Given** a node on a different protocol version from the broker, **When** it tries to join, **Then** it is refused, naming both versions.
@@ -118,7 +120,8 @@ The server only runs agents. The person installs Parley there with no broker, te
 - **A person sets `PARLEY_BROKER` or `PARLEY_OWNS` in their own environment.** A block beats it, with one rule across every reader. The adapter cannot tell a person's variable from an old entry's value (research R2).
 - **A person sets `PARLEY_WORKSPACE` in their own environment.** It says where to look for the file first. If a matching file is there, that folder is the workspace.
 - **An old entry holds another machine's path as a shared `PARLEY_WORKSPACE`.** If no matching file is at that path, it is ignored and the file is found from the folder the adapter started in.
-- **The checkout moved on one machine.** The agent keeps working when opened by hand, because its folder comes from where the file is. A node still starts from the folder in `node.json`, so enrolling again on that machine is what fixes unattended starts, as it does today.
+- **The checkout moved on one machine.** The attach is refused, naming both folders (§4.1.1): a name belongs to one repository, and the broker cannot tell a moved checkout from a clone. The person retires the old name and enrols again from the new folder.
+- **A row was registered with no folder.** It attaches, and the folder it now reports is recorded, so a line can be accepted for it.
 - **A machine is enrolled and has no ownership line yet.** It has an empty block. The block is what says this machine uses that project entry, so a withdrawal elsewhere does not remove the entry from under it.
 - **The adapter is started in a subfolder.** It looks in the folder it was started in and each parent, up to the repository's root. If it finds no file, it uses the launch environment alone, as an entry with no blocks does.
 - **Enrolling under a different role while another machine has a block for that project.** Refused, naming both roles and the other machine, because the role is shared and changing it would rename the other machine's agent.
@@ -142,7 +145,7 @@ The server only runs agents. The person installs Parley there with no broker, te
 **Reaching a broker**
 
 - **FR-007**: When the block for this machine names a broker address and the shared entry names a project, the adapter MUST connect to the address, MUST NOT require this machine to describe the project, and MUST NOT give the notice about both being set.
-- **FR-008**: In that case the adapter MUST check that the broker it reached serves the named project, and MUST stop and name both if it does not.
+- **FR-008**: The wire MUST NOT gain any notion of a project (SPEC.md §4.1). Tools a person uses to set a machine up MAY compare a name with the `human-user@<project>` in a broker's registry, which adds nothing to the protocol.
 - **FR-009**: Setting both a project and an address outside a block MUST keep today's behaviour, notice included.
 - **FR-010**: A broker address in a block MUST be treated as one anywhere else is: nothing new binds to the network, and the existing warnings still apply. The tunnel stays the person's to set up.
 
@@ -156,7 +159,7 @@ The server only runs agents. The person installs Parley there with no broker, te
 
 - **FR-024**: Both install scripts MUST offer an agent-only mode that installs `parley`, `parley-mcp` and one surface, starts no broker and registers no broker autostart entry. Its default surface MUST be the terminal on every platform, because the machine is reached over SSH and no broker is there to host a web UI. `--surfaces` still overrides it.
 - **FR-025**: `parley autostart install --project <name> --broker <address>` MUST install an entry that runs this machine's node for that project and no broker, having first confirmed the broker serves that project. A machine MUST be able to hold one such entry per project. `status` MUST list them, and `remove` MUST take the project when there is more than one.
-- **FR-026**: A node started from such an entry MUST keep trying when the broker cannot be reached, at first join and after losing it, and MUST keep its running agents meanwhile. It MUST stop, saying why, when the broker answers and refuses it for a reason that retrying cannot fix: another project, another protocol version, or another node already joined for this machine. `parley up` typed by a person keeps today's behaviour unless asked to keep trying.
+- **FR-026**: A node started from such an entry MUST keep trying when the broker cannot be reached, at first join and after losing it, and MUST keep its running agents meanwhile. It MUST stop, saying why, when the broker answers and refuses it for a reason that retrying cannot fix: another protocol version. It MUST keep trying when told another node is joined for this machine, and say so, because a broker that has not noticed this machine's last connection die reads exactly the same. `parley up` typed by a person keeps today's behaviour unless asked to keep trying.
 - **FR-027**: Installing such an entry MUST say plainly when it will stop at logout or need a sign-in to start, and give the exact remedy. It MUST NOT change that system setting itself.
 - **FR-028**: An install, an `--only` of the `parley` tool and an uninstall MUST stop node entries' processes before replacing or removing the tools. An install MUST start them again, and an uninstall MUST remove the entries.
 - **FR-029**: A node MUST state its protocol version when it joins, and the broker MUST refuse a different one, naming both, as it does for an adapter.
@@ -208,5 +211,5 @@ The server only runs agents. The person installs Parley there with no broker, te
 - Autostart stays user-level, because the node starts agents that must be signed in as the person. A system service is out of scope.
 - A committed file now shows machine names and a tunnel port to anybody who can read the repository. It shows fewer folder paths than today, because new entries hold none. The docs must say this, and a repository that should not show them keeps its file gitignored.
 - A tunnel-only machine was tried on 2026-11-04 (research R1). The adapter and node connect by address, and enrolment does not. A node actually starting an agent over an address has not been run yet.
-- Feature 027 (session-owned delivery, uncommitted) is separate and untouched. No schema change is expected, so this feature should not take migration 007. The check in FR-008 may need a small wire change, which is allowed.
+- Feature 027 (session-owned delivery, uncommitted) is separate and untouched. No schema change is expected, so this feature should not take migration 007.
 - Out of scope: writing a launch configuration for another machine, provisioning a machine over SSH, a recorded answers/executes label, and blocking write tools on an instance.

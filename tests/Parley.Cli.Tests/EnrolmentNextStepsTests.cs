@@ -24,6 +24,7 @@ namespace Parley.Cli.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class EnrolmentNextStepsTests : IAsyncDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "parley-nextsteps-" + Path.GetRandomFileName());

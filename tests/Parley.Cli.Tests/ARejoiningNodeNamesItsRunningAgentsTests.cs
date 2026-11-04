@@ -29,6 +29,7 @@ namespace Parley.Cli.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ARejoiningNodeNamesItsRunningAgentsTests : IAsyncDisposable
 {
     private const string Project = "beta";

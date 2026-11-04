@@ -23,6 +23,7 @@ namespace Parley.Store.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class OwnershipTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

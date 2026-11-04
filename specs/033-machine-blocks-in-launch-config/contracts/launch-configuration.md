@@ -35,11 +35,11 @@
 
 | Command | On a machine that does not describe the project |
 |---|---|
-| `parley enroll <dir> --project acme --broker <address>` | Asks the broker. Goes ahead if it serves `acme`. Writes this machine's block, including the address. Creates no project, store or port. |
+| `parley enroll <dir> --project acme --broker <address>` | Reads the broker's registry. Goes ahead if its seat is `human-user@acme`. Writes this machine's block, including the address. Creates no project, store or port. |
 | The same, broker serves another project | Exit 78: names both projects. Nothing written. |
 | `parley enroll <dir> --broker <address>` | Exit 78: asks for `--project`. Replaces today's crash. |
-| `parley up --project acme --broker <address>` | Asks the broker, as above, then joins. |
-| `parley up --broker <address>` | Joins, announcing only the names for the project the broker serves. |
+| `parley up --project acme --broker <address>` | Reads the registry, as above, then joins. With `--keep-trying`, joins on the name given. |
+| `parley up --broker <address>` | Joins, announcing every name the catalogued repositories declare. |
 | `parley --launch-key parley-acme waiting <role>` | Uses this repository's effective address for that entry, or its project if there is none. For the hook. |
 | Any other verb with `--project acme` | Refused as today. |
 | Any verb, run in a repository, nothing else named | If exactly one entry has a block address for this machine, uses that address. |
@@ -67,7 +67,7 @@ Each names what to fix. Wording is settled in the code. The content is the contr
 | Block for a key with no entry | The file, the machine and the key. |
 | Adapter cannot reach a project, and the file has blocks | The existing refusal, plus this machine's name and the machines the file has blocks for. |
 | Enrol would change a role another machine uses | The file, both roles, and the other machine. |
-| Broker serves another project | Both project names and the address. |
+| The broker's seat names another project | Both project names and the address. |
 | Node on another protocol version | Both versions, and to install on both machines. |
 | Entry will stop at logout (Linux) | That it will, and `loginctl enable-linger <user>`. |
 | Entry needs a sign-in (Windows, macOS) | That it starts at logon, so a machine nobody signs in to will not run it. |
@@ -76,20 +76,10 @@ Each names what to fix. Wording is settled in the code. The content is the contr
 ## Wire (protocol 0.13)
 
 ```proto
-message AttachRequest {
-  // ...existing fields...
-  string expected_project = N; // empty unless a machine block supplied the address
-}
-
-service Nodes {
-  // ...existing calls...
-  rpc ServedProject(Empty) returns (ServedProjectReply); // the project this broker serves
-}
-
 message JoinRequest {
   // ...existing fields...
   string protocol_version = N; // refused when it differs, naming both
 }
 ```
 
-`Attach` with a non-empty `expected_project` that is not this broker's project fails with `FailedPrecondition`, before any row is written, naming both. An `Agents` reply still carries no turn information, and `Agents` gains no operation.
+The wire gains no notion of a project (SPEC.md §4.1). `Agents` gains no operation.

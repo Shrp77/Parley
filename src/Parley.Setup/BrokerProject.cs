@@ -6,10 +6,18 @@ using Wire = Parley.Transport;
 
 namespace Parley.Setup;
 
-/// <summary>Asks a broker which project it serves, for a machine that holds no project of its own (SPEC.md §4.1.2).</summary>
+/// <summary>Which project a broker is, as an operator's tool on a machine holding no project of its own can tell (SPEC.md §4.1.2).</summary>
 /// <remarks>
-/// <b>Asked, because the name is the only check there is.</b> A machine with only a tunnel has nothing to look a project up
-/// in, and an address is a port number: the wrong one reaches a working broker, whose roster looks entirely normal.
+/// <para>
+/// <b>Read from the person's seat, because the protocol has no concept of a project</b> (§4.1): membership is which endpoint an
+/// agent reaches. Every project's registry holds <c>human-user@&lt;project&gt;</c>, and a client comparing that name with the one it
+/// was given sends the broker nothing new and asks it to decide nothing.
+/// </para>
+/// <para>
+/// <b>A help to a person setting a machine up, and no guard.</b> An address is a port number, and the wrong one reaches a working
+/// broker whose roster looks entirely normal, so enrolling and installing an entry look first. An adapter does not: it
+/// connects to the address its block gives, because that is what membership is.
+/// </para>
 /// </remarks>
 public static class BrokerProject
 {
@@ -40,11 +48,17 @@ public static class BrokerProject
         {
             using var channel = GrpcChannel.ForAddress(endpoint);
 
-            var reply = await new Wire.Nodes.NodesClient(channel)
-                .ServedProjectAsync(new Wire.Empty(), deadline: DateTime.UtcNow + Patience, cancellationToken: cancellationToken)
+            var registry = await new Wire.Operators.OperatorsClient(channel)
+                .DescribeRegistryAsync(new Wire.Empty(), deadline: DateTime.UtcNow + Patience, cancellationToken: cancellationToken)
                 .ResponseAsync.ConfigureAwait(false);
 
-            return (reply.Project, null);
+            var seat = registry.Rows
+                .Select(row => row.Name)
+                .FirstOrDefault(name => name.StartsWith(PersonSeat.Role + "@", StringComparison.Ordinal));
+
+            return seat is null
+                ? (null, $"The broker at {endpoint} has no seat for a person, so which project it is cannot be told.")
+                : (seat[(PersonSeat.Role.Length + 1)..], null);
         }
         catch (RpcException failure)
         {

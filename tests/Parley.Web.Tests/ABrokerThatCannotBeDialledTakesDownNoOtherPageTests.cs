@@ -19,6 +19,7 @@ namespace Parley.Web.Tests;
 /// cannot dial answered every page with a 500.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ABrokerThatCannotBeDialledTakesDownNoOtherPageTests
 {
     [Theory]

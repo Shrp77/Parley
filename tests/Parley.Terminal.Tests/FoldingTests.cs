@@ -12,6 +12,7 @@ namespace Parley.Terminal.Tests;
 /// under its own content on exactly the conversations where that shape matters most.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class FoldingTests
 {
     [Fact]

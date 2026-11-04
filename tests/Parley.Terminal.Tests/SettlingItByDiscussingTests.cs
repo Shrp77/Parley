@@ -33,6 +33,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class SettlingItByDiscussingTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");
@@ -90,7 +91,9 @@ public sealed class SettlingItByDiscussingTests : IDisposable
     {
         var root = JsonNode.Parse(File.ReadAllText(LaunchFile))!;
 
-        return root["mcpServers"]!["parley"]!["env"]!["PARLEY_OWNS"]?.GetValue<string>();
+        // What this machine answers with: its block, then the entry (SPEC.md §4.1.2).
+        return root["parleyMachines"]?[Parley.Core.MachineName.Current]?["parley"]?["PARLEY_OWNS"]?.GetValue<string>()
+            ?? root["mcpServers"]!["parley"]!["env"]!["PARLEY_OWNS"]?.GetValue<string>();
     }
 
     [Fact]

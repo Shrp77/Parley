@@ -33,6 +33,11 @@
     alone -- they are the deployment, and somebody reinstalling a tool has not asked to lose
     their history or their launch configurations.
 
+.PARAMETER AgentOnly
+    For a machine that only runs agents and reaches its broker by a tunnel: parley, parley-mcp and the terminal, and no
+    broker and no broker entry. An entry from `parley autostart install --project <p> --broker <address>` is stopped, and
+    started again once the tools are replaced. -Surfaces still says which surface.
+
 .PARAMETER Surfaces
     Which operator surfaces to install: terminal, web-ui, both or none. Defaults to both on
     Windows and to web-ui elsewhere.
@@ -141,7 +146,8 @@ param(
     [string] $Surfaces,
     [string[]] $Only,
     [switch] $Reset,
-    [string] $Repositories
+    [string] $Repositories,
+    [switch] $AgentOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -194,7 +200,13 @@ $tools = @(
 # web UI alone, because a terminal surface on a machine nobody has a session on is a package
 # installed to be never run.
 if (-not $Surfaces) {
-    $Surfaces = if ([Environment]::OSVersion.Platform -eq 'Win32NT') { 'both' } else { 'web-ui' }
+    $Surfaces = if ($AgentOnly) {
+        # It is reached over a remote session, a line is accepted from a surface on the machine holding the file, and no
+        # broker is there to start a web UI as its child.
+        'terminal'
+    }
+    elseif ([Environment]::OSVersion.Platform -eq 'Win32NT') { 'both' }
+    else { 'web-ui' }
 
     # Said only when it decides anything. -Only names the tools outright, so announcing a
     # surface set it does not consult is a line that contradicts what the run then does.
@@ -280,6 +292,35 @@ function Installed {
     A broker somebody started by hand is left alone. Ending a process a person launched
     themselves is their decision, and the checks downstream report honestly when it blocks them.
 #>
+function Get-NodeEntries {
+    # What `parley autostart install --project <p> --broker <address>` left here.
+    return @(Get-ScheduledTask -TaskName 'parley-node-*' -ErrorAction SilentlyContinue)
+}
+
+function Stop-Nodes {
+    # For the reason Stop-Broker stops the broker. It ends the agents that node started, as stopping a broker does.
+    foreach ($entry in Get-NodeEntries) {
+        Stop-ScheduledTask -TaskName $entry.TaskName -ErrorAction SilentlyContinue
+    }
+
+    $deadline = (Get-Date).AddSeconds(10)
+
+    while ((Get-NodeEntries | Where-Object { $_.State -eq 'Running' }) -and (Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 200
+    }
+}
+
+function Start-Nodes {
+    foreach ($entry in Get-NodeEntries) {
+        try {
+            Start-ScheduledTask -TaskName $entry.TaskName -ErrorAction Stop
+        }
+        catch {
+            Write-Warning "could not start $($entry.TaskName): $($_.Exception.Message)"
+        }
+    }
+}
+
 function Stop-Broker {
     if (-not (Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue)) { return }
 
@@ -495,6 +536,14 @@ if ($Reset -and $Uninstall) {
     Write-Error '-Reset and -Uninstall together make no sense: -Uninstall removes what was installed and installs nothing.'
 }
 
+if ($AgentOnly -and $Reset) {
+    Write-Error '-AgentOnly and -Reset together make no sense: -Reset wipes a deployment, and this machine holds none.'
+}
+
+if ($AgentOnly -and $Only) {
+    Write-Error '-AgentOnly says which tools a machine has, and -Only names them outright. Use one or the other.'
+}
+
 if ($Reset -and $Only) {
     Write-Error '-Reset wipes the whole deployment and stops the broker, and -Only exists to leave the broker running. Use one or the other.'
 }
@@ -511,6 +560,11 @@ if ($Shortcut -and $Uninstall) {
     Write-Error '-Shortcut and -Uninstall together make no sense: -Uninstall removes the shortcut along with everything else.'
 }
 
+# A routine upgrade must not quietly put a broker on a machine that only runs agents. Asked before anything is stopped.
+if (-not $AgentOnly -and -not $Force -and -not $Only -and -not $Reset -and -not $Uninstall -and (Get-NodeEntries).Count -gt 0) {
+    Write-Error "This machine runs a node with no broker of its own: $((Get-NodeEntries | ForEach-Object { $_.TaskName }) -join ', '). Run this with -AgentOnly to keep it that way, or -Force to add a broker here. Nothing has been changed."
+}
+
 # ---------------------------------------------------------------- uninstall --
 
 if ($Uninstall) {
@@ -520,6 +574,7 @@ if ($Uninstall) {
     # how this script came to print "Every tool is gone" with one of them still installed.
     Write-Step 'Stopping the broker'
 
+    Stop-Nodes
     Stop-Broker
 
     # Anything left is a broker somebody started by hand. Ending a process a person launched
@@ -549,7 +604,7 @@ if ($Uninstall) {
     Write-Step 'Removing the autostart entry'
 
     if (Get-Command parley -ErrorAction SilentlyContinue) {
-        & parley autostart remove 2>&1 | Out-Null
+        & parley autostart remove --all 2>&1 | Out-Null
     }
     else {
         Write-Note 'parley is not on PATH; nothing to remove it with'
@@ -799,7 +854,14 @@ Write-Note 'nothing is holding the tool store'
 # that check because this is about to stop it. Two computations of one thing agree until one is
 # edited, and these two would disagree in the direction that matters -- a web UI excluded from the
 # guard and then never stopped is a locked file with nothing left to say so.
-if ($replacingBroker) {
+if ($AgentOnly) {
+    Write-Step 'Stopping this machine''s nodes'
+    Write-Note 'there is no broker on this machine to ask what is open'
+
+    Stop-Nodes
+    Stop-Broker
+}
+elseif ($replacingBroker) {
     # **What stopping it will interrupt, said before it is stopped.**
     #
     # SPEC.md section 11.1: the node stopping tells every agent it started to quit, and the process
@@ -869,6 +931,7 @@ if ($replacingBroker) {
 
     Write-Step 'Stopping any running broker'
 
+    Stop-Nodes
     Stop-Broker
 }
 else {
@@ -1027,6 +1090,20 @@ foreach ($says in $reported) {
 #
 # Nothing here is needed for a surface: a terminal is not registered with a supervisor, does not
 # listen on a port, and has no store. There is nothing to configure and nothing to prove.
+if ($replacingBroker) {
+    Start-Nodes
+}
+
+if ($AgentOnly) {
+    Write-Host ''
+    Write-Host 'This machine runs agents and has no broker.' -ForegroundColor Green
+    Write-Host 'With a tunnel to the broker up:'
+    Write-Host '  parley enroll <folder> --project <its name> --broker <its address>'
+    Write-Host '  parley autostart install --project <its name> --broker <its address>'
+
+    exit 0
+}
+
 if (-not $replacingBroker) {
     if ($Shortcut) { New-WebConsoleShortcut $null }
 

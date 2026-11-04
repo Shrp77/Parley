@@ -20,6 +20,7 @@ namespace Parley.Web.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ListingStateTests
 {
     [Theory]

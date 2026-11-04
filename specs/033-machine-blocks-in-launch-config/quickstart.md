@@ -50,15 +50,15 @@ On each machine, accept that machine's line from a surface running there. Check 
 
 | Do this | Expect |
 |---|---|
-| Point the server's block at another project's port | The adapter stops, naming both projects. |
+| Point the server's block at another project's port | The adapter joins that broker: the address is the membership. `infra@server` shows in that project's roster. |
 | Add `PARLEY_AGENT` to a block | Every reader says the file cannot be read and names the setting. The node carries on with its other repositories. |
 | Stop the tunnel | The adapter says it cannot reach that address. `infra@server` stays registered. The node keeps trying and keeps its running agent. |
 | Start the tunnel again | The node rejoins within a minute, by itself. The agent's process is the same one. |
 | Restart the server | The node comes back. A Request to `infra@server` starts the agent once the tunnel is up. |
-| Point the entry at another project's port | The node stops and its log names both projects. It does not keep retrying. |
+| Install the entry with another project's port | It is refused, naming both projects, and nothing is installed. |
 | Run `./install.sh` with no flag | It stops, names `parley-node-acme`, and asks for `--agent-only` or `--force`. |
 | Run `./install.sh --agent-only` again | The node stops, the tools are replaced, and the node starts again. |
 | Add `PARLEY_WORKSPACE` to a block | The same refusal, and it says each machine works its folder out from where the file is. |
-| Move the checkout on `server` and open it by hand | It attaches, and the registry shows the new folder. A node cannot start it until it is enrolled again, because `node.json` holds the old folder. |
+| Move the checkout on `server` and open it by hand | The attach is refused, naming both folders. Retire the old name, then enrol again from the new folder. |
 | `parley enroll --broker <address>` with no project | Exit 78 with a sentence, not a crash. |
 | Withdraw on `laptop` | `laptop`'s block goes. The entry, the identifier and `server`'s block stay. |

@@ -129,12 +129,11 @@ The command line keeps `serve`, `up`, `autostart`,
   identity on attach as a label, never authority, and an attach under a new name from the same
   repository on the same machine renames the agent (§4.1.1).
 - No surface writes a launch configuration for an agent whose machine is not this one.
-
 - One `.mcp.json` serves every machine (SPEC §4.1.2): `parleyMachines`, filed by machine then launch key, holds a machine's
   `PARLEY_OWNS` and `PARLEY_BROKER` and nothing else, and each machine writes only its own block. `LaunchConfiguration` reads
   and checks it; `MachineBlocks` writes it. A machine with only a tunnel holds no project: `enroll`, `up` and `autostart install`
-  accept a project it does not describe, given an address, once `Nodes.ServedProject` says that is what the broker serves.
-  Every other verb still refuses. It installs with `--agent-only`, and `parley-node-<project>` runs only a node, which keeps
+  accept a project it does not describe, given an address, once that broker's `human-user@<project>` agrees. The protocol
+  gains nothing for this (§4.1): the adapter connects to the address, which is its membership. Every other verb still refuses. It installs with `--agent-only`, and `parley-node-<project>` runs only a node, which keeps
   trying while the broker is unreachable.
 
 **Seats.** The broker provides two participants in every project, neither with a machine:
@@ -171,11 +170,12 @@ The command line keeps `serve`, `up`, `autostart`,
 ```
 dotnet build
 pwsh scripts/test.ps1                 # unit tests, seconds
+pwsh scripts/test.ps1 -Category Smoke # all but [Slow], under 5 minutes
 pwsh scripts/test.ps1 -Category All  # everything, ~25 minutes
 ```
 
-Every test class is `[Unit]` or `[Integration]` (`tests/TestCategories.cs`). Pushes run the unit
-tests; the `nightly` workflow runs everything, and on a pull request before it merges. Every run is
+Every test class is `[Unit]` or `[Integration]` (`tests/TestCategories.cs`), and `[Slow]` leaves an integration test out of the
+smoke run. Pushes run the unit tests; a pull request must pass the `smoke` workflow; the `nightly` workflow runs everything against `main`. Every run is
 recorded in the git-ignored `.test-metrics/`.
 
 Tests run on Microsoft.Testing.Platform, selected in `global.json` under `"test"` beside
@@ -244,7 +244,7 @@ once the parent's own floor catches up (`dotnet nuget why`).
 ## Review gate
 
 A pull request merges after three clean runs of each of three lenses (correctness and concurrency, security and data
-integrity, API surface and maintainability) on the same shipped code, with the full test run (the `nightly` workflow, which the `full-tests` label starts on a pull request) green on the commit that merges; a commit
+integrity, API surface and maintainability) on the same shipped code, with the smoke run (the `smoke` workflow) green on the commit that merges; a commit
 that changes only tests, CI, docs or plugin prose keeps the counts. The rules live in
 [`review/`](review/README.md), one file for how the gate runs and one per lens, each with what counts as medium, how to
 probe, and what the owner has settled. Read the gate's file and the lens's file before a pass; a lens file, not this

@@ -67,25 +67,21 @@ public sealed class MachineBlockOptionsTests : IDisposable
     }
 
     [Fact]
-    public void An_address_in_a_block_is_said_on_purpose_so_nothing_is_noticed_and_the_project_is_checked()
+    public void An_address_in_a_block_is_said_on_purpose_so_nothing_is_noticed()
     {
         File("""{ "test": { "parley-acme": { "PARLEY_BROKER": "http://127.0.0.1:19391" } } }""");
 
-        var options = Read();
-
-        Assert.Null(options.BrokerNotice);
-        Assert.Equal("acme", options.ExpectedProject);
+        Assert.Null(Read().BrokerNotice);
     }
 
     [Fact]
-    public void Both_set_outside_a_block_keep_the_notice_and_check_nothing()
+    public void Both_set_outside_a_block_keep_the_notice()
     {
         File("""{ "test": { "parley-acme": { } } }""");
 
         var options = Read((ServerOptions.BrokerVariable, "http://127.0.0.1:19391"));
 
         Assert.Contains("both set", options.BrokerNotice, StringComparison.Ordinal);
-        Assert.Null(options.ExpectedProject);
     }
 
     [Fact]
@@ -132,7 +128,6 @@ public sealed class MachineBlockOptionsTests : IDisposable
 
         Assert.Null(options.Workspace);
         Assert.False(options.Identity.Known);
-        Assert.Null(options.ExpectedProject);
         Assert.Contains("both set", options.BrokerNotice, StringComparison.Ordinal);
     }
 

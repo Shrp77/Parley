@@ -29,6 +29,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class VerbatimTests : IAsyncDisposable
 {
     /// <summary>Everything that breaks an envelope built by concatenation, in one sentence.</summary>

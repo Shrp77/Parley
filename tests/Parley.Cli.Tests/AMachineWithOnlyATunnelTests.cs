@@ -270,14 +270,14 @@ public sealed class AMachineWithOnlyATunnelTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task A_node_by_address_announces_only_the_project_its_broker_serves()
+    public async Task A_node_by_address_announces_only_the_project_it_was_told()
     {
         await ServeAsync();
         WriteRepository(
             """, "parley-beta": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "other", "PARLEY_PROJECT": "beta" } } """);
         WriteCatalogue(StandingAgent.Command);
 
-        var (_, lines) = Up();
+        var (_, lines) = Up("--project", "alpha");
 
         await SaidAsync(lines, "Can start:");
 
@@ -288,13 +288,67 @@ public sealed class AMachineWithOnlyATunnelTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_second_node_waits_for_the_first_to_go_rather_than_leaving_the_machine_with_none()
+    {
+        // A broker that has not noticed this machine's last connection die says exactly this, after a reboot or a dead tunnel.
+        await ServeAsync();
+        WriteRepository();
+        WriteCatalogue(StandingAgent.Command);
+
+        var (first, firstSaid) = Up("--project", "alpha", "--keep-trying");
+
+        await SaidAsync(firstSaid, "Can start:");
+
+        var (second, secondSaid) = Up("--project", "alpha", "--keep-trying");
+
+        await SaidAsync(secondSaid, "keeps trying");
+        Assert.False(second.HasExited);
+
+        first.Kill(entireProcessTree: true);
+        Assert.True(first.WaitForExit(10_000));
+
+        await SaidAsync(secondSaid, "Can start:");
+        Assert.False(second.HasExited);
+    }
+
+    [Fact]
+    public async Task A_person_typing_it_is_told_about_a_second_node_and_it_stops()
+    {
+        await ServeAsync();
+        WriteRepository();
+        WriteCatalogue(StandingAgent.Command);
+
+        var (_, firstSaid) = Up("--project", "alpha", "--keep-trying");
+
+        await SaidAsync(firstSaid, "Can start:");
+
+        var (code, _, _) = ToolProcess.RunFully(OnThatMachine, "up", "--project", "alpha", "--broker", Address);
+
+        Assert.Equal(78, code);
+    }
+
+    [Fact]
+    public async Task A_stray_project_variable_does_not_defeat_the_block_the_hook_reads()
+    {
+        await ServeAsync();
+        WriteRepository();
+
+        var (code, output, error) = ToolProcess.RunFullyIn(
+            Checkout,
+            [.. OnThatMachine, ("PARLEY_PROJECT", "alpha")],
+            "--launch-key", "parley-alpha", "waiting", "infra", "--with-files");
+
+        Assert.True(code == 0, output + error);
+    }
+
+    [Fact]
     public async Task A_node_for_another_project_stops_and_says_so()
     {
         await ServeAsync();
         WriteRepository();
         WriteCatalogue(StandingAgent.Command);
 
-        var (node, lines) = Up("--project", "beta", "--keep-trying");
+        var (node, lines) = Up("--project", "beta");
 
         await UntilAsync(() => Task.FromResult(node.HasExited), "the node never stopped");
 
@@ -341,7 +395,6 @@ public sealed class AMachineWithOnlyATunnelTests : IAsyncDisposable
                 Adapter = "mcp",
                 Tier = Wire.AgentTier.Pull,
                 ProtocolVersion = Parley.Core.ProtocolVersion.Current,
-                ExpectedProject = "alpha",
                 Workspace = Checkout,
                 Identity = Id,
             },

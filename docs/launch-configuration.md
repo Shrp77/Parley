@@ -96,8 +96,9 @@ value it does not give comes from the entry. The machine is the name the agent w
 chooses a block too.
 
 **The workspace is not in the file.** When a file has `parleyMachines`, an agent's workspace is the folder the
-file was found in. A node starts an agent from the folder in that machine's own `node.json`. Moving a checkout
-needs enrolling again only so that a node can find it.
+file was found in. A node starts an agent from the folder in that machine's own `node.json`. A checkout moved on one
+machine is refused when it attaches, naming both folders, because a name belongs to one repository and a clone looks the
+same to the broker. Retire the old name, then enrol again from the new folder.
 
 **A mistake stops the whole file,** whichever machine it concerns: a setting that cannot go in a block, a name that
 can never be a machine's, a block for an entry the file does not have. It is reported by machine, entry and setting.
@@ -161,8 +162,8 @@ the registry would refuse all stop the run with nothing changed.
 parley enroll /srv --project acme --broker http://127.0.0.1:19100
 ```
 
-The broker is asked which project it serves, and nothing is written if it is another. The address goes in this
-machine's block. No project, store or port is created here. Under another role while another machine has a block
+The name is checked against that broker's registry, and nothing is written if it is another project. The address
+goes in this machine's block. No project, store or port is created here. Under another role while another machine has a block
 for that project, enrolling is refused, because the role is shared and the change would rename that machine's agent.
 
 **Withdrawing takes this machine's block.** The entry stays while another machine's block names it, and

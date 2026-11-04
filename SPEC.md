@@ -267,10 +267,7 @@ optional way to say what the stream already says for certain, and the failure it
 agent that died without calling it. A node's `Join` works the same way, one level out.
 
 **`Attach` and `Join` each state a protocol version, and a different one is refused, naming both**
-(§18). A node is held to this as an adapter is, because two machines are not one build. An `Attach`
-may also state the project it expects (§4.1.2): a broker serving another project refuses it before
-anything is written, naming both. `Nodes.ServedProject` says which project a broker serves, so that a
-machine with no project of its own can ask before it acts.
+(§18). A node is held to this as an adapter is, because two machines are not one build.
 
 **A notice carries counts and never words.** The broker pushes how much is waiting; the adapter
 drains to find out what it is. §13 has a peer's words reach a model wrapped as data, and the
@@ -499,22 +496,24 @@ stays while any entry remains. Enrolling under a different role is refused while
 block for that entry, because the role is shared and the change would rename that machine's agent.
 
 **A machine with only a tunnel.** Such a machine describes no project and has no store, port or broker;
-the reasons to hold a store are §4.1's. An address in its block connects it to the broker. Because a project
-named and not described is otherwise refused (§4.1), three things check the name with the broker instead:
+the reasons to hold a store are §4.1's. An address in its block connects it to the broker, and that is the whole of its
+membership: the protocol has no concept of a project (§4.1), so an adapter connects to the address and is in whichever
+project answers there. The entry's project name is what the key is filed under.
 
-- An adapter whose block supplied the address states the project in `Attach`, and is refused if the broker
-  serves another (§4.0). An adapter with a project and an address set outside a block connects to the
-  address and says it is ignoring the project.
-- `parley enroll` and `parley up`, given a project and an address, ask `Nodes.ServedProject` first and go ahead
-  only if it is that project. Every other command still refuses a project this machine does not describe.
+A person setting such a machine up can get a port wrong, so two tools look first, and neither adds anything to the
+protocol: a broker's registry holds `human-user@<project>` (§4.1.1), and they compare that with the name they were given.
+
+- `parley enroll` and `parley up`, given a project and an address, go ahead only if the names agree, and write nothing if
+  they do not. Every other command still refuses a project this machine does not describe.
 - `parley autostart install`, given a project and an address, does the same, and installs an entry
-  that runs only a node (§12).
+  that runs only a node (§12). That node takes the name it was given.
 
 **An agent-only machine stays startable with nobody there.** A node started from such an entry keeps
 trying while the broker cannot be reached, at first join and after losing it, and keeps the agents it is
 running. Nothing times out, so a machine whose tunnel comes up after it does needs no ordering. When the
-broker answers and refuses it (another project, another protocol, a second node), it stops and says why,
-because retrying cannot fix that. The entry is user-level, for the reason every autostart entry is: the node
+broker answers and refuses it for another protocol, it stops and says why, because
+retrying cannot fix that. A second node is the exception, and it keeps trying and says so: a broker that has not yet noticed
+this machine's last connection die, which a reboot or a dead tunnel leaves behind, reads exactly like one. The entry is user-level, for the reason every autostart entry is: the node
 starts agents that must be signed in as the person. So the machine must have that user's session
 running, and installing the entry says what that needs on this platform.
 

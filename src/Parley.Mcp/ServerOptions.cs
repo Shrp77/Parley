@@ -32,10 +32,6 @@ namespace Parley.Mcp;
 /// default when there is none (SPEC.md §4.1.1). Reported on attach as a label and never as authority: it lets the broker
 /// rename this agent when the repository changes the name, and decides nothing about who may attach.
 /// </param>
-/// <param name="ExpectedProject">
-/// The project this machine's block means by its address (SPEC.md §4.1.2), or null when no block gave one. A broker serving
-/// another refuses the attach, which is the only check a machine holding no project of its own has.
-/// </param>
 /// <remarks>
 /// <para>
 /// <b><see cref="Agent"/> comes from the launch configuration and from nowhere else.</b> It is
@@ -66,8 +62,7 @@ public sealed record ServerOptions(
     string? Owns = null,
     string? BrokerNotice = null,
     string? LaunchToken = null,
-    AgentIdentity Identity = default,
-    string? ExpectedProject = null)
+    AgentIdentity Identity = default)
 {
 
     /// <summary>The environment variable naming the broker to connect to.</summary>
@@ -216,18 +211,10 @@ public sealed record ServerOptions(
             ? (BrokerEndpoint.Read(Effective), null)
             : Where(Effective, located);
 
-        return Rest(
-            Effective,
-            broker,
-            brokerNotice,
-            settings is { BrokerFromBlock: true } ? named ?? located!.Membership!.Project : null);
+        return Rest(Effective, broker, brokerNotice);
     }
 
-    private static ServerOptions Rest(
-        Func<string, string?> read,
-        string broker,
-        string? brokerNotice,
-        string? expectedProject)
+    private static ServerOptions Rest(Func<string, string?> read, string broker, string? brokerNotice)
     {
         var agentName = Require(read, AgentVariable);
 
@@ -301,8 +288,7 @@ public sealed record ServerOptions(
             // Read from the repository rather than the environment, because the identifier belongs to the repository
             // and sits beside the entries, not inside one. A file that cannot be read says nothing, which registers by
             // name alone as before.
-            LaunchConfiguration.TryRead(workspace, out var declared, out _) ? declared.Identity : default,
-            expectedProject);
+            LaunchConfiguration.TryRead(workspace, out var declared, out _) ? declared.Identity : default);
     }
 
     /// <summary>

@@ -11,79 +11,43 @@ public sealed class AttachAndJoinSayWhatTheyMeanTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private static Wire.AttachRequest Attach(string expected) =>
+    private static Wire.AttachRequest Attach() =>
         new()
         {
             Agent = "infra@server",
             Adapter = "mcp",
             Tier = Wire.AgentTier.Pull,
             ProtocolVersion = ProtocolVersion.Current,
-            ExpectedProject = expected,
         };
 
     [Fact]
-    public async Task A_broker_says_which_project_it_serves_to_a_machine_it_has_never_heard_of()
+    public async Task An_identity_arriving_for_a_row_that_had_none_attaches_and_is_kept()
     {
+        // A file gaining a machine section makes an agent present an identity where it sent none before.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
 
-        var reply = await broker.ConnectAsNode().ServedProjectAsync(new Wire.Empty(), cancellationToken: Ct);
+        const string Id = "9f2c1a77-3b41-4e0e-8a6f-7c4b2d9e5011";
 
-        Assert.False(string.IsNullOrEmpty(reply.Project));
-    }
+        using (var first = broker.Connect().Attach(Attach(), cancellationToken: Ct))
+        {
+            Assert.True(await first.ResponseStream.MoveNext(Ct));
+        }
 
-    [Fact]
-    public async Task An_attach_expecting_another_project_is_refused_naming_both_and_writes_no_row()
-    {
-        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await broker.WaitUntilDetachedAsync("infra@server", TimeSpan.FromSeconds(10));
 
-        var served = (await broker.ConnectAsNode().ServedProjectAsync(new Wire.Empty(), cancellationToken: Ct)).Project;
+        var again = Attach();
+        again.Identity = Id;
+        again.Workspace = "/srv/infra";
 
-        using var call = broker.Connect().Attach(Attach("somewhere-else"), cancellationToken: Ct);
+        using var second = broker.Connect().Attach(again, cancellationToken: Ct);
 
-        var refused = await Assert.ThrowsAsync<RpcException>(() => call.ResponseStream.MoveNext(Ct));
+        Assert.True(await second.ResponseStream.MoveNext(Ct));
+        Assert.Equal(Wire.Event.EventOneofCase.Attached, second.ResponseStream.Current.EventCase);
 
-        Assert.Equal(StatusCode.FailedPrecondition, refused.StatusCode);
-        Assert.Contains("somewhere-else", refused.Status.Detail, StringComparison.Ordinal);
-        Assert.Contains(served, refused.Status.Detail, StringComparison.Ordinal);
+        var row = (await broker.ConnectAsOperator().DescribeRegistryAsync(new Wire.Empty(), cancellationToken: Ct))
+            .Rows.Single(r => r.Name == "infra@server");
 
-        var registry = await broker.ConnectAsOperator().DescribeRegistryAsync(new Wire.Empty(), cancellationToken: Ct);
-
-        Assert.DoesNotContain(registry.Rows, row => row.Name == "infra@server");
-    }
-
-    [Fact]
-    public async Task An_attach_expecting_this_project_attaches()
-    {
-        await using var broker = await LoopbackBroker.StartAsync(Ct);
-
-        var served = (await broker.ConnectAsNode().ServedProjectAsync(new Wire.Empty(), cancellationToken: Ct)).Project;
-
-        using var call = broker.Connect().Attach(Attach(served), cancellationToken: Ct);
-
-        Assert.True(await call.ResponseStream.MoveNext(Ct));
-        Assert.Equal(Wire.Event.EventOneofCase.Attached, call.ResponseStream.Current.EventCase);
-    }
-
-    [Fact]
-    public async Task An_attach_expecting_nothing_is_not_asked()
-    {
-        await using var broker = await LoopbackBroker.StartAsync(Ct);
-
-        using var call = broker.Connect().Attach(Attach(string.Empty), cancellationToken: Ct);
-
-        Assert.True(await call.ResponseStream.MoveNext(Ct));
-    }
-
-    [Fact]
-    public async Task What_an_attach_expects_is_held_to_one_printable_line()
-    {
-        await using var broker = await LoopbackBroker.StartAsync(Ct);
-
-        using var call = broker.Connect().Attach(Attach("two\nlines"), cancellationToken: Ct);
-
-        var refused = await Assert.ThrowsAsync<RpcException>(() => call.ResponseStream.MoveNext(Ct));
-
-        Assert.Equal(StatusCode.InvalidArgument, refused.StatusCode);
+        Assert.Equal("/srv/infra", row.Workspace);
     }
 
     [Theory]

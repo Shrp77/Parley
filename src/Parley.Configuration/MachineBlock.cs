@@ -42,9 +42,10 @@ public sealed record LocatedLaunch(
     /// another machine fail quietly here: nothing is there, or what is there is not this agent.
     /// </para>
     /// <para>
-    /// <b>The walk stops at the first folder holding <c>.git</c> or a launch configuration</b>, because a client may
-    /// start a server in a subfolder, and a repository's parents are none of this launch's business. A folder leading off
-    /// this machine is never looked in: the lookup alone would offer the person's sign-in to that host.
+    /// <b>A parent counts only inside a repository</b>, because a client may start a server in a subfolder. Outside one, a
+    /// parent's file is whatever somebody left there: <c>/tmp/.mcp.json</c> naming this role would otherwise choose this
+    /// agent's broker. The walk stops at the first folder holding <c>.git</c> or a launch configuration. A path leading off
+    /// this machine is never looked at: the lookup alone would offer the person's sign-in to that host.
     /// </para>
     /// </remarks>
     public static LocatedLaunch? Find(string? workspace, string? agent, string? project, string startFolder)
@@ -57,46 +58,64 @@ public sealed record LocatedLaunch(
         }
 
         if (!string.IsNullOrWhiteSpace(workspace)
-            && Directory.Exists(workspace)
             && !OffMachineLinks.LeadsOffThisMachine(workspace)
+            && Directory.Exists(workspace)
             && Consider(workspace, agent, project) is { } named)
         {
             return named;
         }
 
-        DirectoryInfo? folder;
+        DirectoryInfo? start;
 
         try
         {
-            folder = new DirectoryInfo(startFolder);
+            start = new DirectoryInfo(startFolder);
         }
         catch (Exception unusable) when (unusable is ArgumentException or NotSupportedException or PathTooLongException)
         {
             return null;
         }
 
-        for (; folder is not null; folder = folder.Parent)
+        if (OffMachineLinks.LeadsOffThisMachine(start.FullName))
         {
-            if (OffMachineLinks.LeadsOffThisMachine(folder.FullName))
+            return null;
+        }
+
+        var inARepository = false;
+
+        for (var folder = start; folder is not null && !inARepository; folder = folder.Parent)
+        {
+            inARepository = IsARepository(folder.FullName);
+        }
+
+        for (var folder = start; folder is not null; folder = inARepository ? folder.Parent : null)
+        {
+            var file = Path.Combine(folder.FullName, LaunchConfiguration.FileName);
+
+            if (OffMachineLinks.LeadsOffThisMachine(file))
             {
                 return null;
             }
 
-            if (File.Exists(Path.Combine(folder.FullName, LaunchConfiguration.FileName))
-                || OffMachineLinks.LeadsOffThisMachine(Path.Combine(folder.FullName, LaunchConfiguration.FileName)))
+            if (File.Exists(file))
             {
                 return Consider(folder.FullName, agent, project);
             }
 
-            var git = Path.Combine(folder.FullName, ".git");
-
-            if (Directory.Exists(git) || File.Exists(git))
+            if (IsARepository(folder.FullName))
             {
                 return null;
             }
         }
 
         return null;
+    }
+
+    private static bool IsARepository(string folder)
+    {
+        var git = Path.Combine(folder, ".git");
+
+        return !OffMachineLinks.LeadsOffThisMachine(git) && (Directory.Exists(git) || File.Exists(git));
     }
 
     private static LocatedLaunch? Consider(string folder, string agent, string? project)

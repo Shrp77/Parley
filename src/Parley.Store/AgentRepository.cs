@@ -212,6 +212,27 @@ public sealed class AgentRepository(SqliteConnection connection)
                 new { Name = name.Value, Identity = identity.ToString() },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
+    /// <summary>Records where an agent works, when the registry has no folder for it.</summary>
+    /// <param name="name">The agent.</param>
+    /// <param name="workspace">Its folder.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>One if the row changed, zero otherwise.</returns>
+    /// <remarks>
+    /// An agent first registered by name alone says where it is once its file has a machine section (SPEC.md §4.1.2), and
+    /// accepting a line finds the file through this. Never over a folder already recorded: that is a collision, and
+    /// the caller has refused it by now.
+    /// </remarks>
+    public async Task<int> RecordWorkspaceIfNoneAsync(
+        AgentName name,
+        string workspace,
+        CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "UPDATE agents SET workspace = @Workspace " +
+                "WHERE name = @Name AND (workspace IS NULL OR workspace = '');",
+                new { Name = name.Value, Workspace = workspace },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
     /// <summary>
     /// Gives an agent a new name, keeping everything that refers to it (SPEC.md §4.1.1).
     /// </summary>

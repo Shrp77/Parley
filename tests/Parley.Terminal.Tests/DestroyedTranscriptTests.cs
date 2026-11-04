@@ -17,6 +17,7 @@ namespace Parley.Terminal.Tests;
 /// read it.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class DestroyedTranscriptTests
 {
     private static BrokerDirectory Directory() =>

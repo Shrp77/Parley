@@ -56,7 +56,9 @@ Each step checks `OffMachineLinks` before looking, as every other lookup does. A
 
 **Every other use is still served.** When a file has a machine section, the found folder is the workspace. It sets the file tools' root (`RepositoryPaths`), and the adapter reports it on attach. The registry records it, and `OwnershipLine` uses that record to find the file.
 
-**What this gains.** A moved checkout keeps working when opened by hand, the committed file shows no folder paths, and each machine has no second copy of a path to drift.
+**What this gains.** The committed file shows no folder paths, and each machine has no second copy of a path to drift.
+
+**What it does not change.** A checkout moved on one machine is still refused when it attaches, naming both folders (§4.1.1), since the broker cannot tell a move from a clone. An earlier draft of this document said it would keep working. That was wrong: reading `BrokerRuntime` showed otherwise.
 
 **Also to fix:** the comment at `EnrollmentPlan.cs:460` says a node uses `PARLEY_WORKSPACE` as its working directory. The code does not.
 
@@ -72,17 +74,17 @@ Each step checks `OffMachineLinks` before looking, as every other lookup does. A
 
 ## R6. Telling the adapter and the broker apart on the project check
 
-**Decision: a new `expected_project` field on `AttachRequest`, sent only when a block supplied the address.** The broker knows its project (`BrokerRuntime.Project`) and refuses a mismatch before any row is written, naming both. A refused adapter reports it by the route other attach refusals use.
+**Decision (owner, 2026-11-04): the adapter makes no check.** The first design added `expected_project` to `AttachRequest` and a `Nodes.ServedProject` call. `SpecConsistencyTests` refused it: §4.1 says the protocol has no concept of a project and must not acquire one. The owner confirmed that: a project is a broker's way of grouping agents, the protocol cares about agents and how to reach them, and membership is which endpoint an agent connects to. So the address in a block is the membership, and a wrong port shows as the agent in the wrong roster.
 
-**Rejected.** Reading `human-user@<project>` from the roster: the row would already exist in the wrong store, and it parses meaning out of a display name.
+**What remains is a client's check.** `parley enroll`, `parley up` and `parley autostart install` read `human-user@<project>` from the broker's registry and compare. That sends the broker nothing new.
 
 ## R7. Enrolling on a tunnel-only machine
 
-**Decision.** `parley enroll <dir> --project <name> --broker <address>`, and the same for `parley up`. If the machine does not describe the project and an address was given explicitly, these two verbs ask the broker which project it serves and go ahead only if it is the one named. Every other verb keeps today's refusal, which `ExplicitBrokerSelectionTests` still holds.
+**Decision.** `parley enroll <dir> --project <name> --broker <address>`, and the same for `parley up`. If the machine does not describe the project and an address was given explicitly, these two verbs read that broker's registry and go ahead only if it is the one named. Every other verb keeps today's refusal, which `ExplicitBrokerSelectionTests` still holds.
 
-The broker's name comes from a new `Nodes.ServedProject` call. It is not a field on `Nodes.Describe`, which answers NotFound for a machine that has never joined, which is exactly this machine. It is on `Nodes` because a new `Operators` call would oblige both screens to bind it (`DriftTests`), and none of them need it.
+The name comes from `human-user@<project>` in the broker's registry (R6), which every project's registry holds. No new call.
 
-`up --broker` with no `--project` also uses this answer, so it announces only that project's names (R1).
+`up --broker` with no `--project` announces every name the catalogued repositories declare, as a node with no project always has. A repository in several projects names one.
 
 **The crash in R1 is fixed in the same place:** enrolling with an address and no project stops with a sentence asking for `--project`.
 
@@ -106,7 +108,7 @@ The broker's name comes from a new `Nodes.ServedProject` call. It is not a field
 
 ## R10. Versions
 
-No schema change, so no migration, and 007 stays with feature 027. Two additive wire fields and one small call: protocol 0.13. Package 0.53.0, since the protocol moves and enrolment writes a new shape.
+No schema change, so no migration, and 007 stays with feature 027. One additive wire field, a node's `protocol_version`: protocol 0.13. Package 0.53.0, since the protocol moves and enrolment writes a new shape.
 
 ## R11. An agent-only machine (added by the owner, 2026-11-04)
 
@@ -123,7 +125,7 @@ No schema change, so no migration, and 007 stays with feature 027. Two additive 
 **Decisions.**
 
 - **Entry:** a new `AutostartPlan.DescribeNode`, labelled `parley-node-<project>`, running `up --project <p> --broker <a> --keep-trying --log <path>`. One entry per project, since each runs one node. It has its own label, so it never collides with `parley-broker` on a machine that has both.
-- **Retrying:** `--keep-trying` on `up`. `Unavailable` then waits and tries again, from 2 seconds doubling to at most 30, for ever: nothing times out. Agents the node runs are kept, as they already are across a rejoin. A refusal is not retried, because the broker answered: another project, another protocol, or a second node. The supervisor must not restart a node after those, so they exit with `Config` and the unit restarts only on failure codes other than that.
+- **Retrying:** `--keep-trying` on `up`. `Unavailable` then waits and tries again, from 2 seconds doubling to at most 30, for ever: nothing times out. Agents the node runs are kept, as they already are across a rejoin. A refusal is not retried, because the broker answered: another protocol. The supervisor must not restart a node after those, so they exit with `Config` and the unit restarts only on failure codes other than that. A second node is retried, and said once: after a reboot or a dead tunnel, a broker that has not noticed the old connection die says the same thing, and stopping for it would leave nobody's machine with no node.
 - **Without the flag,** `parley up` still exits on `Unavailable`, because a person typing it wants to know.
 - **Lingering:** the install checks `loginctl show-user` and prints `loginctl enable-linger <user>` when it is off. It does not run it. It changes a system setting, and may need privilege.
 - **Why not a system service:** the node starts agents that must be signed in as the person, which is why autostart is already user-level.

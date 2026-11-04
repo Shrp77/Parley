@@ -16,6 +16,7 @@ namespace Parley.Terminal.Tests;
 /// both readers and every button but never the heading, and each choice is taken once from every focus.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class RoadmapViewsByKeyboardTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

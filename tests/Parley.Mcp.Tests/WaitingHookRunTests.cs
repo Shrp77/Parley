@@ -28,6 +28,7 @@ namespace Parley.Mcp.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class WaitingHookRunTests : IAsyncDisposable
 {
     private const string Script = "plugins/parley/hooks/parley_waiting.py";
@@ -633,6 +634,37 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         }));
 
         Assert.Contains("1 uncollected message", Run(hookEvent), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task This_machines_block_says_which_broker_to_ask()
+    {
+        // A hook reading only the entry would ask the wrong broker, or none, on a machine with only a tunnel (SPEC.md §4.1.2).
+        await SeedAsync(TestContext.Current.CancellationToken);
+
+        File.WriteAllText(
+            Path.Combine(_workspace, ".mcp.json"),
+            $$"""
+            { "mcpServers": { "parley-alpha": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "orders", "PARLEY_PROJECT": "alpha", "PARLEY_BROKER": "http://127.0.0.1:1" } } },
+              "parleyMachines": { "test": { "parley-alpha": { "PARLEY_BROKER": "{{_broker!.Addresses[0]}}" } } } }
+            """);
+
+        Assert.Contains("1 uncollected message", Run("UserPromptSubmit"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Another_machines_block_is_not_this_ones_broker()
+    {
+        await SeedAsync(TestContext.Current.CancellationToken);
+
+        File.WriteAllText(
+            Path.Combine(_workspace, ".mcp.json"),
+            $$"""
+            { "mcpServers": { "parley-alpha": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "orders", "PARLEY_BROKER": "http://127.0.0.1:1" } } },
+              "parleyMachines": { "server": { "parley-alpha": { "PARLEY_BROKER": "{{_broker!.Addresses[0]}}" } } } }
+            """);
+
+        Assert.DoesNotContain("uncollected", Run("UserPromptSubmit"), StringComparison.Ordinal);
     }
 
     [Fact]

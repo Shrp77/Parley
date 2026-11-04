@@ -22,6 +22,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class FilesPlacingTests : IAsyncDisposable
 {
     private const string Billing = FileLocationFixture.Billing;

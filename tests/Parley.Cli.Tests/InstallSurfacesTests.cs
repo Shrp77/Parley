@@ -61,8 +61,33 @@ public sealed class InstallSurfacesTests
         // Windows has somebody at a screen; the machine install.sh runs on usually does not, and
         // has no browser either -- but it can serve a web UI over a tunnel, so the default there
         // is the web UI rather than nothing.
-        Assert.Contains("'both' } else { 'web-ui' }", Windows, StringComparison.Ordinal);
+        Assert.Contains("'Win32NT') { 'both' }", Windows, StringComparison.Ordinal);
+        Assert.Contains("else { 'web-ui' }", Windows, StringComparison.Ordinal);
         Assert.Contains("surfaces=\"web-ui\"", Unix, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_machine_that_only_runs_agents_gets_the_terminal_and_no_broker_on_both()
+    {
+        // It is reached over SSH, a line is accepted from a surface on the machine holding the file, and no broker is there
+        // to start a web UI as its child (SPEC.md §4.1.2).
+        Assert.Contains("surfaces=\"terminal\"", Unix, StringComparison.Ordinal);
+        Assert.Contains("'terminal'", Windows, StringComparison.Ordinal);
+
+        foreach (var script in new[] { Unix, Windows })
+        {
+            Assert.Contains("--project <its name> --broker <its address>", script, StringComparison.Ordinal);
+            Assert.Contains("parley autostart remove --all", script, StringComparison.Ordinal);
+            Assert.Contains("add a broker here", script, StringComparison.Ordinal);
+        }
+
+        // Gone before the broker's registration, which is the whole of the mode.
+        Assert.True(
+            Unix.IndexOf("This machine runs agents and has no broker", StringComparison.Ordinal)
+            < Unix.IndexOf("Registering the broker to start at logon", StringComparison.Ordinal));
+        Assert.True(
+            Windows.IndexOf("This machine runs agents and has no broker", StringComparison.Ordinal)
+            < Windows.IndexOf("Registering the broker to start at logon", StringComparison.Ordinal));
     }
 
     [Theory]

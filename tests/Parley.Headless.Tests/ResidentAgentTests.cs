@@ -174,6 +174,7 @@ public sealed class ResidentAgentTests : IDisposable
             "turn's reply being read as its own");
     }
 
+    [Slow]
     [Fact]
     public async Task A_cancelled_turns_reply_that_takes_long_is_still_waited_for_and_never_read_as_the_next_ones()
     {
@@ -202,6 +203,7 @@ public sealed class ResidentAgentTests : IDisposable
         Assert.Equal(3.0, fourth.CostUsd);
     }
 
+    [Slow]
     [Fact]
     public async Task The_next_turn_waits_out_a_cancelled_turns_reply_however_quiet_the_agent_is()
     {
@@ -237,6 +239,7 @@ public sealed class ResidentAgentTests : IDisposable
         Assert.False(next.TimedOut, next.Describe());
     }
 
+    [Slow]
     [Fact]
     public async Task A_caller_cancelling_while_an_owed_reply_drains_keeps_it_owed()
     {

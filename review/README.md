@@ -1,7 +1,7 @@
 # The review gate
 
-A pull request merges when three lenses each pass three times in a row on the same shipped code, and the full test run
-(the `nightly` workflow, which the `full-tests` label starts on a pull request) is green on the commit that merges. A commit that changes only tests, CI, docs or plugin prose keeps the counts (see below). This folder holds the rules for that gate. CLAUDE.md points here instead of carrying them.
+A pull request merges when three lenses each pass three times in a row on the same shipped code, and the smoke run
+(the `smoke` workflow, on every push to a pull request) is green on the commit that merges. A commit that changes only tests, CI, docs or plugin prose keeps the counts (see below). This folder holds the rules for that gate. CLAUDE.md points here instead of carrying them.
 
 | File | What it covers |
 |---|---|
@@ -48,10 +48,14 @@ process, no clock it does not own, no environment it does not inject, and no UI.
 - **Between review rounds and before each commit, run the unit tests**: `pwsh scripts/test.ps1` (seconds). Add
   `-Category All` when a change could only show in an integration test, such as a race or a process boundary.
 - **A push runs the unit tests** on Windows, Linux and macOS (`build.yml`).
-- **The `nightly` workflow runs everything** on Windows and Linux, every night against `main`, and on a pull request
-  while it carries the `full-tests` label (`gh pr edit <number> --add-label full-tests`; each push reruns it). The
-  merge needs that run green on the commit that merges. Once the workflow is on `main` it can also be started by hand:
-  `gh workflow run nightly.yml --ref <branch>`.
+- **The `smoke` workflow runs everything but what is marked `[Slow]`** on Windows and Linux, on every push to a pull
+  request, and the merge needs it green on the commit that merges. It has five minutes of testing: `pwsh scripts/test.ps1
+  -Category Smoke` does the same here, and warns when it runs over. A test is in unless marked `[Slow]`, which is decided by
+  its class's cost in the full run's timings and never by its importance, and one real path through each thing a person relies
+  on stays in whatever it costs. When the run nears its budget, mark the next slowest classes.
+- **The `nightly` workflow runs everything** on Windows and Linux, every night against `main`. A failure there is fixed
+  like any other. A pull request may ask for it with the `full-tests` label (`gh pr edit <number> --add-label full-tests`), which
+  is worth doing when a change could only show in a `[Slow]` test: `gh workflow run nightly.yml --ref <branch>` does the same.
 
 Every run records its results in the git-ignored `.test-metrics/` (`runs.jsonl` per run; `tests.jsonl` per test that did
 not pass, and per test on CI, which passes `-AllResults`); `pwsh scripts/pull-test-metrics.ps1` copies CI's runs in beside the local ones.
