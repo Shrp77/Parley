@@ -232,6 +232,51 @@ public sealed class SpinOffAndMovePagesTests
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         Assert.Empty(console.Broker.Abandoned);
+
+        // The page goes on to the conversation, so the bell is the only place that says who it did not reach.
+        var told = await client.GetStringAsync(At("/Notifications"), Ct);
+
+        Assert.Contains(Billing, told, StringComparison.Ordinal);
+        Assert.Contains(Orders, told, StringComparison.Ordinal);
+        Assert.Contains("not sent", told, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("/DescribeRegistry", "")]
+    [InlineData("/Export", "&from=1")]
+    public async Task A_spin_off_page_says_so_when_what_it_reads_cannot_be_read(string failing, string more)
+    {
+        using var console = Console();
+        console.Broker.FailsOn = failing;
+        using var client = console.CreateClient();
+
+        Assert.Contains(Alert, await client.GetStringAsync(At(Spin(more)), Ct), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_move_page_says_so_when_its_preview_cannot_be_read()
+    {
+        using var console = Console();
+        console.Broker.FailsOn = "/PreviewMove";
+        using var client = console.CreateClient();
+
+        Assert.Contains(Alert, await client.GetStringAsync(At(Move("&x=1")), Ct), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_note_is_drawn_on_the_page_when_what_moved_was_the_last_of_the_conversation()
+    {
+        using var console = Console();
+        console.Broker.Moves.Add(new Wire.MoveRecord
+        {
+            Id = 1, Source = "shared", Destination = "disk-cleanup", MovedBy = "human-user@alpha", MovedUtc = "2026-09-16T10:00:00Z", FirstMessage = 9, Messages = 1,
+            Exchanges = { 9 },
+        });
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At($"/Conversations/Detail?project={Project}&id=shared"), Ct);
+
+        Assert.InRange(page.IndexOf("moved from here to disk-cleanup", StringComparison.Ordinal), page.IndexOf("id=\"m2\"", StringComparison.Ordinal), int.MaxValue);
     }
 
     [Fact]
@@ -471,6 +516,10 @@ public sealed class SpinOffAndMovePagesTests
 
         Assert.Contains($"Added: {Reason}", page, StringComparison.Ordinal);
         Assert.DoesNotContain(MovePicking.SentTogether, page, StringComparison.Ordinal);
+
+        // What the page lists is what the post carries, or the broker refuses a group with a part left out.
+        Assert.Contains("name=\"Exchanges\" value=\"1\"", page, StringComparison.Ordinal);
+        Assert.Contains("name=\"Exchanges\" value=\"2\"", page, StringComparison.Ordinal);
     }
 
     [Fact]

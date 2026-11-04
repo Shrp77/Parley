@@ -1112,6 +1112,73 @@ public sealed class MovingExchangesTests : IDisposable
     }
 
     [Fact]
+    public async Task An_exchange_whose_messages_have_gone_can_still_be_previewed_and_moved()
+    {
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+
+        _connection.Execute("DELETE FROM messages WHERE exchange_id = @going;", new { going });
+
+        var preview = await _console.PreviewMoveAsync("pricing", [going], Ct);
+
+        Assert.Null(preview.Refused);
+        Assert.Equal((string.Empty, 0), (Assert.Single(preview.Exchanges).FirstWords, preview.Exchanges[0].Messages));
+
+        Assert.True((await MoveAsync("tax-questions", true, going)).Moved);
+
+        var record = Assert.Single((await _console.ExportAsync("pricing", Ct)).Moves!);
+
+        Assert.Null(record.FirstMessage);
+        Assert.Equal(0, record.Messages);
+    }
+
+    [Fact]
+    public async Task A_destroyed_conversations_own_export_still_gives_its_moves_and_its_split_pairs()
+    {
+        var (persons, _) = await SettledPairAsync();
+
+        Assert.True((await MoveAsync("tax-questions", true, persons)).Moved);
+        Assert.Equal(DestroyVerdict.Gone, (await _console.DestroyConversationAsync("pricing", T0.AddMinutes(10), Ct)).Verdict);
+
+        var gone = await _console.ExportAsync("pricing", Ct);
+
+        Assert.NotNull(gone.Destroyed);
+        Assert.Equal("tax-questions", Assert.Single(gone.Moves!).Destination);
+        Assert.Equal(["tax-questions"], gone.Links!.Children);
+    }
+
+    [Fact]
+    public async Task A_rename_carries_a_waiting_notice_to_the_new_name()
+    {
+        var payments = AgentName.Create("payments@test");
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+
+        Assert.True((await MoveAsync("tax-questions", true, going)).Moved);
+        Assert.True(await new AgentRepository(_connection).RenameAsync(Billing, payments, cancellationToken: Ct));
+
+        Assert.Equal(
+            ["orders@test", "payments@test"],
+            _connection.Query<string>("SELECT agent FROM move_notices ORDER BY agent;"));
+    }
+
+    [Fact]
+    public async Task A_notices_id_is_never_given_again_so_a_late_acknowledgement_marks_nobody_elses()
+    {
+        var first = await AskAsync(Orders, Billing, "is it gross or net?");
+
+        Assert.True((await MoveAsync("tax-questions", true, first)).Moved);
+
+        var highest = _connection.ExecuteScalar<long>("SELECT max(id) FROM move_notices;");
+
+        Assert.Equal(DestroyVerdict.Gone, (await _console.DestroyConversationAsync("tax-questions", T0.AddMinutes(9), Ct)).Verdict);
+        Assert.Equal(0, _connection.ExecuteScalar<int>("SELECT count(*) FROM move_notices;"));
+
+        var second = await AskAsync(Orders, Inventory, "how many?", "stock");
+
+        Assert.True((await _console.MoveExchangesAsync("stock", "stock-questions", true, [second], T0.AddMinutes(10), Ct)).Moved);
+        Assert.True(_connection.ExecuteScalar<long>("SELECT min(id) FROM move_notices;") > highest);
+    }
+
+    [Fact]
     public async Task A_settled_pair_no_move_has_split_is_not_said_to_be_elsewhere()
     {
         _ = await SettledPairAsync();

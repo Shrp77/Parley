@@ -119,6 +119,18 @@ public sealed class ConversationWordingTests
     }
 
     [Fact]
+    public void A_moves_note_is_drawn_when_what_moved_was_the_last_of_the_conversation()
+    {
+        var export = new ConversationExport([Said(1, """{"ask":"what stayed"}""")], [], Moves: [Moved]);
+
+        var lines = Reading.Lines(export, TimeZoneInfo.Utc, "pricing").Select(line => line.Text).ToList();
+
+        var note = lines.FindIndex(line => line.Contains("moved from here to tax-questions", StringComparison.Ordinal));
+
+        Assert.InRange(note, lines.FindIndex(line => line.Contains("what stayed", StringComparison.Ordinal)) + 1, lines.Count - 1);
+    }
+
+    [Fact]
     public void A_transcript_says_what_a_split_settled_pair_is()
     {
         var export = new ConversationExport(

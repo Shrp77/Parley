@@ -133,6 +133,78 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
         Assert.Equal("room", listed.Parent);
     }
 
+    [Fact]
+    public async Task After_a_spin_offs_first_send_it_is_an_ordinary_conversation()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        Assert.True(shell.Transcript.Reach(message));
+
+        await shell.SpinOff();
+
+        var form = (FormDialog)driving.Find(SpinningOff.Title);
+
+        form.Fill(0, "disk-cleanup");
+        form.Finish(taken: true);
+        await shell.Settled;
+
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Line));
+        shell.NewKeyDownEvent(Key.Enter);
+        await shell.Settled;
+
+        Assert.Single((await Client.ExportAsync("disk-cleanup", Ct)).Messages);
+
+        // The other doors open again: only a spin-off not yet sent keeps them shut.
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Transcript));
+        shell.NewKeyDownEvent(Key.K.WithAlt);
+        await shell.Settled;
+
+        Assert.NotEqual(Shell.SpinOffGoesFromTheBox, shell.Said);
+
+        foreach (var dialog in driving.App.SessionStack?.Select(session => session.Runnable).OfType<TableDialog<FormDialog>>() ?? [])
+        {
+            dialog.NewKeyDownEvent(Key.Esc);
+        }
+
+        await shell.Settled;
+
+        shell.Line.Written = "and one thing more";
+        await shell.Settled;
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Line));
+        shell.NewKeyDownEvent(Key.Enter);
+        await shell.Settled;
+
+        Assert.DoesNotContain("already a conversation", shell.Said, StringComparison.Ordinal);
+        Assert.Equal(2, (await Client.ExportAsync("disk-cleanup", Ct)).Messages.Count);
+    }
+
+    [Fact]
+    public async Task A_spin_off_can_start_from_a_conversation_everything_was_moved_out_of()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        var exchange = (await Client.ExportAsync(Conversation, Ct)).Messages.Single(m => m.Id == message).ExchangeId;
+
+        Assert.True((await Client.MoveExchangesAsync(Conversation, "elsewhere", true, [exchange], Ct)).Moved);
+
+        await Walking.GoAsync(shell, Viewing.Project);
+        await shell.Settled;
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+        await shell.SpinOff();
+
+        var form = (FormDialog)driving.Find(SpinningOff.Title);
+
+        form.Fill(0, "disk-cleanup");
+        form.Finish(taken: true);
+        await shell.Settled;
+
+        Assert.DoesNotContain("Nothing was started", shell.Said, StringComparison.Ordinal);
+        Assert.Equal("disk-cleanup", shell.Transcript.Open);
+    }
+
     /// <summary>A conversation on screen with no seat in the project, the cursor on nothing.</summary>
     private async Task<(Shell Shell, Driving.Session Driving)> ReadingWithNoSeatAsync()
     {
