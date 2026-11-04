@@ -59,6 +59,6 @@ On each machine, accept that machine's line from a surface running there. Check 
 | Run `./install.sh` with no flag | It stops, names `parley-node-acme`, and asks for `--agent-only` or `--force`. |
 | Run `./install.sh --agent-only` again | The node stops, the tools are replaced, and the node starts again. |
 | Add `PARLEY_WORKSPACE` to a block | The same refusal, and it says each machine works its folder out from where the file is. |
-| Move the checkout on `server` and open it by hand | The attach is refused, naming both folders. Retire the old name, then enrol again from the new folder. |
+| Move the checkout on `server` and open it by hand | The attach is refused, naming both folders. Give it a different role or purge the old name, then enrol again from the new folder. |
 | `parley enroll --broker <address>` with no project | Exit 78 with a sentence, not a crash. |
 | Withdraw on `laptop` | `laptop`'s block goes. The entry, the identifier and `server`'s block stay. |

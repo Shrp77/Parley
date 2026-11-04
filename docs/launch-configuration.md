@@ -98,7 +98,7 @@ chooses a block too.
 **The workspace is not in the file.** When a file has `parleyMachines`, an agent's workspace is the folder the
 file was found in. A node starts an agent from the folder in that machine's own `node.json`. A checkout moved on one
 machine is refused when it attaches, naming both folders, because a name belongs to one repository and a clone looks the
-same to the broker. Retire the old name, then enrol again from the new folder.
+same to the broker. Give it a different role, or purge the old name, and enrol again from the new folder.
 
 **A mistake stops the whole file,** whichever machine it concerns: a setting that cannot go in a block, a name that
 can never be a machine's, a block for an entry the file does not have. It is reported by machine, entry and setting.

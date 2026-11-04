@@ -135,6 +135,7 @@ public static class OwnershipLine
             var mark = Enrolment.HeldHasByteOrderMark(held);
 
             JsonObject root;
+            string original;
 
             try
             {
@@ -142,6 +143,7 @@ public static class OwnershipLine
                 // any other unreadable one, never a throw through the facilitator's pass.
                 var text = await Enrolment.ReadHeldAsync(held, cancellationToken).ConfigureAwait(false);
 
+                original = text;
                 root = StrictJson.Parse(text) as JsonObject
                        ?? throw new InvalidDataException("the file is not a JSON object.");
 
@@ -239,7 +241,7 @@ public static class OwnershipLine
             await Enrolment.OverwriteHeldAsync(
                 held,
                 path,
-                root.ToJsonString(SerialisationOptions.Indented) + "\n",
+                LaunchText.Render(root, original),
                 cancellationToken,
                 mark ? Marked : Plain).ConfigureAwait(false);
 

@@ -50,6 +50,43 @@ public sealed class AttachAndJoinSayWhatTheyMeanTests
         Assert.Equal("/srv/infra", row.Workspace);
     }
 
+    [Fact]
+    public async Task A_checkout_that_moved_is_refused_and_purging_the_old_name_lets_it_back()
+    {
+        // What the docs tell a person to do.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+
+        var from = Attach();
+        from.Workspace = "/srv/old";
+
+        using (var first = broker.Connect().Attach(from, cancellationToken: Ct))
+        {
+            Assert.True(await first.ResponseStream.MoveNext(Ct));
+        }
+
+        await broker.WaitUntilDetachedAsync("infra@server", TimeSpan.FromSeconds(10));
+
+        var to = Attach();
+        to.Workspace = "/srv/new";
+
+        using (var refused = broker.Connect().Attach(to, cancellationToken: Ct))
+        {
+            var why = await Assert.ThrowsAsync<RpcException>(() => refused.ResponseStream.MoveNext(Ct));
+
+            Assert.Contains("/srv/old", why.Status.Detail, StringComparison.Ordinal);
+            Assert.Contains("/srv/new", why.Status.Detail, StringComparison.Ordinal);
+        }
+
+        var operators = broker.ConnectAsOperator();
+
+        _ = await operators.RetireAsync(new Wire.AgentRequest { Agent = "infra@server" }, cancellationToken: Ct);
+        _ = await operators.PurgeAsync(new Wire.AgentRequest { Agent = "infra@server" }, cancellationToken: Ct);
+
+        using var again = broker.Connect().Attach(to, cancellationToken: Ct);
+
+        Assert.True(await again.ResponseStream.MoveNext(Ct));
+    }
+
     [Theory]
     [InlineData("0.1")]
     [InlineData("")]

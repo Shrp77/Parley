@@ -1,4 +1,3 @@
-using Parley.Configuration;
 using Parley.Core;
 using Parley.Setup;
 using Terminal.Gui.App;
@@ -39,21 +38,6 @@ internal static class Onboarding
     /// The project first: ticking a repository makes it an agent of one particular project, and the caption
     /// is the one thing on that window certain to be read.
     /// </remarks>
-    internal static bool IsAWindow(ProjectSettings? project) =>
-        project is not null && string.Equals(project.Name.Value, ProjectManifest.WindowName, StringComparison.Ordinal);
-
-    /// <summary>What this says instead of enrolling into a broker shown by address.</summary>
-    /// <remarks>
-    /// That name is no project's, and would be written into the repository as one. The command line is told the real one, and
-    /// the broker confirms it.
-    /// </remarks>
-    internal const string AWindowEnrolsNothing =
-        "This machine shows a broker by address and has no project of its own, so nothing is enrolled from here. "
-        + "Use: parley enroll <folder> --project <its name> --broker <its address>";
-
-    /// <summary>The caption for the picker.</summary>
-    /// <param name="project">The project they would join, or null when none is named.</param>
-    /// <returns>The caption.</returns>
     internal static string Caption(ProjectSettings? project) =>
         project is { } named ? $"{named.Name.Value}: {Title}" : Title;
 
@@ -299,13 +283,6 @@ internal static class Onboarding
 
         // The command says which agent it is starting and what it is waiting on, as it happens.
         var outcome = new EnrolmentOutcome(saying);
-
-        if (IsAWindow(project))
-        {
-            await done(AWindowEnrolsNothing).ConfigureAwait(false);
-
-            return;
-        }
 
         var code = await EnrollCommand
             .EnrolAsync(

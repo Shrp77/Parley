@@ -3,6 +3,25 @@ using Parley.Configuration;
 
 namespace Parley.Setup;
 
+/// <summary>A launch configuration as text, keeping the line endings the file already has.</summary>
+/// <remarks>
+/// The file is shared between machines, and a laptop and a Linux server are this feature's own example: a write in the
+/// platform's own line endings would show every line as changed in the other machine's diff.
+/// </remarks>
+internal static class LaunchText
+{
+    /// <summary>Renders the file.</summary>
+    /// <param name="root">What it holds now.</param>
+    /// <param name="original">Its text before, or null when it is new.</param>
+    /// <returns>The text to write.</returns>
+    public static string Render(JsonObject root, string? original)
+    {
+        var newline = original?.Contains("\r\n", StringComparison.Ordinal) == true ? "\r\n" : "\n";
+
+        return root.ToJsonString(SerialisationOptions.Indented).ReplaceLineEndings(newline) + newline;
+    }
+}
+
 /// <summary>Writes the machine section of a launch configuration (SPEC.md §4.1.2).</summary>
 /// <remarks>
 /// <b>Everything here changes one machine's block and nothing else</b>, because the file is shared and each machine

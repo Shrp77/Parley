@@ -229,11 +229,6 @@ internal static class Adding
         ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(done);
 
-        if (Onboarding.IsAWindow(project))
-        {
-            return done(Onboarding.AWindowEnrolsNothing);
-        }
-
         var browsing = new Browsing(Browsing.Opening(lastAdded, startedIn));
         var walk = Prompting.Open(app, browsing);
 

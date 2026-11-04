@@ -106,9 +106,11 @@ public sealed class AMachineWithOnlyATunnelTests : IAsyncDisposable
         return serve;
     }
 
-    private (Process Node, ConcurrentQueue<string> Lines) Up(params string[] arguments)
+    private (Process Node, ConcurrentQueue<string> Lines) Up(params string[] arguments) => UpAt(Address, arguments);
+
+    private (Process Node, ConcurrentQueue<string> Lines) UpAt(string address, params string[] arguments)
     {
-        var node = ToolProcess.Launch(OnThatMachine, ["up", "--broker", Address, .. arguments]);
+        var node = ToolProcess.Launch(OnThatMachine, ["up", "--broker", address, .. arguments]);
         var lines = new ConcurrentQueue<string>();
 
         _running.Add(node);
@@ -130,6 +132,93 @@ public sealed class AMachineWithOnlyATunnelTests : IAsyncDisposable
         node.BeginErrorReadLine();
 
         return (node, lines);
+    }
+
+    /// <summary>A loopback relay that can stop carrying bytes while keeping every socket open, as a dead far end does.</summary>
+    private sealed class SilentRelay : IDisposable
+    {
+        private readonly System.Net.Sockets.TcpListener _listener = new(System.Net.IPAddress.Loopback, 0);
+        private readonly CancellationTokenSource _stop = new();
+        private readonly List<System.Net.Sockets.TcpClient> _held = [];
+        private volatile bool _silent;
+
+        public SilentRelay(int target)
+        {
+            _listener.Start();
+            _ = Task.Run(() => AcceptAsync(target));
+        }
+
+        public int Port => ((System.Net.IPEndPoint)_listener.LocalEndpoint).Port;
+
+        public void GoSilent() => _silent = true;
+
+        public void Dispose()
+        {
+            _stop.Cancel();
+            _listener.Stop();
+
+            lock (_held)
+            {
+                _held.ForEach(client => client.Dispose());
+            }
+
+            _stop.Dispose();
+        }
+
+        private async Task AcceptAsync(int target)
+        {
+            try
+            {
+                while (!_stop.IsCancellationRequested)
+                {
+                    var inbound = await _listener.AcceptTcpClientAsync(_stop.Token);
+                    var outbound = new System.Net.Sockets.TcpClient();
+
+                    await outbound.ConnectAsync(System.Net.IPAddress.Loopback, target, _stop.Token);
+
+                    lock (_held)
+                    {
+                        _held.Add(inbound);
+                        _held.Add(outbound);
+                    }
+
+                    _ = Task.Run(() => PumpAsync(inbound, outbound));
+                    _ = Task.Run(() => PumpAsync(outbound, inbound));
+                }
+            }
+            catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException or System.Net.Sockets.SocketException)
+            {
+                // Stopped, which is how this ends.
+            }
+        }
+
+        private async Task PumpAsync(System.Net.Sockets.TcpClient from, System.Net.Sockets.TcpClient to)
+        {
+            var buffer = new byte[16 * 1024];
+
+            try
+            {
+                while (true)
+                {
+                    var read = await from.GetStream().ReadAsync(buffer, _stop.Token);
+
+                    if (read == 0)
+                    {
+                        return;
+                    }
+
+                    // Read and dropped: the sockets stay open and nothing arrives.
+                    if (!_silent)
+                    {
+                        await to.GetStream().WriteAsync(buffer.AsMemory(0, read), _stop.Token);
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is OperationCanceledException or IOException or ObjectDisposedException or InvalidOperationException)
+            {
+                // Stopped, which is how this ends.
+            }
+        }
     }
 
     private static async Task UntilAsync(Func<Task<bool>> condition, string otherwise, int seconds = 45)
@@ -245,15 +334,18 @@ public sealed class AMachineWithOnlyATunnelTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task A_command_in_the_repository_uses_this_machines_block()
+    public async Task A_repositorys_block_redirects_no_command_but_waiting()
     {
+        // A clone's file would otherwise receive the person's files and their node's join. A dead address is named so that this
+        // can reach nothing of the machine running it, whatever goes wrong.
         await ServeAsync();
         WriteRepository();
 
-        var (code, output, error) = ToolProcess.RunFullyIn(Checkout, OnThatMachine, "registry");
+        var (_, output, error) = ToolProcess.RunFullyIn(
+            Checkout, OnThatMachine, "--launch-key", "parley-alpha", "--broker", "http://127.0.0.1:1", "registry");
 
-        Assert.True(code == 0, output + error);
-        Assert.Contains("human-user@alpha", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("human-user@alpha", output, StringComparison.Ordinal);
+        Assert.Contains("127.0.0.1:1", error, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -377,6 +469,53 @@ public sealed class AMachineWithOnlyATunnelTests : IAsyncDisposable
 
         Assert.Equal(78, node.ExitCode);
         await SaidAsync(lines, "serves project 'alpha'");
+    }
+
+    [Fact]
+    [Slow]
+    public async Task A_tunnel_that_goes_silent_is_noticed_and_the_broker_lets_go()
+    {
+        // The hard case: nothing closes. A dead machine behind ssh leaves sockets open and silent on both sides.
+        await ServeAsync();
+        WriteRepository();
+        WriteCatalogue(StandingAgent.Command);
+
+        using var relay = new SilentRelay(_port);
+
+        var (first, firstSaid) = UpAt($"http://127.0.0.1:{relay.Port}", "--project", "alpha", "--keep-trying");
+
+        await SaidAsync(firstSaid, "Can start:");
+
+        relay.GoSilent();
+
+        await UntilAsync(
+            () => Task.FromResult(firstSaid.Any(line => line.Contains("No broker is answering", StringComparison.Ordinal))),
+            $"it never noticed. It said: {string.Join(" | ", firstSaid)}",
+            seconds: 150);
+
+        first.Kill(entireProcessTree: true);
+        Assert.True(first.WaitForExit(10_000));
+
+        // The broker pings too, so a node back on a working path joins by itself.
+        var (second, secondSaid) = Up("--project", "alpha", "--keep-trying");
+
+        await UntilAsync(
+            () => Task.FromResult(secondSaid.Any(line => line.Contains("Can start:", StringComparison.Ordinal))),
+            $"the broker never let go. It said: {string.Join(" | ", secondSaid)}",
+            seconds: 150);
+
+        Assert.False(second.HasExited);
+    }
+
+    [Fact]
+    public void An_address_that_is_not_one_is_said_rather_than_crashing()
+    {
+        var (code, _, error) = ToolProcess.RunFully(
+            OnThatMachine, "up", "--broker", "not a url", "--project", "alpha", "--keep-trying");
+
+        Assert.Equal(78, code);
+        Assert.Contains("not an address", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("Unhandled", error, StringComparison.Ordinal);
     }
 
     [Fact]

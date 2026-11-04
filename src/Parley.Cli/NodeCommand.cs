@@ -153,13 +153,15 @@ public static class NodeCommand
         var refusals = 0;
         var outages = 0;
         var secondNodeSaid = false;
+        var outageSaid = false;
 
         // From 2 seconds, doubling to 30, for as long as it takes: nothing times out, and a machine that comes up before its
         // tunnel is an ordinary start. Said once for each spell, because a line every 30 seconds is a line nobody reads.
         async Task WaitOutAsync()
         {
-            if (outages == 0)
+            if (!outageSaid && !secondNodeSaid)
             {
+                outageSaid = true;
                 await output.WriteLineAsync($"No broker is answering at {endpoint}. Keeping this node's agents and trying again.")
                     .ConfigureAwait(false);
             }
@@ -236,9 +238,11 @@ public static class NodeCommand
 
                                 secondNodeSaid = false;
 
-                                if (outages > 0)
+                                outages = 0;
+
+                                if (outageSaid)
                                 {
-                                    outages = 0;
+                                    outageSaid = false;
                                     await output.WriteLineAsync($"The broker at {endpoint} is answering again. Rejoined.")
                                         .ConfigureAwait(false);
                                 }
@@ -321,7 +325,7 @@ public static class NodeCommand
                         secondNodeSaid = true;
                         await output.WriteLineAsync(failure.Status.Detail).ConfigureAwait(false);
                         await output.WriteLineAsync(
-                            "If that is this machine's last connection it will clear, so this keeps trying. If another node "
+                            "If that is this machine's last connection, the broker lets go of it within a few minutes, so this keeps trying. If another node "
                             + "is running here, stop one of them.").ConfigureAwait(false);
                     }
 

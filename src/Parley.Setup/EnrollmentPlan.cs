@@ -369,6 +369,14 @@ public static class EnrollmentPlan
     {
         ArgumentNullException.ThrowIfNull(entry);
 
+        // A window onto a broker shown by address, and its name is no project's. Here so that every way of enrolling is held to it.
+        if (string.Equals(project, ProjectManifest.WindowName, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                "this machine shows a broker by address and has no project of its own, so nothing is enrolled from here. "
+                + "Use: parley enroll <folder> --project <its name> --broker <its address>");
+        }
+
         var machine = MachineName.Current;
         var notes = new List<string>();
         var owns = (entry.Owns ?? string.Empty).Trim();
@@ -492,9 +500,20 @@ public static class EnrollmentPlan
         {
             foreach (var kept in new[] { OwnsVariable, ResponderVariable })
             {
-                if (shared[kept] is { } value)
+                if (shared[kept] is not { } value)
+                {
+                    continue;
+                }
+
+                // Held to what a line typed here is held to: a client expands `${...}`, so a value carried across would report
+                // somebody's secret on attach.
+                if (OwnershipStatement.IsLaunchable(value.ToString(), out _))
                 {
                     env[kept] = value.DeepClone();
+                }
+                else
+                {
+                    notes.Add($".mcp.json: {kept} is not carried across, because the client would expand it");
                 }
             }
         }
@@ -512,6 +531,12 @@ public static class EnrollmentPlan
 
         var block = MachineBlocks.Ensure(scratch, machine, key);
 
+        // A line written for another role says nothing true about this one.
+        if (landed?.Agent is { Length: > 0 } before && !string.Equals(before, entry.Agent, StringComparison.Ordinal))
+        {
+            _ = block.Remove(OwnsVariable);
+        }
+
         if (owns.Length > 0)
         {
             block[OwnsVariable] = owns;
@@ -520,6 +545,12 @@ public static class EnrollmentPlan
         if (!string.IsNullOrWhiteSpace(brokerAddress))
         {
             block[BrokerVariable] = brokerAddress;
+        }
+        else if (block.Remove(BrokerVariable))
+        {
+            // Enrolling into a project this machine describes means that project's broker, and a block's address would quietly
+            // beat it, whether stale or planted.
+            notes.Add($".mcp.json: this machine's block named a broker; it is taken out, because this machine describes '{project}'");
         }
 
         // The identity is kept where it is found and minted only where there is none. It sits beside
@@ -559,7 +590,7 @@ public static class EnrollmentPlan
             _ = scratch.Remove(LaunchConfiguration.MachinesMember);
             root[LaunchConfiguration.MachinesMember] = written;
 
-            launchOutput = root.ToJsonString(SerialisationOptions.Indented) + "\n";
+            launchOutput = LaunchText.Render(root, launchConfiguration);
             notes.Add(others > 0
                 ? $".mcp.json: {(existing is null ? "create" : "update")} {key} entry, leaving {others} other server(s)"
                 : $".mcp.json: {(existing is null ? "create" : "update")} {key} entry");

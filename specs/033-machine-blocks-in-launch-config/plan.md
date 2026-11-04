@@ -5,7 +5,7 @@
 
 ## Summary
 
-A repository's `.mcp.json` gains `parleyMachines`: what differs per machine, for each project entry. One method in `LaunchConfiguration` works out a machine's effective settings, and every reader uses it. Writers change only this machine's block. A machine with only a tunnel can enrol and run a node by naming the project and the address, once the broker confirms it serves that project. An agent-only install puts the tools on such a machine with no broker, and a node autostart entry keeps its agents startable across reboots and dropped tunnels. The approach and its evidence are in [research.md](research.md).
+A repository's `.mcp.json` gains `parleyMachines`: what differs per machine, for each project entry. One method in `LaunchConfiguration` works out a machine's effective settings, and every reader uses it. Writers change only this machine's block. A machine with only a tunnel can enrol and run a node by naming the project and the address, once the seat in that broker's registry agrees. An agent-only install puts the tools on such a machine with no broker, and a node autostart entry keeps its agents startable across reboots and dropped tunnels. The approach and its evidence are in [research.md](research.md).
 
 ## Technical Context
 
@@ -17,7 +17,7 @@ A repository's `.mcp.json` gains `parleyMachines`: what differs per machine, for
 **Project Type**: CLI tools, broker, MCP adapter
 **Performance Goals**: The hook keeps its existing time budget. Reading the section adds one parse of a small file already read.
 **Constraints**: Parley.Configuration reaches neither a store nor the transport. Parley.Mcp references neither Broker nor Setup. Loopback only. A green build is the lint gate.
-**Scale/Scope**: About 14 source files, 3 wire fields, 2 install scripts and their reset scripts, 1 hook, 3 documents.
+**Scale/Scope**: About 14 source files, 1 wire field, 2 install scripts and their reset scripts, 1 hook, 3 documents.
 
 ## Constitution Check
 
@@ -33,7 +33,7 @@ A repository's `.mcp.json` gains `parleyMachines`: what differs per machine, for
 | The plugin ships no MCP server configuration | **Pass.** |
 | No surface writes for another machine | **Pass.** `NotHere` stays, and writes go to `agent.Machine`. |
 
-**A rule this changes, on purpose:** "A project named that the manifest does not describe is still refused, address or not" now has an exception for `enroll` and `up`, and only once the broker confirms the name. `ExplicitBrokerSelectionTests` keeps every other verb.
+**A rule this changes, on purpose:** "A project named that the manifest does not describe is still refused, address or not" now has an exception for `enroll` and `up`, and only once the seat in that broker's registry agrees. `ExplicitBrokerSelectionTests` keeps every other verb.
 
 Re-checked after design: no violations.
 
@@ -55,23 +55,21 @@ specs/033-machine-blocks-in-launch-config/
 ### Source code
 
 ```text
-proto/parley.proto                          expected_project, project, a node's protocol_version
+proto/parley.proto                          a node's protocol_version
 install.sh, install.ps1, reset.sh, reset.ps1  agent-only mode; stop, restart and remove node entries
 src/Parley.Setup/AutostartPlan.cs           DescribeNode; the lingering and sign-in notices
 src/Parley.Cli/AutostartCommand.cs          install, status and remove for node entries
 src/Parley.Configuration/LaunchConfiguration.cs   the section, validation, effective settings, finding the file
 src/Parley.Mcp/ServerOptions.cs             overlay the block on the launch's variables; no notice when a block gave the address
-src/Parley.Mcp/BrokerLink.cs                send expected_project; report the refusal
-src/Parley.Server/AgentsService.cs          refuse a mismatch, before any row
-src/Parley.Server/NodesService.cs           say the project in Describe; refuse another protocol on Join
+src/Parley.Server/NodesService.cs           refuse another protocol on Join
+src/Parley.Server/ParleyServer.cs           ping, so a silent connection is let go
 src/Parley.Setup/EnrollmentPlan.cs          write blocks, empty ones included; no folder path in a new entry; refuse a role change another machine uses; fix the out-of-date comment on the workspace
 src/Parley.Setup/Enrolment.cs               withdraw this machine's block only
 src/Parley.Setup/OwnershipLine.cs           write this machine's block
-src/Parley.Setup/LaunchEntries.cs           effective values on an entry
-src/Parley.Setup/ProjectResolution.cs       broker-confirmed project; address from the repository's block
-src/Parley.Cli/Program.cs                   enroll and up by address; --launch-key; the crash
-src/Parley.Cli/NodeCommand.cs               announce only the project the broker serves; --keep-trying; send the protocol
-src/Parley.Terminal/, src/Parley.Web/       a this-machine window: real project for a line, refusal for enrolling
+src/Parley.Setup/BrokerProject.cs           compare a name with the seat in a broker's registry
+src/Parley.Cli/Program.cs                   enroll and up by address; --launch-key for `waiting`; the crash; a pinged channel
+src/Parley.Cli/NodeCommand.cs               --keep-trying; send the protocol
+src/Parley.Setup/OwnershipLine.cs, Enrolment.cs, EnrollmentPlan.cs   a this-machine window: the real entry for a line and a withdrawal, refusal for enrolling
 plugins/parley/hooks/parley_waiting.py      --launch-key, no block logic
 SPEC.md, docs/configuration.md, docs/launch-configuration.md, CLAUDE.md
 Directory.Build.props                       0.53.0
@@ -86,7 +84,7 @@ tests/Parley.Server.Tests                    attach refusal and Describe over a 
 
 ## Order of work
 
-1. **SPEC.md first:** §4.1.1, the launch configuration in §13, the Attach refusal in §10.1, the exception in §4.1.
+1. **SPEC.md first:** §4.1.2, and the protocol check in §4.0.
 2. **The reader:** section, validation, effective settings, finding the file. Unit tests on a table of files. Nothing uses it yet.
 3. **The adapter and the wire**, which delivers US1 for hand-written files and most of US2.
 4. **Writers:** enrolment, ownership line, withdrawal. Delivers US3.
@@ -98,7 +96,7 @@ tests/Parley.Server.Tests                    attach refusal and Describe over a 
 
 - **Test every reader on one table of files (SC-005).** One shared fixture of files and expected effective settings, run from the adapter, Setup and CLI test projects.
 - **A no-block file stays the same (SC-004).** Run the existing launch tests unchanged, and add a test that reading writes nothing.
-- **Mutation-check each new guard:** the project check, the allow-list, the withdrawal rule, the role-change refusal. Each must fail once with a mutation that compiles.
+- **Mutation-check each new guard:** the name check, the allow-list, the withdrawal rule, the role-change refusal. Each must fail once with a mutation that compiles.
 - **A moved checkout:** one test holds that the found folder is what the adapter reports, and that a node starts from `node.json` with no folder in the block.
 - **A row already registered with no identity:** a machine section makes an agent present an identity where it may have sent none. Test that attaching this way against an existing row with no identity gives a clear result, not a stuck agent.
 - **Tests that run a tool** clear every `PARLEY_` variable and pass the catalogue as a seam, as `CLAUDE.md` requires. Machine names reach child processes by `PARLEY_MACHINE`.
@@ -111,7 +109,7 @@ tests/Parley.Server.Tests                    attach refusal and Describe over a 
 
 | Addition | Why it is needed | Simpler option rejected because |
 |---|---|---|
-| Three wire fields | The broker is the only thing that knows its project for certain, and machines can now differ in build. | Parsing `human-user@<project>` from a roster leaves a row in the wrong store. |
+| One wire field | Machines can now differ in build, so a node states its protocol. | A node left to find out later starts agents that are refused. |
 | A second kind of autostart entry | The server's agent must stay startable with nobody there. | Leaving `parley up` to the person fails silently at the first reboot. |
 | `--launch-key` | The hook must not hold a second copy of the rules (FR-005). | A Python copy would need the name normalisation too, and would drift. |
 

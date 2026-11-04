@@ -1,6 +1,5 @@
 using Grpc.Core;
 using Grpc.Net.Client;
-using Parley.Configuration;
 using Parley.Core;
 using Wire = Parley.Transport;
 
@@ -62,7 +61,7 @@ public static class BrokerProject
         }
         catch (RpcException failure)
         {
-            return (null, $"No broker answered at {endpoint}: {failure.Status.Detail} Is the tunnel up?");
+            return (null, $"No broker answered at {endpoint} ({failure.StatusCode}). Is the tunnel up?");
         }
     }
 
@@ -96,7 +95,7 @@ public static class BrokerProject
 
         return string.Equals(served, name, StringComparison.Ordinal)
             ? (new ProjectSettings(project, string.Empty, BrokerEndpoint.Read(_ => address), null), null)
-            : (null, $"The broker at {address} serves project '{served}', not '{name}'. Nothing has been changed.");
+            : (null, $"The broker at {BrokerEndpoint.Read(_ => address)} serves project '{(ProjectName.TryCreate(served, out var named) ? named.Value : "with a name that cannot be shown")}', not '{name}'. Nothing has been changed.");
     }
 
     /// <summary>Whether this machine reaches a project by address and holds nothing of it.</summary>
@@ -105,25 +104,4 @@ public static class BrokerProject
     public static bool ReachedByAddress(ProjectSettings? project) =>
         project is { Store.Length: 0 };
 
-    /// <summary>The address in this machine's block, when a repository names exactly one and nothing else was named.</summary>
-    /// <param name="workingDirectory">Where the command is running.</param>
-    /// <returns>The address, or null.</returns>
-    /// <remarks>
-    /// So a person inside the repository need not repeat what its file already says, the way a project it names works
-    /// today. Only one: with two there is a question, and <c>ProjectResolution</c> answers questions by asking.
-    /// </remarks>
-    public static string? AddressInRepository(string? workingDirectory)
-    {
-        if (string.IsNullOrWhiteSpace(workingDirectory)
-            || !LaunchConfiguration.TryRead(workingDirectory, out var declared, out _)
-            || declared.Machines is null
-            || !declared.Machines.TryGetValue(MachineName.Current, out var blocks))
-        {
-            return null;
-        }
-
-        var addresses = blocks.Values.Where(block => block.Broker is not null).ToList();
-
-        return addresses.Count == 1 ? addresses[0].Broker : null;
-    }
 }

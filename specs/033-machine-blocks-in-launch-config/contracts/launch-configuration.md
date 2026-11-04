@@ -40,9 +40,8 @@
 | `parley enroll <dir> --broker <address>` | Exit 78: asks for `--project`. Replaces today's crash. |
 | `parley up --project acme --broker <address>` | Reads the registry, as above, then joins. With `--keep-trying`, joins on the name given. |
 | `parley up --broker <address>` | Joins, announcing every name the catalogued repositories declare. |
-| `parley --launch-key parley-acme waiting <role>` | Uses this repository's effective address for that entry, or its project if there is none. For the hook. |
+| `parley --launch-key parley-acme waiting <role>` | Uses this repository's effective address for that entry, or its project if there is none. For the hook. No other command follows a repository's block. |
 | Any other verb with `--project acme` | Refused as today. |
-| Any verb, run in a repository, nothing else named | If exactly one entry has a block address for this machine, uses that address. |
 
 ## An agent-only machine
 
@@ -54,7 +53,7 @@
 | `parley autostart install --project acme --broker <address>` | Confirms the broker serves `acme`, then installs and starts `parley-node-acme`. Says if it will stop at logout, with the command that fixes it. |
 | `parley autostart status` | The broker entry, if any, and each node entry. |
 | `parley autostart remove --project acme` | Removes that entry. With one entry on the machine, the project may be left out. |
-| `parley up --keep-trying` | Waits and retries while the broker cannot be reached. Exits `Config` (78) on a refusal. |
+| `parley up --keep-trying` | Waits and retries while the broker cannot be reached, or says another node is joined. Exits `Config` (78) on another protocol. |
 
 ## Messages
 

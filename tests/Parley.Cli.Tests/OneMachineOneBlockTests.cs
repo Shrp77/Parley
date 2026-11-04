@@ -42,7 +42,7 @@ public sealed class OneMachineOneBlockTests : IDisposable
             ["mcpServers"] = JsonNode.Parse(
                 $$"""{ "parley-acme": { "command": "parley-mcp", "env": { {{env}} } }, "other": { "command": "x" } }"""),
             ["parleyMachines"] = JsonNode.Parse(machines),
-        }.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }) + "\n";
+        }.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }).ReplaceLineEndings("\n") + "\n";
 
         File.WriteAllText(LaunchFile, text);
 
@@ -79,6 +79,93 @@ public sealed class OneMachineOneBlockTests : IDisposable
         var after = File.ReadAllText(LaunchFile);
 
         Assert.Equal(before.Replace("\"Old.\"", "\"New.\"", StringComparison.Ordinal), after);
+    }
+
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    public async Task A_write_keeps_the_files_own_line_endings(string newline)
+    {
+        // A laptop and a Linux server share this file, and a write in the platform's own endings changes every line of it.
+        var before = Written($$"""{ "server": {{Block("Makes changes.")}}, "{{Here}}": {{Block("Old.")}} }""").ReplaceLineEndings(newline);
+
+        File.WriteAllText(LaunchFile, before);
+
+        Assert.Null(await OwnershipLine.WriteAsync(
+            Workspace, "acme", Agent, "New.", TestContext.Current.CancellationToken));
+
+        Assert.Equal(before.Replace("\"Old.\"", "\"New.\"", StringComparison.Ordinal), File.ReadAllText(LaunchFile));
+    }
+
+    [Fact]
+    public async Task Withdrawing_keeps_a_byte_order_mark()
+    {
+        var text = Written($$"""{ "server": {{Block("Makes changes.")}}, "{{Here}}": {{Block("Answers.")}} }""");
+
+        File.WriteAllText(LaunchFile, text, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+
+        _ = await Enrolment.WithdrawAsync(Workspace, "infra", "acme", null, TestContext.Current.CancellationToken);
+
+        var written = File.ReadAllBytes(LaunchFile);
+
+        Assert.True(written is [0xEF, 0xBB, 0xBF, ..]);
+        Assert.Null(Read()["parleyMachines"]![Here]);
+    }
+
+    [Fact]
+    public async Task Withdrawing_from_a_window_takes_the_block_that_reaches_a_broker()
+    {
+        Written($$"""{ "server": {{Block("Makes changes.")}}, "{{Here}}": { "parley-acme": { "PARLEY_BROKER": "http://127.0.0.1:19100" } } }""");
+
+        _ = await Enrolment.WithdrawAsync(
+            Workspace, "infra", ProjectManifest.WindowName, null, TestContext.Current.CancellationToken);
+
+        var root = Read();
+
+        Assert.Null(root["parleyMachines"]![Here]);
+        Assert.NotNull(root["mcpServers"]!["parley-acme"]);
+    }
+
+    [Fact]
+    public void Nothing_is_enrolled_into_a_window()
+    {
+        var refused = Assert.Throws<InvalidDataException>(() => EnrollmentPlan.Describe(
+            new EnrollmentEntry(Workspace, "infra", null, Unattended: true), null, null, false, ProjectManifest.WindowName));
+
+        Assert.Contains("parley enroll", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("--broker", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Enrolling_under_a_new_role_drops_the_line_the_old_one_had()
+    {
+        Written($$"""{ "{{Here}}": {{Block("The old role's line.")}} }""");
+
+        var root = Planned("renamed", null);
+
+        Assert.Null(root["parleyMachines"]![Here]!["parley-acme"]!["PARLEY_OWNS"]);
+    }
+
+    [Fact]
+    public void Enrolling_into_a_project_here_takes_a_blocks_address_out()
+    {
+        // Stale or planted, it would quietly beat the project this machine describes.
+        Written($$"""{ "{{Here}}": { "parley-acme": { "PARLEY_BROKER": "http://192.0.2.71:19100" } } }""");
+
+        Assert.Null(Planned("infra", null)["parleyMachines"]![Here]!["parley-acme"]!["PARLEY_BROKER"]);
+    }
+
+    [Fact]
+    public void A_shared_value_a_client_would_expand_is_not_carried_across()
+    {
+        File.WriteAllText(
+            LaunchFile,
+            """{ "mcpServers": { "parley-acme": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "infra", "PARLEY_PROJECT": "acme", "PARLEY_OWNS": "Stock ${GITHUB_TOKEN}", "PARLEY_RESPONDER": "${SECRET}" } } } }""");
+
+        var env = Planned("infra", null)["mcpServers"]!["parley-acme"]!["env"]!.AsObject();
+
+        Assert.False(env.ContainsKey("PARLEY_OWNS"));
+        Assert.False(env.ContainsKey("PARLEY_RESPONDER"));
     }
 
     [Fact]

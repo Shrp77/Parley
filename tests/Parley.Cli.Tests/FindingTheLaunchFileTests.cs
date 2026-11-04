@@ -138,6 +138,49 @@ public sealed class FindingTheLaunchFileTests : IDisposable
     }
 
     [Fact]
+    public void A_member_named_twice_in_a_section_is_a_problem_and_not_silence()
+    {
+        var here = Checkout(
+            "infra",
+            """
+            { "mcpServers": { "parley-acme": { "env": { "PARLEY_AGENT": "infra" } } },
+              "parleyMachines": { "laptop": { "parley-acme": { "PARLEY_OWNS": "One.", "PARLEY_OWNS": "Two." } } } }
+            """);
+
+        Assert.NotNull(LocatedLaunch.Find(null, "infra", "acme", here)?.Problem);
+    }
+
+    [Fact]
+    public void A_launch_naming_no_project_is_the_entry_naming_none()
+    {
+        var here = Checkout(
+            "infra",
+            """
+            { "mcpServers": {
+                "parley": { "env": { "PARLEY_AGENT": "infra" } },
+                "parley-acme": { "env": { "PARLEY_AGENT": "infra", "PARLEY_PROJECT": "acme" } } },
+              "parleyMachines": { "laptop": { "parley": { "PARLEY_OWNS": "Unpinned." } } } }
+            """);
+
+        Assert.Equal("parley", LocatedLaunch.Find(null, "infra", null, here)?.Membership?.Key);
+    }
+
+    [Fact]
+    public void Several_entries_that_could_be_this_launch_are_a_problem_and_not_silence()
+    {
+        var here = Checkout(
+            "infra",
+            """
+            { "mcpServers": {
+                "parley-acme": { "env": { "PARLEY_AGENT": "infra" } },
+                "parley-beta": { "env": { "PARLEY_AGENT": "infra" } } },
+              "parleyMachines": { "laptop": { "parley-acme": { } } } }
+            """);
+
+        Assert.Contains("PARLEY_PROJECT", LocatedLaunch.Find(null, "infra", null, here)?.Problem, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Reading_writes_nothing()
     {
         var here = Checkout("infra");

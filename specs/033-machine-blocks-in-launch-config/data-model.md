@@ -18,7 +18,7 @@ Values follow the rules for the same setting elsewhere: `OwnershipStatement` for
 
 ## Effective settings
 
-`LaunchConfiguration` (Parley.Configuration, which both the adapter and Setup reach) gains one method. Nothing else computes this.
+`LocatedLaunch.SettingsFor` (Parley.Configuration, which both the adapter and Setup reach) computes this for a launch. Other readers ask `LaunchConfiguration.BlockFor` for the block.
 
 ```
 input:  the file, machine name, launch key, the launch environment
@@ -42,7 +42,7 @@ Every write goes through the existing held-file route, so its locking and byte-o
 | Act | Writes |
 |---|---|
 | Enrol, new entry | Shared: `command`, `PARLEY_AGENT`, `PARLEY_PROJECT`. Block: owns and the address, each if there is one, and created even if empty. Identifier if the file has none. No folder path. `node.json` still gets this machine's folder. |
-| Enrol, entry exists | This machine's block. Shared values are untouched (FR-018). **Refused** if the role differs from the entry's and another machine has a block for this key, because that would rename the other machine's agent. |
+| Enrol, entry exists | This machine's block. The shared line and responder stay while the role does (FR-018); a folder and an address go. A block's address goes when none was given. **Refused** if the role differs from the entry's and another machine has a block for this key, because that would rename the other machine's agent. |
 | Accept, edit or remove a line | This machine's block, that key only. Removing a line takes the value out and keeps the block, because the machine is still enrolled. |
 | Withdraw | This machine's block for the key. If no other machine's block names the key, the entry goes as it does today. The identifier goes only with the last entry. A machine with no blocks left is removed, and so is a section with no machines left. |
 

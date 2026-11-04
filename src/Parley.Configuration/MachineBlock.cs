@@ -127,6 +127,18 @@ public sealed record LocatedLaunch(
             return new LocatedLaunch(folder, LaunchConfiguration.None, null, problem);
         }
 
+        // Several entries fit and the file has blocks, so which applies cannot be told. Going on would connect this agent with
+        // none of them, to whatever the launch alone says.
+        if (read && configuration.Machines is not null && configuration.IsAmbiguous(agent, project))
+        {
+            return new LocatedLaunch(
+                folder,
+                LaunchConfiguration.None,
+                null,
+                $"{Path.Combine(folder, LaunchConfiguration.FileName)} has more than one entry for this agent, and this launch " +
+                "does not say which. Set PARLEY_PROJECT in each entry.");
+        }
+
         return read && configuration.EntryFor(agent, project) is { } membership
             ? new LocatedLaunch(folder, configuration, membership, null)
             : null;

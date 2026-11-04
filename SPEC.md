@@ -506,7 +506,7 @@ protocol: a broker's registry holds `human-user@<project>` (§4.1.1), and they c
 - `parley enroll` and `parley up`, given a project and an address, go ahead only if the names agree, and write nothing if
   they do not. Every other command still refuses a project this machine does not describe.
 - `parley autostart install`, given a project and an address, does the same, and installs an entry
-  that runs only a node (§12). That node takes the name it was given.
+  that runs only a node. That node takes the name it was given.
 
 **An agent-only machine stays startable with nobody there.** A node started from such an entry keeps
 trying while the broker cannot be reached, at first join and after losing it, and keeps the agents it is
@@ -3865,7 +3865,8 @@ agents:
 says how to start one checkout and where; it does not say what anything is called, because a name
 is what one project calls an agent (§4.1) and this file has no projects in it. The identifier does
 not collide across any boundary and is not derived from a path or a name, so a checkout that moves
-or is renamed is the same agent afterwards and nothing has to be repaired.
+or is renamed needs only its catalogue entry changed. Its name is another matter: a name belongs to one
+folder (§4.1.1), and a broker cannot tell a move from a clone.
 
 **What a project calls a checkout is declared by the checkout.** A node serving a project reads
 each catalogued workspace's own launch configuration — the same file §13 requires to fix the

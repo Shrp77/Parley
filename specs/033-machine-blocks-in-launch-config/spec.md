@@ -2,7 +2,7 @@
 
 **Feature Branch**: `033-machine-blocks-in-launch-config`
 **Created**: 2026-11-04
-**Status**: Draft
+**Status**: Built
 **Input**: Owner, 2026-11-04: "We're going to add the ability for the .mcp.json to support agents being registered on different machines. Example; an infrastructure agent that is registered both on the local machine and on the server that hosts the infrastructure implementation. The local instance can answer questions about the system while the remote agent can execute changes."
 
 **Decided by the owner, 2026-11-04**:
@@ -120,7 +120,7 @@ The server only runs agents. The person installs Parley there with no broker, te
 - **A person sets `PARLEY_BROKER` or `PARLEY_OWNS` in their own environment.** A block beats it, with one rule across every reader. The adapter cannot tell a person's variable from an old entry's value (research R2).
 - **A person sets `PARLEY_WORKSPACE` in their own environment.** It says where to look for the file first. If a matching file is there, that folder is the workspace.
 - **An old entry holds another machine's path as a shared `PARLEY_WORKSPACE`.** If no matching file is at that path, it is ignored and the file is found from the folder the adapter started in.
-- **The checkout moved on one machine.** The attach is refused, naming both folders (§4.1.1): a name belongs to one repository, and the broker cannot tell a moved checkout from a clone. The person retires the old name and enrols again from the new folder.
+- **The checkout moved on one machine.** The attach is refused, naming both folders (§4.1.1): a name belongs to one repository, and the broker cannot tell a moved checkout from a clone. The person gives it a different role or purges the old name, and enrols again from the new folder.
 - **A row was registered with no folder.** It attaches, and the folder it now reports is recorded, so a line can be accepted for it.
 - **A machine is enrolled and has no ownership line yet.** It has an empty block. The block is what says this machine uses that project entry, so a withdrawal elsewhere does not remove the entry from under it.
 - **The adapter is started in a subfolder.** It looks in the folder it was started in and each parent, up to the repository's root. If it finds no file, it uses the launch environment alone, as an entry with no blocks does.

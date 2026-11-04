@@ -90,14 +90,34 @@ public sealed record LaunchConfiguration
     {
         ArgumentNullException.ThrowIfNull(agent);
 
+        var fits = Fitting(agent, project);
+
+        if (fits.Count == 1)
+        {
+            return fits[0];
+        }
+
+        // A launch naming no project is the entry that names none, whatever else this role answers in.
+        var unpinned = string.IsNullOrWhiteSpace(project) ? fits.Where(fit => fit.Project is null).ToList() : [];
+
+        return unpinned.Count == 1 ? unpinned[0] : null;
+    }
+
+    /// <summary>Whether more than one entry could be a launch, so that which block applies cannot be told.</summary>
+    /// <param name="agent">What the launch's <c>PARLEY_AGENT</c> holds.</param>
+    /// <param name="project">What its <c>PARLEY_PROJECT</c> holds, if anything.</param>
+    /// <returns><see langword="true"/> when several fit and none is the one.</returns>
+    public bool IsAmbiguous(string agent, string? project) =>
+        EntryFor(agent, project) is null && Fitting(agent, project).Count > 1;
+
+    private List<LaunchMembership> Fitting(string agent, string? project)
+    {
         var role = RoleOf(agent);
-        var fits = Memberships
+
+        return [.. Memberships
             .Where(membership => string.Equals(RoleOf(membership.Name), role, StringComparison.Ordinal)
                 && (string.IsNullOrWhiteSpace(project)
-                    || string.Equals(membership.Project, project.Trim(), StringComparison.Ordinal)))
-            .ToList();
-
-        return fits.Count == 1 ? fits[0] : null;
+                    || string.Equals(membership.Project, project.Trim(), StringComparison.Ordinal)))];
     }
 
     private static string RoleOf(string name)
@@ -158,13 +178,21 @@ public sealed record LaunchConfiguration
             return true;
         }
 
+        string? text = null;
+
         try
         {
-            return TryParse(StrictJson.ReadFile(path), path, out configuration, out problem, out machinesBroken);
+            text = StrictJson.ReadFile(path);
+
+            return TryParse(text, path, out configuration, out problem, out machinesBroken);
         }
         catch (Exception failure) when (failure is JsonException or IOException or UnauthorizedAccessException)
         {
             problem = failure.Message;
+
+            // A member named twice is refused while parsing, before the section can be looked at. A file holding one that
+            // cannot be parsed has a section nobody can read, which is never the same as saying nothing.
+            machinesBroken = text?.Contains($"\"{MachinesMember}\"", StringComparison.Ordinal) == true;
 
             return false;
         }

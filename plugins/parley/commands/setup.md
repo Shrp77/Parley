@@ -93,8 +93,9 @@ Preview it first with `--describe`, which says what would change and changes not
 Enrolling:
 
 - merges an entry into this repository's `.mcp.json` - key `parley-<project>`, naming
-  `PARLEY_AGENT`, `PARLEY_PROJECT` and `PARLEY_WORKSPACE` - and records the repository's identity
-  there as `parleyAgentId`. Other servers in the file are left alone;
+  `PARLEY_AGENT` and `PARLEY_PROJECT` - adds this machine's block under `parleyMachines`, and records
+  the repository's identity there as `parleyAgentId`. Other servers in the file and other machines'
+  blocks are left alone;
 - adds the repository to this machine's `node.json`, which is the consent to start it. A peer's
   request may then start this agent with nobody watching, which spends whatever the agent costs
   to run. The command names the count before it configures anything, and **the user should be

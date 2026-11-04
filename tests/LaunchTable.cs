@@ -94,5 +94,13 @@ internal static class LaunchTable
             With("""{ "laptop": { "parley-acme": { "PARLEY_OWNS": "" } } }"""),
             "laptop", "parley-acme", null, null, "Leave it out"),
         new("a section that is not one", With("[]"), "laptop", "parley-acme", null, null, "parleyMachines"),
+        new(
+            "an address with more than a host and port",
+            With("""{ "laptop": { "parley-acme": { "PARLEY_BROKER": "http://127.0.0.1:19100/a" } } }"""),
+            "laptop", "parley-acme", null, null, "not an address"),
+        new(
+            "an address hiding a control character",
+            With("""{ "laptop": { "parley-acme": { "PARLEY_BROKER": "http://127.0.0.1:19100/\u001b]0;x\u0007" } } }"""),
+            "laptop", "parley-acme", null, null, "not an address"),
     ];
 }

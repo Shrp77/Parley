@@ -679,6 +679,12 @@ for i in "${!commands[@]}"; do
     fi
 done
 
+# `--only parley` on a machine that only runs agents is the same run: a node's tools are replaced, and no broker is added.
+if [ -n "$only" ] && [ -n "$(node_entries)" ] \
+    && [ ! -e "$HOME/.config/systemd/user/$task.service" ] && [ ! -e "$HOME/Library/LaunchAgents/$task.plist" ]; then
+    agent_only=1
+fi
+
 if [ "$agent_only" = "1" ]; then
     step "Stopping this machine's nodes"
     note "there is no broker on this machine to ask what is open"
@@ -931,7 +937,7 @@ fi
 if [ "$agent_only" = "1" ]; then
     echo ""
     echo "${green}This machine runs agents and has no broker.${plain}"
-    echo "With a tunnel to the broker up, from the checkout's parent folder:"
+    echo "With a tunnel to the broker up:"
     echo "  parley enroll <folder> --project <its name> --broker <its address>"
     echo "  parley autostart install --project <its name> --broker <its address>"
 

@@ -15,7 +15,7 @@
 - **Mutation checks:** copy the file with `mktemp` first, never `git checkout` to restore, use a change that compiles, `touch` the restored file before rebuilding, and confirm with `git diff --stat` that it is gone. A mutation that does not compile proves nothing.
 - Use `Edit` or `Write` on C#, never scripted regex.
 
-**Changed while building**: the project check on the wire (T006, T007, T020 to T023 as written) was taken out. SPEC.md §4.1 says the protocol has no concept of a project, and the owner confirmed it, so the address is the membership and only `enroll`, `up` and `autostart install` compare the name, using `human-user@<project>` from the registry. T059 runs the smoke run, which the owner added while this feature was being built: `[Slow]`, `-Category Smoke` and the `smoke` workflow.
+**Changed while building**, so read this before the tasks below. Tasks say what was planned, and tests went into `AMachineWithOnlyATunnelTests`, `TwoMachinesOneFileTests`, `AttachAndJoinSayWhatTheyMeanTests`, `MachineBlockOptionsTests`, `OneMachineOneBlockTests` and `EveryReaderAgreesTests` rather than the names given. The logic of T025 and T030 is in `Program.cs` and `BrokerProject.cs`, T030's in-repository address was removed as a security finding, T028's project filter is `--project`, SPEC changes are all in §4.0, §4.1.2 and §18, and a window's enrolment is refused in `EnrollmentPlan` for every surface. The project check on the wire (T006, T007, T020 to T023 as written) was taken out. SPEC.md §4.1 says the protocol has no concept of a project, and the owner confirmed it, so the address is the membership and only `enroll`, `up` and `autostart install` compare the name, using `human-user@<project>` from the registry. T059 runs the smoke run, which the owner added while this feature was being built: `[Slow]`, `-Category Smoke` and the `smoke` workflow.
 
 ## Phase 1: Setup
 
@@ -110,7 +110,7 @@
 - [X] T041 [US5] In `install.sh`: stop each `parley-node-*` before replacing tools and start it again afterwards; stop a plain install on a machine with such entries and ask for `--agent-only` or `--force`; make `--uninstall` remove them. Do the same removal in `reset.sh`
 - [X] T042 [US5] Make the same changes as T040 and T041 in `install.ps1` as `-AgentOnly`, and in `reset.ps1`
 - [ ] T043 [US5] **By hand, on Windows, on a throwaway root and only with the owner's agreement, since `-Force` ends the live broker on this machine:** run `install.ps1 -AgentOnly`, a second run, a plain run and `-Uninstall`. Write what each did in the PR body
-- [ ] T044 [US5] **By hand, in a Linux container (podman):** run `install.sh --agent-only`, a second run, a plain run and `--uninstall`, each with the same check. Write what each did in the PR body
+- [X] T044 [US5] **By hand, in a Linux container (podman):** run `install.sh --agent-only`, a second run, a plain run and `--uninstall`, each with the same check. Write what each did in the PR body
 
 **Checkpoint**: US5 holds in tests. The reboot and lingering checks wait for T058.
 
@@ -146,9 +146,9 @@
 - [X] T056 [P] Update `docs/operating.md` and `README.md` for the agent-only install, keeping `README.md` free of spec section references, and `plugins/parley/skills/parley-operator/SKILL.md` and `plugins/parley/commands/status.md` for the new commands
 - [X] T057 Update `CLAUDE.md`'s Layout and Behaviours for blocks, the agent-only machine and the exception in T005, and `.specify/memory/constitution.md` if it restates anything changed
 - [ ] T058 Run all of `quickstart.md` with two roots on this machine and a Linux container, **including a node starting a real agent over an address**. Tell the owner which steps need a real second machine: the reboot, lingering and a real SSH tunnel. Ask whether to run those before merging, and report which were and were not run
-- [ ] T059 Run `pwsh scripts/test.ps1 -Category All` and read every failure. Check the run included the new files by their test counts
-- [ ] T060 Run the hygiene check on tracked and brand-new files against the names of the sibling repositories, and read `git status` by name before staging, leaving `.claude/outbox/` and `specs/027-session-owned-delivery/` out
-- [ ] T061 Open the pull request with a Conventional Commits title and the design rationale in the body, label it `full-tests`, and run the review gate in `review/README.md`, reading the gate's file and each lens's file first
+- [ ] T059 Run `pwsh scripts/test.ps1 -Category Smoke` and read every failure. Check the run included the new files by their test counts
+- [X] T060 Run the hygiene check on tracked and brand-new files against the names of the sibling repositories, and read `git status` by name before staging, leaving `.claude/outbox/` and `specs/027-session-owned-delivery/` out
+- [ ] T061 Open the pull request with a Conventional Commits title and the design rationale in the body, and run the review gate in `review/README.md`, reading the gate's file and each lens's file first
 
 ## Dependencies
 

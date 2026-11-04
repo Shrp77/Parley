@@ -1119,7 +1119,10 @@ var addressFromBlock = false;
 
 // **What a repository's own entry says about this machine** (SPEC.md §4.1.2), for the waiting hook, which must not hold a second
 // copy of the rule. An address in this machine's block wins over what was passed; with none, what was passed stands.
-if (!string.IsNullOrWhiteSpace(launchKey))
+//
+// **`waiting` and nothing else.** It takes counts and sends nothing. Any other command typed inside a repository must not be
+// redirected by that repository's file: a clone's block would otherwise receive the person's files and their node's join.
+if (!string.IsNullOrWhiteSpace(launchKey) && verb == "waiting")
 {
     if (!LaunchConfiguration.TryRead(Environment.CurrentDirectory, out var declared, out var unreadable, out var machinesBroken)
         && machinesBroken)
@@ -1163,7 +1166,16 @@ if (verb is "enroll" or "up"
     // it was installed.
     if (verb == "up" && keepTrying && ProjectName.TryCreate(namedHere, out var nameOnly))
     {
-        reached = new ProjectSettings(nameOnly, string.Empty, BrokerEndpoint.Read(_ => addressGiven), null);
+        try
+        {
+            reached = new ProjectSettings(nameOnly, string.Empty, BrokerEndpoint.Read(_ => addressGiven), null);
+        }
+        catch (InvalidOperationException notAnAddress)
+        {
+            await Console.Error.WriteLineAsync(notAnAddress.Message).ConfigureAwait(false);
+
+            return Config;
+        }
     }
     else
     {
@@ -1178,17 +1190,6 @@ if (verb is "enroll" or "up"
 
         reached = confirmed;
     }
-}
-
-// A person inside a repository whose block names the broker need not repeat it. Not where the repository also names a project
-// this machine describes: that is the answer the selection below gives.
-if (reached is null
-    && string.IsNullOrWhiteSpace(addressGiven)
-    && string.IsNullOrWhiteSpace(namedHere)
-    && !projectFromRepository.Any(named => configuredProjects.Any(p => string.Equals(p.Name.Value, named, StringComparison.Ordinal)))
-    && BrokerProject.AddressInRepository(Environment.CurrentDirectory) is { } inRepository)
-{
-    brokerAddress = inRepository;
 }
 
 var project = reached;
@@ -1294,7 +1295,17 @@ catch (InvalidOperationException ex)
     return Config;
 }
 
-using var channel = GrpcChannel.ForAddress(endpoint);
+// Pinged, as the adapter's connection is: a node waiting on a stream cannot otherwise tell a tunnel that went silent from a quiet
+// broker, and would stay "joined" to nothing for as long as the machine is up.
+using var channel = GrpcChannel.ForAddress(endpoint, new GrpcChannelOptions
+{
+    HttpHandler = new System.Net.Http.SocketsHttpHandler
+    {
+        KeepAlivePingDelay = TimeSpan.FromSeconds(60),
+        KeepAlivePingTimeout = TimeSpan.FromSeconds(30),
+        EnableMultipleHttp2Connections = true,
+    },
+});
 
 try
 {

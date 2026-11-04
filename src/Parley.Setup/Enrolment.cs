@@ -107,7 +107,7 @@ public static class Enrolment
                 {
                     var path = LaunchPath(workspace);
 
-                    await OverwriteHeldAsync(held, path, launch, cancellationToken).ConfigureAwait(false);
+                    await OverwriteHeldAsync(held, path, launch, cancellationToken, LaunchEncoding(held)).ConfigureAwait(false);
                     written.Add(path);
                 }
 
@@ -467,6 +467,12 @@ public static class Enrolment
             && first[1] == 0xBB
             && first[2] == 0xBF;
     }
+
+    /// <summary>What a launch configuration is written back in: with a byte-order mark if it had one.</summary>
+    /// <param name="held">The file, as held.</param>
+    /// <returns>The encoding, or null for the default when the file is new.</returns>
+    private static Encoding? LaunchEncoding(FileStream? held) =>
+        held is null ? null : HeldHasByteOrderMark(held) ? Utf8WithMark : Utf8;
 
     /// <summary>Replaces what a held file holds, or writes one that was not there.</summary>
     /// <param name="stream">The handle, or null when the file did not exist.</param>
@@ -849,7 +855,7 @@ public static class Enrolment
 
                     if (plan.LaunchConfiguration is { } text)
                     {
-                        await OverwriteHeldAsync(launch, launchPath, text, cancellationToken).ConfigureAwait(false);
+                        await OverwriteHeldAsync(launch, launchPath, text, cancellationToken, LaunchEncoding(launch)).ConfigureAwait(false);
                         written.Add(launchPath);
                     }
 
@@ -1025,8 +1031,14 @@ public static class Enrolment
                         // an enrolment into this project would have written at, and nothing else. Two
                         // rules would drift, and the direction they drift in leaves a repository still
                         // announcing itself as an agent of somewhere it was removed from.
+                        //
+                        // A window onto a broker shown by address is no project's name: on a machine with only a tunnel, the
+                        // entry meant is the one this machine's block reaches a broker through.
                         var candidates = project is null
                             ? entries
+                            : string.Equals(project, ProjectManifest.WindowName, StringComparison.Ordinal)
+                                ? [.. entries.Where(entry =>
+                                    MachineBlocks.Block(root, MachineName.Current, entry.Key)?[EnrollmentPlan.BrokerVariable] is not null)]
                             : LaunchEntries.Landing(servers, project).Existing is { } landed
                                 ? (IReadOnlyList<LaunchEntry>)[landed]
                                 : [];
@@ -1090,8 +1102,9 @@ public static class Enrolment
                                 await OverwriteHeldAsync(
                                     held,
                                     launchPath,
-                                    root.ToJsonString(SerialisationOptions.Indented) + "\n",
-                                    cancellationToken).ConfigureAwait(false);
+                                    LaunchText.Render(root, text),
+                                    cancellationToken,
+                                    LaunchEncoding(held)).ConfigureAwait(false);
 
                                 written.Add(launchPath);
                                 notes.Add(
@@ -1126,8 +1139,9 @@ public static class Enrolment
                             await OverwriteHeldAsync(
                                 held,
                                 launchPath,
-                                root.ToJsonString(SerialisationOptions.Indented) + "\n",
-                                cancellationToken).ConfigureAwait(false);
+                                LaunchText.Render(root, text),
+                                cancellationToken,
+                                LaunchEncoding(held)).ConfigureAwait(false);
 
 
                             written.Add(launchPath);

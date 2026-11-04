@@ -96,7 +96,7 @@ The name comes from `human-user@<project>` in the broker's registry (R6), which 
 
 `parley_waiting.py` reads the file itself and passes `--broker` or `--project`. Adding block logic in Python would be a second implementation of FR-005, and would need a second copy of the name normalisation that the hook already avoids.
 
-**Decision.** The hook passes `--launch-key <key>` and no address, and the CLI works out the effective address from `LaunchConfiguration`. The same resolution serves a person running `parley registry` inside a repository whose block names a broker.
+**Decision.** The hook passes `--launch-key <key>`, and for `waiting` alone the CLI takes the address from this machine's block. No other command follows a repository's block: a clone's file would otherwise receive the person's files and their node's join.
 
 **Rollout.** The plugin cache is a copy keyed by commit, so the hook changes only when the plugin is reinstalled. An old hook on a machine using blocks reports nothing waiting, which is the direction it already treats as safe.
 
