@@ -288,6 +288,29 @@ public sealed class AMachineWithOnlyATunnelTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task What_an_entry_is_checked_against_refuses_a_project_that_broker_is_not()
+    {
+        // Asked of the check and never through `autostart install`: if this guard ever broke, that command would register a real
+        // entry on whoever's machine ran the test. A mutation did exactly that once.
+        await ServeAsync();
+
+        var (project, refusal) = await BrokerProject.ConfirmAsync("beta", Address, Ct);
+
+        Assert.Null(project);
+        Assert.Contains("alpha", refusal, StringComparison.Ordinal);
+        Assert.Contains("beta", refusal, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_entry_for_a_node_names_its_project()
+    {
+        var (code, _, error) = ToolProcess.RunFully(OnThatMachine, "autostart", "install", "--broker", Address);
+
+        Assert.Equal(78, code);
+        Assert.Contains("--project", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_second_node_waits_for_the_first_to_go_rather_than_leaving_the_machine_with_none()
     {
         // A broker that has not noticed this machine's last connection die says exactly this, after a reboot or a dead tunnel.
