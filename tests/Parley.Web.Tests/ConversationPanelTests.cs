@@ -121,6 +121,24 @@ public sealed class ConversationPanelTests
     }
 
     [Fact]
+    public async Task A_question_handed_back_stays_unmarked_while_another_question_waits()
+    {
+        using var console = new TranscriptConsole();
+        console.Broker.Request(9, Orders, Person, "Which ledger?");
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Person, WaitedOn = Orders, ExchangeId = 9 });
+        console.Broker.Request(10, Orders, Person, "And which year?");
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Orders, WaitedOn = Person, ExchangeId = 10 });
+
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(page, "class=\"reply-to\""));
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(page, "href=\"#m10\" target=\"_self\" data-waiting"));
+        Assert.DoesNotContain("href=\"#m9\" target=\"_self\" data-waiting", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task An_earlier_question_on_the_same_exchange_is_neither_marked_nor_listed()
     {
         // The agent asked, the person replied, the agent asked again: only its latest is owed.
