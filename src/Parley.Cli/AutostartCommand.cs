@@ -165,7 +165,7 @@ public static class AutostartCommand
         }
 
         await output.WriteLineAsync(
-            $"This machine's node for '{project}' is running, and will start when you log in, as {Describe(plan.Supervisor)}. "
+            $"This machine's node for '{project}' is running, and will start when you log in, as {Describe(plan.Supervisor, plan.Label)}. "
             + "There is no broker on this machine.").ConfigureAwait(false);
         await output.WriteLineAsync($"  runs:  {plan.CommandLine()}").ConfigureAwait(false);
         await output.WriteLineAsync($"  logs:  {plan.LogPath}").ConfigureAwait(false);
@@ -806,7 +806,7 @@ public static class AutostartCommand
 
         foreach (var label in NodeLabels(plan.Supervisor))
         {
-            await output.WriteLineAsync($"{label}: this machine's node, as {Describe(plan.Supervisor)}.").ConfigureAwait(false);
+            await output.WriteLineAsync($"This machine's node runs as {Describe(plan.Supervisor, label)}.").ConfigureAwait(false);
         }
 
         var present = plan.Supervisor switch
@@ -933,11 +933,13 @@ public static class AutostartCommand
     /// <summary>Names a supervisor the way somebody would look for it.</summary>
     /// <param name="supervisor">The supervisor.</param>
     /// <returns>Its name, and where to find it.</returns>
-    private static string Describe(Supervisor supervisor) => supervisor switch
+    private static string Describe(Supervisor supervisor) => Describe(supervisor, AutostartPlan.Name);
+
+    private static string Describe(Supervisor supervisor, string label) => supervisor switch
     {
-        Supervisor.ScheduledTask => $"a scheduled task called '{AutostartPlan.Name}'",
-        Supervisor.SystemdUser => $"the systemd user unit '{AutostartPlan.Name}.service'",
-        Supervisor.LaunchAgent => $"the launch agent '{AutostartPlan.Name}'",
+        Supervisor.ScheduledTask => $"a scheduled task called '{label}'",
+        Supervisor.SystemdUser => $"the systemd user unit '{label}.service'",
+        Supervisor.LaunchAgent => $"the launch agent '{label}'",
         _ => "nothing this build knows about"
     };
 
