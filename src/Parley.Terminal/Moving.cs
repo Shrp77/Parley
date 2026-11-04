@@ -40,6 +40,9 @@ internal static class Moving
 
     private const int FilesNamed = 12;
 
+    /// <summary>How many characters of file names the door holds at most, whatever else it names.</summary>
+    private const int FilesLength = 200;
+
     private const string Picking = "A message can't leave its exchange, so a whole exchange goes. Tick what to move.";
 
     /// <summary>Opens the dialogs that move some exchanges.</summary>
@@ -298,19 +301,33 @@ internal static class Moving
         }
 
         said.Append("Anything asked as a result stays behind unless you ticked it. ");
+        said.Append("Untick anything you meant to leave; a message to several, or to a role, goes whole. ");
 
-        // Cut, or a conversation with many files would push the list itself off the screen. An agent chooses these names.
+        // Last, and cut, or a conversation with many files would crowd out the rest. An agent chooses these names.
         if (preview.FilesStaying.Count > 0)
         {
-            var named = string.Join(", ", preview.FilesStaying.Take(FilesNamed));
-            var more = preview.FilesStaying.Count > FilesNamed
-                ? string.Create(CultureInfo.InvariantCulture, $" and {preview.FilesStaying.Count - FilesNamed} more")
+            var shown = new List<string>();
+            var length = 0;
+
+            foreach (var file in preview.FilesStaying.Take(FilesNamed))
+            {
+                if (shown.Count > 0 && length + file.Length > FilesLength)
+                {
+                    break;
+                }
+
+                shown.Add(file);
+                length += file.Length;
+            }
+
+            var more = preview.FilesStaying.Count > shown.Count
+                ? string.Create(CultureInfo.InvariantCulture, $" and {preview.FilesStaying.Count - shown.Count} more, listed under Files")
                 : string.Empty;
 
-            said.Append(Safe.Text($"These files stay in {source}: {named}{more}. "));
+            said.Append(Safe.Text($"These files stay in {source}: {string.Join(", ", shown)}{more}."));
         }
 
-        return said.Append("Untick anything you meant to leave; a message to several, or to a role, goes whole.").ToString();
+        return said.ToString().TrimEnd();
     }
 
     /// <remarks>

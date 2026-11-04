@@ -217,6 +217,7 @@ public sealed class SpinOffAndMovePagesTests
 
         Assert.Equal("disk-cleanup", Assert.Single(console.Broker.Abandoned).Child);
         Assert.Contains("my own words", body, StringComparison.Ordinal);
+        Assert.Matches($"<ul class=\"sent\" role=\"status\">\\s*<li><strong>{Regex.Escape(Orders)}</strong>", body);
         Assert.Contains("value=\"disk-cleanup\"", body, StringComparison.Ordinal);
     }
 
@@ -395,6 +396,19 @@ public sealed class SpinOffAndMovePagesTests
         using var response = await client.GetAsync(At($"/Conversations/Detail?project={Project}&id=shared"), Ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_panel_lists_what_was_started_from_a_conversation_with_no_parent_of_its_own()
+    {
+        using var console = Console();
+        console.Broker.Children.Add("child-one");
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At($"/Conversations/Detail?project={Project}&id=shared"), Ct);
+
+        Assert.Contains("Started from this one", page, StringComparison.Ordinal);
+        Assert.Matches("""<a target="_top" href="[^"]*id=child-one">child-one</a>""", page);
     }
 
     [Fact]

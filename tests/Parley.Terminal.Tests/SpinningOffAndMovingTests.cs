@@ -871,26 +871,111 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
         Assert.Equal(2, Regex.Count(driving.Text(), @"\[.\] \d+: still open: "));
     }
 
+    private static string Squeezed(string drawn) => Regex.Replace(drawn, @"[\s│┃]+", string.Empty);
+
+    private static List<Tickable> LongRows(int count) =>
+    [
+        .. Enumerable.Range(1, count).Select(i => new Tickable(
+            $"{i}: still open: {string.Join(' ', Enumerable.Repeat("words", 20))} (billing-service@desktop-a1b2c3d.corp.example.com to orders-service@desktop-a1b2c3d.corp.example.com, {i} messages-end{i})",
+            string.Empty,
+            Ticked: false)),
+    ];
+
     [Fact]
-    public async Task The_row_under_the_cursor_is_drawn_whole_as_the_cursor_moves()
+    public void The_row_under_the_cursor_is_drawn_whole_as_the_cursor_and_the_page_move()
     {
-        var (shell, driving, _) = await SeatedAsync();
+        using var driving = Driving.Open(width: 80, height: 30);
+        using var ticking = new TickDialog("Choose", "Which.", LongRows(TickDialog.PageSize + 1), showsWholeRow: true);
+
+        driving.Show(ticking);
+        driving.App.LayoutAndDraw(true);
+        Assert.Contains("messages-end1)", Squeezed(driving.Text()), StringComparison.Ordinal);
+
+        // The cursor stays on the page's first row across a turn, so only the page has changed.
+        driving.Press(Key.PageDown);
+        driving.App.LayoutAndDraw(true);
+        Assert.Contains("messages-end11)", Squeezed(driving.Text()), StringComparison.Ordinal);
+
+        driving.Press(Key.PageUp);
+        driving.Press(Key.CursorDown);
+        driving.App.LayoutAndDraw(true);
+        Assert.Contains("messages-end2)", Squeezed(driving.Text()), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_long_door_and_long_names_are_drawn_whole_at_80_by_24()
+    {
+        var door = string.Join(' ', Enumerable.Repeat("sentence of the door", 18)) + " last-words-of-the-door";
+
+        using var driving = Driving.Open(width: 80, height: 24);
+        using var ticking = new TickDialog("Choose", door, LongRows(3), showsWholeRow: true);
+
+        driving.Show(ticking);
+        driving.App.LayoutAndDraw(true);
+
+        var drawn = driving.Text();
+
+        Assert.Contains("last-words-of-the-door", Squeezed(drawn), StringComparison.Ordinal);
+        Assert.Contains("messages-end1)", Squeezed(drawn), StringComparison.Ordinal);
+        Assert.Equal(3, Regex.Count(drawn, @"\[ \] \d+: still open"));
+        Assert.DoesNotContain(TickDialog.TooShort.Trim(), drawn, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(16)]
+    [InlineData(12)]
+    public void A_short_screen_keeps_the_list_and_says_there_is_more(int height)
+    {
+        var door = string.Join(' ', Enumerable.Repeat("sentence of the door", 30));
+
+        using var driving = Driving.Open(width: 80, height: height);
+        using var ticking = new TickDialog("Choose", door, LongRows(3), showsWholeRow: true);
+
+        driving.Show(ticking);
+        driving.App.LayoutAndDraw(true);
+        driving.App.LayoutAndDraw(true);
+
+        var drawn = driving.Text();
+
+        Assert.Equal(3, Regex.Count(drawn, @"\[ \] \d+: still open"));
+        Assert.Contains(TickDialog.TooShort.Trim(), drawn, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_row_with_no_whole_row_asked_for_draws_nothing_under_the_list()
+    {
+        using var ticking = new TickDialog("Choose", "Which.", LongRows(1));
+
+        Assert.Equal(string.Empty, ticking.WholeRow);
+    }
+
+    [Fact]
+    public async Task The_door_says_a_row_goes_whole_before_it_names_the_files_and_stops_at_its_limit()
+    {
+        var (shell, driving, message) = await SeatedAsync();
         using var held = shell;
 
-        _ = await AskPersonAsync(shell, "another question");
+        System.Data.Common.DbConnection raw = _connection;
 
-        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
-        await shell.Settled;
+        using (var place = raw.CreateCommand())
+        {
+            var files = string.Concat(Enumerable.Range(0, 8).Select(i =>
+                $"INSERT INTO shared_files (conversation_id, name_key, name, size_bytes, sha256, placed_by, placed_utc, changed_utc, modified_ticks) VALUES ('room', '{new string('N', 60)}{i}.MD', '{new string('n', 60)}{i}.md', 10, '{new string('a', 64)}', 'orders@test', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 0);"));
+
+            place.CommandText = "INSERT INTO conversation_folders (conversation_id, folder, created_utc) VALUES ('room', 'room', '2026-01-01T00:00:00.000Z');" + files;
+            place.ExecuteNonQuery();
+        }
+
+        Assert.True(shell.Transcript.Reach(message));
+
         await shell.MoveEntries();
         await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
-        var ticking = (TickDialog)driving.Find(Moving.Title);
+        var door = ((TickDialog)driving.Find(Moving.ReviewTitle)).Described;
 
-        ticking.Rows.SelectedItem = 0;
-        Assert.Equal(ticking.Items[0].Label, ticking.WholeRow);
-
-        ticking.Rows.SelectedItem = 1;
-        Assert.Equal(ticking.Items[1].Label, ticking.WholeRow);
+        Assert.InRange(door.IndexOf("goes whole", StringComparison.Ordinal), 0, door.IndexOf("These files stay", StringComparison.Ordinal));
+        Assert.Contains("and 5 more, listed under Files.", door, StringComparison.Ordinal);
     }
 
     [Fact]

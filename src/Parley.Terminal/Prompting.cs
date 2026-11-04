@@ -99,6 +99,48 @@ internal static class Prompting
         return Math.Max(1, lines.Sum(line => Math.Max(1, (int)Math.Ceiling(line.Length / 60.0))));
     }
 
+    /// <summary>How many rows text needs wrapped by word at a known width.</summary>
+    /// <param name="text">The text.</param>
+    /// <param name="width">The width it wraps at.</param>
+    /// <returns>The rows, at least one.</returns>
+    /// <remarks>Word by word, because wrapping leaves each line short of the width and counting characters under-measures.</remarks>
+    internal static int WrappedRows(string text, int width)
+    {
+        var rows = 0;
+
+        foreach (var line in (text ?? string.Empty).ReplaceLineEndings("\n").Split('\n'))
+        {
+            var filled = 0;
+
+            rows++;
+
+            foreach (var word in line.Split(' '))
+            {
+                if (filled > 0 && filled + 1 + word.Length <= width)
+                {
+                    filled += 1 + word.Length;
+
+                    continue;
+                }
+
+                if (filled > 0)
+                {
+                    rows++;
+                }
+
+                filled = word.Length;
+
+                while (filled > width)
+                {
+                    rows++;
+                    filled -= width;
+                }
+            }
+        }
+
+        return Math.Max(1, rows);
+    }
+
     /// <summary>Opens a dialog and returns the session it is running in.</summary>
     /// <param name="app">The application to open it in.</param>
     /// <param name="dialog">The dialog.</param>

@@ -61,8 +61,11 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
     /// <summary>The space between two columns.</summary>
     private const string Gutter = "   ";
 
-    /// <summary>How many rows the row under the cursor gets when it is drawn whole.</summary>
-    private const int WholeRows = 4;
+    /// <summary>How many rows of the list a short screen still keeps, when there are that many to show.</summary>
+    private const int ListKeeps = 3;
+
+    /// <summary>What the count line adds when a screen is too short to draw everything.</summary>
+    internal const string TooShort = "   A taller window shows the rest.";
 
     /// <summary>What the tick column is as wide as, so the heading lines up with the names under it.</summary>
     private const string Box = "[ ] ";
@@ -76,6 +79,7 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
     private readonly Plain _count;
     private readonly Plain _whole;
     private readonly bool _showsWhole;
+    private bool _cut;
     private ObservableCollection<string> _drawn = [];
     private int _page;
 
@@ -101,8 +105,6 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
         _described = description;
         _showsWhole = showsWholeRow;
 
-        var wholeRows = showsWholeRow ? WholeRows : 0;
-
         // A column is at least as wide as its heading, or a short column would push the next heading
         // out of line with what is under it. A column nobody has anything in is left out entirely.
         var notes = _items.Max(item => (int?)item.Note.Length) ?? 0;
@@ -122,7 +124,9 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
         // dialog rather than on the shell's status line, because a modal takes the screen and the
         // line underneath it is describing a surface the person cannot reach.
         Height = Dim.Func(
-            view => Math.Min(wants + headed + Math.Min(_items.Count, PageSize) + wholeRows + Edges, Room(view)),
+            view => showsWholeRow
+                ? Math.Min(Prompting.WrappedRows(description, Across(view)) + headed + Math.Min(_items.Count, PageSize) + WholeWants(view) + Edges, Room(view))
+                : Math.Min(wants + headed + Math.Min(_items.Count, PageSize) + Edges, Room(view)),
             this);
 
         var said = new Plain
@@ -131,7 +135,9 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
             X = 1,
             Y = 0,
             Width = Dim.Fill(2),
-            Height = Dim.Func(view => Math.Max(1, Math.Min(wants, Content(view) - 3)), this),
+            Height = Dim.Func(
+                view => showsWholeRow ? Fit(view, headed).Door : Math.Max(1, Math.Min(wants, Content(view) - 3)),
+                this),
         };
 
         said.TextFormatter.WordWrap = true;
@@ -155,7 +161,7 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
 
             // Whatever is left, never one row per item: the viewport has to be true or the toolkit
             // will not scroll, and a terminal shorter than a page still has to work.
-            Height = Dim.Fill(2 + wholeRows),
+            Height = showsWholeRow ? Dim.Func(view => Fit(view, headed).List, this) : Dim.Fill(2),
         };
 
         KeyRouting.TableFirst(_rows, this);
@@ -163,9 +169,9 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
         _whole = new Plain
         {
             X = 1,
-            Y = Pos.AnchorEnd(2 + wholeRows),
+            Y = Pos.Bottom(_rows),
             Width = Dim.Fill(2),
-            Height = wholeRows,
+            Height = Dim.Func(view => showsWholeRow ? Fit(view, headed).Whole : 0, this),
             Visible = showsWholeRow,
         };
 
@@ -199,7 +205,7 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
     /// </remarks>
     internal event EventHandler<IReadOnlyList<Tickable>?>? Done;
 
-    /// <summary>What the line under the list says of the row under the cursor, or empty.</summary>
+    /// <summary>What is drawn under the list of the row under the cursor, or empty.</summary>
     internal string WholeRow => _whole.Text;
 
     /// <summary>What is being decided, as the dialog states it.</summary>
@@ -243,7 +249,7 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
             _drawn[onPage] = Row(_items[index]);
         }
 
-        _count.Text = Counted;
+        _count.Text = Counted + (_cut ? TooShort : string.Empty);
     }
 
     /// <summary>Ticks every row, or none of them, on every page.</summary>
@@ -260,6 +266,41 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
 
     private static int Room(View? view) => view?.App?.Screen.Height ?? int.MaxValue;
 
+    /// <summary>How many columns the text in this dialog wraps at: 80% of the screen, less the edges and a margin for wrapping.</summary>
+    private static int Across(View? view) =>
+        view?.App?.Screen.Width is > 0 and var width ? Math.Max(20, (width * 80 / 100) - 6) : 60;
+
+    /// <summary>How many rows the longest row wants when it is drawn whole.</summary>
+    private int WholeWants(View? view) =>
+        _items.Max(item => (int?)Prompting.WrappedRows(item.Label, Across(view))) ?? 0;
+
+    /// <summary>Shares a short screen between the door, the list and the row drawn whole.</summary>
+    /// <remarks>
+    /// The list comes first, because Space and Enter act on its rows and nobody should tick what they can't see. Then the
+    /// row under the cursor, then the door. What doesn't fit is cut from the door's end and the count line says so, because
+    /// no key scrolls here and a window can be made taller.
+    /// </remarks>
+    private (int Door, int List, int Whole) Fit(View? view, int headed)
+    {
+        // The dialog's own height, measured the same way, rather than its viewport, which is the last layout's.
+        var doorWants = Prompting.WrappedRows(_described, Across(view));
+        var wholeWants = WholeWants(view);
+        var content = Math.Min(doorWants + Math.Min(_items.Count, PageSize) + wholeWants, Room(view) - Edges - headed);
+        var keeps = Math.Min(Math.Max(1, _items.Count), ListKeeps);
+        var whole = Math.Max(1, Math.Min(wholeWants, content - keeps - 1));
+        var door = Math.Max(1, Math.Min(doorWants, content - keeps - whole));
+        var list = Math.Max(1, content - door - whole);
+        var cut = door < doorWants || whole < wholeWants;
+
+        if (cut != _cut)
+        {
+            _cut = cut;
+            _count.Text = Counted + (cut ? TooShort : string.Empty);
+        }
+
+        return (door, list, whole);
+    }
+
     private static int Content(View? view) =>
         view?.Viewport.Height is > 0 and var rows ? rows : int.MaxValue;
 
@@ -274,9 +315,9 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
 
     /// <summary>Lays one row out in the grid's columns.</summary>
     /// <remarks>
-    /// Padded, never cut: a column is as wide as its widest cell, and the last one runs on, so nothing a
-    /// person decides on is hidden to make a row fit. The trailing space is trimmed so an empty last column
-    /// leaves no padding behind.
+    /// Padded, never cut here: a column is as wide as its widest cell, and the last one runs on, so a row is never shortened
+    /// to make it fit. A row wider than the dialog runs past its edge, which is what drawing the row whole is for. The
+    /// trailing space is trimmed so an empty last column leaves no padding behind.
     /// </remarks>
     private string Cells(string tick, string label, string note, string owns)
     {
@@ -416,8 +457,7 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
 
         _rows.SetSource(_drawn);
         _rows.SelectedItem = _drawn.Count > 0 ? Math.Clamp(row, 0, _drawn.Count - 1) : null;
-        _count.Text = Counted;
-        ShowWholeRow();
+        _count.Text = Counted + (_cut ? TooShort : string.Empty);
     }
 
     /// <summary>Draws the row under the cursor whole, when this dialog does that.</summary>
