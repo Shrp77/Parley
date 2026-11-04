@@ -451,6 +451,7 @@ public sealed class SpinOffAndMovePagesTests
 
         Assert.Contains("a whole exchange goes", page, StringComparison.Ordinal);
         Assert.Matches("""1 message, still open:\s+the first words""", page);
+        Assert.Contains("<strong>orders@test</strong> to <strong>billing@test</strong>", page, StringComparison.Ordinal);
     }
 
     [Fact]

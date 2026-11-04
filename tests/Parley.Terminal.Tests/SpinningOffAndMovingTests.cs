@@ -411,6 +411,7 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
         Assert.Contains(Parley.Client.Rendering.MovePicking.SentTogether, reviewing.Described, StringComparison.Ordinal);
         driving.Resize(80, 24);
         Assert.Contains(", added:", driving.Text(), StringComparison.Ordinal);
+        Assert.Contains(reviewing.Items, item => item.Whole.Contains(", added. ", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -869,6 +870,7 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
 
         driving.Resize(80, 24);
         Assert.Equal(2, Regex.Count(driving.Text(), @"\[.\] \d+: still open: "));
+        Assert.Contains("orders@testtohuman-user@test,1message.", Squeezed(driving.Text()), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1061,6 +1063,60 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
 
         Assert.InRange(door.IndexOf("goes whole", StringComparison.Ordinal), 0, door.IndexOf("These files stay", StringComparison.Ordinal));
         Assert.Contains("and 5 more, listed under Files.", door, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_agents_control_characters_reach_no_row_of_a_move()
+    {
+        var (shell, driving, _) = await SeatedAsync();
+        using var held = shell;
+
+        _ = await AskPersonAsync(shell, "bad\\u001b[31mwords\\u0007here");
+
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+        await shell.MoveEntries();
+        await shell.Settled;
+
+        void Holds(TickDialog dialog)
+        {
+            Assert.Contains(dialog.Items, item => item.Label.Contains("words", StringComparison.Ordinal));
+            Assert.All(dialog.Items, item => Assert.DoesNotContain(item.Label + item.Whole, c => char.IsControl(c)));
+        }
+
+        var ticking = (TickDialog)driving.Find(Moving.Title);
+
+        Holds(ticking);
+
+        ticking.NewKeyDownEvent(Key.A.WithAlt);
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        Holds((TickDialog)driving.Find(Moving.ReviewTitle));
+    }
+
+    [Fact]
+    public async Task A_spun_off_destination_is_chosen_by_its_name_though_its_row_says_more()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        var seat = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        Assert.Null(await Client.SpinOffAsync(Conversation, "kid", Ct));
+        await seat.StartAsync(shell.Held!.Seat.Name, T0, Ct);
+        Assert.True((await seat.RequestAsync(shell.Held!.Seat.Name, Billing, "model-a", """{"ask":"kid"}""", T0, "kid", Ct)).Succeeded);
+
+        Assert.True(shell.Transcript.Reach(message));
+
+        await shell.MoveEntries();
+        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        driving.Row(((ChoiceDialog)driving.Find(Moving.WhereTitle)).Choices, $"kid - spinoff from {Conversation}");
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        Assert.Single((await Client.ExportAsync("kid", Ct)).Messages, m => m.Id == message);
     }
 
     [Fact]

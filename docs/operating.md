@@ -205,7 +205,7 @@ timezone, sortable either way.
   before you confirm. Work still open carries on in the new place: its agents aren't woken, and are told at their next
   collection. Both conversations say what moved, and you can move it back unless where it came from has closed. Files stay where they are. A closed conversation
   takes nothing in, and roadmap items' conversations and ownership conversations are refused both ways. On the terminal a
-  row can run past the dialog's edge, so the row under the cursor is drawn whole under the list.
+  row can run past the dialog's edge, so the row under the cursor is drawn whole under the list, with who it is between and how many messages.
 - **Go to a linked conversation** (`Alt+l` in a conversation, or the links in the panel): its parent, what was started
   from it, and where entries moved to or from. On the web, a move's note in the transcript links to where entries went or came from.
 - **Close a request without answering** (`Alt+j` in a conversation, or the button on the message)
