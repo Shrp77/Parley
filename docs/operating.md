@@ -308,6 +308,7 @@ other operator command exits with a message that names the terminal:
 parley                              open the terminal
 parley serve                        run the broker for every project
 parley up                           run this machine's node, so its agents can be started
+                                    (--keep-trying waits for a broker it cannot reach)
 parley autostart install|status|remove
 parley use [<project>]              the project this terminal's commands act on
 parley project list                 the projects this machine names, and who is answering

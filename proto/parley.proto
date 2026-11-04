@@ -661,6 +661,9 @@ message JoinRequest {
   // The identifiers (`parleyAgentId`) of the checkouts this node can launch for this project. A node can start an agent
   // by the identifier alone, so a repository whose role was renamed is still startable under the name the broker holds.
   repeated string startable_identities = 5;
+
+  // Refused when it differs, naming both (section 4.0): two machines are not one build.
+  string protocol_version = 6;
 }
 
 message TurnReport {
