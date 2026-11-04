@@ -1085,6 +1085,15 @@ public sealed class MovingExchangesTests : IDisposable
     }
 
     [Fact]
+    public async Task A_name_holding_two_dots_is_refused_in_a_sentence_by_a_move_and_a_spin_off()
+    {
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+
+        Assert.Contains("no '..'", (await MoveAsync("a..b", true, going)).Refused, StringComparison.Ordinal);
+        Assert.Contains("no '..'", await _console.SpinOffAsync("pricing", "a..b", T0, Ct), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_settled_pair_no_move_has_split_is_not_said_to_be_elsewhere()
     {
         _ = await SettledPairAsync();

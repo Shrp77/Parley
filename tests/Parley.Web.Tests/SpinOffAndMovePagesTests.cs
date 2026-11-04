@@ -379,9 +379,13 @@ public sealed class SpinOffAndMovePagesTests
         using var client = console.CreateClient();
 
         var correct = $"data-correct=\"{WebUtility.HtmlEncode(Parley.Client.ConversationName.Allowed)}\"";
+        var pattern = $"pattern=\"{WebUtility.HtmlEncode(Parley.Client.ConversationName.Pattern)}\"";
 
-        Assert.Contains(correct, await client.GetStringAsync(At(Move("&x=1")), Ct), StringComparison.Ordinal);
-        Assert.Contains(correct, await client.GetStringAsync(At(Spin()), Ct), StringComparison.Ordinal);
+        foreach (var page in new[] { await client.GetStringAsync(At(Move("&x=1")), Ct), await client.GetStringAsync(At(Spin()), Ct) })
+        {
+            Assert.Contains(correct, page, StringComparison.Ordinal);
+            Assert.Contains(pattern, page, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
@@ -705,12 +709,17 @@ public sealed class SpinOffAndMovePagesTests
     public async Task A_new_name_and_a_chosen_conversation_together_move_nothing_and_say_why()
     {
         using var console = Console();
+        console.Broker.AlsoListed.Add(new Wire.ConversationSummary { ConversationId = "other-work" });
         using var client = console.CreateClient();
 
         var (_, body) = await PostAsync(client, Move("&x=1"), ("Exchanges", "1"), ("Where", "new"), ("Existing", "other-work"), ("NewName", "typed-earlier"));
 
         Assert.Contains("both given", body, StringComparison.Ordinal);
         Assert.Empty(console.Broker.MovesAsked);
+
+        // The form comes back as it was, since the sentence asks the person to clear one of them.
+        Assert.Contains("value=\"typed-earlier\"", body, StringComparison.Ordinal);
+        Assert.Matches("""<option value="other-work" selected""", body);
     }
 
     [Fact]
