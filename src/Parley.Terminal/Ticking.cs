@@ -81,6 +81,7 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
     private readonly Plain _whole;
     private readonly bool _showsWhole;
     private bool _cut;
+    private (int Across, int Rows) _wholeWants;
     private ObservableCollection<string> _drawn = [];
     private int _page;
 
@@ -272,8 +273,18 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
         view?.App?.Screen.Width is > 0 and var width ? Math.Max(20, (width * 80 / 100) - 6) : 60;
 
     /// <summary>How many rows the longest row wants when it is drawn whole.</summary>
-    private int WholeWants(View? view) =>
-        _items.Max(item => (int?)Prompting.WrappedRows(WholeOf(item), Across(view))) ?? 0;
+    /// <remarks>Kept for a width, because this runs on every layout and the rows' words don't change while the dialog is open.</remarks>
+    private int WholeWants(View? view)
+    {
+        var across = Across(view);
+
+        if (_wholeWants.Across != across)
+        {
+            _wholeWants = (across, _items.Max(item => (int?)Prompting.WrappedRows(WholeOf(item), across)) ?? 0);
+        }
+
+        return _wholeWants.Rows;
+    }
 
     private static string WholeOf(Tickable item) => item.Whole.Length > 0 ? item.Whole : item.Label;
 

@@ -105,47 +105,12 @@ internal static class Prompting
     /// <param name="width">The width it wraps at.</param>
     /// <returns>The rows, at least one.</returns>
     /// <remarks>
-    /// Word by word, because wrapping leaves each line short of the width, and in columns, because a wide character takes two:
-    /// counting characters under-measures both, and what is under-measured is cut with nothing to say so.
+    /// Asked of the toolkit's own formatter, which is what draws it: wide characters, what can't straddle a line's last column
+    /// and joined characters all change the count, and anything measured another way cuts text with nothing to say so.
     /// </remarks>
-    internal static int WrappedRows(string text, int width)
-    {
-        var rows = 0;
-
-        foreach (var line in (text ?? string.Empty).ReplaceLineEndings("\n").Split('\n'))
-        {
-            var filled = 0;
-
-            rows++;
-
-            foreach (var word in line.Split(' '))
-            {
-                var columns = word.GetColumns();
-
-                if (filled > 0 && filled + 1 + columns <= width)
-                {
-                    filled += 1 + columns;
-
-                    continue;
-                }
-
-                if (filled > 0)
-                {
-                    rows++;
-                }
-
-                filled = columns;
-
-                while (filled > width)
-                {
-                    rows++;
-                    filled -= width;
-                }
-            }
-        }
-
-        return Math.Max(1, rows);
-    }
+    internal static int WrappedRows(string text, int width) =>
+        Math.Max(1, (text ?? string.Empty).ReplaceLineEndings("\n").Split('\n')
+            .Sum(line => Math.Max(1, TextFormatter.Format(line, width, Alignment.Start, wordWrap: true).Count)));
 
     /// <summary>Opens a dialog and returns the session it is running in.</summary>
     /// <param name="app">The application to open it in.</param>

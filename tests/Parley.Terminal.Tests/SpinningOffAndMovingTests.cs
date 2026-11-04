@@ -910,6 +910,7 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
 
     [Theory]
     [InlineData("語語語語語語語語語語", 10, 2)]
+    [InlineData("語語語語語語語語語", 9, 3)]
     [InlineData("abcdefghij", 10, 1)]
     [InlineData("abcdefghijklmnopqrstuvwxy", 10, 3)]
     [InlineData("abcde fghij", 10, 2)]
