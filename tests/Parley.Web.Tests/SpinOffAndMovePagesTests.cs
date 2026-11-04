@@ -105,6 +105,73 @@ public sealed class SpinOffAndMovePagesTests
     }
 
     [Fact]
+    public async Task A_moves_entry_in_the_bell_leads_to_where_it_went()
+    {
+        using var console = Console();
+        using var client = NoRedirects(console);
+
+        _ = await PostAsync(client, Move("&x=1"), ("Exchanges", "1"), ("Where", "new"), ("NewName", "disk-cleanup"));
+
+        var told = await client.GetStringAsync(At("/Notifications"), Ct);
+
+        Assert.Contains("id=disk-cleanup", told, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_spin_off_says_why_when_the_person_cannot_be_seated()
+    {
+        using var console = Console();
+        using var client = console.CreateClient();
+
+        var (_, body) = await PostAsync(client, Spin(), Spinning(Orders));
+
+        Assert.Matches("role=\"alert\">Nothing was sent: [^<]+<", body);
+    }
+
+    [Fact]
+    public async Task Each_moves_note_on_the_page_is_where_its_entries_were_whichever_came_first()
+    {
+        using var console = Console();
+
+        console.Broker.Request(5, Orders, Billing, "A third.");
+        console.Broker.Moves.Add(new Wire.MoveRecord
+        {
+            Id = 1, Source = "shared", Destination = "tax-questions", MovedBy = "human-user@alpha", MovedUtc = "2026-09-16T10:00:00Z", FirstMessage = 4, Messages = 1, Exchanges = { 4 },
+        });
+        console.Broker.Moves.Add(new Wire.MoveRecord
+        {
+            Id = 2, Source = "shared", Destination = "stock-questions", MovedBy = "human-user@alpha", MovedUtc = "2026-09-16T10:01:00Z", FirstMessage = 2, Messages = 1, Exchanges = { 3 },
+        });
+        console.Broker.Messages[1].Id = 3;
+        console.Broker.Messages[1].ExchangeId = 3;
+        console.Broker.Exchanges[1].ExchangeId = 3;
+
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At($"/Conversations/Detail?project={Project}&id=shared"), Ct);
+        var one = page.IndexOf("id=\"m1\"", StringComparison.Ordinal);
+        var three = page.IndexOf("id=\"m3\"", StringComparison.Ordinal);
+        var five = page.IndexOf("id=\"m5\"", StringComparison.Ordinal);
+
+        Assert.InRange(page.IndexOf("moved from here to stock-questions", StringComparison.Ordinal), one, three);
+        Assert.InRange(page.IndexOf("moved from here to tax-questions", StringComparison.Ordinal), three, five);
+    }
+
+    [Fact]
+    public async Task A_destroyed_conversations_panel_offers_nobody_to_write_to()
+    {
+        using var console = Console();
+        console.Broker.Gone = new Wire.DestroyedConversation { ConversationId = "shared", DestroyedUtc = "2026-09-16T11:00:00Z", Messages = 2 };
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Orders, WaitedOn = "human-user@alpha", ExchangeId = 1 });
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At($"/Conversations/Detail?project={Project}&id=shared"), Ct);
+
+        Assert.DoesNotContain("class=\"waiting-on-you\"", page, StringComparison.Ordinal);
+        Assert.DoesNotMatch("<input[^>]*name=\"Targets\"", page);
+    }
+
+    [Fact]
     public async Task A_link_cannot_choose_where_a_move_goes()
     {
         using var console = Console();
@@ -129,7 +196,13 @@ public sealed class SpinOffAndMovePagesTests
         using var client = console.CreateClient();
 
         Assert.Contains("data-exchanges=\"77\"", await client.GetStringAsync(At($"/Conversations/Detail?project={Project}&id=shared"), Ct), StringComparison.Ordinal);
-        Assert.Contains("name=\"x\" value=\"77\"", await client.GetStringAsync(At(Move()), Ct), StringComparison.Ordinal);
+
+        var pick = await client.GetStringAsync(At(Move()), Ct);
+
+        Assert.Contains("name=\"x\" value=\"77\"", pick, StringComparison.Ordinal);
+
+        // With no script Continue is a plain form, and it has to say which conversation it was on.
+        Assert.Contains("name=\"id\" value=\"shared\"", pick, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -180,7 +253,7 @@ public sealed class SpinOffAndMovePagesTests
         var page = await client.GetStringAsync(At($"/Conversations/Detail?project={Project}&id=shared"), Ct);
 
         Assert.Equal(2, Regex.Matches(page, "class=\"spin-off\"", RegexOptions.None, TimeSpan.FromSeconds(2)).Count);
-        Assert.Contains($"href=\"/Conversations/SpinOff?project={Project}&amp;id=shared&amp;from=2\"", page, StringComparison.Ordinal);
+        Assert.Contains($"<a class=\"spin-off\" target=\"_top\" href=\"/Conversations/SpinOff?project={Project}&amp;id=shared&amp;from=2\"", page, StringComparison.Ordinal);
         Assert.Contains("id=\"move-start\"", page, StringComparison.Ordinal);
         Assert.Equal(2, Regex.Matches(page, "class=\"move-pick\"", RegexOptions.None, TimeSpan.FromSeconds(2)).Count);
     }

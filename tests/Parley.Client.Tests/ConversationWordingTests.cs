@@ -131,6 +131,28 @@ public sealed class ConversationWordingTests
     }
 
     [Fact]
+    public void Each_moves_note_is_where_its_entries_were_whichever_move_came_first()
+    {
+        var later = Moved with { Id = 2, Destination = "stock-questions", FirstMessage = 2 };
+        var earlier = Moved with { Id = 1, Destination = "tax-questions", FirstMessage = 5 };
+        var export = new ConversationExport(
+            [Said(1, """{"ask":"one"}"""), Said(3, """{"ask":"three"}"""), Said(6, """{"ask":"six"}""")],
+            [],
+            Moves: [earlier, later]);
+
+        var lines = Reading.Lines(export, TimeZoneInfo.Utc, "pricing").Select(line => line.Text).ToList();
+
+        Assert.InRange(
+            lines.FindIndex(line => line.Contains("to stock-questions", StringComparison.Ordinal)),
+            lines.FindIndex(line => line.Contains("one", StringComparison.Ordinal)) + 1,
+            lines.FindIndex(line => line.Contains("three", StringComparison.Ordinal)) - 1);
+        Assert.InRange(
+            lines.FindIndex(line => line.Contains("to tax-questions", StringComparison.Ordinal)),
+            lines.FindIndex(line => line.Contains("three", StringComparison.Ordinal)) + 1,
+            lines.FindIndex(line => line.Contains("six", StringComparison.Ordinal)) - 1);
+    }
+
+    [Fact]
     public void A_transcript_says_what_a_split_settled_pair_is()
     {
         var export = new ConversationExport(

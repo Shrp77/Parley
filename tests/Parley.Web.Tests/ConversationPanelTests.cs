@@ -191,6 +191,7 @@ public sealed class ConversationPanelTests
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(page, "href=\"#m1\" target=\"_self\" data-waiting"));
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(page, "href=\"#m2\" target=\"_self\" data-waiting"));
         Assert.Contains("<strong>orders@test</strong> (2)", page, StringComparison.Ordinal);
+        Assert.Contains("Waiting on you <span class=\"waiting-count\">2</span>", page, StringComparison.Ordinal);
     }
 
     [Fact]

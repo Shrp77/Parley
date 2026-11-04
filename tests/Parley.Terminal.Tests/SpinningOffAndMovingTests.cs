@@ -180,6 +180,72 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_spin_offs_name_is_corrected_as_it_is_typed_as_the_rule_says()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        Assert.True(shell.Transcript.Reach(message));
+
+        await shell.SpinOff();
+
+        var form = (FormDialog)driving.Find(SpinningOff.Title);
+
+        foreach (var key in "disk cleanup")
+        {
+            driving.Press(new Key(key));
+        }
+
+        Assert.Equal("disk-cleanup", form.Values[0]);
+    }
+
+    [Fact]
+    public async Task Alt_l_lists_a_conversation_once_though_it_is_both_parent_and_where_entries_came_from()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        var exchange = (await Client.ExportAsync(Conversation, Ct)).Messages.Single(m => m.Id == message).ExchangeId;
+
+        Assert.True((await Client.MoveExchangesAsync(Conversation, "disk-cleanup", true, [exchange], Ct)).Moved);
+
+        await Walking.GoAsync(shell, Viewing.Conversation, "disk-cleanup");
+        await shell.Settled;
+        await shell.GoToRelated();
+        await shell.Settled;
+
+        var rows = ((ChoiceDialog)driving.Find(Shell.RelatedTitle)).Choices.Source!.ToList().Cast<string>();
+
+        Assert.Single(rows, row => row == Conversation);
+    }
+
+    [Fact]
+    public async Task The_list_to_place_a_file_in_says_what_a_conversation_was_spun_off_from()
+    {
+        var (shell, driving, _) = await SeatedAsync();
+        using var held = shell;
+
+        var seat = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        Assert.Null(await Client.SpinOffAsync(Conversation, "kid", Ct));
+        await seat.StartAsync(shell.Held!.Seat.Name, T0, Ct);
+        Assert.True((await seat.RequestAsync(shell.Held!.Seat.Name, Billing, "model-a", """{"ask":"kid"}""", T0, "kid", Ct)).Succeeded);
+
+        await Walking.GoAsync(shell, Viewing.Projects);
+        await shell.Settled;
+
+        var list = await FilesOnScreen.ListAsync(driving, shell);
+
+        driving.Row(list.Choices, FilesPlacing.Choice);
+        list.Choices.InvokeCommand(global::Terminal.Gui.Input.Command.Accept);
+        await shell.Settled;
+
+        _ = (ChoiceDialog)driving.Find(FilesPlacing.Title);
+
+        Assert.Contains($"kid - spinoff from {Conversation}", driving.Text(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Alt_l_from_a_spin_off_offers_its_parent()
     {
         var (shell, driving, message) = await SeatedAsync();
@@ -1557,6 +1623,9 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
 
         Assert.Contains("Nothing was sent", shell.Said, StringComparison.Ordinal);
         Assert.Single((await Client.ExportAsync("disk-cleanup", Ct)).Messages);
+
+        // What is on screen says what got there first.
+        Assert.Contains("got here first", shell.Transcript.Written, StringComparison.Ordinal);
 
         shell.NewKeyDownEvent(Key.Enter);
         await shell.Settled;

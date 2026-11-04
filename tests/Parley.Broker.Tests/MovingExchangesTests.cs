@@ -323,6 +323,33 @@ public sealed class MovingExchangesTests : IDisposable
     }
 
     [Fact]
+    public async Task A_file_placed_somewhere_else_keeps_nobody_in_the_source()
+    {
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+        _ = await AskAsync(Orders, Inventory, "how many?");
+        _ = await AskAsync(Person, Inventory, "and elsewhere?", "stock");
+        PlaceFile("stock", Billing);
+
+        Assert.True((await MoveAsync("tax-questions", true, going)).Moved);
+
+        Assert.Equal(0, _connection.ExecuteScalar<int>(
+            "SELECT count(*) FROM conversation_participants WHERE conversation_id = 'pricing' AND agent = 'billing@test';"));
+    }
+
+    [Fact]
+    public async Task A_move_into_a_conversation_tells_only_the_parties_to_what_moved()
+    {
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+        _ = await AskAsync(Person, Inventory, "how many?", "stock");
+
+        Assert.True((await MoveAsync("stock", false, going)).Moved);
+
+        Assert.Equal(
+            ["billing@test", "orders@test"],
+            _connection.Query<string>("SELECT agent FROM move_notices ORDER BY agent;"));
+    }
+
+    [Fact]
     public async Task A_poll_in_either_conversation_is_voided()
     {
         var going = await AskAsync(Orders, Billing, "is it gross or net?");
