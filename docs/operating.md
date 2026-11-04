@@ -40,7 +40,7 @@ is a new request too.
 
 Everything still waiting on you is listed in the room, one row per agent with a count. Enter on a
 row lists the questions and takes you to the one you choose. The web console shows the same list
-above the transcript.
+in the panel beside the transcript, or above it on a narrow screen.
 
 **Being at the seat is an open connection and nothing else.** There is no heartbeat. A surface
 nobody has touched for twenty minutes drops its connection, because an open tab is not a person
@@ -97,7 +97,7 @@ It has three views, one at a time:
 
 Enter goes in and Escape comes back, landing on what you were looking at. `Ctrl+Q` leaves.
 Words you have not sent stay in the box until you open a different conversation, which starts with
-an empty box. Going to a project view and back keeps them; Escape asks before leaving them. If the
+an empty box. Going to a project view and back keeps them, except the box of a spin-off not yet sent, whose words go with it; Escape asks before leaving them. If the
 screen was too busy to empty the box, Enter sends nothing and says so; press it again to send the words here.
 Tab moves between the panes of a view, the arrow keys move within one, and the mouse works too.
 Below eighty columns the panes of a view stack one above another instead of sitting side by side.

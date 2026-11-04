@@ -34,4 +34,10 @@ public sealed class WholeRequestTests
     {
         Assert.Empty(Of(MessageType.Clarify, """{"text":"of VAT?"}""").Items());
     }
+
+    [Fact]
+    public void An_outcome_id_holding_a_lone_surrogate_is_refused_rather_than_thrown()
+    {
+        Assert.False(PayloadShape.TryReadOutcomes("""{"outcomes":[{"id":"\ud800","outcome":"done"}]}""", out _));
+    }
 }

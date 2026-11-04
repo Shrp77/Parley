@@ -107,6 +107,7 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
         Assert.Equal("disk-cleanup", shell.Transcript.Open);
         Assert.Contains("> the disk is full", shell.Line.Written, StringComparison.Ordinal);
         Assert.Contains("orders@test said in room:", shell.Line.Written, StringComparison.Ordinal);
+        Assert.True(shell.Line.HasFocus);
 
         // On the screen, not only in the box: these words go out as the person's.
         driving.App.LayoutAndDraw(true);
