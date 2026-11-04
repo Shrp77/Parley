@@ -733,7 +733,7 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task The_seat_can_still_send_a_result_on_what_moved()
+    public async Task The_seat_still_owes_what_moved()
     {
         var (shell, driving, message) = await SeatedAsync();
         using var held = shell;

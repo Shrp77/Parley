@@ -31,7 +31,7 @@ See [research.md](research.md). The ones that shape the work:
 4. **Whole groups are enforced at the broker, not just drawn.** `move_exchanges` refuses a list that leaves part of a `request_group` behind. `preview_move` adds the rest and says so. A send to several agents has no group, because it is only drawn as one entry, so a surface passes every exchange of what was picked.
 5. **Move records and links hold names and numbers, and outlive either side.** No foreign keys to `conversations`. Retention and destroy leave them, as `destroyed_conversations` is left.
 6. **A moved exchange counts as activity for retention.** `moved_utc` joins the idle rule, so entries moved into a new conversation are not pruned on the next pass. `created_utc` itself never changes.
-7. **Move notices follow `roadmap_notices`**: their own table and `delivered_utc`, one row per agent per exchange, collected and acknowledged as the other notices are. They do not count toward waiting and never reach a wake.
+7. **Move notices follow `roadmap_notices`**: their own table and `delivered_utc`, one row per agent per exchange per move, collected and acknowledged as the other notices are. They do not count toward waiting and never reach a wake.
 8. **`Spin off` and `Move` are separate pages on the web, and separate files on the terminal.** Each is the one place its operation is called, with its door. The web's per-message tick boxes are an enhancement over a page that works without script.
 9. **The list's wording is a display.** `ConversationSummary` gains `Parent`; `row.Id` stays exact because `Closing` and `Destroying` compare typed names to it. A conversation name cannot hold a space (§9.2), so ` - spinoff from ` cannot be forged by a name, on either surface.
 

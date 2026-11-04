@@ -79,7 +79,7 @@ public sealed class ConversationWordingTests
 
         Assert.Contains("Parent conversation: logging", file, StringComparison.Ordinal);
         Assert.Contains("Sub-conversation: child-one", file, StringComparison.Ordinal);
-        Assert.Contains("(exchange 7, 9) moved from pricing to tax-questions by human-user@test", file, StringComparison.Ordinal);
+        Assert.Contains("(exchange 7, 9) moved from pricing to tax-questions by human-user@test on 2026-11-03 09:00:00Z.", file, StringComparison.Ordinal);
         Assert.Contains("Exchange 3 was settled by exchange 4. One of them is now in other.", file, StringComparison.Ordinal);
     }
 

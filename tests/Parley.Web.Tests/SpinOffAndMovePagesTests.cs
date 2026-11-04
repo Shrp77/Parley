@@ -261,7 +261,7 @@ public sealed class SpinOffAndMovePagesTests
 
         var file = System.Text.Encoding.UTF8.GetString(Parley.Web.Pages.Conversations.DetailModel.RawExport("shared", export));
 
-        foreach (var expected in new[] { "logging", "child-one", "destination", "settledElsewhere", "other" })
+        foreach (var expected in new[] { "logging", "child-one", "destination", "settledElsewhere", "other", "human-user@test", "movedUtc", "firstMessage", "movedBy" })
         {
             Assert.Contains(expected, file, StringComparison.Ordinal);
         }

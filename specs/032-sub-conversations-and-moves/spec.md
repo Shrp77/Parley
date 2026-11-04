@@ -2,7 +2,7 @@
 
 **Feature Branch**: `032-sub-conversations-and-moves`
 **Created**: 2026-11-03
-**Status**: Draft
+**Status**: Built
 **Input**: Owner, 2026-11-03: "I want to be able to spin off sub-conversations from a conversation. Example; one of the agents told me to fix some stuff in the infrastructure. I came across some issues and want to have a targeted conversation only on that. And then I want to be able to take some conversation entries and MOVE them into a new conversation because the topic of the entries doesn't align with the topic of the conversation they were in."
 
 **Decided by the owner, 2026-11-03**:

@@ -62,6 +62,35 @@ public sealed class MovesOverTheWireTests
     }
 
     [Fact]
+    public async Task A_result_after_a_move_lands_in_the_new_conversation()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+        var operators = broker.ConnectAsOperator();
+
+        var opened = await orders.Client.RequestAsync(Requests.Open(Orders, Billing, "net or gross?"), cancellationToken: Ct);
+        var exchange = Assert.Single(opened.Outcomes).ExchangeId;
+        var source = Assert.Single(opened.Outcomes).ConversationId;
+
+        var move = new Wire.MoveExchangesRequest { Source = source, Destination = "tax-questions", NewConversation = true };
+        move.Exchanges.Add(exchange);
+        Assert.Equal(string.Empty, (await operators.MoveExchangesAsync(move, cancellationToken: Ct)).Refused);
+
+        _ = await billing.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Billing }, cancellationToken: Ct);
+
+        var said = await billing.Client.ResultAsync(Requests.Result(Billing, exchange), cancellationToken: Ct);
+
+        Assert.True(said.Ok, said.Refusal.ToString());
+
+        var there = await operators.ExportAsync(new Wire.ExportRequest { ConversationId = "tax-questions" }, cancellationToken: Ct);
+
+        Assert.Equal(2, there.Messages.Count);
+        Assert.Equal(Wire.ExchangeState.Closed, Assert.Single(there.Exchanges).State);
+        Assert.Empty((await operators.ExportAsync(new Wire.ExportRequest { ConversationId = source }, cancellationToken: Ct)).Messages);
+    }
+
+    [Fact]
     public async Task A_list_and_an_export_carry_the_parent_whether_it_closed_and_where_a_note_goes()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);

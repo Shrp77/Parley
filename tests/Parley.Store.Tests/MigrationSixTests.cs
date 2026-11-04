@@ -1,5 +1,6 @@
 using Dapper;
 using Microsoft.Data.Sqlite;
+using Parley.Core;
 using Xunit;
 
 namespace Parley.Store.Tests;
@@ -40,6 +41,48 @@ public sealed class MigrationSixTests : IDisposable
     }
 
     [Fact]
+    public void Every_row_of_every_table_it_found_is_kept_as_it_was()
+    {
+        const string When = "2026-11-03T09:00:00.0000000Z";
+
+        Work.Register(_connection, AgentName.Create("orders@test"), AgentName.Create("billing@test"));
+
+        _connection.Execute(
+            """
+            INSERT INTO conversations (id, state, opened_utc) VALUES ('pricing', 'OPEN', @When);
+            INSERT INTO conversations (id, state, opened_utc, closed_utc, closed_by) VALUES ('old-work', 'CLOSED', @When, @When, 'person');
+            INSERT INTO conversation_participants (conversation_id, agent, joined_utc) VALUES
+              ('pricing', 'orders@test', @When),
+              ('pricing', 'billing@test', @When);
+            INSERT INTO exchanges
+                (pair_key, requester, receiver, owed_by, state, conversation_id, opened_utc,
+                 uncollected_flag_ms, stalled_flag_ms, request_hash)
+            VALUES ('billing@test' || char(31) || 'orders@test', 'orders@test', 'billing@test',
+                    'billing@test', 'OPEN', 'pricing', @When, 900000, 14400000, 'hash-1');
+            INSERT INTO messages (exchange_id, type, from_agent, to_agent, responder_model, payload_json, content_hash,
+                                  conversation_id, created_utc, delivered_utc)
+            SELECT id, 'request', 'orders@test', 'billing@test', 'test', json_object('ask', 'net?'),
+                   '0000000000000000000000000000000000000000000000000000000000000001', 'pricing', @When, @When
+              FROM exchanges;
+            """,
+            new { When });
+
+        var before = Dump();
+
+        SchemaMigrator.Migrate(_connection);
+
+        var after = Dump();
+
+        Assert.Contains("CLOSED", string.Concat(before["conversations"]), StringComparison.Ordinal);
+        Assert.Contains("delivered_utc=" + When, Assert.Single(before["messages"]), StringComparison.Ordinal);
+
+        foreach (var (table, rows) in before)
+        {
+            Assert.Equal(rows, after[table]);
+        }
+    }
+
+    [Fact]
     public void A_conversation_cannot_be_its_own_parent_and_has_only_one()
     {
         SchemaMigrator.Migrate(_connection);
@@ -53,6 +96,14 @@ public sealed class MigrationSixTests : IDisposable
         Assert.Throws<SqliteException>(() => Link("a", "c"));
         Assert.Throws<SqliteException>(() => Link("d", "d"));
     }
+
+    private Dictionary<string, string[]> Dump() => _connection
+        .Query<string>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name;")
+        .ToDictionary(
+            table => table,
+            table => _connection.Query($"SELECT * FROM \"{table}\" ORDER BY 1, 2;")
+                .Select(row => string.Join('|', ((IDictionary<string, object>)row).Select(c => $"{c.Key}={c.Value}")))
+                .ToArray());
 
     private List<string> Tables() =>
         [.. _connection.Query<string>("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name;")];

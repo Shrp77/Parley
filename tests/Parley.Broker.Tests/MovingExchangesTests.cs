@@ -465,8 +465,9 @@ public sealed class MovingExchangesTests : IDisposable
         _ = await _console.PruneAsync(policy, later.AddDays(11), Ct);
         Assert.Equal(0, _connection.ExecuteScalar<int>("SELECT count(*) FROM messages;"));
 
-        // The record holds no words, and outlives them.
+        // The record holds no words, and outlives them. So does the link it made.
         Assert.Equal(1, _connection.ExecuteScalar<int>("SELECT count(*) FROM conversation_moves;"));
+        Assert.Equal(1, _connection.ExecuteScalar<int>("SELECT count(*) FROM conversation_links;"));
     }
 
     [Fact]
@@ -849,6 +850,23 @@ public sealed class MovingExchangesTests : IDisposable
 
         Assert.Equal(0, _connection.ExecuteScalar<int>("SELECT count(*) FROM move_notices;"));
         Assert.Single((await _console.ExportAsync("pricing", Ct)).Moves!);
+        Assert.Equal(["tax-questions"], (await _console.ExportAsync("pricing", Ct)).Links!.Children);
+    }
+
+    [Fact]
+    public async Task A_result_on_a_moved_exchange_closes_it_in_the_new_place()
+    {
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+
+        Assert.True((await MoveAsync("tax-questions", true, going)).Moved);
+
+        await CloseAsync(going, Billing);
+
+        var there = await _console.ExportAsync("tax-questions", Ct);
+
+        Assert.Equal(2, there.Messages.Count);
+        Assert.Equal(ExchangeState.Closed, Assert.Single(there.Exchanges).State);
+        Assert.Empty((await _console.ExportAsync("pricing", Ct)).Messages);
     }
 
     [Fact]

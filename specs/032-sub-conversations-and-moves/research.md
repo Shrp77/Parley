@@ -19,7 +19,7 @@
 
 ## Length records
 
-**Decision**: move the rows of messages still held, giving them the destination's next positions in order. Rows of already-pruned messages have no exchange to trace, so stay under the source.
+**Decision**: move the rows of messages still held, and rank both conversations again by message id, so moved rows take their place in broker order and the source closes up. Rows of already-pruned messages have no exchange to trace, so stay under the source.
 **Rationale**: `message_lengths` has no `exchange_id`, and the numbers exist to judge limits (§17 question 16). Position is "how far into a conversation", which a moved message now is. No row is lost.
 
 ## Retention
