@@ -106,6 +106,9 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <summary>The end of the one operation's path that cannot reach the broker, when one should fail.</summary>
     public string FailsOn { get; set; } = string.Empty;
 
+    /// <summary>Every operation asked of this broker, by its path.</summary>
+    public System.Collections.Concurrent.ConcurrentQueue<string> Paths { get; } = new();
+
     /// <summary>Every spin-off asked for.</summary>
     public List<Wire.SpinOffRequest> SpunOff { get; } = [];
 
@@ -150,6 +153,8 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <inheritdoc/>
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        Paths.Enqueue(request.RequestUri!.AbsolutePath);
+
         if (FailsOn.Length > 0 && request.RequestUri!.AbsolutePath.EndsWith(FailsOn, StringComparison.Ordinal))
         {
             throw new HttpRequestException("The scripted broker is down for this operation.");

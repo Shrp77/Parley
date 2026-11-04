@@ -82,6 +82,54 @@ public sealed class SpinOffAndMovePagesTests
         Assert.DoesNotContain("evil-words", page, StringComparison.Ordinal);
         Assert.DoesNotContain("evil-name", page, StringComparison.Ordinal);
         Assert.DoesNotMatch("""name="Targets" value="billing@test" checked""", page);
+
+        // With no message to start from, nothing overwrites what the link tried to fill.
+        var plain = await client.GetStringAsync(At(Spin("&Says=evil-words&Targets=billing@test&Name=evil-name")), Ct);
+
+        Assert.DoesNotContain("evil-words", plain, StringComparison.Ordinal);
+        Assert.DoesNotContain("evil-name", plain, StringComparison.Ordinal);
+        Assert.DoesNotMatch("""name="Targets" value="billing@test" checked""", plain);
+    }
+
+    [Fact]
+    public async Task The_other_conversations_list_takes_no_seat_where_one_could_be_taken()
+    {
+        using var console = Seated();
+        using var client = console.CreateClient();
+
+        using var response = await client.GetAsync(At($"/Conversations/Detail?project={RoadmapConsole.Project}&id=shared&handler=WaitingElsewhere"), Ct);
+
+        Assert.True(response.IsSuccessStatusCode);
+        Assert.NotEmpty(console.Broker.Paths);
+        Assert.All(console.Broker.Paths, path => Assert.StartsWith("/parley.v1.Operators/", path, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_link_cannot_choose_where_a_move_goes()
+    {
+        using var console = Console();
+        console.Broker.AlsoListed.Add(new Wire.ConversationSummary { ConversationId = "other-work" });
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At(Move("&x=1&NewName=evil-name&Existing=other-work&Where=existing")), Ct);
+
+        Assert.DoesNotContain("evil-name", page, StringComparison.Ordinal);
+        Assert.DoesNotMatch("""<option value="other-work" selected""", page);
+        Assert.DoesNotMatch("""value="existing" checked""", page);
+    }
+
+    [Fact]
+    public async Task A_tick_carries_the_exchange_and_not_the_message()
+    {
+        using var console = Console();
+
+        console.Broker.Messages[1].ExchangeId = 77;
+        console.Broker.Exchanges[1].ExchangeId = 77;
+
+        using var client = console.CreateClient();
+
+        Assert.Contains("data-exchanges=\"77\"", await client.GetStringAsync(At($"/Conversations/Detail?project={Project}&id=shared"), Ct), StringComparison.Ordinal);
+        Assert.Contains("name=\"x\" value=\"77\"", await client.GetStringAsync(At(Move()), Ct), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -132,7 +180,7 @@ public sealed class SpinOffAndMovePagesTests
         var page = await client.GetStringAsync(At($"/Conversations/Detail?project={Project}&id=shared"), Ct);
 
         Assert.Equal(2, Regex.Matches(page, "class=\"spin-off\"", RegexOptions.None, TimeSpan.FromSeconds(2)).Count);
-        Assert.Contains("from=2", page, StringComparison.Ordinal);
+        Assert.Contains($"href=\"/Conversations/SpinOff?project={Project}&amp;id=shared&amp;from=2\"", page, StringComparison.Ordinal);
         Assert.Contains("id=\"move-start\"", page, StringComparison.Ordinal);
         Assert.Equal(2, Regex.Matches(page, "class=\"move-pick\"", RegexOptions.None, TimeSpan.FromSeconds(2)).Count);
     }
@@ -204,6 +252,7 @@ public sealed class SpinOffAndMovePagesTests
         Assert.Empty(console.Broker.Requested);
         Assert.Contains("my own words", body, StringComparison.Ordinal);
         Assert.Contains("value=\"disk-cleanup\"", body, StringComparison.Ordinal);
+        Assert.Matches($"name=\"Targets\" value=\"{Orders}\" checked", body);
     }
 
     [Fact]
@@ -277,6 +326,7 @@ public sealed class SpinOffAndMovePagesTests
         var page = await client.GetStringAsync(At($"/Conversations/Detail?project={Project}&id=shared"), Ct);
 
         Assert.InRange(page.IndexOf("moved from here to disk-cleanup", StringComparison.Ordinal), page.IndexOf("id=\"m2\"", StringComparison.Ordinal), int.MaxValue);
+        Assert.Contains(">Open disk-cleanup</a>", page, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -413,8 +463,8 @@ public sealed class SpinOffAndMovePagesTests
         Assert.InRange(note, page.IndexOf("id=\"m1\"", StringComparison.Ordinal), page.IndexOf("id=\"m2\"", StringComparison.Ordinal));
         Assert.Contains("Spun off from", page, StringComparison.Ordinal);
         Assert.Contains("id=logging", page, StringComparison.Ordinal);
-        Assert.Matches("""<a target="_top" href="[^"]*id=child-one">child-one</a>""", page);
-        Assert.Matches("""<a target="_top" href="[^"]*id=disk-cleanup">Open disk-cleanup</a>""", page);
+        Assert.Contains($"<a target=\"_top\" href=\"/Conversations/Detail?project={Project}&amp;id=child-one\">child-one</a>", page, StringComparison.Ordinal);
+        Assert.Contains($"<a target=\"_top\" href=\"/Conversations/Detail?project={Project}&amp;id=disk-cleanup\">Open disk-cleanup</a>", page, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -606,6 +656,7 @@ public sealed class SpinOffAndMovePagesTests
         var page = await client.GetStringAsync(At($"/Conversations/Detail?project={Project}&id=shared"), Ct);
 
         Assert.Contains("moved from here to disk-cleanup", page, StringComparison.Ordinal);
+        Assert.Contains(">Open disk-cleanup</a>", page, StringComparison.Ordinal);
         Assert.DoesNotContain("Nothing was recorded", page, StringComparison.Ordinal);
     }
 

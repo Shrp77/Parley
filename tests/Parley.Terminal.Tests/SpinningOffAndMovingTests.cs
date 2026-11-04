@@ -180,6 +180,55 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Alt_l_from_a_spin_off_offers_its_parent()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        Assert.True(shell.Transcript.Reach(message));
+
+        await shell.SpinOff();
+
+        var form = (FormDialog)driving.Find(SpinningOff.Title);
+
+        form.Fill(0, "disk-cleanup");
+        form.Finish(taken: true);
+        await shell.Settled;
+
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Line));
+        shell.NewKeyDownEvent(Key.Enter);
+        await shell.Settled;
+
+        await shell.GoToRelated();
+        await shell.Settled;
+
+        var choosing = (ChoiceDialog)driving.Find(Shell.RelatedTitle);
+
+        Assert.Contains(Conversation, choosing.Choices.Source!.ToList().Cast<string>());
+    }
+
+    [Fact]
+    public async Task An_emptied_conversation_says_everywhere_its_entries_went()
+    {
+        var (shell, _, message) = await SeatedAsync();
+        using var held = shell;
+
+        var other = await AskPersonAsync(shell, "another question");
+        var first = (await Client.ExportAsync(Conversation, Ct)).Messages.Single(m => m.Id == message).ExchangeId;
+
+        Assert.True((await Client.MoveExchangesAsync(Conversation, "first-place", true, [first], Ct)).Moved);
+        Assert.True((await Client.MoveExchangesAsync(Conversation, "second-place", true, [other], Ct)).Moved);
+
+        await Walking.GoAsync(shell, Viewing.Project);
+        await shell.Settled;
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+
+        Assert.Contains("moved from here to first-place", shell.Transcript.Written, StringComparison.Ordinal);
+        Assert.Contains("moved from here to second-place", shell.Transcript.Written, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_spin_off_can_start_from_a_conversation_everything_was_moved_out_of()
     {
         var (shell, driving, message) = await SeatedAsync();

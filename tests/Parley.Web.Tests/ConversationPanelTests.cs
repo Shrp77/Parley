@@ -261,7 +261,7 @@ public sealed class ConversationPanelTests
         var list = await client.GetStringAsync(Elsewhere("other"), TestContext.Current.CancellationToken);
 
         Assert.Contains("<strong>shared</strong> (1)", list, StringComparison.Ordinal);
-        Assert.Contains("id=shared#m1", list, StringComparison.Ordinal);
+        Assert.Contains($"href=\"/Conversations/Detail?project={TranscriptConsole.Project}&amp;id=shared#m1\"", list, StringComparison.Ordinal);
         Assert.DoesNotContain("<b>bold", list, StringComparison.Ordinal);
         Assert.Contains("&lt;b&gt;bold", list, StringComparison.Ordinal);
     }
