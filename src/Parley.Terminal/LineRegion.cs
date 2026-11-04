@@ -272,6 +272,13 @@ internal sealed class LineRegion : FrameView
         _field.MoveEnd();
     }
 
+    /// <summary>Shows the box from its first line, with the cursor there.</summary>
+    /// <remarks>
+    /// For words somebody else wrote that the person is about to send as their own: the box scrolls to its cursor, so with the
+    /// cursor at the end a quote would be sent unread.
+    /// </remarks>
+    internal void ShowFromTheTop() => Prompting.OnTheLoop(_field.MoveHome);
+
     /// <summary>Whether the box has focus, so a printable key is somebody writing rather than an action.</summary>
     /// <remarks>
     /// <b>Every action on this surface is Alt plus a letter and menus open with F10, so a plain

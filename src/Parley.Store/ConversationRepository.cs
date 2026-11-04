@@ -555,8 +555,8 @@ public sealed class ConversationRepository(SqliteConnection connection)
     /// <para>
     /// Both parties are told: the receiver so it stops, the requester so it knows its work was not done.
     /// Each notice is a Result carrying an outcome of <c>closed</c> for every item the Request carried,
-    /// attributed to <c>parley:broker</c>, which the schema requires of a closed outcome and forbids of
-    /// anything else (§9.3). It says who closed it and nothing a participant wrote, so it cannot exceed
+    /// attributed to <c>parley:broker</c>, which the schema requires of an exchange first closing as closed and
+    /// forbids of anything else (§9.3). It says who closed it and nothing a participant wrote, so it cannot exceed
     /// the message cap by quoting one.
     /// </para>
     /// </remarks>
@@ -858,6 +858,8 @@ public sealed class ConversationRepository(SqliteConnection connection)
                      WHERE m.id IS NOT NULL
                         OR EXISTS (SELECT 1 FROM conversation_participants p WHERE p.conversation_id = c.id)
                         OR EXISTS (SELECT 1 FROM shared_files f WHERE f.conversation_id = c.id)
+                        -- Everything moved out of it: it stays, and says what left (SPEC.md 5.0).
+                        OR EXISTS (SELECT 1 FROM conversation_moves mv WHERE mv.source = c.id)
                 )
                 SELECT c.id                                       AS Id,
                        a.messages                                 AS Messages,
@@ -866,7 +868,10 @@ public sealed class ConversationRepository(SqliteConnection connection)
                        EXISTS (SELECT 1 FROM exchanges e
                                 WHERE e.conversation_id = c.id
                                   AND e.state = 'OPEN')           AS HasOpenExchange,
-                       (c.archived_utc IS NOT NULL)               AS Archived
+                       (c.archived_utc IS NOT NULL)               AS Archived,
+                       (SELECT l.parent FROM conversation_links l
+                         WHERE l.child = c.id)                    AS Parent,
+                       (c.state = 'CLOSED')                       AS Closed
                   FROM conversations c
                   JOIN activity a ON a.id = c.id
                  WHERE (@IncludeArchived OR c.archived_utc IS NULL)
@@ -922,7 +927,9 @@ public sealed class ConversationRepository(SqliteConnection connection)
                 ExchangeRow.ParseTimestamp(row.LastActivityUtc),
                 row.HasOpenExchange,
                 row.Archived,
-                reserved is { } r ? new RoadmapItemRef(r.RoadmapId, r.RoadmapNumber, r.Title, r.ItemNumber, r.Removed) : null));
+                reserved is { } r ? new RoadmapItemRef(r.RoadmapId, r.RoadmapNumber, r.Title, r.ItemNumber, r.Removed) : null,
+                row.Parent,
+                row.Closed));
         }
 
         return summaries;
@@ -960,6 +967,7 @@ public sealed class ConversationRepository(SqliteConnection connection)
                      WHERE m.id IS NOT NULL
                         OR EXISTS (SELECT 1 FROM conversation_participants p WHERE p.conversation_id = c.id)
                         OR EXISTS (SELECT 1 FROM shared_files f WHERE f.conversation_id = c.id)
+                        OR EXISTS (SELECT 1 FROM conversation_moves mv WHERE mv.source = c.id)
                 )
                 SELECT count(*)
                   FROM conversations c
@@ -1162,6 +1170,23 @@ public sealed class ConversationRepository(SqliteConnection connection)
             "DELETE FROM ownership_questions WHERE conversation_id = @Conversation;")
             .ConfigureAwait(false);
 
+        // An exchange that ceases to exist is not news about where it went (SPEC.md §14).
+        await ExecuteAsync(
+            """
+            DELETE FROM move_notices
+             WHERE exchange_id IN (SELECT id FROM exchanges WHERE conversation_id = @Conversation);
+            """).ConfigureAwait(false);
+
+        // A move can leave what was settled elsewhere and what settled it here (SPEC.md 5.0). Nothing can name what is gone,
+        // so the question stays closed and says only that: destroying is the person's erase control and has no exception.
+        await ExecuteAsync(
+            """
+            UPDATE exchanges
+               SET settled_by = NULL, outcome = 'closed'
+             WHERE conversation_id <> @Conversation
+               AND settled_by IN (SELECT id FROM exchanges WHERE conversation_id = @Conversation);
+            """).ConfigureAwait(false);
+
         await RazeAsync("exchanges", "DELETE FROM exchanges WHERE conversation_id = @Conversation;")
             .ConfigureAwait(false);
 
@@ -1253,6 +1278,10 @@ public sealed class ConversationRepository(SqliteConnection connection)
     private sealed class ConversationSummaryRow
     {
         public string Id { get; init; } = string.Empty;
+
+        public string? Parent { get; init; }
+
+        public bool Closed { get; init; }
 
         public int Messages { get; init; }
 

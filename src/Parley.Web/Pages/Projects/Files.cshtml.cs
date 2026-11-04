@@ -79,6 +79,13 @@ public sealed class FilesModel(BrokerDirectory directory) : PageModel
     /// <summary>The conversations a file can be placed in: the one in view, or every one the project lists.</summary>
     public IReadOnlyList<string> Placeable { get; private set; } = [];
 
+    private IReadOnlyDictionary<string, string> _parents = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>A placeable conversation's parent, for the list to say (SPEC.md §5.0).</summary>
+    /// <param name="id">The conversation.</param>
+    /// <returns>Its parent, or <see langword="null"/>.</returns>
+    public string? ParentOf(string id) => _parents.GetValueOrDefault(id);
+
     /// <summary>What happened, once something has.</summary>
     public string? Outcome { get; private set; }
 
@@ -365,20 +372,21 @@ public sealed class FilesModel(BrokerDirectory directory) : PageModel
         var conversations = await BrokerDirectory.ReadAsync(
             () => EveryConversationAsync(broker, token)).ConfigureAwait(false);
 
-        Placeable = conversations.Value ?? [];
+        Placeable = [.. (conversations.Value ?? []).Select(c => c.Id)];
+        _parents = (conversations.Value ?? []).Where(c => c.Parent is not null).ToDictionary(c => c.Id, c => c.Parent!, StringComparer.Ordinal);
         Problem ??= conversations.Problem;
     }
 
-    private static async Task<IReadOnlyList<string>> EveryConversationAsync(BrokerClient broker, CancellationToken token)
+    private static async Task<IReadOnlyList<ConversationSummary>> EveryConversationAsync(BrokerClient broker, CancellationToken token)
     {
-        var ids = new List<string>();
+        var ids = new List<ConversationSummary>();
         string? next = null;
 
         do
         {
             var page = await broker.ConversationsAsync(pageToken: next, cancellationToken: token).ConfigureAwait(false);
 
-            ids.AddRange(page.Items.Select(c => c.Id));
+            ids.AddRange(page.Items);
             next = page.NextPageToken;
         }
         while (next is not null);

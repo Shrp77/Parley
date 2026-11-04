@@ -86,6 +86,22 @@ public sealed class ConversationNameTests
     }
 
     [Fact]
+    public void The_patterns_class_keeps_to_what_a_browser_compiles()
+    {
+        // Browsers compile `pattern` in the mode that refuses a bare hyphen, a syntax character or a doubled mark in a class,
+        // and then ignore the attribute silently. Nothing here runs that mode, so this holds the class's spelling.
+        var opening = ConversationName.Pattern.IndexOf('[', StringComparison.Ordinal);
+        var closing = ConversationName.Pattern.IndexOf(']', StringComparison.Ordinal);
+        var inClass = ConversationName.Pattern[(opening + 1)..closing];
+        var rest = System.Text.RegularExpressions.Regex.Replace(
+            inClass, @"\\-|[A-Za-z0-9]-[A-Za-z0-9]", string.Empty, System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromSeconds(5));
+
+        Assert.DoesNotContain('-', rest);
+        Assert.DoesNotContain(rest, c => "()[]{}/|".Contains(c, StringComparison.Ordinal));
+        Assert.DoesNotMatch(@"([!#$%&*+,.:;<=>?@^_`~])\1", rest);
+    }
+
+    [Fact]
     public void The_rule_the_console_enforces_is_the_rule_this_applies()
     {
         // `Pattern` is what a browser with no scripts holds a field to and `Allowed` is what the

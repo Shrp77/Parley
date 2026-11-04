@@ -694,7 +694,7 @@
         button:hover { filter: brightness(1.08); }
         button:active { transform: scale(0.98); }
         button:disabled { opacity: 0.5; cursor: not-allowed; filter: none; transform: none; }
-        button.quiet:hover { background: var(--quiet-wash); filter: none; }
+        button.quiet:hover { background: var(--quiet-wash); color: var(--ink); filter: none; }
 
         :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
@@ -900,25 +900,109 @@
             .slot-7 { --agent: #7f9ac4; }
         }
 
-        /* Roster beside the transcript, the way a messenger keeps its people to one side.
-           Collapses above the conversation on a narrow screen rather than squeezing it. */
-        .conversation {
+        /* The conversation page: a panel that stays on screen, and the conversation beside it. The panel is what sticks, its
+           height is capped, and its tools stay put while what is below them scrolls inside it.
+
+           The cap leaves room for the page's own bottom padding as well as the frame. A sticky box cannot leave its
+           container, so a taller one is pushed up under the frame at the end of the page, which is where this page opens. */
+        .convo-page {
             display: grid;
-            grid-template-columns: clamp(15rem, 17vw, 20rem) minmax(0, 1fr) 4rem;
+            grid-template-columns: clamp(18rem, 22vw, 24rem) minmax(0, 1fr);
             gap: 1.5rem;
             align-items: start;
         }
 
-        /* The conversation page's left column: both rosters, the legend and what is waiting. The column
-           is what sticks, so the rosters inside it do not; its own height is capped so a long roster
-           scrolls inside it rather than past the bottom of the window. */
-        .side {
+        .convo-main { min-width: 0; }
+
+        .convo-panel {
             position: sticky;
             top: calc(var(--frame) + 1rem);
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+            max-height: calc(100vh - var(--frame) - 5.5rem);
+            min-width: 0;
+        }
+
+        /* Above what scrolls beneath it, so its menus are not drawn under the list. */
+        .panel-tools { position: relative; z-index: 3; flex: none; display: grid; gap: 0.5rem; min-width: 0; }
+        .panel-tools .filter-title { display: none; }
+
+        .side {
+            flex: 1 1 auto;
+            min-height: 0;
             display: grid;
-            gap: 1rem;
-            max-height: calc(100vh - var(--frame) - 2rem);
+            align-content: start;
+            gap: 0.8rem;
             overflow-y: auto;
+        }
+
+        .side > * { min-width: 0; margin: 0; }
+        #elsewhere:empty { display: none; }
+
+        .waiting-on-you, .waiting-elsewhere { background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); padding: 0.7rem 0.8rem; font-size: 0.85rem; overflow-wrap: anywhere; }
+        .waiting-on-you { border-left: 3px solid var(--accent); }
+        .waiting-elsewhere:not(:has(details)) { display: none; }
+        .waiting-on-you h2, .waiting-elsewhere h2 { margin: 0; font-size: 0.85rem; }
+        .waiting-elsewhere summary { cursor: pointer; }
+        .waiting-elsewhere summary h2 { display: inline; }
+        .waiting-count { display: inline-block; min-width: 1.4rem; padding: 0 0.4rem; border-radius: 999px; text-align: center; font-size: 0.75rem; color: var(--on-accent); background: var(--accent); }
+        /* Stays in reach while the list scrolls inside the panel. */
+        .waiting-step { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0; padding: 0.4rem 0; background: var(--card); }
+        .waiting-step button { padding: 0.2rem 0.8rem; font-size: 0.8rem; }
+        .waiting-where { font-size: 0.78rem; color: var(--ink-faint); }
+        .waiting-on-you ul, .waiting-elsewhere ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+        .waiting-elsewhere ul { margin-top: 0.5rem; max-height: 16rem; overflow-y: auto; }
+        .waiting-on-you ol, .waiting-elsewhere ol { margin: 0.2rem 0 0; padding-left: 1.2rem; display: grid; gap: 0.25rem; }
+        .waiting-on-you a[aria-current] { font-weight: 700; }
+
+        .convo-links { font-size: 0.85rem; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); padding: 0.5rem 0.8rem; overflow-wrap: anywhere; }
+        .convo-links p { margin: 0.1rem 0; }
+        .convo-links ul { margin: 0.1rem 0 0; padding-left: 1.1rem; }
+        .convo-links a { color: var(--accent); text-decoration: underline; }
+
+        /* The console speaking about the conversation, so quiet and centred like a day marker. */
+        .moved-note, .moved-notes li { align-self: center; list-style: none; margin: 0.6rem 0; padding: 0.3rem 0.9rem; font-size: 0.8rem; color: var(--ink-soft); background: var(--quiet-wash); border-radius: 999px; overflow-wrap: anywhere; }
+        .moved-notes { margin: 0; padding: 0; }
+
+        /* Told apart from the name it follows, so it reads as what the console says about it. */
+        .spinoff-of { font-weight: 400; color: var(--ink-soft); }
+
+        .move-pick { display: none; align-items: center; gap: 0.25rem; margin-left: 0.5rem; }
+        .picking .move-pick { display: inline-flex; }
+        .picking .spin-off { display: none; }
+        .move-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.5rem 0.8rem; background: var(--card); border: 1px solid var(--accent); border-radius: var(--radius); font-size: 0.85rem; }
+        .move-bar[hidden] { display: none; }
+        .move-form { display: block; max-width: 60rem; }
+        .move-form textarea { width: 100%; }
+        .move-form input[type="text"] { width: min(30rem, 100%); }
+        .move-to { display: grid; gap: 0.4rem; border: 1px solid var(--rule); border-radius: var(--radius); padding: 0.8rem 1rem; justify-items: start; }
+        .move-list { padding-left: 1.2rem; display: grid; gap: 0.5rem; overflow-wrap: anywhere; }
+        .move-actions { display: flex; align-items: center; gap: 1rem; }
+
+        /* A closed panel: a narrow strip, with the name running down it. Only where there are columns to
+           close; below that the panel is simply at the top of the page. */
+        .panel-strip { display: none; }
+
+        @@media (min-width: 60.01rem) {
+            .convo-page.panel-closed { grid-template-columns: 3rem minmax(0, 1fr); }
+            .panel-closed .panel-tools, .panel-closed .side { display: none; }
+            .panel-closed .panel-strip { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; padding: 0.5rem 0; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); overflow: hidden; }
+        }
+
+        .strip-button { position: relative; display: inline-grid; place-items: center; width: 2.2rem; height: 2.2rem; padding: 0; border-radius: 999px; color: var(--ink); background: none; border: 1px solid var(--rule); }
+        .strip-button[hidden], .strip-note[hidden] { display: none; }
+        .strip-count { position: absolute; top: -0.35rem; right: -0.35rem; min-width: 1.1rem; padding: 0 0.2rem; border-radius: 999px; font-size: 0.68rem; line-height: 1.1rem; color: var(--on-accent); background: var(--accent); }
+        .strip-name, .strip-note { writing-mode: vertical-rl; white-space: nowrap; }
+        .strip-name { font-weight: 600; font-size: 0.9rem; }
+        .strip-note { font-size: 0.72rem; color: var(--ink-faint); }
+
+        /* The messages and the minimap of them. */
+        .conversation {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 4rem;
+            gap: 1.5rem;
+            align-items: start;
         }
 
         /* A day marker. Centred and quiet, like the visibility note, because both are the
@@ -1245,12 +1329,13 @@
             background: var(--card);
             border: 1px solid var(--rule);
             border-radius: var(--radius);
-            padding: 0.7rem 1rem;
-            margin: 1rem 0 0;
+            padding: 0.6rem 0.8rem;
+            margin: 0;
+            min-width: 0;
         }
 
-        .find label { flex: 0 0 auto; }
-        .find input { flex: 1 1 14rem; min-width: 0; }
+        .find label { flex: 1 1 100%; font-size: 0.85rem; }
+        .find input { flex: 1 1 8rem; min-width: 0; }
 
         .found {
             flex: 1 1 100%;
@@ -1409,16 +1494,18 @@
         .notice-new { margin-left: 0.4rem; font-size: 0.75rem; font-weight: 600; color: var(--accent); }
         .bell-empty { margin: 0.4rem 0; color: var(--ink-soft); }
         .bell-all { display: block; padding-top: 0.5rem; font-weight: 600; font-size: 0.88rem; }
-        .convo-head { position: relative; margin: 0 0 0.8rem; }
-        .convo-frame { background: var(--card); border: 1px solid var(--rule); border-radius: 0.9rem; padding: 0.5rem 1rem; }
-        .convo-frame summary { cursor: pointer; list-style: none; display: flex; align-items: center; min-height: 2.4rem; padding-right: 11rem; }
+        .convo-head { position: relative; display: grid; gap: 0.4rem; min-width: 0; background: var(--card); border: 1px solid var(--rule); border-radius: 0.9rem; padding: 0.5rem 0.8rem; }
+        .convo-frame { min-width: 0; }
+        .convo-frame summary { cursor: pointer; list-style: none; display: flex; align-items: center; min-height: 2rem; }
         .convo-frame summary::-webkit-details-marker { display: none; }
         .convo-frame summary::before { content: "chevron_right"; content: "chevron_right" / ""; font-family: "Material Symbols Outlined"; margin-right: 0.5rem; font-size: 1.5rem; line-height: 1; color: var(--ink); transition: transform 0.15s; }
         .convo-frame[open] summary::before { transform: rotate(90deg); }
-        .convo-frame h1 { margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .convo-frame h1 { margin: 0; flex: 1; min-width: 0; font-size: 1.15rem; overflow-wrap: anywhere; }
         .convo-frame .item-title { margin: 0.5rem 0 0; font-size: 1rem; font-style: normal; color: var(--ink); }
         .convo-frame .as-of { margin: 0.4rem 0 0.2rem; }
-        .convo-actions { position: absolute; top: 0.5rem; right: 0.8rem; display: flex; align-items: center; gap: 0.5rem; }
+        .convo-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+        #panel-close { margin-left: auto; }
+        #panel-close[hidden] { display: none; }
         .convo-actions .file-button { display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.4rem 0.8rem; border-radius: 999px; font-weight: 600; font-size: 0.9rem; text-decoration: none; color: var(--ink); background: var(--card); border: 1px solid var(--rule); cursor: pointer; list-style: none; }
         .convo-actions .file-button::-webkit-details-marker { display: none; }
         .convo-actions .file-button:hover { border-color: var(--accent); }
@@ -1429,7 +1516,7 @@
         .new-below:active { transform: translateX(-50%) scale(0.98); }
         .new-below[hidden] { display: none; }
         .export-menu { position: relative; }
-        .export-list { position: absolute; right: 0; top: calc(100% + 0.3rem); z-index: 5; display: flex; flex-direction: column; min-width: 9rem; background: var(--card); border: 1px solid var(--rule); border-radius: 0.6rem; box-shadow: 0 6px 18px rgba(0,0,0,0.18); overflow: hidden; }
+        .export-list { position: absolute; left: 0; top: calc(100% + 0.3rem); z-index: 5; display: flex; flex-direction: column; min-width: 9rem; background: var(--card); border: 1px solid var(--rule); border-radius: 0.6rem; box-shadow: 0 6px 18px rgba(0,0,0,0.18); overflow: hidden; }
         .export-list a { padding: 0.5rem 0.9rem; color: var(--ink); text-decoration: none; white-space: nowrap; }
         .export-list a:hover { background: var(--rule); }
 
@@ -1445,12 +1532,13 @@
             background: var(--card);
             border: 1px solid var(--rule);
             border-radius: var(--radius);
-            padding: 0.6rem 1rem;
-            margin: 0.6rem 0 0;
+            padding: 0.6rem 0.8rem;
+            margin: 0;
             font-size: 0.85rem;
         }
 
         .filter[hidden] { display: none; }
+        #filter-clear[hidden] { display: none; }
         .filter-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-faint); }
         .only-me { display: inline-flex; align-items: center; gap: 0.4rem; }
 
@@ -1555,9 +1643,11 @@
         }
 
         @@media (max-width: 60rem) {
-            .conversation { grid-template-columns: minmax(0, 1fr); }
+            .convo-page, .conversation { grid-template-columns: minmax(0, 1fr); }
 
-            .side { position: static; max-height: none; overflow-y: visible; }
+            .convo-panel { position: static; max-height: none; }
+            .side { overflow-y: visible; }
+            #panel-close { display: none; }
 
             /* Horizontal above the conversation, where a vertical rail beside it
                would have nowhere to be. */

@@ -1272,6 +1272,21 @@ public sealed class AgentRepository(SqliteConnection connection)
             "DELETE FROM ownership_questions WHERE conversation_id IN (SELECT id FROM doomed_conversations);")
             .ConfigureAwait(false);
 
+        // An exchange that ceases to exist is not news to its other party about where it went (SPEC.md §14).
+        await RazeAsync("move_notices",
+            "DELETE FROM move_notices WHERE exchange_id IN (SELECT id FROM doomed_exchanges);")
+            .ConfigureAwait(false);
+
+        // A move can leave what was settled in a conversation that stays (SPEC.md 5.0). Nothing can name what is gone, so it
+        // stays closed and says only that, and a purge is not held up by somebody else's pair.
+        await ExecuteAsync(
+            """
+            UPDATE exchanges
+               SET settled_by = NULL, outcome = 'closed'
+             WHERE id NOT IN (SELECT id FROM doomed_exchanges)
+               AND settled_by IN (SELECT id FROM doomed_exchanges);
+            """).ConfigureAwait(false);
+
         await RazeAsync("exchanges",
             "DELETE FROM exchanges WHERE id IN (SELECT id FROM doomed_exchanges);")
             .ConfigureAwait(false);

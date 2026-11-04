@@ -1,0 +1,121 @@
+@page
+@model Parley.Web.Pages.Conversations.MoveModel
+@{
+    ViewData["Title"] = "Move entries";
+    ViewData["Project"] = Model.Project;
+    var back = Url.Page("/Conversations/Detail", new { project = Model.Project, id = Model.Id });
+}
+
+<h1>Move entries out of @Model.Id</h1>
+
+@if (Model.Problem is { Length: > 0 } problem)
+{
+    <p class="unreachable" role="alert">@problem</p>
+}
+
+@if (Model.Picking && Model.Preview is { Refused: null } all)
+{
+    @* A GET, because picking changes nothing: it only asks what would go. *@
+    <p class="lede">Pick what to move. A message can't leave its exchange, so a whole exchange goes.</p>
+    <form method="get" class="move-form">
+        <input type="hidden" name="project" value="@Model.Project" />
+        <input type="hidden" name="id" value="@Model.Id" />
+        <ul class="move-list">
+            @foreach (var exchange in all.Exchanges)
+            {
+                <li>
+                    <label>
+                        <input type="checkbox" name="x" value="@exchange.Id" />
+                        <strong>@exchange.Requester.Value</strong> to <strong>@exchange.Receiver.Value</strong>
+                        @(exchange.Open ? "(still open)" : null): @exchange.FirstWords
+                    </label>
+                </li>
+            }
+        </ul>
+        <p class="move-actions">
+            <button type="submit">Continue</button>
+            <a href="@back">Cancel</a>
+        </p>
+    </form>
+}
+else if (Model.Preview is { Refused: null } preview)
+{
+    var open = preview.Exchanges.Count(e => e.Open);
+    var messages = preview.Exchanges.Sum(e => e.Messages);
+
+    <p class="lede">
+        This will move @preview.Exchanges.Count exchange@(preview.Exchanges.Count == 1 ? null : "s") and @messages message@(messages == 1 ? null : "s").
+        A message can't leave its exchange, so a whole exchange goes. Each message keeps its words, its author and its time.
+        You can move them back afterwards, unless @Model.Id has closed.
+    </p>
+    @if (open > 0)
+    {
+        <p role="note">
+            @open of these @(open == 1 ? "is" : "are") still in progress. That work carries on in the new place. The agents
+            involved aren't woken, and are told the next time they collect.
+        </p>
+    }
+
+    <ul class="move-list">
+        @foreach (var exchange in preview.Exchanges)
+        {
+            <li>
+                <strong>@exchange.Requester.Value</strong> to <strong>@exchange.Receiver.Value</strong>,
+                @exchange.Messages message@(exchange.Messages == 1 ? null : "s")@(exchange.Open ? ", still open" : null):
+                @exchange.FirstWords
+                @if (Model.AddedBecause(exchange) is { Length: > 0 } because)
+                {
+                    <br /><small>Added: @because</small>
+                }
+            </li>
+        }
+    </ul>
+
+    <p>Anything an agent asked as a result of these stays behind unless you pick it too, because Parley doesn't record what led to what.</p>
+
+    @if (preview.FilesStaying.Count > 0)
+    {
+        <p>These files stay in @Model.Id: @string.Join(", ", preview.FilesStaying)</p>
+    }
+
+    <form method="post" class="move-form">
+        @foreach (var exchange in preview.Exchanges)
+        {
+            <input type="hidden" name="Exchanges" value="@exchange.Id" />
+        }
+
+        <fieldset class="move-to">
+            <legend>Where they go</legend>
+            <label>
+                <input type="radio" name="Where" value="new" checked="@(Model.Where != "existing")" />
+                A new conversation, called
+            </label>
+            <input name="NewName" type="text" autocomplete="off" spellcheck="false" maxlength="@Parley.Client.ConversationName.Longest"
+                   pattern="@Parley.Client.ConversationName.Pattern" data-correct="@Parley.Client.ConversationName.Allowed" title="@Parley.Client.ConversationName.Rule" value="@Model.NewName" aria-label="The new conversation's name" />
+            <small>@Parley.Client.ConversationName.Rule</small>
+            @if (Model.Destinations.Count > 0)
+            {
+                <label>
+                    <input type="radio" name="Where" value="existing" checked="@(Model.Where == "existing")" />
+                    An existing conversation
+                </label>
+                <select name="Existing" aria-label="The existing conversation">
+                    <option value="">Choose one</option>
+                    @foreach (var conversation in Model.Destinations)
+                    {
+                        <option value="@conversation.Id" selected="@(Model.Existing == conversation.Id)">@Parley.Client.Rendering.ConversationWording.Listed(conversation.Id, conversation.Parent)</option>
+                    }
+                </select>
+            }
+        </fieldset>
+
+        <p class="move-actions">
+            <button type="submit">Move @preview.Exchanges.Count exchange@(preview.Exchanges.Count == 1 ? null : "s")</button>
+            <a href="@back">Cancel</a>
+        </p>
+    </form>
+}
+else
+{
+    <p><a href="@back">Back to @Model.Id</a></p>
+}

@@ -298,11 +298,14 @@ public sealed class ScriptedOperators : HttpMessageHandler
         return new Wire.PruneFilesReply { FilesRemoved = Files.Count, BytesFreed = Files.Sum(f => f.SizeBytes) };
     }
 
+    /// <summary>The parent every listed conversation names.</summary>
+    public string Parent { get; set; } = string.Empty;
+
     private Wire.ListConversationsReply ListConversations()
     {
         var reply = new Wire.ListConversationsReply();
 
-        reply.Conversations.AddRange(Conversations.Select(id => new Wire.ConversationSummary { ConversationId = id }));
+        reply.Conversations.AddRange(Conversations.Select(id => new Wire.ConversationSummary { ConversationId = id, Parent = Parent }));
 
         return reply;
     }

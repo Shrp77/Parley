@@ -100,6 +100,24 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <summary>When set with <see cref="Seats"/>, the seat's stream says, after the attach, that the store is being rewritten.</summary>
     public bool Tidying { get; set; }
 
+    /// <summary>What a spin-off answers, when it should refuse.</summary>
+    public string SpinOffRefusal { get; set; } = string.Empty;
+
+    /// <summary>The end of the one operation's path that cannot reach the broker, when one should fail.</summary>
+    public string FailsOn { get; set; } = string.Empty;
+
+    /// <summary>Every operation asked of this broker, by its path.</summary>
+    public System.Collections.Concurrent.ConcurrentQueue<string> Paths { get; } = new();
+
+    /// <summary>Every spin-off asked for.</summary>
+    public List<Wire.SpinOffRequest> SpunOff { get; } = [];
+
+    /// <summary>Every spin-off taken back.</summary>
+    public List<Wire.SpinOffRequest> Abandoned { get; } = [];
+
+    /// <summary>Who the seat's Requests are refused for.</summary>
+    public HashSet<string> RefusesRequestsTo { get; } = new(StringComparer.Ordinal);
+
     /// <summary>Every Request the seat sent.</summary>
     public List<Wire.OpenRequest> Requested { get; } = [];
 
@@ -135,6 +153,13 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <inheritdoc/>
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        Paths.Enqueue(request.RequestUri!.AbsolutePath);
+
+        if (FailsOn.Length > 0 && request.RequestUri!.AbsolutePath.EndsWith(FailsOn, StringComparison.Ordinal))
+        {
+            throw new HttpRequestException("The scripted broker is down for this operation.");
+        }
+
         ArgumentNullException.ThrowIfNull(request);
 
         var body = request.Content is null ? [] : await request.Content.ReadAsByteArrayAsync(cancellationToken);
@@ -195,6 +220,12 @@ public sealed class RoadmapBroker : HttpMessageHandler
                 "/parley.v1.Operators/ListConversations" => new Wire.ListConversationsReply { Conversations = { Conversations } },
                 "/parley.v1.Operators/Export" => Export(Wire.ExportRequest.Parser.ParseFrom(payload).ConversationId),
                 "/parley.v1.Operators/Implements" => new Wire.ImplementsReply { ProtocolVersion = Parley.Core.ProtocolVersion.Current },
+                "/parley.v1.Operators/SpinOff" => Spun(Wire.SpinOffRequest.Parser.ParseFrom(payload)),
+                "/parley.v1.Operators/AbandonSpinOff" => Taken(Wire.SpinOffRequest.Parser.ParseFrom(payload)),
+                "/parley.v1.Agents/Request" when Seats && RefusesRequestsTo.Contains(Requested[^1].To) => new Wire.RequestReply
+                {
+                    Outcomes = { new Wire.RequestOutcome { Ok = false, Rejection = Wire.RequestRejection.Duplicate } },
+                },
                 "/parley.v1.Agents/Request" when Seats => new Wire.RequestReply
                 {
                     Outcomes = { new Wire.RequestOutcome { Ok = true, ExchangeId = 7, ConversationId = "rm1-1" } },
@@ -219,6 +250,20 @@ public sealed class RoadmapBroker : HttpMessageHandler
         response.TrailingHeaders.Add("grpc-status", (reply is null ? 12 : 0).ToString(CultureInfo.InvariantCulture));
 
         return response;
+    }
+
+    private Wire.SpinOffReply Spun(Wire.SpinOffRequest asked)
+    {
+        SpunOff.Add(asked);
+
+        return new Wire.SpinOffReply { Refused = SpinOffRefusal };
+    }
+
+    private Wire.DidItReply Taken(Wire.SpinOffRequest asked)
+    {
+        Abandoned.Add(asked);
+
+        return new Wire.DidItReply { Changed = true };
     }
 
     /// <summary>One message as gRPC frames it on the wire: an uncompressed flag, its length, and its bytes.</summary>

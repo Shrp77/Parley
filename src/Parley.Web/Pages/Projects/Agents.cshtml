@@ -106,7 +106,7 @@
                        it works with no script. *@
                     <details class="grid-row" role="row">
                         <summary>
-                            <a class="name" href="/Conversations/Detail?project=@Model.Project&amp;id=@conversation.Id">@conversation.Id</a>
+                            <a class="name" href="/Conversations/Detail?project=@Model.Project&amp;id=@conversation.Id">@conversation.Id@if (conversation.Parent is { } parent) {<span class="spinoff-of">@Parley.Client.Rendering.ConversationWording.SpinoffSuffix(parent)</span>}</a>
                             <span class="num">@conversation.Messages</span>
                             <span class="when">
                                 @conversation.LastActivityUtc.ToString("d MMM yyyy, HH:mm")

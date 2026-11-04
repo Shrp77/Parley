@@ -1,0 +1,80 @@
+@model Parley.Web.Pages.Conversations.DetailModel
+@*
+    The changing half of the panel beside the transcript: what is waiting on the person, then who to write to. What is
+    waiting comes first because the tree can be taller than the window, and below it the list was on the page but never
+    on the screen. A destroyed conversation has nobody left to write to, so only its links are drawn.
+*@
+@if (Model.Links.Parent is not null || Model.Links.Children.Count > 0)
+{
+    @* Names only, so it still reads when the other side was destroyed. *@
+    <nav class="convo-links" aria-label="Related conversations">
+        @if (Model.Links.Parent is { } parent)
+        {
+            <p>
+                @(Model.Links.How == Parley.Core.ConversationLinkKind.Move ? "Made by moving entries out of" : "Spun off from")
+                <a target="_top" href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = parent })">@parent</a>
+            </p>
+        }
+        @if (Model.Links.Children.Count > 0)
+        {
+            <p>Started from this one:</p>
+            <ul>
+                @foreach (var child in Model.Links.Children)
+                {
+                    <li><a target="_top" href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = child })">@child</a></li>
+                }
+            </ul>
+        }
+    </nav>
+}
+
+@if (Model.Destroyed is null)
+{
+    @if (Model.WaitingOnYou.Count > 0)
+    {
+        @* Each agent once with how many of its questions, and each question a link to where it was asked. The words are
+           the agent's and are escaped like every other agent-written text. *@
+        <section class="waiting-on-you" aria-label="Waiting on you">
+            <h2>Waiting on you <span class="waiting-count">@Model.WaitingOnYou.Sum(on => on.Questions.Count)</span></h2>
+            <p class="waiting-step">
+                <button type="button" class="quiet" data-waiting-step="-1">Previous</button>
+                <button type="button" id="next-waiting" class="quiet" data-waiting-step="1">Next</button>
+                <span id="waiting-where" class="waiting-where" role="status"></span>
+            </p>
+            <ul>
+                @foreach (var on in Model.WaitingOnYou)
+                {
+                    <li>
+                        <strong>@on.Peer.Value</strong> (@on.Questions.Count)
+                        <ol>
+                            @foreach (var question in on.Questions)
+                            {
+                                <li>
+                                    @if (question.At is { } at)
+                                    {
+                                        <a href="@($"#m{at}")" target="_self" data-waiting>@Parley.Web.Pages.Conversations.DetailModel.Start(question)</a>
+                                    }
+                                    else
+                                    {
+                                        @Parley.Web.Pages.Conversations.DetailModel.Start(question)
+                                    }
+                                </li>
+                            }
+                        </ol>
+                    </li>
+                }
+            </ul>
+        </section>
+    }
+
+    @* What is waiting in the project's other conversations is read far less often than this region, so the page's script
+       keeps it and puts it back here each time this region is replaced. *@
+    <div id="elsewhere"></div>
+
+    <partial name="_Recipients" model="Model" />
+
+    @if (Model.Messages.Count > 0)
+    {
+        <p class="roster-legend">@Parley.Client.Rendering.RoomRoster.ParticipantLegend</p>
+    }
+}

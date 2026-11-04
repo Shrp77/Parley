@@ -38,7 +38,12 @@ public sealed class Pruner(SqliteConnection connection)
               FROM messages m
         ),
         activity AS (
-            SELECT grp, max(created) AS last_activity
+            -- A move is activity in both conversations: a message's time never changes, so entries moved somewhere
+            -- new would otherwise be released before the person had read them there (SPEC.md 9.4).
+            SELECT grp,
+                   max(max(created),
+                       coalesce((SELECT max(unixepoch(moved_utc)) FROM conversation_moves mv
+                                  WHERE mv.source = grp OR mv.destination = grp), 0)) AS last_activity
               FROM grouped
              GROUP BY grp
         ),
@@ -173,6 +178,10 @@ public sealed class Pruner(SqliteConnection connection)
     private const string DeleteDecidedProposals =
         """
         DELETE FROM roadmap_notices
+         WHERE delivered_utc IS NOT NULL
+           AND unixepoch(delivered_utc) <= @NowSeconds - @MaximumAgeSeconds;
+
+        DELETE FROM move_notices
          WHERE delivered_utc IS NOT NULL
            AND unixepoch(delivered_utc) <= @NowSeconds - @MaximumAgeSeconds;
 

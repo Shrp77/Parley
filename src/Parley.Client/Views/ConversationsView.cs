@@ -26,6 +26,7 @@ public enum SortBy
 /// <param name="ActiveSinceArchived">
 /// Whether a message has arrived since it was archived. Always false when it is not archived.
 /// </param>
+/// <param name="Parent">The conversation it was spun off from or made out of (SPEC.md §5.0), or <see langword="null"/>.</param>
 public sealed record ConversationRow(
     string Id,
     DateTimeOffset LastActivityUtc,
@@ -33,7 +34,8 @@ public sealed record ConversationRow(
     IReadOnlyList<AgentName> Participants,
     bool HasOpenExchange,
     bool Archived,
-    bool ActiveSinceArchived);
+    bool ActiveSinceArchived,
+    string? Parent = null);
 
 /// <summary>
 /// The conversations half of a project view: a list you can order, and a description of one.
@@ -107,7 +109,8 @@ public static class ConversationsView
                 s.Participants,
                 s.HasOpenExchange,
                 s.Archived,
-                ActiveSinceArchived: false))
+                ActiveSinceArchived: false,
+                s.Parent))
         ];
     }
 
@@ -145,7 +148,7 @@ public static class ConversationsView
 
         var lines = new List<string>
         {
-            row.Id,
+            Rendering.ConversationWording.Listed(row.Id, row.Parent),
             $"{row.Messages} message{(row.Messages == 1 ? string.Empty : "s")}",
             row.Participants.Count == 0
                 ? "nobody is party to it"

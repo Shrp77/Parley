@@ -7,59 +7,134 @@
     ViewData["Project"] = Model.Project;
 }
 
-@* The header is one frame. Its title takes the room the two controls leave, and opening it shows what the conversation
-   is. Ordering is said once, plainly: it is the broker's record and not a wall clock, because the agents run on different
-   machines and a timeline sorted on their clocks would misorder itself. *@
-<div class="convo-head">
-    <details class="convo-frame">
-        <summary>
-            <h1>@Model.Id</h1>
-        </summary>
-        @if (Model.Item is { } item)
-        {
-            @* The roadmap item this is the work on, so the name rm1-3 is never all a person has to go on, and the way
-               back to the roadmap, opened on that item. *@
-            @if (Model.ItemTitle is { Length: > 0 } itemTitle)
-            {
-                <p class="item-title">@itemTitle</p>
+@* The page is two columns: a panel that stays on screen, and the conversation. The panel holds what a reader reaches for
+   from anywhere in a long transcript, so none of it scrolls away: the name, find and the filter stay at its top, and what
+   is waiting and who to write to scroll inside the rest of it. *@
+<div class="convo-page" id="convo-page">
+<aside class="convo-panel" id="convo-panel" aria-label="This conversation">
+    @* Remembered in this browser, and set before the panel is drawn so a closed panel does not flash open. *@
+    <script>
+        try {
+            if (window.localStorage.getItem("parley-convo-panel") === "closed") {
+                document.getElementById("convo-page").classList.add("panel-closed");
             }
-            @if (Model.RoadmapPath is { } back)
-            {
-                <p class="item-of"><a href="@back" target="_top">@(Parley.Client.Roadmaps.ItemWording.Belongs(item))</a></p>
-            }
-            else
-            {
-                @* A removed item's conversation belongs to no item (SPEC.md §5.7): it says which it was and leads nowhere. *@
-                <p class="item-of">@(Parley.Client.Roadmaps.ItemWording.Belongs(item))</p>
-            }
-        }
-        <p class="as-of">
-            In the order the broker recorded them. Times come from the agents' machines.
-            @Parley.Client.Rendering.LocalTime.Note()
-        </p>
-    </details>
+        } catch (e) { }
+    </script>
 
-    <div class="convo-actions">
-        @* The project's Files page, already narrowed to this conversation. *@
-        <a class="file-button" target="_top" href="@Url.Page("/Projects/Files", new { project = Model.Project, conversation = Model.Id })" title="Files placed in this conversation" aria-label="Files placed in this conversation">
-            <span class="icon" aria-hidden="true">description</span>
-        </a>
-        @* Two ways to keep the conversation outside the console: the readable one carries the annotations of who saw what,
-           and the other is the broker's own records, for another program to read. *@
-        <details class="export-menu">
-            <summary class="file-button" title="Export this conversation">
-                <span class="icon" aria-hidden="true">download</span>
-                Export
-            </summary>
-            <div class="export-list">
-                @* Built by the page's URL helper, so a value is encoded and cannot add a parameter of its own. *@
-                <a href="@Url.Page("/Conversations/Detail", "Transcript", new { project = Model.Project, id = Model.Id })" download title="The conversation as a text file, with who saw what noted on it, whether it was destroyed and the roadmap item it belongs to">Export TXT</a>
-                <a href="@Url.Page("/Conversations/Detail", "Raw", new { project = Model.Project, id = Model.Id })" download title="The messages and exchanges as the broker holds them, the destroyed record and the roadmap item, as JSON for another program">Export JSON</a>
-            </div>
-        </details>
+    @* What a closed panel leaves: the way to open it, the way through what is waiting, and the name. *@
+    <div class="panel-strip">
+        <button type="button" id="panel-open" class="strip-button" title="Open this panel" aria-label="Open this panel"><span class="icon" aria-hidden="true">chevron_right</span></button>
+        <button type="button" class="strip-button" id="strip-waiting" data-waiting-step="1" title="Go to the next message waiting on you" aria-label="Go to the next message waiting on you" hidden>
+            <span class="icon" aria-hidden="true">inbox</span>
+            <span class="strip-count" id="strip-count"></span>
+        </button>
+        <span class="strip-note" id="strip-filtered" hidden>Filtered</span>
+        <span class="strip-name">@Model.Id</span>
     </div>
-</div>
 
+    <div class="panel-tools">
+        @* Opening it shows what the conversation is. Ordering is said once, plainly: it is the broker's record and not a
+           wall clock, because the agents run on different machines and a timeline sorted on their clocks would misorder
+           itself. *@
+        <div class="convo-head">
+            <details class="convo-frame">
+                <summary>
+                    <h1>@Model.Id</h1>
+                </summary>
+                @if (Model.Item is { } item)
+                {
+                    @* The roadmap item this is the work on, so the name rm1-3 is never all a person has to go on, and the way
+                       back to the roadmap, opened on that item. *@
+                    @if (Model.ItemTitle is { Length: > 0 } itemTitle)
+                    {
+                        <p class="item-title">@itemTitle</p>
+                    }
+                    @if (Model.RoadmapPath is { } back)
+                    {
+                        <p class="item-of"><a href="@back" target="_top">@(Parley.Client.Roadmaps.ItemWording.Belongs(item))</a></p>
+                    }
+                    else
+                    {
+                        @* A removed item's conversation belongs to no item (SPEC.md §5.7): it says which it was and leads nowhere. *@
+                        <p class="item-of">@(Parley.Client.Roadmaps.ItemWording.Belongs(item))</p>
+                    }
+                }
+                <p class="as-of">
+                    In the order the broker recorded them. Times come from the agents' machines.
+                    @Parley.Client.Rendering.LocalTime.Note()
+                </p>
+            </details>
+
+            <div class="convo-actions">
+                @* The project's Files page, already narrowed to this conversation. *@
+                <a class="file-button" target="_top" href="@Url.Page("/Projects/Files", new { project = Model.Project, conversation = Model.Id })" title="Files placed in this conversation" aria-label="Files placed in this conversation">
+                    <span class="icon" aria-hidden="true">description</span>
+                </a>
+                @* Two ways to keep the conversation outside the console: the readable one carries the annotations of who saw what,
+                   and the other is the broker's own records, for another program to read. *@
+                <details class="export-menu">
+                    <summary class="file-button" title="Export this conversation">
+                        <span class="icon" aria-hidden="true">download</span>
+                        Export
+                    </summary>
+                    <div class="export-list">
+                        @* Built by the page's URL helper, so a value is encoded and cannot add a parameter of its own. *@
+                        <a href="@Url.Page("/Conversations/Detail", "Transcript", new { project = Model.Project, id = Model.Id })" download title="The conversation as a text file, with who saw what noted on it, whether it was destroyed and the roadmap item it belongs to">Export TXT</a>
+                        <a href="@Url.Page("/Conversations/Detail", "Raw", new { project = Model.Project, id = Model.Id })" download title="The messages and exchanges as the broker holds them, the destroyed record and the roadmap item, as JSON for another program">Export JSON</a>
+                    </div>
+                </details>
+                <a class="file-button" target="_top" href="@Url.Page("/Conversations/SpinOff", new { project = Model.Project, id = Model.Id })" title="Start a new conversation linked to this one">Spin off</a>
+                @* With a script this picks entries in place. Without one, the page it leads to lists them. *@
+                <a class="file-button" id="move-start" target="_top" href="@Url.Page("/Conversations/Move", new { project = Model.Project, id = Model.Id })" title="Move entries to another conversation">Move entries</a>
+                @* Only with a script, which is what can close it and remember that. *@
+                <button type="button" id="panel-close" class="file-button" title="Close this panel" aria-label="Close this panel" hidden><span class="icon" aria-hidden="true">chevron_left</span></button>
+            </div>
+        </div>
+
+        @* What has been picked to move, while picking. *@
+        <div class="move-bar" id="move-bar" role="group" aria-label="Moving entries" hidden>
+            <span id="move-count" role="status">Tick what you want to move.</span>
+            <button type="button" id="move-go" disabled>Continue</button>
+            <button type="button" id="move-cancel" class="quiet">Cancel</button>
+        </div>
+
+        @if (Model.Problem is not { Length: > 0 } && Model.Destroyed is null && Model.Messages.Count > 0)
+        {
+            @* Searching happens here rather than at the broker: the whole conversation is already on
+               the page, so a round trip would be slower and would page results that are all in front of
+               the reader anyway. Enhancement only — with no script the transcript is simply a
+               transcript, and the browser's own find still works on it. *@
+            <div class="find" role="search">
+                <label for="find">Find in this conversation</label>
+                <input id="find" type="search" autocomplete="off" spellcheck="false"
+                       placeholder="a word, an agent, a phrase" />
+                <p id="found" class="found" role="status"></p>
+            </div>
+
+            @* Narrows the transcript to the messages that involve somebody. Client-side for the reason find is: the
+               whole conversation is on the page. Hidden until the script has built it, so with no script the page is
+               the whole transcript and no control that does nothing. *@
+            <div class="filter" id="filter" role="group" aria-label="Show only some of the conversation" hidden
+                 data-human="@(Model.Participants.Where(p => p.Role == "human-user").Select(p => p.Value).FirstOrDefault() ?? Model.Seat?.Name.Value)">
+                <span class="filter-title">Show</span>
+                <label class="only-me"><input type="checkbox" id="only-me" /> Only between me and an agent</label>
+                <details class="pick" id="pick">
+                    <summary id="pick-summary">Any agent</summary>
+                    <div class="menu" id="pick-menu"></div>
+                </details>
+                <button type="button" id="filter-clear" hidden>Show everything</button>
+                <p id="filtered" class="found" role="status"></p>
+            </div>
+        }
+    </div>
+
+    @if (Model.Problem is not { Length: > 0 })
+    {
+        <partial name="_FollowedSide" model="Model" />
+    }
+</aside>
+
+<div class="convo-main">
 @* The transcript follows the conversation, and this is what it says when it cannot. Kept on screen
    rather than replacing the transcript: a moment's trouble reaching the broker must not take the
    conversation away from somebody reading it, and saying nothing would leave the page asserting it
@@ -75,35 +150,6 @@
 }
 else
 {
-    @if (Model.Destroyed is null && Model.Messages.Count > 0)
-    {
-        @* Searching happens here rather than at the broker: the whole conversation is already on
-           the page, so a round trip would be slower and would page results that are all in front of
-           the reader anyway. Enhancement only — with no script the transcript is simply a
-           transcript, and the browser's own find still works on it. *@
-        <div class="find" role="search">
-            <label for="find">Find in this conversation</label>
-            <input id="find" type="search" autocomplete="off" spellcheck="false"
-                   placeholder="a word, an agent, a phrase" />
-            <p id="found" class="found" role="status"></p>
-        </div>
-
-        @* Narrows the transcript to the messages that involve somebody. Client-side for the reason find is: the
-           whole conversation is on the page. Hidden until the script has built it, so with no script the page is
-           the whole transcript and no control that does nothing. *@
-        <div class="filter" id="filter" role="group" aria-label="Show only some of the conversation" hidden
-             data-human="@(Model.Participants.Where(p => p.Role == "human-user").Select(p => p.Value).FirstOrDefault() ?? Model.Seat?.Name.Value)">
-            <span class="filter-title">Show</span>
-            <label class="only-me"><input type="checkbox" id="only-me" /> Only between me and an agent</label>
-            <details class="pick" id="pick">
-                <summary id="pick-summary">Any agent</summary>
-                <div class="menu" id="pick-menu"></div>
-            </details>
-            <button type="button" id="filter-clear" hidden>Show everything</button>
-            <p id="filtered" class="found" role="status"></p>
-        </div>
-    }
-
     <partial name="_Followed" model="Model" />
 }
 
@@ -165,6 +211,8 @@ else
 <form method="post" id="close-request" asp-page-handler="CloseRequest" asp-route-project="@Model.Project" asp-route-id="@Model.Id" hidden>
     <input type="hidden" name="Closing" id="closing" value="" />
 </form>
+</div>
+</div>
 
 @section Scripts {
     <style>
@@ -179,7 +227,7 @@ else
         // page honest about them: a group's box shows all, some or none of its members, ticking it
         // ticks them, and the composer says in a sentence who the message will go to.
         //
-        // The tree is part of the followed region and is replaced every few seconds so its states stay
+        // The tree is in `#followed-side` and is replaced every few seconds so its states stay
         // current. A replaced box knows only what the server was told, so what the reader ticked and
         // which groups they closed is taken before the swap and put back after it.
         window.parleyTree = (function () {
@@ -318,6 +366,7 @@ else
         // and a parsed document runs no scripts.
         (function () {
             var region = document.getElementById("followed");
+            var side = document.getElementById("followed-side");
             var uncertain = document.getElementById("uncertain");
             var between = document.getElementById("between");
 
@@ -393,15 +442,20 @@ else
                 return document.documentElement.scrollHeight - window.scrollY - window.innerHeight > window.innerHeight * 0.3;
             }
 
-            function apply(fresh) {
+            function moved(from) {
+                return [].slice.call(from.childNodes).map(function (n) { return document.adoptNode(n); });
+            }
+
+            function apply(fresh, freshSide) {
                 var bottom = atBottom();
                 var end = pageEnd();
                 var held = anchor();
                 var kept = window.parleyTree ? window.parleyTree.snapshot() : null;
 
-                region.replaceChildren.apply(region, [].slice.call(fresh.childNodes).map(function (n) {
-                    return document.adoptNode(n);
-                }));
+                region.replaceChildren.apply(region, moved(fresh));
+
+                if (side && freshSide) { side.replaceChildren.apply(side, moved(freshSide)); }
+
                 region.setAttribute("data-seen", fresh.getAttribute("data-seen") || "");
 
                 if (kept) { window.parleyTree.restore(kept); }
@@ -434,15 +488,15 @@ else
                         return r.text();
                     })
                     .then(function (html) {
-                        var fresh = new DOMParser().parseFromString(html, "text/html")
-                            .getElementById("followed");
+                        var parsed = new DOMParser().parseFromString(html, "text/html");
+                        var fresh = parsed.getElementById("followed");
 
                         if (!fresh) { throw new Error("no region"); }
 
                         if (uncertain) { uncertain.hidden = true; }
 
                         if (fresh.getAttribute("data-seen") !== region.getAttribute("data-seen")) {
-                            apply(fresh);
+                            apply(fresh, parsed.getElementById("followed-side"));
                         }
                     })
                     .catch(function () {
@@ -655,7 +709,7 @@ else
                         return;
                     }
 
-                    // A note between messages belongs to the one before it.
+                    // A note between messages goes with the turn before it, a move's note included.
                     li.classList.toggle("filtered-out", !lastTurn);
                 });
 
@@ -668,6 +722,11 @@ else
                     : picked.length === 1 ? picked[0] : picked.length + " agents";
                 clear.hidden = !active;
                 note.textContent = active ? "Showing " + shown + " of " + total + " messages." : "";
+
+                var strip = document.getElementById("strip-filtered");
+
+                if (strip) { strip.hidden = !active; }
+
                 remember();
 
                 document.dispatchEvent(new CustomEvent("parley:filtered"));
@@ -961,20 +1020,6 @@ else
                 closer.submit();
             });
 
-            // The next message waiting on the person, after the one on screen, round to the first. The links are in the
-            // followed region and are replaced every few seconds, so they are read at each press.
-            document.addEventListener("click", function (e) {
-                if (!e.target.closest || !e.target.closest("#next-waiting")) { return; }
-
-                var links = Array.prototype.slice.call(document.querySelectorAll("a[data-waiting]"));
-
-                if (links.length === 0) { return; }
-
-                var at = links.findIndex(function (link) { return link.getAttribute("href") === location.hash; });
-
-                location.hash = links[(at + 1) % links.length].getAttribute("href");
-            });
-
             document.addEventListener("click", function (e) {
                 var button = e.target.closest ? e.target.closest("button.reply-to") : null;
 
@@ -992,6 +1037,231 @@ else
             });
 
             cancel.addEventListener("click", clear);
+        })();
+
+        // Closing the panel, and going through what is waiting on the person. The links are in `#followed-side` and are
+        // replaced every few seconds, so they are read at each press.
+        (function () {
+            var page = document.getElementById("convo-page");
+            var closer = document.getElementById("panel-close");
+            var opener = document.getElementById("panel-open");
+
+            if (!page || !closer || !opener) { return; }
+
+            closer.hidden = false;
+
+            function setClosed(closed) {
+                page.classList.toggle("panel-closed", closed);
+
+                try {
+                    window.localStorage.setItem("parley-convo-panel", closed ? "closed" : "open");
+                } catch (e) { }
+            }
+
+            closer.addEventListener("click", function () { setClosed(true); });
+            opener.addEventListener("click", function () { setClosed(false); });
+
+            // In the order they sit in the transcript, not grouped by agent as the list is: going through them should only
+            // ever move one way down the conversation.
+            function waiting() {
+                return [].slice.call(document.querySelectorAll("a[data-waiting]")).sort(function (a, b) {
+                    return Number(a.getAttribute("href").slice(2)) - Number(b.getAttribute("href").slice(2));
+                });
+            }
+
+            function show() {
+                var links = waiting();
+                var at = links.findIndex(function (link) { return link.getAttribute("href") === location.hash; });
+                var where = document.getElementById("waiting-where");
+                var count = document.getElementById("strip-count");
+                var strip = document.getElementById("strip-waiting");
+
+                links.forEach(function (link) {
+                    if (link.getAttribute("href") === location.hash) {
+                        link.setAttribute("aria-current", "location");
+                    } else {
+                        link.removeAttribute("aria-current");
+                    }
+                });
+
+                if (where) { where.textContent = at >= 0 ? (at + 1) + " of " + links.length : ""; }
+
+                if (count) { count.textContent = links.length; }
+
+                if (strip) { strip.hidden = links.length === 0; }
+            }
+
+            // A message the filter is hiding cannot be scrolled to, and the link would appear not to work. What was asked for
+            // is that message, so the filter gives way.
+            function reveal() {
+                var target = location.hash.length > 1 ? document.getElementById(location.hash.slice(1)) : null;
+
+                if (target && target.classList.contains("filtered-out")) {
+                    var clear = document.getElementById("filter-clear");
+
+                    if (clear) { clear.click(); }
+
+                    target.scrollIntoView();
+                }
+            }
+
+            document.addEventListener("click", function (e) {
+                var button = e.target.closest ? e.target.closest("[data-waiting-step]") : null;
+
+                if (!button) { return; }
+
+                var links = waiting();
+
+                if (links.length === 0) { return; }
+
+                var step = Number(button.getAttribute("data-waiting-step"));
+                var at = links.findIndex(function (link) { return link.getAttribute("href") === location.hash; });
+                var next = at < 0 ? (step > 0 ? 0 : links.length - 1) : (at + step + links.length) % links.length;
+                var href = links[next].getAttribute("href");
+
+                if (href === location.hash) {
+                    document.getElementById(href.slice(1)).scrollIntoView();
+                } else {
+                    location.hash = href;
+                }
+            });
+
+            window.addEventListener("hashchange", function () { reveal(); show(); });
+            document.addEventListener("parley:followed", show);
+
+            reveal();
+            show();
+        })();
+
+        // Picking entries to move, in place. Picking changes nothing: what was ticked is sent to the Move page, which says
+        // what would go and asks. The tick boxes are in the followed region and are replaced every few seconds, so what is
+        // picked is held here and put back.
+        (function () {
+            var start = document.getElementById("move-start");
+            var bar = document.getElementById("move-bar");
+            var page = document.getElementById("convo-page");
+            var go = document.getElementById("move-go");
+            var said = document.getElementById("move-count");
+
+            if (!start || !bar || !page || !document.getElementById("followed")) { return; }
+
+            var picked = {};
+
+            function boxes() { return [].slice.call(document.querySelectorAll(".move-pick input")); }
+
+            function exchanges() {
+                var all = {};
+
+                boxes().forEach(function (b) {
+                    if (picked[b.getAttribute("data-exchanges")]) {
+                        b.getAttribute("data-exchanges").split(" ").forEach(function (x) { all[x] = true; });
+                    }
+                });
+
+                return Object.keys(all);
+            }
+
+            function show() {
+                boxes().forEach(function (b) { b.checked = !!picked[b.getAttribute("data-exchanges")]; });
+
+                var many = exchanges().length;
+
+                go.disabled = many === 0;
+                said.textContent = many === 0 ? "Tick what you want to move." : many === 1 ? "1 exchange picked." : many + " exchanges picked.";
+            }
+
+            function picking(on) {
+                page.classList.toggle("picking", on);
+                bar.hidden = !on;
+
+                if (!on) { picked = {}; }
+
+                show();
+            }
+
+            start.addEventListener("click", function (e) { e.preventDefault(); picking(true); });
+            document.getElementById("move-cancel").addEventListener("click", function () { picking(false); });
+
+            document.addEventListener("change", function (e) {
+                var box = e.target;
+
+                if (!box.closest || !box.closest(".move-pick")) { return; }
+
+                if (box.checked) { picked[box.getAttribute("data-exchanges")] = true; } else { delete picked[box.getAttribute("data-exchanges")]; }
+
+                show();
+            });
+
+            go.addEventListener("click", function () {
+                var to = new URL(start.href, location.href);
+
+                exchanges().forEach(function (x) { to.searchParams.append("x", x); });
+                window.top.location.assign(to.href);
+            });
+
+            document.addEventListener("parley:followed", show);
+        })();
+
+        // What is waiting on the person in the project's other conversations. A separate, slower read than following: it
+        // exports every open conversation the person is in, which is not something to do every three seconds. It has no
+        // frame, so like following it keeps no seat, and it reads without collecting, so nothing is marked delivered. An
+        // embedded page leaves it out: it sits inside a roadmap, which is about that item.
+        (function () {
+            var region = document.getElementById("followed");
+
+            if (!region || !window.fetch || !window.DOMParser || document.body.classList.contains("embed")) { return; }
+
+            var url = region.getAttribute("data-follow").replace("handler=Follow", "handler=WaitingElsewhere");
+            var every = 60000;
+            var held = null;
+            var memory = "parley-elsewhere-open";
+
+            function place() {
+                var slot = document.getElementById("elsewhere");
+
+                if (slot && held && held.parentNode !== slot) { slot.replaceChildren(held); }
+            }
+
+            function wasClosed() {
+                try { return window.localStorage.getItem(memory) === "closed"; } catch (e) { return false; }
+            }
+
+            function next() { window.setTimeout(read, every); }
+
+            function read() {
+                if (document.hidden) { next(); return; }
+
+                fetch(url, { cache: "no-store", credentials: "same-origin" })
+                    .then(function (r) {
+                        if (!r.ok) { throw new Error(String(r.status)); }
+                        return r.text();
+                    })
+                    .then(function (html) {
+                        var fresh = new DOMParser().parseFromString(html, "text/html").getElementById("elsewhere-list");
+
+                        if (!fresh) { return; }
+
+                        held = document.adoptNode(fresh);
+
+                        var open = held.querySelector("details");
+
+                        if (open && wasClosed()) { open.open = false; }
+
+                        if (open) {
+                            open.addEventListener("toggle", function () {
+                                try { window.localStorage.setItem(memory, open.open ? "open" : "closed"); } catch (e) { }
+                            });
+                        }
+
+                        place();
+                    })
+                    // The list stays as it was. Following is what says the broker cannot be reached.
+                    .catch(function () { })
+                    .then(next);
+            }
+
+            document.addEventListener("parley:followed", place);
+            read();
         })();
     </script>
 }

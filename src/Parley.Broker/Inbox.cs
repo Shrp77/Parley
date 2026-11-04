@@ -28,6 +28,8 @@ namespace Parley.Broker;
 /// <param name="ClosurePollsNotListed">
 /// Closure polls outstanding beyond those this collection lists, which later ones list (SPEC.md §10.1).
 /// </param>
+/// <param name="MoveNoticeBatch">Open exchanges of this agent's that the person moved (SPEC.md §5.0).</param>
+/// <param name="MoveNoticesWaiting">How many more of those wait for a later collection.</param>
 /// <param name="RoadmapNoticesWaiting">
 /// Roadmap notices left for a later collection, besides those this one and any other in flight hold.
 /// </param>
@@ -50,8 +52,19 @@ public sealed record Inbox(
     IReadOnlyList<RoadmapNotice>? RoadmapNoticeBatch = null,
     int MessagesWaiting = 0,
     int ClosurePollsNotListed = 0,
-    int RoadmapNoticesWaiting = 0)
+    int RoadmapNoticesWaiting = 0,
+    IReadOnlyList<MoveNotice>? MoveNoticeBatch = null,
+    int MoveNoticesWaiting = 0)
 {
+    /// <summary>
+    /// Gets the open exchanges of this agent's that the person moved, collected with this inbox.
+    /// </summary>
+    /// <remarks>
+    /// Another collection for the reason roadmap notices are one: it is not a message. It opens nothing, is owed
+    /// nothing and wakes nobody (SPEC.md §5.0).
+    /// </remarks>
+    public IReadOnlyList<MoveNotice> MoveNotices => MoveNoticeBatch ?? [];
+
     /// <summary>
     /// Gets what became of this agent's own roadmap proposals, collected with this inbox.
     /// </summary>
@@ -78,5 +91,5 @@ public sealed record Inbox(
     /// Named for what it means rather than derived from one collection, so a reader of only
     /// <see cref="Messages"/> cannot under-report an outstanding poll or a file that changed.
     /// </remarks>
-    public bool IsEmpty => Messages.Count == 0 && ClosurePolls.Count == 0 && Notices.Notices.Count == 0 && RoadmapNotices.Count == 0;
+    public bool IsEmpty => Messages.Count == 0 && ClosurePolls.Count == 0 && Notices.Notices.Count == 0 && RoadmapNotices.Count == 0 && MoveNotices.Count == 0;
 }

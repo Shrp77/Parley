@@ -16,6 +16,8 @@ namespace Parley.Core;
 /// The roadmap item it belongs to, or <see langword="null"/> for an ordinary conversation (SPEC.md §5.7). Defaulted
 /// for the same reason as <paramref name="Archived"/>.
 /// </param>
+/// <param name="Parent">The conversation it was spun off from or made out of (SPEC.md §5.0), or <see langword="null"/>.</param>
+/// <param name="Closed">Whether it has closed, and so can take nothing more.</param>
 /// <remarks>
 /// <para>
 /// <b>Participation is derived and is not evidence of agreement.</b> SPEC.md §5.0 makes an
@@ -37,7 +39,9 @@ public sealed record ConversationSummary(
     DateTimeOffset LastActivityUtc,
     bool HasOpenExchange,
     bool Archived = false,
-    RoadmapItemRef? Item = null);
+    RoadmapItemRef? Item = null,
+    string? Parent = null,
+    bool Closed = false);
 
 /// <summary>
 /// One page of conversations, and how many archived ones were left out of it.

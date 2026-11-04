@@ -35,6 +35,21 @@ public sealed class FilesPageTests : IDisposable
     public void Dispose() => _console.Dispose();
 
     [Fact]
+    public async Task The_place_to_put_a_file_says_what_a_conversation_was_spun_off_from_and_posts_only_its_name()
+    {
+        _console.Broker.Parent = "logging";
+
+        using var client = _console.CreateClient();
+
+        var body = await client.GetStringAsync(new Uri(Page, UriKind.Relative), Ct);
+
+        Assert.Contains(
+            $"<option value=\"pricing\">{System.Net.WebUtility.HtmlEncode(Parley.Client.Rendering.ConversationWording.Listed("pricing", "logging"))}</option>",
+            body,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task The_list_shows_each_file_with_its_size_short_hash_and_placer_and_the_placements_under_it()
     {
         using var client = _console.CreateClient();

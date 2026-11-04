@@ -142,20 +142,33 @@ public static class Reading
     /// <summary>Lays a conversation out for reading, with what each reply settled beneath it (SPEC.md §5.6).</summary>
     /// <param name="export">The conversation: its messages and the state of its exchanges.</param>
     /// <param name="zone">The zone to render times in, or <see langword="null"/> for this machine's.</param>
+    /// <param name="conversation">The conversation being read, for what moved in or out of it; <see langword="null"/> leaves that out.</param>
     /// <returns>The transcript, line by line.</returns>
     /// <remarks>
     /// <b>From the record, never from the reply's words.</b> The person must see what an agent decided its words settled,
     /// and the broker cannot check that a model said so — so the list is drawn from the exchanges the reply closed, the
     /// way <see cref="Settled"/> finds them, beneath the reply that closed them.
     /// </remarks>
-    public static IReadOnlyList<TranscriptLine> Lines(ConversationExport export, TimeZoneInfo? zone = null)
+    public static IReadOnlyList<TranscriptLine> Lines(ConversationExport export, TimeZoneInfo? zone = null, string? conversation = null)
     {
         ArgumentNullException.ThrowIfNull(export);
 
         var lines = new List<TranscriptLine>();
 
+        // A move's note sits where the entries are, or were, by its earliest message's place in the broker's order (SPEC.md §5.0).
+        var moves = new Queue<MoveRecord>(
+            conversation is null ? [] : (export.Moves ?? []).Where(m => m.FirstMessage is not null).OrderBy(m => m.FirstMessage));
+
         foreach (var line in Lines(export.Messages, zone))
         {
+            if (line.Kind == LineKind.Header && line.Message is { } at)
+            {
+                while (moves.Count > 0 && moves.Peek().FirstMessage <= at)
+                {
+                    lines.Add(new TranscriptLine(Pad(ConversationWording.MoveLine(moves.Dequeue(), conversation!, zone)), LineKind.Annotation, null));
+                }
+            }
+
             lines.Add(line);
 
             if (line.Kind != LineKind.Header || line.Message is not { } id)
@@ -173,6 +186,19 @@ public static class Reading
             if (RoleRequest(message, export) is { } role)
             {
                 lines.Add(new TranscriptLine(Pad(role), LineKind.Annotation, null, id));
+            }
+        }
+
+        if (conversation is not null)
+        {
+            foreach (var move in moves.Concat((export.Moves ?? []).Where(m => m.FirstMessage is null)))
+            {
+                lines.Add(new TranscriptLine(Pad(ConversationWording.MoveLine(move, conversation, zone)), LineKind.Annotation, null));
+            }
+
+            foreach (var pair in export.SettledElsewhere ?? [])
+            {
+                lines.Add(new TranscriptLine(Pad(ConversationWording.SettledLine(pair)), LineKind.Annotation, null));
             }
         }
 

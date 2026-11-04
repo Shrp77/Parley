@@ -103,7 +103,9 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             Read(row.LastActivityUtc) ?? DateTimeOffset.MinValue,
             row.HasOpenExchange,
             row.Archived,
-            ItemOf(row.Item)));
+            ItemOf(row.Item),
+            string.IsNullOrEmpty(row.Parent) ? null : row.Parent,
+            row.Closed));
 
         return new ConversationPage(
             [.. conversations],
@@ -192,7 +194,25 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             e.SettledBy == 0 ? null : e.SettledBy,
             string.IsNullOrEmpty(e.RequestGroup) ? null : e.RequestGroup));
 
-        return new ConversationExport([.. messages], [.. exchanges], destroyed, ItemOf(reply.Item));
+        var links = new ConversationLinks(
+            string.IsNullOrEmpty(reply.Parent) ? null : reply.Parent,
+            string.IsNullOrEmpty(reply.Parent) ? null : reply.ParentByMove ? ConversationLinkKind.Move : ConversationLinkKind.SpinOff,
+            [.. reply.Children]);
+
+        var moves = reply.Moves.Select(m => new MoveRecord(
+            m.Id,
+            m.Source,
+            m.Destination,
+            m.MovedBy,
+            Read(m.MovedUtc) ?? DateTimeOffset.MinValue,
+            m.FirstMessage == 0 ? null : m.FirstMessage,
+            m.Messages,
+            [.. m.Exchanges]));
+
+        var settled = reply.SettledElsewhere.Select(s => new SettledElsewhere(s.ExchangeId, s.SettledBy, s.ConversationId));
+
+        return new ConversationExport(
+            [.. messages], [.. exchanges], destroyed, ItemOf(reply.Item), links, [.. moves], [.. settled]);
     }
 
     /// <inheritdoc/>
@@ -408,6 +428,60 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             cancellationToken: cancellationToken);
 
         return reply.Changed;
+    }
+
+    /// <inheritdoc/>
+    public async Task<string?> SpinOffAsync(string parent, string child, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.SpinOffAsync(
+            new Wire.SpinOffRequest { Parent = parent, Child = child }, cancellationToken: cancellationToken);
+
+        return string.IsNullOrEmpty(reply.Refused) ? null : reply.Refused;
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> AbandonSpinOffAsync(string parent, string child, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.AbandonSpinOffAsync(
+            new Wire.SpinOffRequest { Parent = parent, Child = child }, cancellationToken: cancellationToken);
+
+        return reply.Changed;
+    }
+
+    /// <inheritdoc/>
+    public async Task<MovePreview> PreviewMoveAsync(
+        string source, IReadOnlyCollection<long> exchanges, CancellationToken cancellationToken = default)
+    {
+        var request = new Wire.PreviewMoveRequest { Source = source };
+        request.Exchanges.AddRange(exchanges);
+
+        var reply = await _operators.PreviewMoveAsync(request, cancellationToken: cancellationToken);
+
+        return new MovePreview(
+            [
+                .. reply.Exchanges.Select(e => new MovePreviewExchange(
+                    e.ExchangeId,
+                    e.Open,
+                    AgentName.Create(e.Requester),
+                    AgentName.Create(e.Receiver),
+                    e.Messages,
+                    e.FirstWords,
+                    string.IsNullOrEmpty(e.AddedBecause) ? null : e.AddedBecause)),
+            ],
+            [.. reply.FilesStaying],
+            string.IsNullOrEmpty(reply.Refused) ? null : reply.Refused);
+    }
+
+    /// <inheritdoc/>
+    public async Task<MoveOutcome> MoveExchangesAsync(
+        string source, string destination, bool isNew, IReadOnlyCollection<long> exchanges, CancellationToken cancellationToken = default)
+    {
+        var request = new Wire.MoveExchangesRequest { Source = source, Destination = destination, NewConversation = isNew };
+        request.Exchanges.AddRange(exchanges);
+
+        var reply = await _operators.MoveExchangesAsync(request, cancellationToken: cancellationToken);
+
+        return new MoveOutcome(string.IsNullOrEmpty(reply.Refused) ? null : reply.Refused, reply.Exchanges, reply.Messages);
     }
 
     /// <inheritdoc/>

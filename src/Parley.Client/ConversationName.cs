@@ -39,15 +39,16 @@ public static class ConversationName
 
     /// <summary>The rule in one line, for a field to carry above itself.</summary>
     public const string Rule =
-        "Letters, digits, '.', '_' and '-', up to 64 characters. Spaces become hyphens.";
+        "Letters, digits, '.', '_' and '-', up to 64 characters, and no '..'. Spaces become hyphens.";
 
     /// <summary>The same rule as a regular expression, for an HTML <c>pattern</c> attribute.</summary>
     /// <remarks>
     /// Derived from nothing — written once, here, next to the code that applies it, so a console
     /// field and a terminal field cannot come to hold two spellings of one rule. The lookahead is
-    /// what carries the <c>..</c> half, which a character class cannot say.
+    /// what carries the <c>..</c> half, which a character class cannot say. The hyphen is escaped because browsers compile
+    /// a <c>pattern</c> in a mode that refuses a bare one in a class, and then ignore the whole attribute without saying so.
     /// </remarks>
-    public const string Pattern = @"(?!.*\.\.)[A-Za-z0-9._-]{1,64}";
+    public const string Pattern = @"(?!.*\.\.)[A-Za-z0-9._\-]{1,64}";
 
     /// <summary>The characters <see cref="Correct"/> keeps, as a character class.</summary>
     /// <remarks>

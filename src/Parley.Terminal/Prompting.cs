@@ -1,4 +1,5 @@
 using System.Drawing;
+using Terminal.Gui.Text;
 using Terminal.Gui.App;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
@@ -98,6 +99,18 @@ internal static class Prompting
 
         return Math.Max(1, lines.Sum(line => Math.Max(1, (int)Math.Ceiling(line.Length / 60.0))));
     }
+
+    /// <summary>How many rows text needs wrapped by word at a known width.</summary>
+    /// <param name="text">The text.</param>
+    /// <param name="width">The width it wraps at.</param>
+    /// <returns>The rows, at least one.</returns>
+    /// <remarks>
+    /// Asked of the toolkit's own formatter, which is what draws it: wide characters, what can't straddle a line's last column
+    /// and joined characters all change the count, and anything measured another way cuts text with nothing to say so.
+    /// </remarks>
+    internal static int WrappedRows(string text, int width) =>
+        Math.Max(1, (text ?? string.Empty).ReplaceLineEndings("\n").Split('\n')
+            .Sum(line => Math.Max(1, TextFormatter.Format(line, width, Alignment.Start, wordWrap: true).Count)));
 
     /// <summary>Opens a dialog and returns the session it is running in.</summary>
     /// <param name="app">The application to open it in.</param>

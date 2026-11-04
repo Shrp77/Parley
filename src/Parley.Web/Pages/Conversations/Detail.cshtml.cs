@@ -73,6 +73,49 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// </remarks>
     public IReadOnlyList<WaitingOn> WaitingOnYou { get; private set; } = [];
 
+    /// <summary>This conversation's parent and children (SPEC.md §5.0).</summary>
+    public ConversationLinks Links { get; private set; } = ConversationLinks.None;
+
+    /// <summary>Every move in or out of this conversation, oldest first (SPEC.md §5.0).</summary>
+    public IReadOnlyList<MoveRecord> Moves { get; private set; } = [];
+
+    /// <summary>Settled pairs split across this and another conversation (SPEC.md §5.6).</summary>
+    public IReadOnlyList<SettledElsewhere> SettledAcross { get; private set; } = [];
+
+    /// <summary>What is waiting on the person in this project's other conversations, oldest first.</summary>
+    public IReadOnlyList<Delivered> Elsewhere { get; private set; } = [];
+
+    /// <summary>What is waiting on the person in the project's other conversations, for a page to show beside this one.</summary>
+    /// <returns>The list, 503 when the broker could not be read, or 404 for a project this console does not know.</returns>
+    /// <remarks>
+    /// Its own handler, read far less often than <see cref="OnGetFollowAsync"/>: it exports every open conversation the
+    /// person is in. A partial with no frame, so it keeps no seat, and it reads what is owed without collecting anything,
+    /// so unlike opening the Inbox it marks nothing delivered.
+    /// </remarks>
+    public async Task<IActionResult> OnGetWaitingElsewhereAsync()
+    {
+        if (directory.Find(Project) is not { } project || string.IsNullOrWhiteSpace(Id))
+        {
+            return NotFound();
+        }
+
+        var read = await BrokerDirectory.ReadAsync(async () =>
+            await PersonOwes.ReadAsync(
+                new BrokerClient(directory.ClientFor(project)), PersonSeat.On(project.Name), HttpContext.RequestAborted)
+                .ConfigureAwait(false)).ConfigureAwait(false);
+
+        if (read.Value is not { } owed)
+        {
+            return Unavailable(read.Problem);
+        }
+
+        Elsewhere = [.. owed.Where(item => !string.Equals(item.Message.ConversationId, Id, StringComparison.Ordinal))];
+
+        Response.Headers.CacheControl = "no-store";
+
+        return Partial("_WaitingElsewhere", this);
+    }
+
     /// <summary>The start of a question, short enough for one line of the list.</summary>
     /// <param name="question">The question.</param>
     /// <returns>Up to a hundred characters, on one line, with an ellipsis when cut.</returns>
@@ -80,7 +123,17 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     {
         ArgumentNullException.ThrowIfNull(question);
 
-        var flat = string.Join(' ', question.Asked.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return Start(question.Asked);
+    }
+
+    /// <summary>The start of something an agent said, short enough for one line of a list.</summary>
+    /// <param name="asked">What it said.</param>
+    /// <returns>Up to a hundred characters, on one line, with an ellipsis when cut.</returns>
+    public static string Start(string asked)
+    {
+        ArgumentNullException.ThrowIfNull(asked);
+
+        var flat = string.Join(' ', asked.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
         return flat.Length <= 100
             ? flat
@@ -137,12 +190,16 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
 
     /// <summary>Whether a message is an agent's question back to the person that is still waiting on them.</summary>
     /// <param name="message">The message.</param>
-    /// <returns><see langword="true"/> for a Clarify to the person, on an open exchange, with nothing after it there.</returns>
+    /// <returns><see langword="true"/> for the latest thing said to the person on an exchange the person owes the next move on.</returns>
+    /// <remarks>
+    /// Who owes comes from the wait-for graph and never from the transcript's last message. An agent may settle its question
+    /// by handing the turn back (SPEC.md §5.6), which writes no message, so the transcript would go on saying the person owes
+    /// what they do not.
+    /// </remarks>
     public bool AwaitsReply(Message message) =>
         message.Type is MessageType.Clarify or MessageType.Request
         && message.To.Role == "human-user"
-        && Exchanges.TryGetValue(message.ExchangeId, out var snapshot)
-        && snapshot.State == ExchangeState.Open
+        && WaitingOnYou.Any(on => on.Questions.Any(question => question.Exchange == message.ExchangeId))
         && Messages.Last(m => m.ExchangeId == message.ExchangeId).Id == message.Id;
 
     /// <summary>The outcome the person chose, when their words close an agent's Request as well as answer it.</summary>
@@ -206,36 +263,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
 
     /// <summary>The messages as the page draws them: a send to several agents is one turn, not one per agent.</summary>
     /// <returns>Each turn, in the order the broker recorded its first message.</returns>
-    /// <remarks>
-    /// A send to several agents is recorded as one Request each, because a refusal is per agent. The words, the sender
-    /// and the conversation are the same, and the recipients are what the "to" line is for, so adjacent Requests that
-    /// match are drawn once with every recipient named. Only adjacent ones: reordering messages to join them would
-    /// misstate the order the broker recorded.
-    /// </remarks>
-    public IReadOnlyList<IReadOnlyList<Message>> Turns()
-    {
-        var turns = new List<List<Message>>();
-
-        foreach (var message in Messages)
-        {
-            if (turns.Count > 0
-                && turns[^1][0] is { Type: MessageType.Request } first
-                && message.Type == MessageType.Request
-                && first.From == message.From
-                && first.To != message.To
-                && string.Equals(first.PayloadJson, message.PayloadJson, StringComparison.Ordinal)
-                && turns[^1].All(m => m.To != message.To))
-            {
-                turns[^1].Add(message);
-            }
-            else
-            {
-                turns.Add([message]);
-            }
-        }
-
-        return [.. turns.Select(turn => (IReadOnlyList<Message>)turn)];
-    }
+    public IReadOnlyList<IReadOnlyList<Message>> Turns() => MovePicking.Turns(Messages);
 
     /// <summary>Says where the exchange a message belongs to stands.</summary>
     /// <param name="message">The message.</param>
@@ -295,7 +323,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// </returns>
     /// <remarks>
     /// <para>
-    /// <b>The transcript follows its conversation.</b> A transcript grows only at its end, and
+    /// <b>The transcript follows its conversation.</b> A move can change its middle, and
     /// the page keeps the message a reader is looking at where it was, so a page never changes under a reader
     /// mid-sentence, and a reader at the bottom sees an answer arrive without reloading.
     /// </para>
@@ -331,7 +359,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
 
         Response.Headers.CacheControl = "no-store";
 
-        return Problem is null ? Partial("_Followed", this) : Unavailable(Problem);
+        return Problem is null ? Partial("_Follow", this) : Unavailable(Problem);
     }
 
     /// <summary>The transcript as text, with its annotations intact.</summary>
@@ -429,6 +457,11 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
                 conversation = id,
                 messages = export.Messages,
                 exchanges = export.Exchanges,
+                parent = export.Links?.Parent,
+                parentBy = export.Links?.How?.ToString(),
+                children = export.Links?.Children ?? [],
+                moves = export.Moves ?? [],
+                settledElsewhere = export.SettledElsewhere ?? [],
                 destroyed = export.Destroyed is { } gone
                     ? new
                     {
@@ -734,6 +767,9 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
         Messages = read.Value?.Messages ?? [];
         Destroyed = read.Value?.Destroyed;
         Item = read.Value?.Item;
+        Links = read.Value?.Links ?? ConversationLinks.None;
+        Moves = read.Value?.Moves ?? [];
+        SettledAcross = read.Value?.SettledElsewhere ?? [];
         Participants = Visibility.Participants(Messages);
         Exchanges = Snapshots(read.Value?.Exchanges ?? []);
         Problem = read.Problem;

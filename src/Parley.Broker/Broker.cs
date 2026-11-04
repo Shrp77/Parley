@@ -81,6 +81,9 @@ public sealed class Broker
     /// <summary>The most roadmap notices one collection hands over; the rest wait for the next.</summary>
     private const int RoadmapNoticesPerCollection = 50;
 
+    /// <summary>The most move notices one collection carries (SPEC.md §5.0); the rest are counted and wait.</summary>
+    private const int MoveNoticesPerCollection = 50;
+
     /// <summary>
     /// About how many characters of messages one collection hands over; what would pass it waits for the next.
     /// </summary>
@@ -1013,7 +1016,7 @@ public sealed class Broker
         RequireStarted("collecting an inbox");
         ArgumentNullException.ThrowIfNull(holds);
 
-        var (heldMessages, heldFileNotices, heldRoadmapNotices) = holds.HeldFor(agent);
+        var (heldMessages, heldFileNotices, heldRoadmapNotices, heldMoveNotices) = holds.HeldFor(agent);
         var pending = await _messages.GetPendingAsync(agent, limit, heldMessages, cancellationToken).ConfigureAwait(false);
         var owed = await _messages.GetOwedExchangeIdsAsync(agent, cancellationToken).ConfigureAwait(false);
         var handed = 0;
@@ -1101,10 +1104,19 @@ public sealed class Broker
         var proposalsWaiting = await roadmaps
             .CountNoticesAsync(agent, [.. heldRoadmapNotices, .. proposalIds], cancellationToken).ConfigureAwait(false);
 
-        var hold = new InboxHold(agent, handedIds, requests, noticeKeys, proposalIds);
+        // That the person moved an open exchange of this agent's (SPEC.md §5.0). Told when it next looks, and never a
+        // reason to wake it.
+        var moves = new ConversationMoveRepository(_connection);
+        var (moved, movedIds) = await moves
+            .PeekNoticesAsync(agent, MoveNoticesPerCollection, heldMoveNotices, cancellationToken)
+            .ConfigureAwait(false);
+        var movedWaiting = await moves
+            .CountNoticesAsync(agent, [.. heldMoveNotices, .. movedIds], cancellationToken).ConfigureAwait(false);
+
+        var hold = new InboxHold(agent, handedIds, requests, noticeKeys, proposalIds, movedIds);
         holds.Add(hold);
 
-        return (new Inbox(delivered, polls, notices, proposals, waiting, pollsWaiting, proposalsWaiting), hold);
+        return (new Inbox(delivered, polls, notices, proposals, waiting, pollsWaiting, proposalsWaiting, moved, movedWaiting), hold);
     }
 
     /// <summary>Records a collection delivered once its caller says it has it (SPEC.md §6).</summary>
@@ -1141,6 +1153,8 @@ public sealed class Broker
         await new FileNoticeRepository(_connection).DeleteAsync(hold.Agent, hold.FileNotices, cancellationToken)
             .ConfigureAwait(false);
         await new RoadmapRepository(_connection).MarkNoticesDeliveredAsync(hold.RoadmapNotices, nowUtc, cancellationToken)
+            .ConfigureAwait(false);
+        await new ConversationMoveRepository(_connection).MarkNoticesDeliveredAsync(hold.MoveNotices, nowUtc, cancellationToken)
             .ConfigureAwait(false);
     }
 

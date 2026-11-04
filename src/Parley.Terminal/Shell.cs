@@ -298,15 +298,55 @@ internal sealed partial class Shell : Window
                 return;
             }
 
+            // **The link first**, so a Request never reaches a spin-off with no link behind it. Refused, nothing is sent
+            // and the words stay.
+            if (_spinningOff is { } spinning
+                && spinning.Project == place.Name.Value
+                && spinning.Conversation == conversation
+                && await SpinningOff.LinkAsync(new BrokerClient(_directory.ClientFor(place)), spinning.Parent, conversation, token)
+                    .ConfigureAwait(false) is { } refused)
+            {
+                Said = $"Nothing was sent: {refused}";
+
+                // Only if something else took the name since: it is an ordinary conversation now, and what is on screen says
+                // so. Refused for any other reason, say its parent went, a later Enter must be refused too, or it would send
+                // with no link behind it. Leaving this conversation is what ends that.
+                var taken = await new BrokerClient(_directory.ClientFor(place)).ExportAsync(conversation, token).ConfigureAwait(false);
+
+                if (taken.Exchanges.Count > 0)
+                {
+                    _spinningOff = null;
+
+                    await OpenAsync(place, conversation, token).ConfigureAwait(false);
+                }
+
+                return;
+            }
+
             var sent = await voice.SendAsync(hold, draft, conversation, token).ConfigureAwait(false);
 
             Said = sent.Says;
+
+            // Reached nobody, so nothing was started. The words stay, and Enter links it again.
+            if (sent.Count == 0 && _spinningOff is { } unsent && unsent.Conversation == conversation && unsent.Project == place.Name.Value)
+            {
+                await SpinningOff.AbandonAsync(new BrokerClient(_directory.ClientFor(place)), unsent.Parent, conversation, token)
+                    .ConfigureAwait(false);
+            }
 
             // **Cleared only on a send that reached somebody**, decided by the count rather than by the words,
             // so a draft the cap refused is kept.
             if (sent.Count == 0)
             {
                 return;
+            }
+
+            _spinningOff = null;
+
+            // Its participants are the broker's to say from now on, and a conversation can empty again by a move.
+            if (_pending is { } started && started.Project == place.Name.Value && started.Conversation == conversation)
+            {
+                _pending = null;
             }
 
             // Only what was sent leaves the box: what was typed after Enter is the start of the next thought, and is the
@@ -1656,6 +1696,10 @@ internal sealed partial class Shell : Window
         // the furniture.
         Focus(Opening(place));
 
+        NotStartedAnyMore(place.Viewing == Viewing.Conversation && place.Title is { } arriving && Current is { } within
+            ? within.Name.Value + "/" + arriving
+            : null);
+
         // **Arriving at a conversation reads it**, so the view is never on a conversation it has not read.
         //
         // **Awaited rather than queued**: every caller is already on the work queue, so a queued read would sit
@@ -1698,6 +1742,43 @@ internal sealed partial class Shell : Window
         if (place.Viewing == Viewing.Configuration)
         {
             await ReadConfigurationAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Forgets a conversation that was named and never spoken in, once the person has gone anywhere else.</summary>
+    /// <param name="arriving">The project and conversation now on screen, or null when no conversation is.</param>
+    /// <remarks>
+    /// Any view counts, not only another conversation: Escape goes to the project, and what was armed there would otherwise
+    /// link whatever later takes the name to a parent the person left behind, and hand it the recipient they discarded. What
+    /// was written for a spin-off goes with it, because coming back it could only be sent with no link behind it.
+    /// </remarks>
+    private void NotStartedAnyMore(string? arriving)
+    {
+        if (_spinningOff is { } spinning && spinning.Project + "/" + spinning.Conversation != arriving)
+        {
+            _spinningOff = null;
+
+            if (string.Equals(_lineFor, spinning.Project + "/" + spinning.Conversation, StringComparison.Ordinal))
+            {
+                Line.Rewrite(_ =>
+                {
+                    _lineFor = null;
+                    _itemWords = null;
+
+                    return string.Empty;
+                });
+            }
+        }
+
+        if (_pending is { } waiting && waiting.Project + "/" + waiting.Conversation != arriving)
+        {
+            _pending = null;
+
+            // Who was ticked for it goes too, or a later conversation under the name would start with them ticked.
+            if (_drafted == (waiting.Project, waiting.Conversation))
+            {
+                _drafted = null;
+            }
         }
     }
 
@@ -4007,7 +4088,18 @@ internal sealed partial class Shell : Window
 
     /// <summary>Sends a participant a Request, in the conversation on screen.</summary>
     /// <returns>When the dialog has been opened.</returns>
-    private Task SendRequest() => Compose(Transcript.Open);
+    private Task SendRequest()
+    {
+        // The box is what records a spin-off's link before anything is sent, so a Request from here would arrive with none.
+        if (_spinningOff is { } spinning && spinning.Conversation == Transcript.Open)
+        {
+            Said = SpinOffGoesFromTheBox;
+
+            return Task.CompletedTask;
+        }
+
+        return Compose(Transcript.Open);
+    }
 
     /// <summary>Sends a participant a Request, opening a new conversation.</summary>
     /// <returns>When the dialog has been opened.</returns>
@@ -4779,6 +4871,172 @@ internal sealed partial class Shell : Window
         return Task.CompletedTask;
     }
 
+    /// <summary>Starts a new conversation from the message under the cursor, with it quoted in the box.</summary>
+    /// <returns>When the dialog has been opened.</returns>
+    /// <remarks>
+    /// Read from the broker's record of that message, and only its author is ticked. A cursor on no message starts one
+    /// with an empty box. Nothing exists until the person sends: the link is recorded by <see cref="SendLine"/>.
+    /// </remarks>
+    internal Task SpinOff()
+    {
+        if (App is not { } app || Current is not { } project || Transcript.Open is not { } parent)
+        {
+            return Task.CompletedTask;
+        }
+
+        var under = Transcript.Under;
+        var client = new BrokerClient(_directory.ClientFor(project));
+
+        var form = new FormDialog(
+            SpinningOff.Title,
+            [
+                new FormField(
+                    SpinningOff.Door + " Conversation name — " + ConversationName.Rule,
+                    Participation.Suggested(),
+                    Participation.ConversationProblem,
+                    Correct: ConversationName.Correct,
+                    Corrected: ConversationName.WasCorrected),
+            ]);
+
+        var token = Prompting.Open(app, form);
+
+        form.Done += (_, values) =>
+        {
+            Prompting.Close(app, token);
+
+            if (values is null)
+            {
+                Said = string.Empty;
+
+                return;
+            }
+
+            var name = values[0].Trim();
+
+            Queue(async reading =>
+            {
+                // Told now rather than after the person has written everything: the box would then belong to a
+                // conversation that already exists, and their words would go into it.
+                var there = await client.ExportAsync(name, reading).ConfigureAwait(false);
+
+                if (SpinningOff.NameProblem(name, parent, there) is { } problem)
+                {
+                    Said = $"Nothing was started: {problem}";
+
+                    return;
+                }
+
+                var export = await client.ExportAsync(parent, reading).ConfigureAwait(false);
+
+                // A spin-off of something itself not yet sent has no parent to name.
+                if (export.Exchanges.Count == 0 && (export.Moves is not { Count: > 0 }))
+                {
+                    Said = "Nothing was started: this conversation has nothing in it yet, so send it first.";
+
+                    return;
+                }
+
+                var message = under is { } id ? export.Messages.FirstOrDefault(m => m.Id == id) : null;
+
+                // A line of the person's own first, with the quote below it where they can read it before they send it.
+                var quote = message is null ? string.Empty : "\n" + Parley.Client.Rendering.Quoting.Of(message, parent).TrimEnd();
+
+                _pending = (project.Name.Value, name, message is null || PersonSeat.Is(message.From) ? [] : [message.From]);
+                _spinningOff = (project.Name.Value, name, parent);
+
+                await GoAsync(ViewPlace.Into(project.Name).Into(name)).ConfigureAwait(false);
+
+                // Words, never a command: a command begins with a slash, and a quote begins with a line break and a name.
+                Line.Rewrite(now => string.IsNullOrWhiteSpace(now) ? quote : now);
+
+                Line.ShowFromTheTop();
+
+                Focus(Panes.ToList().IndexOf(Line));
+            });
+        };
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Goes to a conversation this one is linked to, or that entries moved to or from.</summary>
+    /// <returns>When the work to open the choice has been queued.</returns>
+    internal Task GoToRelated()
+    {
+        if (App is not { } app || Current is not { } project || Transcript.Open is not { } here)
+        {
+            return Task.CompletedTask;
+        }
+
+        var client = new BrokerClient(_directory.ClientFor(project));
+
+        Queue(async token =>
+        {
+            var export = await client.ExportAsync(here, token).ConfigureAwait(false);
+
+            IReadOnlyList<string> related =
+            [
+                .. new[] { export.Links?.Parent }.OfType<string>()
+                    .Concat(export.Links?.Children ?? [])
+                    .Concat((export.Moves ?? []).Select(move => Parley.Client.Rendering.ConversationWording.OtherSide(move, here)))
+                    .Distinct(StringComparer.Ordinal),
+            ];
+
+            if (related.Count == 0)
+            {
+                Said = NoRelated;
+
+                return;
+            }
+
+            var rows = related.Select(id => (Id: id, Row: Safe.Text(id))).ToList();
+            var choosing = Prompting.Choose(RelatedTitle, "Which conversation?", [.. rows.Select(r => r.Row)]);
+            var opened = Prompting.Open(app, choosing);
+
+            choosing.Done += (_, picked) =>
+            {
+                Prompting.Close(app, opened);
+
+                if (rows.FirstOrDefault(r => r.Row == picked).Id is { } id)
+                {
+                    Queue(_ => GoAsync(ViewPlace.Into(project.Name).Into(id)));
+                }
+            };
+        });
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Moves entries of the conversation on screen to another, starting from the one under the cursor.</summary>
+    /// <returns>When the work to open the dialog has been queued.</returns>
+    internal Task MoveEntries()
+    {
+        if (App is not { } app || Current is not { } project || Transcript.Open is not { } source)
+        {
+            return Task.CompletedTask;
+        }
+
+        var under = Transcript.Under;
+        var client = new BrokerClient(_directory.ClientFor(project));
+
+        Queue(async token =>
+        {
+            var export = await client.ExportAsync(source, token).ConfigureAwait(false);
+            var exchange = under is { } id ? export.Messages.FirstOrDefault(m => m.Id == id)?.ExchangeId : null;
+
+            await Moving.OpenAsync(app, client, source, exchange, Queue, async (said, destination) =>
+            {
+                Said = said;
+
+                if (destination is not null)
+                {
+                    await GoAsync(ViewPlace.Into(project.Name).Into(destination)).ConfigureAwait(false);
+                }
+            }, token).ConfigureAwait(false);
+        });
+
+        return Task.CompletedTask;
+    }
+
     /// <summary>Closes a Request waiting on the person, without answering it.</summary>
     /// <returns>When the dialog has been opened.</returns>
     /// <remarks>
@@ -5482,6 +5740,18 @@ internal sealed partial class Shell : Window
     /// the room shows them as its participants meanwhile. Once the conversation has any message the record is ignored.
     /// </remarks>
     private (string Project, string Conversation, IReadOnlyList<AgentName> Peers)? _pending;
+
+    /// <summary>The action's name, and the dialog's.</summary>
+    internal const string RelatedTitle = "Go to a related conversation";
+
+    /// <summary>What is said when a Request is asked for in a spin-off not yet sent.</summary>
+    internal const string SpinOffGoesFromTheBox = "This conversation starts with what is in the box. Press Enter there to send it.";
+
+    /// <summary>What is said when there is nowhere to go.</summary>
+    internal const string NoRelated = "No other conversation is linked to this one.";
+
+    // A spin-off not yet sent: the link is recorded when its first words are, and not before (SPEC.md §5.0).
+    private (string Project, string Conversation, string Parent)? _spinningOff;
 
     /// <summary>Asks for a conversation's name, then opens it empty with the box focused.</summary>
     /// <param name="peers">Who it is for.</param>

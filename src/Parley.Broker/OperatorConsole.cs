@@ -37,6 +37,7 @@ public sealed class OperatorConsole
     private readonly ResultsReportRepository _results;
     private readonly FlagRepository _flags;
     private readonly RoadmapRepository _roadmaps;
+    private readonly ConversationMoveRepository _moves;
 
     /// <summary>Creates a console over an open connection.</summary>
     /// <param name="connection">An open, already-migrated connection. Borrowed, never closed.</param>
@@ -48,6 +49,7 @@ public sealed class OperatorConsole
         _agents = new AgentRepository(connection);
         _messages = new MessageRepository(connection);
         _exchanges = new ExchangeRepository(connection);
+        _moves = new ConversationMoveRepository(connection);
         _pruner = new Pruner(connection);
         _refusals = new SizeRefusalRepository(connection);
         _lengths = new MessageLengthRepository(connection);
@@ -101,6 +103,48 @@ public sealed class OperatorConsole
         CancellationToken cancellationToken = default) =>
         await _conversations.CloseRequestAsync(exchange, reason, nowUtc, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
+
+    /// <summary>Opens a new conversation with a parent, sending nothing (§10.2's <c>spin_off</c>).</summary>
+    /// <param name="parent">The conversation it comes from.</param>
+    /// <param name="child">The new conversation's name.</param>
+    /// <param name="nowUtc">The instant.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Why it was refused, or <see langword="null"/>.</returns>
+    public Task<string?> SpinOffAsync(string parent, string child, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) =>
+        _moves.SpinOffAsync(parent, child, nowUtc, cancellationToken);
+
+    /// <summary>Takes back a link whose first Request reached nobody (§10.2's <c>abandon_spin_off</c>).</summary>
+    /// <param name="parent">The conversation it came from.</param>
+    /// <param name="child">The conversation that was to be started.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Whether anything was taken back.</returns>
+    public Task<bool> AbandonSpinOffAsync(string parent, string child, CancellationToken cancellationToken = default) =>
+        _moves.AbandonSpinOffAsync(parent, child, cancellationToken);
+
+    /// <summary>Says what moving some exchanges would take (§10.2's <c>preview_move</c>).</summary>
+    /// <param name="source">The conversation they are in.</param>
+    /// <param name="exchanges">The exchanges picked.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Every exchange that would go, and the files that stay.</returns>
+    public Task<MovePreview> PreviewMoveAsync(string source, IReadOnlyCollection<long> exchanges, CancellationToken cancellationToken = default) =>
+        _moves.PreviewAsync(source, exchanges, cancellationToken);
+
+    /// <summary>Moves whole exchanges to another conversation, all or none (§10.2's <c>move_exchanges</c>).</summary>
+    /// <param name="source">The conversation they are in.</param>
+    /// <param name="destination">Where they go.</param>
+    /// <param name="isNew">Whether the destination must not exist yet.</param>
+    /// <param name="exchanges">Every exchange that goes.</param>
+    /// <param name="nowUtc">The instant.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>How many moved, or why none did.</returns>
+    public Task<MoveOutcome> MoveExchangesAsync(
+        string source,
+        string destination,
+        bool isNew,
+        IReadOnlyCollection<long> exchanges,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default) =>
+        _moves.MoveAsync(source, destination, isNew, exchanges, nowUtc, cancellationToken);
 
     /// <summary>Withdraws an agent's registration (§10.2).</summary>
     /// <param name="agent">The agent to retire.</param>
@@ -305,7 +349,10 @@ public sealed class OperatorConsole
             messages,
             exchanges,
             destroyed,
-            reserved is { } r ? new RoadmapItemRef(r.RoadmapId, r.RoadmapNumber, r.Title, r.ItemNumber, r.Removed) : null);
+            reserved is { } r ? new RoadmapItemRef(r.RoadmapId, r.RoadmapNumber, r.Title, r.ItemNumber, r.Removed) : null,
+            await _moves.GetLinksAsync(conversationId, cancellationToken).ConfigureAwait(false),
+            await _moves.GetMovesAsync(conversationId, cancellationToken).ConfigureAwait(false),
+            await _moves.GetSettledElsewhereAsync(conversationId, cancellationToken).ConfigureAwait(false));
     }
 
     /// <summary>Lists the project's roadmaps (§10.2's <c>roadmaps()</c>).</summary>
