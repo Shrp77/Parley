@@ -19,6 +19,7 @@ namespace Parley.Cli.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class MovedToTheTerminalTests
 {
     /// <summary>Every verb that moved.</summary>

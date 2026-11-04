@@ -13,6 +13,7 @@ namespace Parley.Server.Tests;
 /// longer waits out a hold over everything at all. One still taking frames is never ended.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class AStalledDownloadIsLetGoTests
 {
     private const string Orders = "orders@alpha";

@@ -15,6 +15,7 @@ namespace Parley.Terminal.Tests;
 /// which stopped being true on the first press and never changed. The sentence has to be the true one.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class SendWithoutASeatTests
 {
     [Fact]

@@ -18,6 +18,7 @@ namespace Parley.Terminal.Tests;
 /// skipped and what is exercised is the surface's own confirmation and the command's deleting.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class RemovingTests : IDisposable
 {
     private readonly string _directory =

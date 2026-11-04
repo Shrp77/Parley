@@ -202,7 +202,7 @@ watching the check fail.
 
 **Review is three consecutive clean runs per lens.** Three lenses — correctness and
 concurrency; security and data integrity; API surface and maintainability — run after the last
-edit rather than alongside it, all on one version of shipped code, and the full test run must be
+edit rather than alongside it, all on one version of shipped code, and the smoke run must be
 green on the commit that merges. A finding above low severity in the pull request's own changes
 resets that lens to zero; one only in code the pull request did not change is recorded for later. A
 change only to tests, CI or docs keeps the counts. The lenses are independent and all three must

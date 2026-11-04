@@ -14,6 +14,7 @@ namespace Parley.Cli.Tests;
 /// saying which and why. A machine naming two projects, because that is where the choice exists at all.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ProjectContextCommandTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "parley-use-" + Guid.NewGuid().ToString("N"));

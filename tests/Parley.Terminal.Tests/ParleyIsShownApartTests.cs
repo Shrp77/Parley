@@ -17,6 +17,7 @@ namespace Parley.Terminal.Tests;
 /// would say it had an agent on the day it was created.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ParleyIsShownApartTests
 {
     private static BrokerDirectory Directory() =>

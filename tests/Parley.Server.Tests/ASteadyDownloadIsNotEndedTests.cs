@@ -13,6 +13,7 @@ namespace Parley.Server.Tests;
 /// download was ended (DeadlineExceeded), not that the broker is down, after its hold was let go.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ASteadyDownloadIsNotEndedTests
 {
     private const string Orders = "orders@alpha";

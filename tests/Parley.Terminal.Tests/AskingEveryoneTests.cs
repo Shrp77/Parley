@@ -23,6 +23,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class AskingEveryoneTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

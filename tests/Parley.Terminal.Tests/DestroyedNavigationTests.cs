@@ -22,6 +22,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class DestroyedNavigationTests
 {
     private static BrokerDirectory Directory() =>

@@ -19,6 +19,7 @@ namespace Parley.Cli.Tests;
 /// end, a wake that never came. The broker is held here for longer than one deadline, as a rewrite would hold it.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ANodeReportOutlastsARewriteTests : IAsyncDisposable
 {
     private static readonly AgentName Billing = AgentName.Create("billing@" + NodeCatalogue.Machine);

@@ -14,6 +14,7 @@ namespace Parley.Terminal.Tests;
 /// only the focus and <c>?</c>, the actions menu does.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class VersionShownTests
 {
     [Fact]

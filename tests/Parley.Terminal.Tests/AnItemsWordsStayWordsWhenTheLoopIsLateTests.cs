@@ -24,6 +24,7 @@ namespace Parley.Terminal.Tests;
 /// </remarks>
 [Collection(nameof(OwnsTheMarshal))]
 [Integration]
+[Slow]
 public sealed class AnItemsWordsStayWordsWhenTheLoopIsLateTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");
