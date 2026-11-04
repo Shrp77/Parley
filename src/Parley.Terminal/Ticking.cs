@@ -13,7 +13,8 @@ namespace Parley.Terminal;
 /// </param>
 /// <param name="Ticked">Whether it starts ticked.</param>
 /// <param name="Owns">What it says it owns, or empty. A column of its own rather than part of the note.</param>
-internal readonly record struct Tickable(string Label, string Note, bool Ticked, string Owns = "");
+/// <param name="Whole">What a dialog that draws the row under the cursor whole draws for it, or empty for its label.</param>
+internal readonly record struct Tickable(string Label, string Note, bool Ticked, string Owns = "", string Whole = "");
 
 /// <summary>
 /// A list where several rows are chosen rather than one.
@@ -65,7 +66,7 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
     private const int ListKeeps = 3;
 
     /// <summary>What the count line adds when a screen is too short to draw everything.</summary>
-    internal const string TooShort = "   A taller window shows the rest.";
+    internal const string TooShort = "   More in a taller window.";
 
     /// <summary>What the tick column is as wide as, so the heading lines up with the names under it.</summary>
     private const string Box = "[ ] ";
@@ -272,7 +273,9 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
 
     /// <summary>How many rows the longest row wants when it is drawn whole.</summary>
     private int WholeWants(View? view) =>
-        _items.Max(item => (int?)Prompting.WrappedRows(item.Label, Across(view))) ?? 0;
+        _items.Max(item => (int?)Prompting.WrappedRows(WholeOf(item), Across(view))) ?? 0;
+
+    private static string WholeOf(Tickable item) => item.Whole.Length > 0 ? item.Whole : item.Label;
 
     /// <summary>Shares a short screen between the door, the list and the row drawn whole.</summary>
     /// <remarks>
@@ -465,6 +468,6 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
     {
         var at = (_page * PageSize) + At;
 
-        _whole.Text = _showsWhole && at < _items.Count ? _items[at].Label : string.Empty;
+        _whole.Text = _showsWhole && at < _items.Count ? WholeOf(_items[at]) : string.Empty;
     }
 }

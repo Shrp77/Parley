@@ -88,7 +88,7 @@ internal static class Moving
         }
 
         var rows = everything.Exchanges
-            .Select(e => (e.Id, Row: new Tickable(Label(e, []), string.Empty, e.Id == under)))
+            .Select(e => (e.Id, Row: new Tickable(Label(e, []), string.Empty, e.Id == under, Whole: Whole(e, []))))
             .ToList();
 
         var ticking = new TickDialog(Title, Picking, [.. rows.Select(r => r.Row)], showsWholeRow: true);
@@ -137,7 +137,7 @@ internal static class Moving
         var destinations = await MovePicking.DestinationsAsync(client, source, token).ConfigureAwait(false);
 
         var rows = preview.Exchanges
-            .Select(e => new Tickable(Label(e, ticked), string.Empty, Ticked: true))
+            .Select(e => new Tickable(Label(e, ticked), string.Empty, Ticked: true, Whole: Whole(e, ticked)))
             .ToList();
 
         var reviewing = new TickDialog(ReviewTitle, Describe(preview, source, ticked), rows, showsWholeRow: true);
@@ -331,20 +331,38 @@ internal static class Moving
     }
 
     /// <remarks>
-    /// What a person decides on comes first, then the words that tell two rows apart, and who and how many last. A row can be
-    /// wider than the dialog and no key scrolls sideways, so the dialog also draws the row under the cursor whole.
+    /// What a person decides on comes first, then the words that tell two rows apart. A row can be wider than the dialog and no
+    /// key scrolls sideways, so the dialog also draws the row under the cursor whole (<see cref="Whole"/>).
     /// </remarks>
     private static string Label(MovePreviewExchange exchange, IReadOnlyCollection<long> ticked)
     {
-        IEnumerable<string> marks =
-        [
-            .. exchange.Open ? ["still open"] : Array.Empty<string>(),
-            .. AddedBecause(exchange, ticked) is null ? Array.Empty<string>() : ["added"],
-        ];
-        var marked = string.Join(", ", marks);
+        var marked = Marks(exchange, ticked);
 
         return Safe.Text(string.Create(
             CultureInfo.InvariantCulture,
-            $"{exchange.Id}: {(marked.Length == 0 ? string.Empty : marked + ": ")}{exchange.FirstWords} ({exchange.Requester.Value} to {exchange.Receiver.Value}, {exchange.Messages} message{(exchange.Messages == 1 ? string.Empty : "s")})"));
+            $"{exchange.Id}: {(marked.Length == 0 ? string.Empty : marked + ": ")}{exchange.FirstWords}"));
     }
+
+    /// <summary>The row under the cursor, as it is drawn under the list.</summary>
+    /// <remarks>
+    /// Who it is between comes before the words, which an agent wrote: words that imitate the names can't stand where the names
+    /// are, and however long the words are the names are drawn.
+    /// </remarks>
+    private static string Whole(MovePreviewExchange exchange, IReadOnlyCollection<long> ticked)
+    {
+        var marked = Marks(exchange, ticked);
+
+        return Safe.Text(string.Create(
+            CultureInfo.InvariantCulture,
+            $"{exchange.Id}: {(marked.Length == 0 ? string.Empty : marked + ". ")}{exchange.Requester.Value} to {exchange.Receiver.Value}, {exchange.Messages} message{(exchange.Messages == 1 ? string.Empty : "s")}. Asked: {exchange.FirstWords}"));
+    }
+
+    /// <summary>Whether a row is open and whether it was added.</summary>
+    private static string Marks(MovePreviewExchange exchange, IReadOnlyCollection<long> ticked) => string.Join(
+        ", ",
+        (IEnumerable<string>)
+        [
+            .. exchange.Open ? ["still open"] : Array.Empty<string>(),
+            .. AddedBecause(exchange, ticked) is null ? Array.Empty<string>() : ["added"],
+        ]);
 }

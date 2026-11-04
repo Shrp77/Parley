@@ -1,4 +1,5 @@
 using System.Drawing;
+using Terminal.Gui.Text;
 using Terminal.Gui.App;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
@@ -103,7 +104,10 @@ internal static class Prompting
     /// <param name="text">The text.</param>
     /// <param name="width">The width it wraps at.</param>
     /// <returns>The rows, at least one.</returns>
-    /// <remarks>Word by word, because wrapping leaves each line short of the width and counting characters under-measures.</remarks>
+    /// <remarks>
+    /// Word by word, because wrapping leaves each line short of the width, and in columns, because a wide character takes two:
+    /// counting characters under-measures both, and what is under-measured is cut with nothing to say so.
+    /// </remarks>
     internal static int WrappedRows(string text, int width)
     {
         var rows = 0;
@@ -116,9 +120,11 @@ internal static class Prompting
 
             foreach (var word in line.Split(' '))
             {
-                if (filled > 0 && filled + 1 + word.Length <= width)
+                var columns = word.GetColumns();
+
+                if (filled > 0 && filled + 1 + columns <= width)
                 {
-                    filled += 1 + word.Length;
+                    filled += 1 + columns;
 
                     continue;
                 }
@@ -128,7 +134,7 @@ internal static class Prompting
                     rows++;
                 }
 
-                filled = word.Length;
+                filled = columns;
 
                 while (filled > width)
                 {

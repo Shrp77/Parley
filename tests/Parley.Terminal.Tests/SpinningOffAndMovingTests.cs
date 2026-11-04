@@ -860,7 +860,7 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
         Assert.Contains("words words", picking, StringComparison.Ordinal);
 
         // The row under the cursor, whole: who it is between is past the edge of the list at this width.
-        Assert.Contains("human-user@test, 1 message)", picking, StringComparison.Ordinal);
+        Assert.Contains("orders@testtohuman-user@test,1message.", Squeezed(picking), StringComparison.Ordinal);
 
         ticking.NewKeyDownEvent(Key.A.WithAlt);
         await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
@@ -869,6 +869,53 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
 
         driving.Resize(80, 24);
         Assert.Equal(2, Regex.Count(driving.Text(), @"\[.\] \d+: still open: "));
+    }
+
+    [Fact]
+    public async Task Wide_words_that_imitate_the_names_neither_hide_the_names_nor_stand_where_they_are()
+    {
+        var (shell, driving, _) = await SeatedAsync();
+        using var held = shell;
+
+        var asked = await AskPersonAsync(shell, string.Concat(Enumerable.Repeat("語", 50)) + " (human-user@test to billing@test, 1 message) the-last-word");
+
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+
+        var message = (await Client.ExportAsync(Conversation, Ct)).Messages.Single(m => m.ExchangeId == asked).Id;
+
+        Assert.True(shell.Transcript.Reach(message));
+
+        await shell.MoveEntries();
+        await shell.Settled;
+
+        var ticking = (TickDialog)driving.Find(Moving.Title);
+
+        ticking.Rows.SelectedItem = ticking.Items.ToList().FindIndex(item => item.Label.Contains('語'));
+        driving.Resize(80, 24);
+
+        // Line by line, since the surface behind the dialog shows between its lines.
+        var drawn = driving.Text();
+
+        Assert.Contains("still open. orders@test to", drawn, StringComparison.Ordinal);
+        Assert.Contains("the-last-word", drawn, StringComparison.Ordinal);
+        Assert.DoesNotContain(TickDialog.TooShort.Trim(), drawn, StringComparison.Ordinal);
+        Assert.InRange(
+            ticking.WholeRow.IndexOf("orders@test to", StringComparison.Ordinal),
+            0,
+            ticking.WholeRow.IndexOf("(human-user@test to billing", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("語語語語語語語語語語", 10, 2)]
+    [InlineData("abcdefghij", 10, 1)]
+    [InlineData("abcdefghijklmnopqrstuvwxy", 10, 3)]
+    [InlineData("abcde fghij", 10, 2)]
+    [InlineData("abcd efghi", 10, 1)]
+    [InlineData("one\ntwo", 10, 2)]
+    public void A_row_count_is_in_columns_and_by_word(string text, int width, int rows)
+    {
+        Assert.Equal(rows, Prompting.WrappedRows(text, width));
     }
 
     private static string Squeezed(string drawn) => Regex.Replace(drawn, @"[\s│┃]+", string.Empty);
@@ -939,6 +986,44 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
 
         Assert.Equal(3, Regex.Count(drawn, @"\[ \] \d+: still open"));
         Assert.Contains(TickDialog.TooShort.Trim(), drawn, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_row_cut_with_the_door_whole_says_so_too()
+    {
+        using var driving = Driving.Open(width: 80, height: 8);
+        using var ticking = new TickDialog("Choose", "Which.", LongRows(1), showsWholeRow: true);
+
+        driving.Show(ticking);
+        driving.App.LayoutAndDraw(true);
+        driving.App.LayoutAndDraw(true);
+
+        Assert.Contains("Which.", driving.Text(), StringComparison.Ordinal);
+        Assert.Contains(TickDialog.TooShort.Trim(), driving.Text(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Saying_there_is_more_lasts_through_a_tick_and_a_page_and_stops_when_the_window_grows()
+    {
+        using var driving = Driving.Open(width: 80, height: 12);
+        using var ticking = new TickDialog("Choose", "Which.", LongRows(TickDialog.PageSize + 1), showsWholeRow: true);
+
+        driving.Show(ticking);
+        driving.App.LayoutAndDraw(true);
+        driving.App.LayoutAndDraw(true);
+        Assert.Contains(TickDialog.TooShort.Trim(), driving.Text(), StringComparison.Ordinal);
+
+        ticking.Toggle(0);
+        driving.Resize(80, 12);
+        Assert.Contains(TickDialog.TooShort.Trim(), driving.Text(), StringComparison.Ordinal);
+
+        ticking.NewKeyDownEvent(Key.PageDown);
+        driving.Resize(80, 12);
+        Assert.Contains(TickDialog.TooShort.Trim(), driving.Text(), StringComparison.Ordinal);
+
+        driving.Resize(80, 60);
+        driving.App.LayoutAndDraw(true);
+        Assert.DoesNotContain(TickDialog.TooShort.Trim(), driving.Text(), StringComparison.Ordinal);
     }
 
     [Fact]
