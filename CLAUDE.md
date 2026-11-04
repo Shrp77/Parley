@@ -17,7 +17,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
   -Hidden`, never `-Reset`. `-Force` ends the broker and every `parley-mcp`, so every tool on a
   machine is one build: **the wire, enums and protocol still change freely**, with no
   compatibility caveats.
-- Features 019–026 and 028–031 are merged. Feature 032 is in progress on its branch: `specs/032-sub-conversations-and-moves/`.
+- Features 019–026 and 028–032 are merged; the latest is `specs/032-sub-conversations-and-moves/`.
   Feature 027, session-owned delivery, is not committed yet; its plan predates the rule above and must move its schema
   change into migration 007 (003 holds file problems, 004 when an agent was first asked what it owns and first refreshed,
   005 a message's limit and the record of its length, 006 conversation links, moves and move notices).
