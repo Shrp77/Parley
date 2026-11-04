@@ -468,6 +468,14 @@ public static class Enrolment
             && first[2] == 0xBF;
     }
 
+    // An entry names a role and the registry a whole name, so the terminal's withdrawal must match either spelling.
+    private static string RoleOf(string agent)
+    {
+        var at = agent.IndexOf('@', StringComparison.Ordinal);
+
+        return at < 0 ? agent : agent[..at];
+    }
+
     /// <summary>What a launch configuration is written back in: with a byte-order mark if it had one.</summary>
     /// <param name="held">The file, as held.</param>
     /// <returns>The encoding, or null for the default when the file is new.</returns>
@@ -1037,8 +1045,9 @@ public static class Enrolment
                         var candidates = project is null
                             ? entries
                             : string.Equals(project, ProjectManifest.WindowName, StringComparison.Ordinal)
-                                ? [.. entries.Where(entry =>
-                                    MachineBlocks.Block(root, MachineName.Current, entry.Key)?[EnrollmentPlan.BrokerVariable] is not null)]
+                                ? MachineBlocks.ThroughAWindow(root, entries, MachineName.Current) is { } through
+                                    ? [through]
+                                    : []
                             : LaunchEntries.Landing(servers, project).Existing is { } landed
                                 ? (IReadOnlyList<LaunchEntry>)[landed]
                                 : [];
@@ -1077,7 +1086,9 @@ public static class Enrolment
                             notes.Add(
                                 $"{launchPath}: left alone, {Quoting.Quoted(stranger.Key)} is not an entry this wrote");
                         }
-                        else if (named is not null && !string.Equals(named, agent, StringComparison.Ordinal))
+                        else if (named is not null
+                                 && !string.Equals(named, agent, StringComparison.Ordinal)
+                                 && !string.Equals(named, RoleOf(agent), StringComparison.Ordinal))
                         {
                             // Somebody else's. The workspace comes from the registry, which is what the
                             // agent said about itself and may be some time old, so a repository

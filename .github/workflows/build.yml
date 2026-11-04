@@ -39,8 +39,8 @@ jobs:
       - name: Build
         run: dotnet build --no-restore --configuration Release
 
-      # Only the unit tests on a push: they run in seconds. The integration tests run nightly and, by hand, before a
-      # pull request merges (nightly.yml; review/README.md). PARLEY_HEARTBEAT makes every broker a test starts log a line
+      # Only the unit tests on a push: they run in seconds. A pull request must also pass the smoke run (smoke.yml), and
+      # everything runs nightly (nightly.yml; review/README.md). PARLEY_HEARTBEAT makes every broker a test starts log a line
       # a second, so a failure seen only on a runner says what its broker was doing.
       - name: Test
         shell: pwsh

@@ -120,6 +120,8 @@ public sealed record LocatedLaunch(
 
     private static LocatedLaunch? Consider(string folder, string agent, string? project)
     {
+        WaitForAWriter(Path.Combine(folder, LaunchConfiguration.FileName));
+
         var read = LaunchConfiguration.TryRead(folder, out var configuration, out var problem, out var machinesBroken);
 
         if (machinesBroken)
@@ -142,6 +144,40 @@ public sealed record LocatedLaunch(
         return read && configuration.EntryFor(agent, project) is { } membership
             ? new LocatedLaunch(folder, configuration, membership, null)
             : null;
+    }
+
+    /// <summary>Waits a moment for a writer holding the file, which is what enrolling or accepting a line does.</summary>
+    /// <param name="file">The launch configuration.</param>
+    /// <remarks>
+    /// Bounded, and only ever a moment in practice: a write is short. Past it, the read below reports the file as unreadable.
+    /// </remarks>
+    private static void WaitForAWriter(string file)
+    {
+        for (var attempt = 0; attempt < 30; attempt++)
+        {
+            try
+            {
+                using var open = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+
+                return;
+            }
+            catch (FileNotFoundException)
+            {
+                return;
+            }
+            catch (DirectoryNotFoundException)
+            {
+                return;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return;
+            }
+            catch (IOException)
+            {
+                Thread.Sleep(100);
+            }
+        }
     }
 
     /// <summary>What this machine ends up with.</summary>

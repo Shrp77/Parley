@@ -248,7 +248,9 @@ public sealed class NodeCatalogue
             found.Add(new CataloguedWorkspace(
                 identity,
                 entry.Workspace,
-                read ? declared.Memberships : [],
+                // What this machine answers through: a machine that withdrew from a project stops offering it, though the
+                // entry stays while another machine's block names it (SPEC.md §4.1.2).
+                read ? [.. declared.Memberships.Where(membership => declared.AnswersHere(Machine, membership.Key))] : [],
                 problem));
         }
 

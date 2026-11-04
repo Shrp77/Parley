@@ -288,6 +288,52 @@ public sealed class AMachineWithOnlyATunnelTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_second_project_by_address_from_one_checkout_is_refused()
+    {
+        await ServeAsync();
+
+        var root = new System.Text.Json.Nodes.JsonObject
+        {
+            ["mcpServers"] = JsonNode.Parse("""{ "parley-beta": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "infra", "PARLEY_PROJECT": "beta" } } }"""),
+            ["parleyMachines"] = JsonNode.Parse("""{ "server": { "parley-beta": { "PARLEY_BROKER": "http://127.0.0.1:2" } } }"""),
+        };
+
+        File.WriteAllText(Path.Combine(Checkout, ".mcp.json"), root.ToJsonString());
+
+        var before = File.ReadAllText(Path.Combine(Checkout, ".mcp.json"));
+        var (code, output, error) = ToolProcess.RunFully(
+            OnThatMachine, "enroll", Checkouts, "--all", "--project", "alpha", "--broker", Address);
+
+        Assert.NotEqual(0, code);
+        Assert.Contains("second checkout", output + error, StringComparison.Ordinal);
+        Assert.Equal(before, File.ReadAllText(Path.Combine(Checkout, ".mcp.json")));
+    }
+
+    [Fact]
+    public async Task A_window_says_how_to_enrol_in_a_plain_sentence()
+    {
+        await Task.Yield();
+
+        var said = new StringWriter();
+        var complained = new StringWriter();
+
+        var code = await EnrollCommand.EnrolAsync(
+            [new EnrollmentEntry(Checkout, "infra", null, Unattended: true) { Enroll = true }],
+            describe: false,
+            new Resolved(Catalogue, ValueSource.Default),
+            said,
+            complained,
+            new Parley.Core.ProjectSettings(
+                Parley.Core.ProjectName.Create(ProjectManifest.WindowName), string.Empty, Address, null),
+            MachineRoot,
+            Ct);
+
+        Assert.NotEqual(0, code);
+        Assert.Equal(EnrollmentPlan.AWindowEnrolsNothing, complained.ToString().Trim());
+        Assert.False(File.Exists(Path.Combine(Checkout, ".mcp.json")));
+    }
+
+    [Fact]
     public async Task Enrolling_into_a_project_the_broker_does_not_serve_writes_nothing()
     {
         await ServeAsync();
@@ -585,19 +631,28 @@ public sealed class AMachineWithOnlyATunnelTests : IAsyncDisposable
 
         var launchedBefore = File.ReadAllLines(evidence).Length;
 
+        static int Times(ConcurrentQueue<string> said, string text) =>
+            said.Count(line => line.Contains(text, StringComparison.Ordinal));
+
+        var noticedBefore = Times(lines, "No broker is answering");
+        var backBefore = Times(lines, "answering again");
+
         // The tunnel drops.
         serve.Kill(entireProcessTree: true);
         Assert.True(serve.WaitForExit(10_000));
 
         await UntilAsync(
-            () => Task.FromResult(lines.Count(line => line.Contains("No broker is answering", StringComparison.Ordinal)) >= 1),
-            "it never noticed");
+            () => Task.FromResult(Times(lines, "No broker is answering") > noticedBefore),
+            $"it never noticed. It said: {string.Join(" | ", lines)}");
 
         Assert.False(node.HasExited);
 
-        // And comes back.
+        // And comes back: said again, after the outage rather than after the first join.
         await ServeAsync();
-        await SaidAsync(lines, "answering again");
+
+        await UntilAsync(
+            () => Task.FromResult(Times(lines, "answering again") > backBefore),
+            $"it never rejoined. It said: {string.Join(" | ", lines)}");
 
         Assert.False(node.HasExited);
         Assert.Equal(launchedBefore, File.ReadAllLines(evidence).Length);

@@ -168,9 +168,11 @@ const string Help = """
     on the broker's machine; it removes text permanently, so save a discussion first if you want it.
 
     A machine that only runs agents holds no project. enroll, up and autostart install accept a project it
-    does not describe, given --broker with its address, once that broker says it serves that project:
+    does not describe, given --broker or PARLEY_BROKER with its address, once that broker's registry names that
+    project (up --keep-trying takes the name as given, because the tunnel may not be up):
     `parley autostart install --project <p> --broker <address>` runs a node at logon and no broker, and
-    `parley autostart remove --all` takes every entry. Every other command still refuses such a project.
+    `parley autostart remove [--project <p>] [--all]` takes an entry, or every one. Every other command still
+    refuses such a project. up also takes --log <path>, and --hidden with it.
 
     up runs until you stop it. It tells the broker this machine is here, which is what makes the
     agents registered to it startable rather than stranded, and starts one when a question
@@ -1014,6 +1016,15 @@ if (verb == "autostart" && rest.Length == 1)
     // What it installs binds nothing, and it checks the name with the broker first.
     if (rest[0] == "install" && !string.IsNullOrWhiteSpace(brokerAddress))
     {
+        if (configuredProjects.Any(p => string.Equals(p.Name.Value, projectName, StringComparison.Ordinal)))
+        {
+            await Console.Error.WriteLineAsync(
+                $"This machine describes '{projectName}', and the entry that serves it already runs this machine's node.")
+                .ConfigureAwait(false);
+
+            return Config;
+        }
+
         if (string.IsNullOrWhiteSpace(projectName))
         {
             await Console.Error.WriteLineAsync(
@@ -1423,6 +1434,15 @@ catch (RpcException failure)
 // resolutions disagree, and the result reads as a machine that has no agents listed on it.
 async Task<int> UpAsync()
 {
+    if (hidden && string.IsNullOrWhiteSpace(logPath))
+    {
+        await Console.Error.WriteLineAsync(
+            "--hidden closes the console this would report to, so it needs somewhere to report instead: pass --log <path>.")
+            .ConfigureAwait(false);
+
+        return Usage;
+    }
+
     // Written by the node itself, for the reason `serve` is: a supervisor runs a program, not a command line.
     using var log = Logging.Open(logPath, Console.Error);
 

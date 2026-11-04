@@ -216,22 +216,46 @@ public static class AutostartCommand
 
         return folder is null || !Directory.Exists(folder)
             ? []
-            : [.. Directory.EnumerateFiles(folder, AutostartPlan.NodePrefix + "*")
+            : [.. Directory.EnumerateFiles(folder, AutostartPlan.NodePrefix + "*" + (supervisor == Supervisor.SystemdUser ? ".service" : ".plist"))
                 .Select(file => Path.GetFileNameWithoutExtension(file))
+
+                // Only what `install` could have written. Anything else in that folder is not ours to name or to remove.
+                .Where(label => Parley.Core.ProjectName.TryCreate(label[AutostartPlan.NodePrefix.Length..], out _))
                 .Order(StringComparer.Ordinal)];
     }
 
     private static async Task<int> RemoveEverythingAsync(TextWriter output, TextWriter error, CancellationToken cancellationToken)
     {
-        foreach (var node in NodeLabels(AutostartPlan.Detect()))
+        var nodes = NodeLabels(AutostartPlan.Detect());
+        var failed = false;
+
+        foreach (var node in nodes)
         {
             if (await RemoveNodeAsync(node, cancellationToken).ConfigureAwait(false))
             {
                 await output.WriteLineAsync($"Removed {node}.").ConfigureAwait(false);
             }
+            else
+            {
+                failed = true;
+                await error.WriteLineAsync($"Could not remove {node}.").ConfigureAwait(false);
+            }
         }
 
-        return await RemoveAsync(null, output, error, cancellationToken).ConfigureAwait(false);
+        var plan = AutostartPlan.Describe("placeholder");
+        var hasBroker = plan.Supervisor == Supervisor.ScheduledTask
+            ? OperatingSystem.IsWindows() && ScheduledTasks.Exists(plan.Label)
+            : File.Exists(plan.UnitPath);
+
+        // A machine that only runs agents has no broker entry, and that is not something having gone wrong.
+        if (!hasBroker && nodes.Count > 0)
+        {
+            return failed ? 1 : 0;
+        }
+
+        var broker = await RemoveAsync(null, output, error, cancellationToken).ConfigureAwait(false);
+
+        return failed ? 1 : broker;
     }
 
     private static async Task<bool> RemoveNodeAsync(string label, CancellationToken cancellationToken)
@@ -444,6 +468,12 @@ public static class AutostartCommand
 
         try
         {
+            // A node already running keeps its old address otherwise: the task ignores a second start while one runs.
+            if (plan.IsNode)
+            {
+                ScheduledTasks.Stop(plan.Label);
+            }
+
             ScheduledTasks.Register(plan.Label, plan.ScheduledTaskXml(CurrentUser()));
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -583,6 +613,13 @@ public static class AutostartCommand
         var enabled = await RunAsync(
             "systemctl", ["--user", "enable", "--now", plan.Label + ".service"], cancellationToken)
             .ConfigureAwait(false);
+
+        // A node already running keeps its old address otherwise, and `enable --now` starts only what is stopped.
+        if (enabled.ExitCode == 0 && plan.IsNode)
+        {
+            _ = await RunAsync("systemctl", ["--user", "restart", plan.Label + ".service"], cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         if (enabled.ExitCode == 0)
         {

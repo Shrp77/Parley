@@ -82,6 +82,18 @@ public sealed record LaunchConfiguration
             ? block
             : null;
 
+    /// <summary>Whether a machine answers through an entry.</summary>
+    /// <param name="machine">The machine.</param>
+    /// <param name="key">The entry's key.</param>
+    /// <returns>
+    /// <see langword="true"/> when it has a block for it, or when no machine has: an entry from before blocks belongs to whichever
+    /// machine opens it. An entry only other machines hold blocks for is theirs, so a machine that withdrew stops offering it.
+    /// </returns>
+    public bool AnswersHere(string machine, string key) =>
+        BlockFor(machine, key) is not null
+        || Machines is null
+        || !Machines.Values.Any(blocks => blocks.ContainsKey(key));
+
     /// <summary>The entry a launch is, when exactly one fits.</summary>
     /// <param name="agent">What the launch's <c>PARLEY_AGENT</c> holds: a role, or a whole name.</param>
     /// <param name="project">What its <c>PARLEY_PROJECT</c> holds, if anything.</param>
@@ -191,8 +203,9 @@ public sealed record LaunchConfiguration
             problem = failure.Message;
 
             // A member named twice is refused while parsing, before the section can be looked at. A file holding one that
-            // cannot be parsed has a section nobody can read, which is never the same as saying nothing.
-            machinesBroken = text?.Contains($"\"{MachinesMember}\"", StringComparison.Ordinal) == true;
+            // cannot be parsed has a section nobody can read, and a file that could not be read at all may have one: neither
+            // is the same as saying nothing, which would quietly run this agent with none of it.
+            machinesBroken = text is null || text.Contains($"\"{MachinesMember}\"", StringComparison.Ordinal);
 
             return false;
         }

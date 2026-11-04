@@ -163,6 +163,7 @@ The server only runs agents. The person installs Parley there with no broker, te
 - **FR-027**: Installing such an entry MUST say plainly when it will stop at logout or need a sign-in to start, and give the exact remedy. It MUST NOT change that system setting itself.
 - **FR-028**: An install, an `--only` of the `parley` tool and an uninstall MUST stop node entries' processes before replacing or removing the tools. An install MUST start them again, and an uninstall MUST remove the entries.
 - **FR-029**: A node MUST state its protocol version when it joins, and the broker MUST refuse a different one, naming both, as it does for an adapter.
+- **FR-031**: A checkout on a machine with only a tunnel MUST be enrolled by address in one project at most. A second MUST be refused, saying to use a second checkout, because a node is one process per broker and could not wake an agent another node started.
 - **FR-030**: Agent-only mode MUST NOT be combinable with `--only` or `--reset`, and MUST say why when asked.
 
 **Writing**

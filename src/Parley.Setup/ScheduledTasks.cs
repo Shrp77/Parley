@@ -159,6 +159,22 @@ public static class ScheduledTasks
         return false;
     }
 
+    /// <summary>Stops a task's running instance, if it has one.</summary>
+    /// <param name="name">The task.</param>
+    public static void Stop(string name)
+    {
+        try
+        {
+            dynamic folder = RootFolder();
+
+            folder.GetTask(name).Stop(0);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // Not there yet, or not running: nothing to stop.
+        }
+    }
+
     /// <summary>The tasks whose names start with a prefix.</summary>
     /// <param name="prefix">The prefix.</param>
     /// <returns>Their names, empty when the scheduler cannot be asked.</returns>

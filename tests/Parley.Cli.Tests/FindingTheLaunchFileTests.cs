@@ -181,6 +181,34 @@ public sealed class FindingTheLaunchFileTests : IDisposable
     }
 
     [Fact]
+    public void A_launch_waits_for_a_writer_holding_the_file_rather_than_reading_it_as_silence()
+    {
+        var here = Checkout("infra");
+        var path = Path.Combine(here, ".mcp.json");
+        var held = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(500, TestContext.Current.CancellationToken);
+            await held.DisposeAsync();
+        }, TestContext.Current.CancellationToken);
+
+        var located = LocatedLaunch.Find(null, "infra", "acme", here);
+
+        Assert.Equal("Answers.", located?.Configuration.BlockFor("laptop", "parley-acme")?.Owns);
+    }
+
+    [Fact]
+    public void A_file_held_past_the_wait_is_a_problem_and_not_silence()
+    {
+        var here = Checkout("infra");
+
+        using var held = new FileStream(Path.Combine(here, ".mcp.json"), FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+        Assert.NotNull(LocatedLaunch.Find(null, "infra", "acme", here)?.Problem);
+    }
+
+    [Fact]
     public void Reading_writes_nothing()
     {
         var here = Checkout("infra");

@@ -223,11 +223,18 @@ internal static class Adding
         string? startedIn = null,
         Func<string?, Task>? enrolling = null)
     {
-        ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(done);
+
+        // Before the folder walk and the form, which would otherwise be filled in for nothing.
+        if (string.Equals(project.Name.Value, ProjectManifest.WindowName, StringComparison.Ordinal))
+        {
+            return done(EnrollmentPlan.AWindowEnrolsNothing);
+        }
+
+        ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(catalogue);
         ArgumentNullException.ThrowIfNull(queue);
-        ArgumentNullException.ThrowIfNull(done);
 
         var browsing = new Browsing(Browsing.Opening(lastAdded, startedIn));
         var walk = Prompting.Open(app, browsing);

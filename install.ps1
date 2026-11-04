@@ -855,7 +855,8 @@ Write-Note 'nothing is holding the tool store'
 # edited, and these two would disagree in the direction that matters -- a web UI excluded from the
 # guard and then never stopped is a locked file with nothing left to say so.
 # -Only parley on a machine that only runs agents is the same run: a node's tools are replaced, and no broker is added.
-if ($Only -and (Get-NodeEntries).Count -gt 0 -and -not (Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue)) {
+# Any other tool under -Only is left to the branch below, which touches nothing that is running.
+if ($Only -and $replacingBroker -and (Get-NodeEntries).Count -gt 0 -and -not (Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue)) {
     $AgentOnly = $true
 }
 

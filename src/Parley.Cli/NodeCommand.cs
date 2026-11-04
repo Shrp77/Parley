@@ -323,7 +323,7 @@ public static class NodeCommand
                     if (!secondNodeSaid)
                     {
                         secondNodeSaid = true;
-                        await output.WriteLineAsync(failure.Status.Detail).ConfigureAwait(false);
+                        await output.WriteLineAsync(Inert.Line(failure.Status.Detail)).ConfigureAwait(false);
                         await output.WriteLineAsync(
                             "If that is this machine's last connection, the broker lets go of it within a few minutes, so this keeps trying. If another node "
                             + "is running here, stop one of them.").ConfigureAwait(false);
@@ -386,7 +386,7 @@ public static class NodeCommand
         }
         catch (RpcException failure) when (failure.StatusCode is StatusCode.AlreadyExists or StatusCode.FailedPrecondition)
         {
-            await output.WriteLineAsync(failure.Status.Detail).ConfigureAwait(false);
+            await output.WriteLineAsync(Inert.Line(failure.Status.Detail)).ConfigureAwait(false);
             return Config;
         }
         finally

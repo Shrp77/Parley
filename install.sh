@@ -680,7 +680,8 @@ for i in "${!commands[@]}"; do
 done
 
 # `--only parley` on a machine that only runs agents is the same run: a node's tools are replaced, and no broker is added.
-if [ -n "$only" ] && [ -n "$(node_entries)" ] \
+# Any other tool under --only is left to the branch below, which touches nothing that is running.
+if [ -n "$only" ] && [ "$replacing_broker" = "1" ] && [ -n "$(node_entries)" ] \
     && [ ! -e "$HOME/.config/systemd/user/$task.service" ] && [ ! -e "$HOME/Library/LaunchAgents/$task.plist" ]; then
     agent_only=1
 fi

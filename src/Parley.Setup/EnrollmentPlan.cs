@@ -62,6 +62,11 @@ public static class EnrollmentPlan
     /// </remarks>
     public const string BrokerVariable = "PARLEY_BROKER";
 
+    /// <summary>What is said instead of enrolling into a broker shown by address.</summary>
+    public const string AWindowEnrolsNothing =
+        "This machine shows a broker by address and has no project of its own, so nothing is enrolled from here. "
+        + "Use: parley enroll <folder> --project <its name> --broker <its address>";
+
     /// <summary>The variable naming which model answers, carried across a re-enrolment.</summary>
     public const string ResponderVariable = "PARLEY_RESPONDER";
 
@@ -372,9 +377,7 @@ public static class EnrollmentPlan
         // A window onto a broker shown by address, and its name is no project's. Here so that every way of enrolling is held to it.
         if (string.Equals(project, ProjectManifest.WindowName, StringComparison.Ordinal))
         {
-            throw new InvalidDataException(
-                "this machine shows a broker by address and has no project of its own, so nothing is enrolled from here. "
-                + "Use: parley enroll <folder> --project <its name> --broker <its address>");
+            throw new InvalidDataException(AWindowEnrolsNothing);
         }
 
         var machine = MachineName.Current;
@@ -478,6 +481,18 @@ public static class EnrollmentPlan
             throw new InvalidDataException(
                 $"'{key}' is {Quoting.Quoted(role)} and {string.Join(", ", holding)} has a block for it. Enrolling as "
                 + $"{Quoting.Quoted(entry.Agent)} would rename that machine's agent too. Use the same role, or withdraw it there first");
+        }
+
+        // One checkout, one project by address. A node is one process per broker, and one started agent can only be known to
+        // the node that started it, so a second project would take it for an agent somebody opened by hand and never wake it.
+        if (!string.IsNullOrWhiteSpace(brokerAddress)
+            && LaunchEntries.Read(servers).FirstOrDefault(other =>
+                !string.Equals(other.Key, key, StringComparison.Ordinal)
+                && MachineBlocks.Block(root, machine, other.Key)?[BrokerVariable] is not null) is { } already2)
+        {
+            throw new InvalidDataException(
+                $"this checkout already reaches a broker through '{already2.Key}' on this machine, and a machine with only a "
+                + "tunnel can run one project per checkout. Use a second checkout");
         }
 
         // What is shared, written new every time rather than merged into: a `command` or a `PATH` adopted from what is there

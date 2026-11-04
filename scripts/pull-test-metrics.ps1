@@ -36,7 +36,7 @@ $taken = if (Test-Path $ledger) { [System.Collections.Generic.HashSet[string]](G
 $since = [DateTimeOffset]::UtcNow.AddDays(-$Days)
 
 $copied = 0
-foreach ($workflow in 'build.yml', 'nightly.yml') {
+foreach ($workflow in 'build.yml', 'smoke.yml', 'nightly.yml') {
     $runs = gh run list --workflow $workflow --limit 200 --json databaseId,createdAt,status | ConvertFrom-Json
     foreach ($run in $runs | Where-Object { $_.status -eq 'completed' -and [DateTimeOffset]$_.createdAt -ge $since }) {
         $artifacts = gh api "repos/{owner}/{repo}/actions/runs/$($run.databaseId)/artifacts" --jq '.artifacts[] | select(.name | startswith("test-metrics-")) | .name' 2>$null

@@ -13,7 +13,7 @@ namespace Parley.Testing;
 /// <see cref="IntegrationAttribute"/>, even a test of two modules together.
 /// </para>
 /// <para>
-/// Unit tests run on every push; integration tests run nightly and before a pull request merges
+/// Unit tests run on every push; the smoke run before a pull request merges; everything nightly
 /// (<c>.github/workflows/nightly.yml</c>). The category is a trait, so a runner selects it with
 /// <c>-trait "Category=Unit"</c>.
 /// </para>
@@ -46,8 +46,8 @@ public sealed class IntegrationAttribute : Attribute, ITraitAttribute
 /// <remarks>
 /// <b>Marked by what is left out, so a new test is in the smoke run until somebody says otherwise.</b> The smoke run has five
 /// minutes (<c>scripts/test.ps1 -Category Smoke</c>), and these tests hold most of the full run's time in few classes. What marks
-/// one is its cost, from the full run's own timings, never its importance: one real path through each thing a person relies on
-/// stays in whatever it costs.
+/// one is its cost, from the full run's own timings. One real path through each thing a person relies on stays in whatever it
+/// costs, and so do the guards.
 /// </remarks>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
 public sealed class SlowAttribute : Attribute, ITraitAttribute

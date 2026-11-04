@@ -116,6 +116,24 @@ internal static class MachineBlocks
         return true;
     }
 
+    /// <summary>The one entry a window onto a broker can mean on this machine, or null when that cannot be told.</summary>
+    /// <param name="root">The file.</param>
+    /// <param name="entries">Its entries.</param>
+    /// <param name="machine">This machine.</param>
+    /// <returns>The entry.</returns>
+    /// <remarks>
+    /// <b>A window's name is no project's</b>, so the only safe reading is a machine that answers through exactly one entry, and
+    /// reaches a broker through it. Picking the one with an address from among several would overwrite another project's line.
+    /// </remarks>
+    public static LaunchEntry? ThroughAWindow(JsonObject root, IReadOnlyList<LaunchEntry> entries, string machine)
+    {
+        var here = entries.Where(entry => AnswersHere(root, machine, entry.Key)).ToList();
+
+        return here.Count == 1 && Block(root, machine, here[0].Key)?[EnrollmentPlan.BrokerVariable] is not null
+            ? here[0]
+            : null;
+    }
+
     /// <summary>Whether this machine still answers through an entry.</summary>
     /// <param name="root">The file.</param>
     /// <param name="machine">This machine.</param>

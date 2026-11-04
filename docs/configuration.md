@@ -312,7 +312,8 @@ you. On Windows and macOS it starts at logon, so a machine nobody signs in to wi
 On this machine, run `--agent-only` again: the install stops the node, replaces the tools and starts it again. A plain
 install stops and asks, so a routine upgrade does not add a broker.
 
-**One node per broker.** A repository in two projects on such a machine has two entries and two processes.
+**One project per checkout.** A node is one process per broker, so a checkout in two projects on such a machine could not be
+woken in the second. Enrolling a second project by address from one checkout is refused. Use a second checkout.
 
 ### Watching a remote broker from a machine with no projects
 

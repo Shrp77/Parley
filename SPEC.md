@@ -482,8 +482,9 @@ so the block beats both. The machine is the one the agent will carry (§4.1.1).
 **A file with no `parleyMachines` behaves as if this section did not exist.** When a file has one, the
 agent's workspace is the folder the file was found in, and its identifier comes from that file. An adapter
 looks for the file in `PARLEY_WORKSPACE`'s folder if a file there has an entry for this launch, then in the
-folder it was started in and each parent, stopping at the first holding `.git` or `.mcp.json`. A path that
-leads off this machine is not looked up (§4.1).
+folder it was started in. Inside a repository it also looks in each parent, stopping at the first holding `.git` or
+`.mcp.json`; outside one a parent's file is whatever somebody left there, and is not read. A path that leads off this
+machine is not looked up (§4.1).
 
 **A section that breaks these rules is a file that could not be read,** for every reader and whichever
 machine it concerns, and it names the machine, the entry and the setting. A reader that could ignore it
@@ -504,9 +505,15 @@ A person setting such a machine up can get a port wrong, so two tools look first
 protocol: a broker's registry holds `human-user@<project>` (§4.1.1), and they compare that with the name they were given.
 
 - `parley enroll` and `parley up`, given a project and an address, go ahead only if the names agree, and write nothing if
-  they do not. Every other command still refuses a project this machine does not describe.
+  they do not. `parley up --keep-trying` takes the name as given, because the tunnel may not be up yet. Every other command
+  still refuses a project this machine does not describe.
 - `parley autostart install`, given a project and an address, does the same, and installs an entry
-  that runs only a node. That node takes the name it was given.
+  that runs only a node. That node takes the name it was given. It refuses a project this machine describes, whose entry
+  already runs a node.
+
+**One project per checkout on such a machine.** A node is one process per broker, and an agent it started is known only to that
+process, so a second project would take it for one somebody opened by hand and never wake it. Enrolling a second project by
+address from the same checkout is refused; use a second checkout.
 
 **An agent-only machine stays startable with nobody there.** A node started from such an entry keeps
 trying while the broker cannot be reached, at first join and after losing it, and keeps the agents it is

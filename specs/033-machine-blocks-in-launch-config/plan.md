@@ -117,4 +117,4 @@ tests/Parley.Server.Tests                    attach refusal and Describe over a 
 
 - **The tunnel is still the person's.** The node waits for it, but nothing brings it up. The docs name `autossh`, a systemd unit or a scheduled task.
 - **User-level autostart:** on Windows and macOS the entry starts at logon, so a machine nobody signs in to will not run it. On Linux, lingering fixes that. The install says which applies.
-- **One node per broker** on such a machine: a repository in two projects there has two entries and two processes, so the "one process per identifier" rule is not shared between them. Not reachable in the owner's example. To be stated in the docs.
+- **One project per checkout** on such a machine: a node is one process per broker, and an agent it started is known only to that process, so a second project could not wake it. Enrolling a second project by address from one checkout is refused.

@@ -126,8 +126,8 @@ one up. Accepting an agent's answer to the ownership question writes it to this 
 An agent a node starts also carries `PARLEY_LAUNCH_TOKEN`. It is not written to the file.
 
 It looks for this file in `PARLEY_WORKSPACE`'s folder if a file there has an entry for this launch, then in the
-folder it started in and each parent, up to the first holding `.git` or `.mcp.json`. It lays this machine's block
-over what it was given.
+folder it started in. Inside a repository it also looks in each parent, up to the first holding `.git` or `.mcp.json`.
+It lays this machine's block over what it was given.
 
 ## How a repository is enrolled
 
@@ -167,7 +167,10 @@ goes in this machine's block. No project, store or port is created here. Under a
 for that project, enrolling is refused, because the role is shared and the change would rename that machine's agent.
 
 **Withdrawing takes this machine's block.** The entry stays while another machine's block names it, and
-`parleyAgentId` stays while any entry remains.
+`parleyAgentId` stays while any entry remains. This machine's node stops offering the agent in that project.
+
+**One project per checkout on a machine with only a tunnel.** Enrolling a second project by address from the same
+checkout is refused. Use a second checkout.
 
 ## What every reader owes
 

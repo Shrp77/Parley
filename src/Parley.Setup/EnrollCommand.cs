@@ -648,6 +648,14 @@ public static class EnrollCommand
         CancellationToken cancellationToken,
         EnrolmentOutcome? outcome = null)
     {
+        // Before anything is looked at, so the person is told this and not something about a file.
+        if (string.Equals(project?.Name.Value, ProjectManifest.WindowName, StringComparison.Ordinal))
+        {
+            await error.WriteLineAsync(EnrollmentPlan.AWindowEnrolsNothing).ConfigureAwait(false);
+
+            return Config;
+        }
+
         // Held for the whole run: validation and writing are far apart by design (everything is refused
         // before anything is written), so a gate spanning only one of them would leave a window.
         using var gate = await Catalogues.GateAsync(projectManifest, cancellationToken).ConfigureAwait(false);

@@ -149,8 +149,8 @@ public sealed class MachineBlockOptionsTests : IDisposable
 
         var refused = Assert.Throws<InvalidOperationException>(() => Read());
 
-        Assert.Contains(MachineName.Current, refused.Message, StringComparison.Ordinal);
-        Assert.Contains("server", refused.Message, StringComparison.Ordinal);
+        Assert.Contains($"This machine is {MachineName.Current}", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("has blocks for: server", refused.Message, StringComparison.Ordinal);
     }
 
     [Fact]

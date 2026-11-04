@@ -11,6 +11,7 @@ namespace Parley.Terminal.Tests;
 /// Shift+Enter line after it never reached the screen — and the half that did said Alt, which sends nothing.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class SendKeyIsNamedTests
 {
     [Fact]
