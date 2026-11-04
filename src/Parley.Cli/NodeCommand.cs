@@ -92,6 +92,17 @@ public static class NodeCommand
     /// identity, so one checkout is one process however many projects ask for it. Null makes its own, which
     /// is what a node running alone wants.
     /// </param>
+    /// <param name="byAddress">
+    /// Whether this machine reached the broker by an address it was given, rather than through a project it describes. The
+    /// broker is then asked which project it serves on every join (SPEC.md §4.1.2): a project named must be that one, and
+    /// with none named, that one decides which names are announced. Whatever now answers at an address may have changed
+    /// since the last join.
+    /// </param>
+    /// <param name="keepTrying">
+    /// Whether a broker that cannot be reached is waited for rather than the end of this node, keeping every agent it is
+    /// running. For an entry nobody is watching: a person who typed the command wants to be told. A broker that answers and
+    /// refuses still ends it, because retrying cannot fix that.
+    /// </param>
     public static async Task<int> RunAsync(
         GrpcChannel channel,
         string endpoint,
@@ -99,7 +110,9 @@ public static class NodeCommand
         TextWriter output,
         string? project = null,
         ConcurrentDictionary<AgentIdentity, ResidentAgent>? residents = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool byAddress = false,
+        bool keepTrying = false)
     {
         ArgumentNullException.ThrowIfNull(channel);
         ArgumentException.ThrowIfNullOrWhiteSpace(catalogueFile);
@@ -144,15 +157,59 @@ public static class NodeCommand
         // because a refusal then is a real second node.
         var rejoin = false;
         var refusals = 0;
+        var outages = 0;
+        var wanted = project;
+
+        // From 2 seconds, doubling to 30, for as long as it takes: nothing times out, and a machine that comes up before its
+        // tunnel is an ordinary start. Said once for each spell, because a line every 30 seconds is a line nobody reads.
+        async Task WaitOutAsync()
+        {
+            if (outages == 0)
+            {
+                await output.WriteLineAsync($"No broker is answering at {endpoint}. Keeping this node's agents and trying again.")
+                    .ConfigureAwait(false);
+            }
+
+            outages++;
+            await Task.Delay(
+                TimeSpan.FromSeconds(Math.Min(30, 2 * Math.Pow(2, Math.Min(outages - 1, 5)))),
+                cancellationToken).ConfigureAwait(false);
+        }
 
         try
         {
             while (true)
             {
+                if (byAddress)
+                {
+                    try
+                    {
+                        var served = (await nodes.ServedProjectAsync(new Wire.Empty(), cancellationToken: cancellationToken)
+                            .ResponseAsync.ConfigureAwait(false)).Project;
+
+                        if (wanted is not null && !string.Equals(wanted, served, StringComparison.Ordinal))
+                        {
+                            await output.WriteLineAsync(
+                                $"This node is for project '{wanted}', and the broker at {endpoint} serves project " +
+                                $"'{served}'. Check the address.").ConfigureAwait(false);
+
+                            return Config;
+                        }
+
+                        project = served;
+                    }
+                    catch (RpcException failure) when (keepTrying && IsAnOutage(failure) && !cancellationToken.IsCancellationRequested)
+                    {
+                        await WaitOutAsync().ConfigureAwait(false);
+                        continue;
+                    }
+                }
+
                 var request = new Wire.JoinRequest
                 {
                     Machine = NodeCatalogue.Machine,
                     Facts = Observe(),
+                    ProtocolVersion = ProtocolVersion.Current,
 
                     // This node reports the turns it gives (SPEC.md §11.6), so its agents can be told working from stopped.
                     ReportsTurns = true,
@@ -177,6 +234,7 @@ public static class NodeCommand
                 var watcher = WatchAsync(
                     catalogueFile, project, announceable.Names, output, rejoining, watching.Token);
                 var refused = false;
+                var lost = false;
 
                 // This attempt's place on the board every node loop sharing the table can read (TellJoinedAsync).
                 var seat = new object();
@@ -206,6 +264,13 @@ public static class NodeCommand
                                 // name of whichever started it.
                                 var named = catalogue.NamesIn(project);
                                 var joined = new TurnReporter(nodes, request.Machine, output);
+
+                                if (outages > 0)
+                                {
+                                    outages = 0;
+                                    await output.WriteLineAsync($"The broker at {endpoint} is answering again. Rejoined.")
+                                        .ConfigureAwait(false);
+                                }
 
                                 // And from now on told of every launch any loop sharing the table makes of what this
                                 // project starts (lens 1 run 107). **Seated before the table is read** (lens 1 run 109):
@@ -269,6 +334,10 @@ public static class NodeCommand
                 {
                     refused = true;
                 }
+                catch (RpcException failure) when (keepTrying && IsAnOutage(failure) && !cancellationToken.IsCancellationRequested)
+                {
+                    lost = true;
+                }
                 finally
                 {
                     Boards.GetOrCreateValue(residents).Leave(seat);
@@ -285,6 +354,15 @@ public static class NodeCommand
                 }
 
                 var changed = await watcher.ConfigureAwait(false);
+
+                // A broker that ended the stream has gone away, to a node that was told to wait for one.
+                if (lost || (changed is null && keepTrying && !cancellationToken.IsCancellationRequested))
+                {
+                    catalogue = changed ?? catalogue;
+                    rejoin = true;
+                    await WaitOutAsync().ConfigureAwait(false);
+                    continue;
+                }
 
                 if (changed is null)
                 {
@@ -313,7 +391,7 @@ public static class NodeCommand
 
             return Unavailable;
         }
-        catch (RpcException failure) when (failure.StatusCode == StatusCode.AlreadyExists)
+        catch (RpcException failure) when (failure.StatusCode is StatusCode.AlreadyExists or StatusCode.FailedPrecondition)
         {
             await output.WriteLineAsync(failure.Status.Detail).ConfigureAwait(false);
             return Config;
@@ -409,6 +487,22 @@ public static class NodeCommand
 
         return null;
     }
+
+    /// <summary>Whether a failure says the broker could not be reached, rather than that it answered and refused.</summary>
+    /// <param name="failure">The failure.</param>
+    /// <returns><see langword="true"/> when trying again could help.</returns>
+    /// <remarks>
+    /// Named by the outages rather than by the refusals: a stopping broker has been seen to end a stream in several of
+    /// these, and a code this does not name ends a node that nobody is watching, so what is named here is checked by a test
+    /// that stops a real broker.
+    /// </remarks>
+    private static bool IsAnOutage(RpcException failure) =>
+        failure.StatusCode is StatusCode.Unavailable
+            or StatusCode.Cancelled
+            or StatusCode.Internal
+            or StatusCode.Unknown
+            or StatusCode.DeadlineExceeded
+            or StatusCode.Aborted;
 
     /// <summary>Whether an ended stream ended because this asked it to.</summary>
     /// <param name="ending">What came out of the stream.</param>

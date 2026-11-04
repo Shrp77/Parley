@@ -105,6 +105,10 @@ message AttachRequest {
   string adapter_config = 6;
   string owns = 7;
   string protocol_version = 8;
+  // The project a machine's block means by its address (section 4.1.2), empty otherwise. A broker serving another
+  // project refuses the attach, naming both, before anything is written.
+  string expected_project = 20;
+
   string launch_token = 9;       // what the node that started this process put in its environment; empty when none did (section 11.7)
 
   // The repository's identifier (`parleyAgentId`), empty when it has none. A label and never authority (section 4.1.1):
@@ -616,6 +620,10 @@ service Nodes {
   // What the node observed about itself. Detected, never configured (section 4.1.1).
   rpc Describe(DescribeNodeRequest) returns (DescribeNodeReply);
 
+  // Which project this broker serves (section 4.1.2), so that a machine with no project of its own can ask before it
+  // acts. Asked before a machine has ever joined, which is why it is not part of Describe.
+  rpc ServedProject(Empty) returns (ServedProjectReply);
+
   // A turn this node gave an agent began or ended (section 11.6). Ignored unless the agent is on this
   // node's machine and the node is joined. A failure here never fails the turn.
   rpc ReportTurn(TurnReport) returns (Empty);
@@ -661,6 +669,9 @@ message JoinRequest {
   // The identifiers (`parleyAgentId`) of the checkouts this node can launch for this project. A node can start an agent
   // by the identifier alone, so a repository whose role was renamed is still startable under the name the broker holds.
   repeated string startable_identities = 5;
+
+  // Refused when it differs, naming both (section 4.0): two machines are not one build.
+  string protocol_version = 6;
 }
 
 message TurnReport {
@@ -746,6 +757,10 @@ message GiveTurn {
 
 message DescribeNodeRequest {
   string machine = 1;
+}
+
+message ServedProjectReply {
+  string project = 1;
 }
 
 message DescribeNodeReply {

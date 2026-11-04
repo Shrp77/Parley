@@ -1,3 +1,4 @@
+using Parley.Core;
 using Parley.Setup;
 using System.Text.Json.Nodes;
 using Xunit;
@@ -138,6 +139,14 @@ public sealed class ProbeSeventeenTests : IDisposable
         var env = (await ServersAsync())["parley-alpha"]!["env"]!;
 
         Assert.Equal("orders", env["PARLEY_AGENT"]!.GetValue<string>());
-        Assert.Equal("Carts and totals.", env["PARLEY_OWNS"]!.GetValue<string>());
+
+        // The line written for the old role says nothing true of this one, so it is not carried across.
+        Assert.Null(env["PARLEY_OWNS"]);
+
+        var written = JsonNode.Parse(await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!;
+
+        Assert.Equal(
+            "Carts and totals.",
+            written["parleyMachines"]![MachineName.Current]!["parley-alpha"]!["PARLEY_OWNS"]!.GetValue<string>());
     }
 }

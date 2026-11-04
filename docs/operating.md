@@ -308,6 +308,7 @@ other operator command exits with a message that names the terminal:
 parley                              open the terminal
 parley serve                        run the broker for every project
 parley up                           run this machine's node, so its agents can be started
+                                    (--keep-trying waits for a broker it cannot reach)
 parley autostart install|status|remove
 parley use [<project>]              the project this terminal's commands act on
 parley project list                 the projects this machine names, and who is answering
@@ -366,7 +367,9 @@ hand. `-Force` or `--force` ends them and carries on. Those editor sessions keep
 Parley until each editor restarts. That is the cost.
 
 When the protocol number moves, install on every machine running a broker or an agent, then
-restart the sessions that had Parley configured. See [Configuration](configuration.md#versions).
+restart the sessions that had Parley configured. See [Configuration](configuration.md#versions). A machine
+that only runs agents installs with `--agent-only` (`-AgentOnly`), which stops its node, replaces the tools and starts it
+again. See [A machine that only runs agents](configuration.md#a-machine-that-only-runs-agents).
 
 **Never use `-Reset` (`--reset`) to upgrade.** It deletes every project's store, and a store holds
 the project's work. Any other install keeps the stores. A new build that changes a store's tables

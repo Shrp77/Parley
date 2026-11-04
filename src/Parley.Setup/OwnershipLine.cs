@@ -144,6 +144,11 @@ public static class OwnershipLine
 
                 root = StrictJson.Parse(text) as JsonObject
                        ?? throw new InvalidDataException("the file is not a JSON object.");
+
+                if (!LaunchConfiguration.TryParse(text, path, out _, out var broken, out var machinesBroken) && machinesBroken)
+                {
+                    throw new InvalidDataException(broken ?? "its machine section cannot be read.");
+                }
             }
             catch (Exception unreadable) when (unreadable is System.Text.Json.JsonException or InvalidDataException)
             {
@@ -159,6 +164,22 @@ public static class OwnershipLine
             {
                 servers = root["mcpServers"] as JsonObject;
                 (key, existing) = LaunchEntries.Landing(servers, project);
+
+                // A surface on a machine with only a tunnel shows its broker as a window, which is no project's name. The
+                // entry is the one this machine's block reaches a broker through, for this agent (SPEC.md §4.1.2): anything
+                // less certain is refused below, as a project with no entry is.
+                if (existing is null && string.Equals(project, ProjectManifest.WindowName, StringComparison.Ordinal))
+                {
+                    var through = LaunchEntries.Read(servers)
+                        .Where(entry => Names(entry, agent)
+                            && MachineBlocks.Block(root, agent.Machine, entry.Key)?[EnrollmentPlan.BrokerVariable] is not null)
+                        .ToList();
+
+                    if (through.Count == 1)
+                    {
+                        (key, existing) = (through[0].Key, through[0]);
+                    }
+                }
             }
             catch (Exception ambiguous) when (ambiguous is InvalidDataException or ArgumentException)
             {
@@ -188,19 +209,31 @@ public static class OwnershipLine
                 return $"{path} has no entry at '{key}'. Nothing has been written.";
             }
 
-            if (entry["env"] is not JsonObject environment)
-            {
-                environment = [];
-                entry["env"] = environment;
-            }
+            // This machine's block and nothing else (SPEC.md §4.1.2). NotHere has already said this is the agent's machine.
+            var machine = agent.Machine;
+            var environment = entry["env"] as JsonObject;
 
             if (statement is null)
             {
-                environment.Remove(EnrollmentPlan.OwnsVariable);
+                // Taking a line out must leave none, and a shared one would come back through the fallback. It goes only
+                // when nobody else reads it.
+                if (environment?[EnrollmentPlan.OwnsVariable] is not null)
+                {
+                    if (MachineBlocks.OthersHolding(root, machine, key) is { Count: > 0 } others)
+                    {
+                        return $"{path} has a shared line for '{key}', and {string.Join(", ", others)} may be reading it. " +
+                               "Give this machine its own line instead. Nothing has been written.";
+                    }
+
+                    _ = environment.Remove(EnrollmentPlan.OwnsVariable);
+                }
+
+                // Kept when emptied: the block is what says this machine is enrolled.
+                _ = MachineBlocks.Block(root, machine, key)?.Remove(EnrollmentPlan.OwnsVariable);
             }
             else
             {
-                environment[EnrollmentPlan.OwnsVariable] = statement;
+                MachineBlocks.Ensure(root, machine, key)[EnrollmentPlan.OwnsVariable] = statement;
             }
 
             await Enrolment.OverwriteHeldAsync(

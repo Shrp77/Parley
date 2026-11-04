@@ -168,7 +168,7 @@ The server only runs agents. The person installs Parley there with no broker, te
 - **FR-015**: Accepting, editing or removing an ownership line, by any route including Auto Accept, MUST write only this machine's block for that project. A surface on another machine MUST still refuse, as it does today.
 - **FR-016**: Every write MUST keep the values and member order of other machines' blocks, the shared values and unknown members, and MUST keep the byte-order mark. A file already in the writer's format MUST be byte-identical outside what changed. A file formatted by hand is reformatted, as it is today.
 - **FR-017**: Withdrawing MUST remove only this machine's block for that project. The project's entry MUST stay while another machine's block names it, and the identifier MUST stay while any entry remains.
-- **FR-018**: Re-enrolling a file that has shared values from before this feature MUST NOT remove or move those values. The new block takes precedence for this machine.
+- **FR-018**: Re-enrolling a file that has shared values from before this feature MUST keep them, and the new block takes precedence for this machine. There are two exceptions, which it MUST remove. A shared `PARLEY_WORKSPACE`, because a machine's path is no use to any other and, once the file has a section, would only send a clone looking in the original. A shared `PARLEY_BROKER`, as enrolling has always done, because the project is named and a port moves.
 
 **Unchanged, and held by tests**
 

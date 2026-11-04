@@ -176,6 +176,17 @@ public sealed class NodesService : Wire.Nodes.NodesBase
         ArgumentNullException.ThrowIfNull(responseStream);
         ArgumentNullException.ThrowIfNull(context);
 
+        // Held as an adapter is (SPEC.md §4.0): machines are not one build, and a node half-understanding a broker starts
+        // agents that are then refused.
+        if (!string.Equals(request.ProtocolVersion, ProtocolVersion.Current, StringComparison.Ordinal))
+        {
+            throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"This broker speaks Parley protocol {ProtocolVersion.Current} and that node speaks " +
+                $"{(request.ProtocolVersion is { Length: > 0 } said && PrintableLine.IsReportable("protocol", said, out _) ? said : "an older version that did not say")}. " +
+                "Install on both machines from the same build."));
+        }
+
         var machine = Machine(request.Machine);
 
         var facts = request.Facts ?? new Wire.NodeFacts();
@@ -243,6 +254,10 @@ public sealed class NodesService : Wire.Nodes.NodesBase
             }
         }
     }
+
+    /// <inheritdoc/>
+    public override Task<Wire.ServedProjectReply> ServedProject(Wire.Empty request, ServerCallContext context) =>
+        Task.FromResult(new Wire.ServedProjectReply { Project = _runtime.Project.Value });
 
     /// <inheritdoc/>
     public override async Task<Wire.DescribeNodeReply> Describe(

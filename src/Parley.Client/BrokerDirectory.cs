@@ -252,7 +252,7 @@ public sealed class BrokerDirectory : IDisposable
     }
 
     private static ProjectSettings Unnamed(string endpoint) =>
-        new(ProjectName.Create("this-machine"),
+        new(ProjectName.Create(ProjectManifest.WindowName),
             string.Empty,
             endpoint,
             "A broker reached by address. This machine has no project of its own, so it is shown here as "

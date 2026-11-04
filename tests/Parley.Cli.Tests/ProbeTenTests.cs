@@ -148,9 +148,12 @@ public sealed class ProbeTenTests : IAsyncDisposable
         Assert.Equal("alpha", servers["parley-alpha"]!["env"]!["PARLEY_PROJECT"]!.GetValue<string>());
         Assert.Equal("beta", servers["parley-beta"]!["env"]!["PARLEY_PROJECT"]!.GetValue<string>());
 
+        var machine = JsonNode.Parse(await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!
+            ["parleyMachines"]![MachineName.Current]!;
+
         Assert.NotEqual(
-            servers["parley-alpha"]!["env"]!["PARLEY_OWNS"]!.GetValue<string>(),
-            servers["parley-beta"]!["env"]!["PARLEY_OWNS"]!.GetValue<string>());
+            machine["parley-alpha"]!["PARLEY_OWNS"]!.GetValue<string>(),
+            machine["parley-beta"]!["PARLEY_OWNS"]!.GetValue<string>());
     }
 
     [Fact]

@@ -80,12 +80,24 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         foreach (var (field, value) in new[]
                  {
                      ("adapter", request.Adapter), ("workspace", request.Workspace), ("resume handle", request.SessionRef),
+                     ("expected project", request.ExpectedProject),
                  })
         {
             if (!PrintableLine.IsReportable(field, value, out var unprintable))
             {
                 throw new RpcException(new Status(StatusCode.InvalidArgument, unprintable!));
             }
+        }
+
+        // An address in a machine's block says which project it means (SPEC.md §4.1.2), and a tunnel to the wrong port is
+        // otherwise invisible from both ends. Before anything is written, so the wrong store gains no row.
+        if (request.ExpectedProject is { Length: > 0 } expected
+            && !string.Equals(expected, _runtime.Project.Value, StringComparison.Ordinal))
+        {
+            throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"This launch is for project '{expected}', and the broker it reached serves project " +
+                $"'{_runtime.Project.Value}'. Check the address in this machine's block."));
         }
 
         // A label, not a credential (§4.1.1): one that is not an identifier is a malformed call, refused whole so a typo

@@ -1,7 +1,6 @@
 using Parley.Configuration;
 using Parley.Core;
 using Parley.Setup;
-using System.Text.Json.Nodes;
 using Xunit;
 
 namespace Parley.Cli.Tests;
@@ -50,32 +49,14 @@ public sealed class ProbeTwelveTests : IDisposable
     [InlineData("/src/or}ders")]
     [InlineData("/src/orders}\"")]
     [InlineData("/src/${OTHER}")]
-    public void A_workspace_that_could_close_the_expansion_early_does_not(string workspace)
+    public void A_folder_that_could_close_an_expansion_is_never_written(string workspace)
     {
-        // **JSON-safe is not configuration-safe.** The workspace is written as
-        // `${PARLEY_WORKSPACE:-<path>}`, and the client expands that. A path holding `}` closes the
-        // expansion early, so everything after it becomes literal text in the value the agent's
-        // server is launched with — and a path is not a value this tooling chooses, it is a directory
-        // somebody has on disk.
+        // A launch configuration once held the folder as `${PARLEY_WORKSPACE:-<path>}`, and a path holding `}` closed that
+        // early. It holds no folder now (SPEC.md §4.1.2), so there is nothing to close: the catalogue holds it, as plain JSON.
         var plan = EnrollmentPlan.Describe(Entry(workspace), null, null, false, project: "alpha");
 
-        var written = JsonNode.Parse(plan.LaunchConfiguration!)!
-            ["mcpServers"]!["parley-alpha"]!["env"]!["PARLEY_WORKSPACE"]!.GetValue<string>();
-
-        // Two shapes are acceptable and no third is: the value is either the path plainly, or one
-        // whole expansion around it. What must never happen is an expansion that closes in the middle
-        // and leaves the rest as literal text — the agent would then be launched with a workspace
-        // that is a prefix of the real one, silently.
-        var slashed = workspace.Replace('\\', '/');
-
-        if (string.Equals(written, slashed, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        Assert.Equal("${PARLEY_WORKSPACE:-" + slashed + "}", written);
-        Assert.DoesNotContain('}', slashed);
-        Assert.DoesNotContain('$', slashed);
+        Assert.DoesNotContain("PARLEY_WORKSPACE", plan.LaunchConfiguration!, StringComparison.Ordinal);
+        Assert.DoesNotContain(workspace.Replace('\\', '/'), plan.LaunchConfiguration!, StringComparison.Ordinal);
     }
 
     [Fact]

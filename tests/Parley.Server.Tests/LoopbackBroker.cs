@@ -535,6 +535,7 @@ internal sealed class JoinedNodeClient : IAsyncDisposable
 
         var request = new Wire.JoinRequest
         {
+            ProtocolVersion = Parley.Core.ProtocolVersion.Current,
             Machine = machine,
             Facts = facts ?? new Wire.NodeFacts { Os = "test-os" },
             ReportsTurns = reportsTurns,

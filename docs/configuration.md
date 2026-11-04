@@ -100,12 +100,18 @@ An agent's identity and settings come from its launch configuration. For Claude 
       "command": "parley-mcp",
       "env": {
         "PARLEY_AGENT": "orders",                      // the role; the machine is added
-        "PARLEY_OWNS": "Carts, orders, line totals. No tax, no stock.",
         "PARLEY_PROJECT": "acme",                      // matches the key, and says where to connect
-        "PARLEY_BROKER": "127.0.0.1:51707",            // optional, instead of PARLEY_PROJECT
         "PARLEY_RESPONDER": "some-model-9",            // optional, which model answers
-        "PARLEY_WORKSPACE": "/src/acme-orders",        // optional, shown in the registry
+        "PARLEY_WORKSPACE": "/src/acme-orders",        // optional, where to look for this file first
         "PARLEY_MACHINE": "server-b"                   // optional, overrides the detected name
+      }
+    }
+  },
+  "parleyMachines": {                                  // what differs on each machine
+    "server-b": {
+      "parley-acme": {
+        "PARLEY_OWNS": "Carts, orders, line totals. No tax, no stock.",
+        "PARLEY_BROKER": "http://127.0.0.1:19100"      // optional, a tunnel's local end
       }
     }
   }
@@ -116,10 +122,10 @@ An agent's identity and settings come from its launch configuration. For Claude 
 |---|---|
 | `PARLEY_AGENT` | The agent's role: the name a project shows. Its identity is `parleyAgentId`, so changing the role renames the agent ([how](launch-configuration.md)). No tool can change either. |
 | `PARLEY_PROJECT` | The project to connect to. Use this on a machine that serves several. |
-| `PARLEY_BROKER` | A broker address, instead of a project. If both are set, the address wins and the server says so. |
+| `PARLEY_BROKER` | A broker address, instead of a project. If both are set in the entry or the environment, the address wins and the server says so. In this machine's block, it means a tunnel to that project: the broker is checked, and one serving another project is refused. |
 | `PARLEY_OWNS` | The ownership line (see below). |
 | `PARLEY_RESPONDER` | Which model answers, recorded with its results. |
-| `PARLEY_WORKSPACE` | The repository's path, shown in the registry to operators. Peers never see it. |
+| `PARLEY_WORKSPACE` | Where to look for the file first. With no `parleyMachines`, the repository's path, shown in the registry to operators. Peers never see it. |
 | `PARLEY_MACHINE` | The machine name. The node detects it; set this only to override it. |
 
 [The launch configuration reference](launch-configuration.md) covers what each program that
@@ -131,7 +137,9 @@ federate. A deployment with no named projects uses the bare key `parley`. The ke
 every tool name the agent sees, so it is never renamed.
 
 **The same committed file works on every machine.** The role is configured and the machine is
-detected, so `orders` becomes `orders@server-b` on one box and `orders@server-a` on another.
+detected, so `orders` becomes `orders@server-b` on one box and `orders@server-a` on another. What differs goes
+in `parleyMachines`, a block per machine and entry, which each machine writes for itself. [The launch configuration
+reference](launch-configuration.md#one-file-on-every-machine) has the rules and an example.
 
 **Prefer `PARLEY_PROJECT` to `PARLEY_BROKER`** on a machine with several projects. An address is
 a port number, and ports move. A project this machine does not describe stops the launch instead
@@ -272,6 +280,37 @@ PARLEY_BROKER=http://127.0.0.1:19100 PARLEY_AGENT=orders claude
 ```
 
 `autossh`, a systemd unit or a scheduled task keeps the tunnel up across a reboot.
+
+### A machine that only runs agents
+
+An infrastructure server can run an agent that makes changes while the broker stays on your laptop. It needs
+Parley installed, and no project, store or broker of its own.
+
+You need the .NET 10 SDK, Git, a checkout of Parley to build from, and the agent's client signed in as you. Then,
+with the tunnel above up, on that machine:
+
+```bash
+./install.sh --agent-only                                   # .\install.ps1 -AgentOnly on Windows
+parley enroll /srv --project acme --broker http://127.0.0.1:19100
+parley autostart install --project acme --broker http://127.0.0.1:19100
+```
+
+- **Installing** puts in `parley`, `parley-mcp` and the terminal. It starts no broker. Lines are accepted from a surface
+  on the machine holding the file, so `--surfaces` can change which one, and `none` leaves you editing the file.
+- **Enrolling** asks the broker which project it serves, and writes the address into this machine's block.
+- **The autostart entry**, `parley-node-acme`, runs only a node, so the agent can be started when a request arrives. It
+  keeps trying while the broker cannot be reached and keeps the agents it is running, so a tunnel that comes up after
+  the machine does is an ordinary start. If the broker answers and refuses it, it stops and says why in its log.
+
+**Keep the machine's session running.** The entry is user-level, because the node starts agents signed in as you. On
+Linux it stops at logout unless lingering is on, and installing the entry prints the command. Nothing turns it on for
+you. On Windows and macOS it starts at logon, so a machine nobody signs in to will not run it.
+
+**Install on both machines when the protocol moves.** A broker refuses an adapter or a node on another protocol version.
+On this machine, run `--agent-only` again: the install stops the node, replaces the tools and starts it again. A plain
+install stops and asks, so a routine upgrade does not add a broker.
+
+**One node per broker.** A repository in two projects on such a machine has two entries and two processes.
 
 ### Watching a remote broker from a machine with no projects
 

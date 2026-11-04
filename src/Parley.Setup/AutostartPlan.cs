@@ -70,6 +70,12 @@ public sealed record AutostartPlan(
     /// </remarks>
     public const string Name = "parley-broker";
 
+    /// <summary>What a node's entry is called, before the project it joins.</summary>
+    public const string NodePrefix = "parley-node-";
+
+    /// <summary>Whether this entry runs only a node, for a project this machine reaches by address.</summary>
+    public bool IsNode => Label.StartsWith(NodePrefix, StringComparison.Ordinal);
+
     /// <summary>
     /// Works out what installing would do on this machine.
     /// </summary>
@@ -252,31 +258,71 @@ public sealed record AutostartPlan(
     /// <param name="binary">The broker binary.</param>
     /// <param name="arguments">What to pass it.</param>
     /// <param name="log">Where its output goes.</param>
+    /// <param name="label">What the entry is called.</param>
     /// <returns>The plan.</returns>
     /// <remarks>
     /// The one place the supervisor is chosen and the unit path derived.
     /// </remarks>
-    private static AutostartPlan Compose(string binary, string arguments, string log) =>
+    private static AutostartPlan Compose(string binary, string arguments, string log, string label = Name) =>
         Detect() switch
         {
             Setup.Supervisor.ScheduledTask => new AutostartPlan(
-                Setup.Supervisor.ScheduledTask, Name, binary, arguments, log, null),
+                Setup.Supervisor.ScheduledTask, label, binary, arguments, log, null),
 
             Setup.Supervisor.SystemdUser => new AutostartPlan(
-                Setup.Supervisor.SystemdUser, Name, binary, arguments, log,
+                Setup.Supervisor.SystemdUser, label, binary, arguments, log,
                 Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                    ".config", "systemd", "user", Name + ".service")),
+                    ".config", "systemd", "user", label + ".service")),
 
             Setup.Supervisor.LaunchAgent => new AutostartPlan(
-                Setup.Supervisor.LaunchAgent, Name, binary, arguments, log,
+                Setup.Supervisor.LaunchAgent, label, binary, arguments, log,
                 Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                    "Library", "LaunchAgents", Name + ".plist")),
+                    "Library", "LaunchAgents", label + ".plist")),
 
             _ => new AutostartPlan(
-                Setup.Supervisor.Unsupported, Name, binary, arguments, log, null)
+                Setup.Supervisor.Unsupported, label, binary, arguments, log, null)
         };
+
+    /// <summary>The entry that runs only a node, for a project this machine reaches by address (SPEC.md §4.1.2).</summary>
+    /// <param name="root">This machine's root.</param>
+    /// <param name="project">The project it joins.</param>
+    /// <param name="address">The address it reaches the broker at.</param>
+    /// <param name="nodeConfig">The machine's catalogue.</param>
+    /// <param name="executable">The binary to run, or null for this one.</param>
+    /// <param name="hidden">Whether it should let go of its console window.</param>
+    /// <returns>The plan.</returns>
+    /// <remarks>
+    /// <b>One per project, under a name of its own</b>, because one node joins one broker and the broker's entry may be here
+    /// too. <c>--keep-trying</c> is written always: nobody is watching this one, and a tunnel that comes up after the machine
+    /// does is an ordinary start.
+    /// </remarks>
+    public static AutostartPlan DescribeNode(
+        string root,
+        string project,
+        string address,
+        string nodeConfig,
+        string? executable = null,
+        bool hidden = false)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(root);
+        ArgumentException.ThrowIfNullOrWhiteSpace(project);
+
+        var machine = Path.GetFullPath(root);
+        var label = NodePrefix + project;
+        var log = Path.Combine(machine, label + ".log");
+
+        var arguments = string.Create(CultureInfo.InvariantCulture,
+            $"up --config {Quote(machine)} --project {Quote(project)} --broker {Quote(address)} --keep-trying --node-config {Quote(Path.GetFullPath(nodeConfig))} --log {Quote(log)}");
+
+        if (hidden)
+        {
+            arguments = string.Create(CultureInfo.InvariantCulture, $"{arguments} --hidden");
+        }
+
+        return Compose(executable ?? Environment.ProcessPath ?? "parley", arguments, log, label);
+    }
 
     /// <summary>Which supervisor this platform uses.</summary>
     /// <returns>The supervisor.</returns>
@@ -311,14 +357,14 @@ public sealed record AutostartPlan(
     public string SystemdUnit() =>
         $"""
         [Unit]
-        Description=Parley broker: the one process that owns the store
+        Description={(IsNode ? "Parley node: starts this machine's agents" : "Parley broker: the one process that owns the store")}
         Documentation=https://github.com/Shrp77/Parley
 
         [Service]
         Type=simple
         ExecStart={Executable} {Arguments}
         Restart=on-failure
-        RestartSec=5
+        RestartSec=5{(IsNode ? "\nRestartPreventExitStatus=78" : string.Empty)}
         StandardOutput=append:{LogPath}
         StandardError=append:{LogPath}
 
@@ -349,11 +395,7 @@ public sealed record AutostartPlan(
             </array>
             <key>RunAtLoad</key>
             <true/>
-            <key>KeepAlive</key>
-            <dict>
-                <key>SuccessfulExit</key>
-                <false/>
-            </dict>
+            {(IsNode ? string.Empty : "<key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>")}
             <key>StandardOutPath</key>
             <string>{Escape(LogPath)}</string>
             <key>StandardErrorPath</key>

@@ -451,7 +451,12 @@ public static class EnrollCommand
             // reports all three separately, as evidence rather than as a default.
             var entry = Existing(workspace)?.FirstOrDefault();
 
-            return (entry?.Agent, entry?.Owns);
+            // This machine's own line first, which is what it answers with.
+            var owns = entry is not null && LaunchConfiguration.TryRead(workspace, out var declared, out _)
+                ? declared.BlockFor(MachineName.Current, entry.Key)?.Owns ?? entry.Owns
+                : entry?.Owns;
+
+            return (entry?.Agent, owns);
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException
                                        or UnauthorizedAccessException or FormatException)
@@ -860,7 +865,8 @@ public static class EnrollCommand
                 instructions,
                 listed.ContainsKey(entry.Agent),
                 project?.Name.Value,
-                nodeWorkspace: listed[entry.Agent]?["workspace"]?.GetValue<string>());
+                nodeWorkspace: listed[entry.Agent]?["workspace"]?.GetValue<string>(),
+                brokerAddress: BrokerProject.ReachedByAddress(project) ? project!.Endpoint : null);
 
             try
             {

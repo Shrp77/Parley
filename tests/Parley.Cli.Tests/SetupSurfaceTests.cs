@@ -56,6 +56,7 @@ public sealed class SetupSurfaceTests
         Assert.Equal(
             [
                 "AutostartPlan",
+                "BrokerProject",
                 "ConsolePicker",
                 "EnrollCommand",
                 "EnrollmentEntry",

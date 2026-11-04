@@ -76,7 +76,9 @@ public sealed class OwnershipLineTests : IDisposable
     {
         var root = JsonNode.Parse(File.ReadAllText(LaunchFile))!;
 
-        return root["mcpServers"]!["parley"]!["env"]!["PARLEY_OWNS"]?.GetValue<string>();
+        // What this machine answers with: its block, then the entry (SPEC.md §4.1.2).
+        return root["parleyMachines"]?[MachineName.Current]?["parley"]?["PARLEY_OWNS"]?.GetValue<string>()
+            ?? root["mcpServers"]!["parley"]!["env"]!["PARLEY_OWNS"]?.GetValue<string>();
     }
 
     [Fact]

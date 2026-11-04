@@ -1,6 +1,6 @@
 ﻿# Parley Protocol Specification
 
-**Version:** 0.12
+**Version:** 0.13
 **Status:** Unstable. Breaking changes expected before 1.0.
 **License:** Apache-2.0
 
@@ -266,6 +266,12 @@ it ends. There is no `Detach` and there must not be one — it could only ever b
 optional way to say what the stream already says for certain, and the failure it invites is an
 agent that died without calling it. A node's `Join` works the same way, one level out.
 
+**`Attach` and `Join` each state a protocol version, and a different one is refused, naming both**
+(§18). A node is held to this as an adapter is, because two machines are not one build. An `Attach`
+may also state the project it expects (§4.1.2): a broker serving another project refuses it before
+anything is written, naming both. `Nodes.ServedProject` says which project a broker serves, so that a
+machine with no project of its own can ask before it acts.
+
 **A notice carries counts and never words.** The broker pushes how much is waiting; the adapter
 drains to find out what it is. §13 has a peer's words reach a model wrapped as data, and the
 envelope is applied on the way out of a drain — so a notice carrying the words would be a second
@@ -427,6 +433,90 @@ broker MUST prefer the refusal.
 description of what happens to be running. A machine that is switched off still has its
 agents in the registry, and asking a role still includes them — see §5.5 for why that is the
 whole point rather than an inconvenience.
+
+### 4.1.2 One launch configuration, every machine
+
+One repository checked out on two machines is two agents (§4.1.1). An infrastructure repository on
+a laptop and on the server it manages gives `infra@laptop`, which answers questions about the system,
+and `infra@server`, which makes changes. One committed `.mcp.json` describes both.
+
+**What is shared stays in the entry; what differs goes in a block.** Beside `mcpServers` and
+`parleyAgentId`, a file may hold `parleyMachines`, keyed by machine name and then by the entry's key:
+
+```jsonc
+{
+  "parleyAgentId": "6f1c…",
+  "mcpServers": {
+    "parley-acme": {
+      "command": "parley-mcp",
+      "env": { "PARLEY_AGENT": "infra", "PARLEY_PROJECT": "acme" }
+    }
+  },
+  "parleyMachines": {
+    "laptop": {
+      "parley-acme": { "PARLEY_OWNS": "Answers questions about the infrastructure. Changes nothing." }
+    },
+    "server": {
+      "parley-acme": {
+        "PARLEY_OWNS": "Makes infrastructure changes on this host.",
+        "PARLEY_BROKER": "http://127.0.0.1:19100"
+      }
+    }
+  }
+}
+```
+
+**An ownership line describes an instance and does not limit it.** Nothing in this protocol stops
+`infra@laptop` changing something. What an instance can do is decided by that machine's own permissions
+and credentials. Its line tells peers which instance to ask, and a sender asks one by its full name; a
+Request to the bare role still reaches both (§5.5).
+
+**A block holds `PARLEY_OWNS` and `PARLEY_BROKER` and nothing else.** It cannot hold the role, the
+project, the machine or the identifier, so the block chosen can never depend on the block. It holds no
+workspace either: an adapter must find the file before it can read a block, so it already knows the
+folder, and a node starts an agent from the folder in that machine's own catalogue (§12). A block may be
+empty, which says this machine is enrolled in that project and differs in nothing.
+
+**One rule, for every reader.** For a machine and an entry, a value in the block wins, and a value it does
+not give comes from the launch environment, or the entry's `env` for a reader with only the file. An adapter
+cannot tell a person's variable from an old entry's value, because a client merges the two before it runs,
+so the block beats both. The machine is the one the agent will carry (§4.1.1).
+
+**A file with no `parleyMachines` behaves as if this section did not exist.** When a file has one, the
+agent's workspace is the folder the file was found in, and its identifier comes from that file. An adapter
+looks for the file in `PARLEY_WORKSPACE`'s folder if a file there has an entry for this launch, then in the
+folder it was started in and each parent, stopping at the first holding `.git` or `.mcp.json`. A path that
+leads off this machine is not looked up (§4.1).
+
+**A section that breaks these rules is a file that could not be read,** for every reader and whichever
+machine it concerns, and it names the machine, the entry and the setting. A reader that could ignore it
+would disagree with one that could not.
+
+**Each machine writes only its own block.** Enrolling, and accepting, changing or removing a line,
+touch this machine's block for that entry. Another machine's values and their order are kept. Withdrawing
+removes this machine's block; the entry stays while another machine's block names it, and the identifier
+stays while any entry remains. Enrolling under a different role is refused while another machine has a
+block for that entry, because the role is shared and the change would rename that machine's agent.
+
+**A machine with only a tunnel.** Such a machine describes no project and has no store, port or broker;
+the reasons to hold a store are §4.1's. An address in its block connects it to the broker. Because a project
+named and not described is otherwise refused (§4.1), three things check the name with the broker instead:
+
+- An adapter whose block supplied the address states the project in `Attach`, and is refused if the broker
+  serves another (§4.0). An adapter with a project and an address set outside a block connects to the
+  address and says it is ignoring the project.
+- `parley enroll` and `parley up`, given a project and an address, ask `Nodes.ServedProject` first and go ahead
+  only if it is that project. Every other command still refuses a project this machine does not describe.
+- `parley autostart install`, given a project and an address, does the same, and installs an entry
+  that runs only a node (§12).
+
+**An agent-only machine stays startable with nobody there.** A node started from such an entry keeps
+trying while the broker cannot be reached, at first join and after losing it, and keeps the agents it is
+running. Nothing times out, so a machine whose tunnel comes up after it does needs no ordering. When the
+broker answers and refuses it (another project, another protocol, a second node), it stops and says why,
+because retrying cannot fix that. The entry is user-level, for the reason every autostart entry is: the node
+starts agents that must be signed in as the person. So the machine must have that user's session
+running, and installing the entry says what that needs on this platform.
 
 ### 4.2 Nothing waits
 
@@ -3412,7 +3502,8 @@ line, from an agent on the broker's own machine that did not say it was blocked,
 `automatic`: the launch configuration is written first and the record second, as for every other
 route, so a record never claims a line the agent will not carry. Otherwise the answer waits, with its
 reason, for a person to accept, edit or discard it from `facilitation()`. An agent on another machine
-always waits: its launch configuration is a file on that machine, and nothing here may write it.
+always waits: its launch configuration is a file on that machine, and nothing here may write it, so
+its line is accepted from a surface running there (§4.1.2).
 
 **Collapsing whitespace is the only change made to an answer.** A model answers in paragraphs, and an
 ownership line refuses a line break (§12.3), so runs of whitespace become one space and the ends are
@@ -4773,10 +4864,10 @@ decided is removed and its number is not reused, so the list has gaps.
 
 ## 18. Protocol version
 
-The protocol version is **0.12** and the storage schema version is **6**.
+The protocol version is **0.13** and the storage schema version is **6**.
 
 The version is `major.minor` and has no patch level, because a protocol change is either visible
 across the boundary or is not a protocol change at all. **While the major is zero, the minor
 carries breaking changes.** Two implementations whose minors differ do not interoperate, and
-§4.0's `Attach` refuses the pairing rather than discovering it later. The number moves only for a
+§4.0's `Attach` and `Join` each refuse the pairing rather than discovering it later. The number moves only for a
 change a second implementation could observe on the wire.

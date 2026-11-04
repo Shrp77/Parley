@@ -81,9 +81,9 @@ message AttachRequest {
   string expected_project = N; // empty unless a machine block supplied the address
 }
 
-message DescribeNodeReply {
-  // ...existing fields...
-  string project = 5;          // the project this broker serves
+service Nodes {
+  // ...existing calls...
+  rpc ServedProject(Empty) returns (ServedProjectReply); // the project this broker serves
 }
 
 message JoinRequest {

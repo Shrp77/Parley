@@ -80,7 +80,7 @@ Each step checks `OffMachineLinks` before looking, as every other lookup does. A
 
 **Decision.** `parley enroll <dir> --project <name> --broker <address>`, and the same for `parley up`. If the machine does not describe the project and an address was given explicitly, these two verbs ask the broker which project it serves and go ahead only if it is the one named. Every other verb keeps today's refusal, which `ExplicitBrokerSelectionTests` still holds.
 
-The broker's name comes from a new `project` field on `Nodes.Describe`'s reply. That is one additive field. A new `Operators` call would oblige both screens to bind it (`DriftTests`), and none of them need it directly.
+The broker's name comes from a new `Nodes.ServedProject` call. It is not a field on `Nodes.Describe`, which answers NotFound for a machine that has never joined, which is exactly this machine. It is on `Nodes` because a new `Operators` call would oblige both screens to bind it (`DriftTests`), and none of them need it.
 
 `up --broker` with no `--project` also uses this answer, so it announces only that project's names (R1).
 
@@ -88,7 +88,7 @@ The broker's name comes from a new `project` field on `Nodes.Describe`'s reply. 
 
 **Terminal and web enrolment stay as they are.** On a machine with only a tunnel, enrolment is `parley enroll`. A surface showing `this-machine` refuses to enrol, naming that command, because it would otherwise write `parley-this-machine`. To be checked while building: what they do today.
 
-**A line accepted from a `this-machine` window** must reach the real entry (spec, US3 scenario 4). Today it would look for project `this-machine` and find no entry. The surface asks `Nodes.Describe` for the name before writing.
+**A line accepted from a `this-machine` window** must reach the real entry (spec, US3 scenario 4). Today it would look for project `this-machine` and find no entry. `OwnershipLine` takes that window's name to mean the one entry for this agent that this machine's block reaches a broker through, and refuses anything less certain. No wire call is needed.
 
 ## R8. One implementation for the waiting hook
 
@@ -106,7 +106,7 @@ The broker's name comes from a new `project` field on `Nodes.Describe`'s reply. 
 
 ## R10. Versions
 
-No schema change, so no migration, and 007 stays with feature 027. Three additive wire fields: protocol 0.13. Package 0.53.0, since the protocol moves and enrolment writes a new shape.
+No schema change, so no migration, and 007 stays with feature 027. Two additive wire fields and one small call: protocol 0.13. Package 0.53.0, since the protocol moves and enrolment writes a new shape.
 
 ## R11. An agent-only machine (added by the owner, 2026-11-04)
 

@@ -217,16 +217,14 @@ public sealed class EnrollmentPlanTests
     }
 
     [Fact]
-    public void The_workspace_is_written_as_an_overridable_default()
+    public void No_folder_is_written_into_the_launch_configuration()
     {
-        // .mcp.json is usually committed and the path is machine-specific, so the value has to be
-        // something a teammate overrides with a variable rather than by editing a shared file.
+        // .mcp.json is usually committed and the path is machine-specific. Each machine works its folder out from where
+        // the file is, and a node starts an agent from the folder in that machine's own catalogue (SPEC.md §4.1.2).
         var plan = EnrollmentPlan.Describe(Entry(), null, null, false);
-        var env = JsonNode.Parse(plan.LaunchConfiguration!)!["mcpServers"]!["parley"]!["env"]!;
 
-        Assert.Equal(
-            "${PARLEY_WORKSPACE:-" + Workspace + "}",
-            env["PARLEY_WORKSPACE"]!.GetValue<string>());
+        Assert.DoesNotContain(Workspace, plan.LaunchConfiguration!, StringComparison.Ordinal);
+        Assert.DoesNotContain("PARLEY_WORKSPACE", plan.LaunchConfiguration!, StringComparison.Ordinal);
     }
 
     [Fact]

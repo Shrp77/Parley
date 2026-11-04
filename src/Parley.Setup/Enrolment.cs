@@ -1075,8 +1075,40 @@ public static class Enrolment
                                 $"{launchPath}: left alone, its {Quoting.Quoted(candidates[0].Key)} entry is "
                                 + $"{Quoting.Quoted(named)} rather than {Quoting.Quoted(agent)}");
                         }
+                        else if (LaunchConfiguration.TryParse(text, launchPath, out _, out var broken, out var machinesBroken) is false
+                                 && machinesBroken)
+                        {
+                            // Rewriting a file this cannot read is the second, unasked-for change above.
+                            notes.Add($"{launchPath}: left alone, {broken}");
+                        }
+                        else if (MachineBlocks.OthersHolding(root, MachineName.Current, candidates[0].Key) is { Count: > 0 } others)
+                        {
+                            // Another machine still answers through this entry (SPEC.md §4.1.2), so only this machine's
+                            // part of the file goes.
+                            if (MachineBlocks.Remove(root, MachineName.Current, candidates[0].Key))
+                            {
+                                await OverwriteHeldAsync(
+                                    held,
+                                    launchPath,
+                                    root.ToJsonString(SerialisationOptions.Indented) + "\n",
+                                    cancellationToken).ConfigureAwait(false);
+
+                                written.Add(launchPath);
+                                notes.Add(
+                                    $"{launchPath}: this machine's block for {Quoting.Flat(candidates[0].Key)} removed; "
+                                    + $"the entry stays for {string.Join(", ", others)}");
+                            }
+                            else
+                            {
+                                notes.Add(
+                                    $"{launchPath}: this machine has no block for {Quoting.Flat(candidates[0].Key)}; "
+                                    + $"the entry stays for {string.Join(", ", others)}");
+                            }
+                        }
                         else if (servers.Remove(candidates[0].Key))
                         {
+                            _ = MachineBlocks.Remove(root, MachineName.Current, candidates[0].Key);
+
                             var left = LaunchEntries.Read(servers).Count;
 
                             // **The identity goes with the last entry and not before it.** It belongs to
@@ -1112,7 +1144,11 @@ public static class Enrolment
                         // those paths leave the repository answering somewhere — the entry was removed and
                         // others remain, the entry belongs to another agent and was left, the file was left
                         // alone for a reason — and all three must keep the catalogue line.
-                        stillAnAgent = LaunchEntries.Read(servers).Count > 0;
+                        //
+                        // **On this machine.** The catalogue is this machine's, so an entry another machine still answers
+                        // through is no reason to keep this machine's line.
+                        stillAnAgent = LaunchEntries.Read(servers)
+                            .Any(entry => MachineBlocks.AnswersHere(root, MachineName.Current, entry.Key));
                     }
                     else
                     {
