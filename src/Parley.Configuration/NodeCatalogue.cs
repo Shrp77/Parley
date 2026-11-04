@@ -250,7 +250,7 @@ public sealed class NodeCatalogue
                 entry.Workspace,
                 // What this machine answers through: a machine that withdrew from a project stops offering it, though the
                 // entry stays while another machine's block names it (SPEC.md §4.1.2).
-                read ? [.. declared.Memberships.Where(membership => declared.AnswersHere(Machine, membership.Key))] : [],
+                read ? [.. declared.Memberships.Where(membership => declared.OffersHere(Machine, membership.Key))] : [],
                 problem));
         }
 

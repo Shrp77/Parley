@@ -120,6 +120,12 @@ public sealed record LocatedLaunch(
 
     private static LocatedLaunch? Consider(string folder, string agent, string? project)
     {
+        // Before anything opens it: the open alone would offer the person's sign-in to whatever a link leads to.
+        if (OffMachineLinks.LeadsOffThisMachine(Path.Combine(folder, LaunchConfiguration.FileName)))
+        {
+            return null;
+        }
+
         WaitForAWriter(Path.Combine(folder, LaunchConfiguration.FileName));
 
         var read = LaunchConfiguration.TryRead(folder, out var configuration, out var problem, out var machinesBroken);

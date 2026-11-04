@@ -86,6 +86,14 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
             return RedirectToPage("/Index", new { tab = "agents" });
         }
 
+        // Before the form, which would otherwise promise writes that are then refused.
+        if (string.Equals(Project, Parley.Configuration.ProjectManifest.WindowName, StringComparison.Ordinal))
+        {
+            Problems = [EnrollmentPlan.AWindowEnrolsNothing];
+
+            return Page();
+        }
+
         if (OffThisMachine())
         {
             return Page();

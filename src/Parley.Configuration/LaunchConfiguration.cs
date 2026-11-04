@@ -82,16 +82,18 @@ public sealed record LaunchConfiguration
             ? block
             : null;
 
-    /// <summary>Whether a machine answers through an entry.</summary>
+    /// <summary>Whether a node on a machine offers an entry.</summary>
     /// <param name="machine">The machine.</param>
     /// <param name="key">The entry's key.</param>
     /// <returns>
-    /// <see langword="true"/> when it has a block for it, or when no machine has: an entry from before blocks belongs to whichever
-    /// machine opens it. An entry only other machines hold blocks for is theirs, so a machine that withdrew stops offering it.
+    /// <see langword="false"/> only when the machine has blocks in this file and none for this entry, and another machine has
+    /// one: it withdrew from that project and stays in another. A machine with no blocks at all has not enrolled through them, whatever
+    /// another machine has since written, so it keeps what it had: its catalogue line is what says it may start this checkout.
     /// </returns>
-    public bool AnswersHere(string machine, string key) =>
+    public bool OffersHere(string machine, string key) =>
         BlockFor(machine, key) is not null
         || Machines is null
+        || !Machines.ContainsKey(machine)
         || !Machines.Values.Any(blocks => blocks.ContainsKey(key));
 
     /// <summary>The entry a launch is, when exactly one fits.</summary>
@@ -200,7 +202,7 @@ public sealed record LaunchConfiguration
         }
         catch (Exception failure) when (failure is JsonException or IOException or UnauthorizedAccessException)
         {
-            problem = failure.Message;
+            problem = Printable(failure.Message);
 
             // A member named twice is refused while parsing, before the section can be looked at. A file holding one that
             // cannot be parsed has a section nobody can read, and a file that could not be read at all may have one: neither

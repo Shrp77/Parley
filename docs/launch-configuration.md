@@ -169,8 +169,8 @@ for that project, enrolling is refused, because the role is shared and the chang
 **Withdrawing takes this machine's block.** The entry stays while another machine's block names it, and
 `parleyAgentId` stays while any entry remains. This machine's node stops offering the agent in that project.
 
-**One project per checkout on a machine with only a tunnel.** Enrolling a second project by address from the same
-checkout is refused. Use a second checkout.
+**A checkout reached by address is in one project on that machine.** Enrolling into a second project is refused while the
+first is by address, in either order. Withdraw it from the first.
 
 ## What every reader owes
 

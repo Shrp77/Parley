@@ -305,7 +305,7 @@ public sealed class AMachineWithOnlyATunnelTests : IAsyncDisposable
             OnThatMachine, "enroll", Checkouts, "--all", "--project", "alpha", "--broker", Address);
 
         Assert.NotEqual(0, code);
-        Assert.Contains("second checkout", output + error, StringComparison.Ordinal);
+        Assert.Contains("one project", output + error, StringComparison.Ordinal);
         Assert.Equal(before, File.ReadAllText(Path.Combine(Checkout, ".mcp.json")));
     }
 
@@ -437,6 +437,14 @@ public sealed class AMachineWithOnlyATunnelTests : IAsyncDisposable
         Assert.Null(project);
         Assert.Contains("alpha", refusal, StringComparison.Ordinal);
         Assert.Contains("beta", refusal, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_entry_for_a_node_refuses_a_project_this_machine_describes()
+    {
+        Assert.NotNull(AutostartCommand.NodeEntryRefusal("alpha", ["alpha"]));
+        Assert.NotNull(AutostartCommand.NodeEntryRefusal(null, ["alpha"]));
+        Assert.Null(AutostartCommand.NodeEntryRefusal("beta", ["alpha"]));
     }
 
     [Fact]

@@ -47,7 +47,7 @@ public sealed class IntegrationAttribute : Attribute, ITraitAttribute
 /// <b>Marked by what is left out, so a new test is in the smoke run until somebody says otherwise.</b> The smoke run has five
 /// minutes (<c>scripts/test.ps1 -Category Smoke</c>), and these tests hold most of the full run's time in few classes. What marks
 /// one is its cost, from the full run's own timings. One real path through each thing a person relies on stays in whatever it
-/// costs, and so do the guards.
+/// costs.
 /// </remarks>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
 public sealed class SlowAttribute : Attribute, ITraitAttribute

@@ -321,8 +321,12 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                    "repository recorded for it and no line to write.";
         }
 
+        var entry = await BrokerProject
+            .ForWritingAsync(project.Name.Value, () => Task.FromResult(registry.Select(row => row.Name.Value)))
+            .ConfigureAwait(false);
+
         var wrong = await OwnershipLine
-            .WriteAsync(known.Workspace, project.Name.Value, agent, acceptance.Statement, token)
+            .WriteAsync(known.Workspace, entry, agent, acceptance.Statement, token)
             .ConfigureAwait(false);
 
         if (wrong is not null)

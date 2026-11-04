@@ -167,9 +167,9 @@ const string Help = """
     the broker was started with, from PARLEY_RETENTION_IDLE_HOURS and PARLEY_RETENTION_MAX_AGE_HOURS
     on the broker's machine; it removes text permanently, so save a discussion first if you want it.
 
-    A machine that only runs agents holds no project. enroll, up and autostart install accept a project it
-    does not describe, given --broker or PARLEY_BROKER with its address, once that broker's registry names that
-    project (up --keep-trying takes the name as given, because the tunnel may not be up):
+    A machine that only runs agents holds no project. enroll and up accept a project it does not describe, given
+    --broker or PARLEY_BROKER with its address, once that broker's registry names that project (up --keep-trying
+    takes the name as given, because the tunnel may not be up). autostart install does too, given --broker only:
     `parley autostart install --project <p> --broker <address>` runs a node at logon and no broker, and
     `parley autostart remove [--project <p>] [--all]` takes an entry, or every one. Every other command still
     refuses such a project. up also takes --log <path>, and --hidden with it.
@@ -1016,24 +1016,14 @@ if (verb == "autostart" && rest.Length == 1)
     // What it installs binds nothing, and it checks the name with the broker first.
     if (rest[0] == "install" && !string.IsNullOrWhiteSpace(brokerAddress))
     {
-        if (configuredProjects.Any(p => string.Equals(p.Name.Value, projectName, StringComparison.Ordinal)))
+        if (AutostartCommand.NodeEntryRefusal(projectName, configuredProjects.Select(p => p.Name.Value)) is { } notThis)
         {
-            await Console.Error.WriteLineAsync(
-                $"This machine describes '{projectName}', and the entry that serves it already runs this machine's node.")
-                .ConfigureAwait(false);
+            await Console.Error.WriteLineAsync(notThis).ConfigureAwait(false);
 
             return Config;
         }
 
-        if (string.IsNullOrWhiteSpace(projectName))
-        {
-            await Console.Error.WriteLineAsync(
-                "An entry for a node names the project it joins. Add --project.").ConfigureAwait(false);
-
-            return Config;
-        }
-
-        var (confirmed, refusal) = await BrokerProject.ConfirmAsync(projectName, brokerAddress).ConfigureAwait(false);
+        var (confirmed, refusal) = await BrokerProject.ConfirmAsync(projectName!, brokerAddress).ConfigureAwait(false);
 
         if (confirmed is null)
         {
@@ -1044,7 +1034,7 @@ if (verb == "autostart" && rest.Length == 1)
 
         return await AutostartCommand.InstallNodeAsync(
             manifestPath,
-            projectName,
+            projectName!,
             confirmed.Endpoint,
             AutostartCommand.MachineCatalogue(nodeConfigPath, manifestPath),
             Console.Out,

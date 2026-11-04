@@ -483,16 +483,18 @@ public static class EnrollmentPlan
                 + $"{Quoting.Quoted(entry.Agent)} would rename that machine's agent too. Use the same role, or withdraw it there first");
         }
 
-        // One checkout, one project by address. A node is one process per broker, and one started agent can only be known to
-        // the node that started it, so a second project would take it for an agent somebody opened by hand and never wake it.
-        if (!string.IsNullOrWhiteSpace(brokerAddress)
-            && LaunchEntries.Read(servers).FirstOrDefault(other =>
-                !string.Equals(other.Key, key, StringComparison.Ordinal)
-                && MachineBlocks.Block(root, machine, other.Key)?[BrokerVariable] is not null) is { } already2)
+        // One project for a checkout reached by address. A node is one process per broker, and an agent can only be known to the
+        // node that started it, so another project would take it for one somebody opened by hand and never wake it. Either order.
+        var alongside = LaunchEntries.Read(servers).FirstOrDefault(other =>
+            !string.Equals(other.Key, key, StringComparison.Ordinal)
+            && MachineBlocks.Block(root, machine, other.Key) is { } theirs
+            && (!string.IsNullOrWhiteSpace(brokerAddress) || theirs[BrokerVariable] is not null));
+
+        if (alongside is not null)
         {
             throw new InvalidDataException(
-                $"this checkout already reaches a broker through '{already2.Key}' on this machine, and a machine with only a "
-                + "tunnel can run one project per checkout. Use a second checkout");
+                $"this checkout is already in '{alongside.Key}' on this machine, and a checkout reached by address can be in "
+                + "only one project, because a node could not wake it in the other. Withdraw it there first");
         }
 
         // What is shared, written new every time rather than merged into: a `command` or a `PATH` adopted from what is there

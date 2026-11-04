@@ -87,6 +87,15 @@ public sealed class ProjectCommandTests : IDisposable
     }
 
     // **One argument.** The store and the endpoint are not supplied anywhere in this file.
+    [Fact]
+    public async Task No_project_can_take_the_name_a_surface_gives_a_broker_shown_by_address()
+    {
+        var (code, _, error) = await AddAsync(Parley.Configuration.ProjectManifest.WindowName);
+
+        Assert.NotEqual(0, code);
+        Assert.Contains("no project can have that name", error, StringComparison.Ordinal);
+    }
+
     private Task<(int Code, string Out, string Error)> AddAsync(
         string name, string? description = null) =>
         RunAsync(["add", name], new ProjectFields(description));

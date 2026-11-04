@@ -1,3 +1,4 @@
+using Parley.Configuration;
 using Parley.Core;
 using Parley.Setup;
 using Terminal.Gui.App;
@@ -69,9 +70,16 @@ internal static class Onboarding
         Func<string, Task> done,
         Action<string, string>? saying = null)
     {
+        ArgumentNullException.ThrowIfNull(done);
+
+        // Before the folder walk, the ticks and the consent, which would otherwise be gone through for nothing.
+        if (string.Equals(project?.Name.Value, ProjectManifest.WindowName, StringComparison.Ordinal))
+        {
+            return done(EnrollmentPlan.AWindowEnrolsNothing);
+        }
+
         ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(queue);
-        ArgumentNullException.ThrowIfNull(done);
         ArgumentNullException.ThrowIfNull(remember);
 
         // **A picker rather than a field**: a typed path can only be reported wrong afterwards.

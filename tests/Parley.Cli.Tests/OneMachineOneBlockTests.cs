@@ -113,46 +113,6 @@ public sealed class OneMachineOneBlockTests : IDisposable
     }
 
     [Fact]
-    public async Task Withdrawing_from_a_window_takes_the_block_that_reaches_a_broker()
-    {
-        Written($$"""{ "server": {{Block("Makes changes.")}}, "{{Here}}": { "parley-acme": { "PARLEY_BROKER": "http://127.0.0.1:19100" } } }""");
-
-        _ = await Enrolment.WithdrawAsync(
-            Workspace, "infra", ProjectManifest.WindowName, null, TestContext.Current.CancellationToken);
-
-        var root = Read();
-
-        Assert.Null(root["parleyMachines"]![Here]);
-        Assert.NotNull(root["mcpServers"]!["parley-acme"]);
-    }
-
-    [Fact]
-    public async Task A_window_never_guesses_between_two_entries()
-    {
-        // A line accepted in a window onto one broker must not land on another project's entry.
-        File.WriteAllText(
-            LaunchFile,
-            $$"""
-            { "mcpServers": {
-                "parley-acme": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "infra", "PARLEY_PROJECT": "acme" } },
-                "parley-c": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "infra", "PARLEY_PROJECT": "c", "PARLEY_BROKER": "http://127.0.0.1:2" } } },
-              "parleyMachines": { "{{Here}}": { "parley-acme": { "PARLEY_OWNS": "Acme's.", "PARLEY_BROKER": "http://127.0.0.1:3" } } } }
-            """);
-
-        var before = File.ReadAllText(LaunchFile);
-
-        Assert.NotNull(await OwnershipLine.WriteAsync(
-            Workspace, ProjectManifest.WindowName, Agent, "The other project's.", TestContext.Current.CancellationToken));
-
-        Assert.Equal(before, File.ReadAllText(LaunchFile));
-
-        _ = await Enrolment.WithdrawAsync(
-            Workspace, "infra", ProjectManifest.WindowName, null, TestContext.Current.CancellationToken);
-
-        Assert.Equal(before, File.ReadAllText(LaunchFile));
-    }
-
-    [Fact]
     public async Task The_terminals_whole_name_withdraws_what_enrolment_wrote()
     {
         Written($$"""{ "{{Here}}": {{Block("Answers.")}} }""");
@@ -315,25 +275,120 @@ public sealed class OneMachineOneBlockTests : IDisposable
     }
 
     [Fact]
-    public async Task A_window_reaches_the_entry_this_machines_block_goes_through()
+    public async Task A_window_writes_to_the_project_its_own_broker_names()
     {
         Written($$"""{ "{{Here}}": { "parley-acme": { "PARLEY_BROKER": "http://127.0.0.1:19100" } } }""");
 
-        Assert.Null(await OwnershipLine.WriteAsync(
-            Workspace, ProjectManifest.WindowName, Agent, "Mine.", TestContext.Current.CancellationToken));
+        var project = await BrokerProject.ForWritingAsync(
+            ProjectManifest.WindowName, () => Task.FromResult<IEnumerable<string>>(["orders@x", "human-user@acme"]));
 
+        Assert.Equal("acme", project);
+        Assert.Null(await OwnershipLine.WriteAsync(Workspace, project, Agent, "Mine.", TestContext.Current.CancellationToken));
         Assert.Equal("Mine.", (string?)Read()["parleyMachines"]![Here]!["parley-acme"]!["PARLEY_OWNS"]);
     }
 
     [Fact]
-    public async Task A_window_with_no_block_address_is_refused()
+    public async Task A_window_onto_another_brokers_project_finds_no_entry_here()
     {
-        var before = Written($$"""{ "{{Here}}": { "parley-acme": { } } }""");
+        // The address in the file reaches acme. The window is on b, so nothing of acme's is touched.
+        var before = Written($$"""{ "{{Here}}": { "parley-acme": { "PARLEY_OWNS": "Acme's.", "PARLEY_BROKER": "http://127.0.0.1:19100" } } }""");
 
-        Assert.NotNull(await OwnershipLine.WriteAsync(
-            Workspace, ProjectManifest.WindowName, Agent, "Mine.", TestContext.Current.CancellationToken));
+        var project = await BrokerProject.ForWritingAsync(
+            ProjectManifest.WindowName, () => Task.FromResult<IEnumerable<string>>(["human-user@b"]));
+
+        Assert.NotNull(await OwnershipLine.WriteAsync(Workspace, project, Agent, "B's.", TestContext.Current.CancellationToken));
+        Assert.Equal(before, File.ReadAllText(LaunchFile));
+
+        _ = await Enrolment.WithdrawAsync(Workspace, "infra", project, null, TestContext.Current.CancellationToken);
 
         Assert.Equal(before, File.ReadAllText(LaunchFile));
+    }
+
+    [Fact]
+    public async Task Only_a_window_is_asked_about()
+    {
+        var project = await BrokerProject.ForWritingAsync(
+            "acme", () => throw new InvalidOperationException("a project's own name needs no asking"));
+
+        Assert.Equal("acme", project);
+    }
+
+    [Fact]
+    public async Task Another_machines_agent_is_never_withdrawn_from_this_machines_files()
+    {
+        var before = Written($$"""{ "server": {{Block("Makes changes.")}}, "{{Here}}": {{Block("Answers.")}} }""");
+
+        _ = await Enrolment.WithdrawAsync(Workspace, "infra@server", "acme", null, TestContext.Current.CancellationToken);
+
+        Assert.Equal(before, File.ReadAllText(LaunchFile));
+    }
+
+    [Fact]
+    public async Task A_workspace_leading_off_this_machine_is_never_looked_up_to_withdraw()
+    {
+        // A row reports its own folder. The lookup alone would offer the person's sign-in.
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        var outcome = await Enrolment.WithdrawAsync(
+            @"\\192.0.2.77\share\repo", "infra", "acme", null, TestContext.Current.CancellationToken);
+
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(5), "it went looking");
+        Assert.Contains(outcome.Notes, note => note.Contains("another machine", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void An_address_and_another_project_here_are_refused_in_either_order()
+    {
+        Written($$"""{ "{{Here}}": { "parley-beta": { } } }""", "\"PARLEY_AGENT\": \"infra\"");
+
+        File.WriteAllText(
+            LaunchFile,
+            $$"""
+            { "mcpServers": {
+                "parley-acme": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "infra", "PARLEY_PROJECT": "acme" } },
+                "parley-beta": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "infra", "PARLEY_PROJECT": "beta" } } },
+              "parleyMachines": { "{{Here}}": { "parley-beta": { } } } }
+            """);
+
+        Assert.Contains(
+            "one project",
+            Assert.Throws<InvalidDataException>(() => Planned("infra", null, address: "http://127.0.0.1:19100")).Message,
+            StringComparison.Ordinal);
+
+        File.WriteAllText(
+            LaunchFile,
+            $$"""
+            { "mcpServers": {
+                "parley-acme": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "infra", "PARLEY_PROJECT": "acme" } },
+                "parley-beta": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "infra", "PARLEY_PROJECT": "beta" } } },
+              "parleyMachines": { "{{Here}}": { "parley-beta": { "PARLEY_BROKER": "http://127.0.0.1:19100" } } } }
+            """);
+
+        Assert.Contains(
+            "one project",
+            Assert.Throws<InvalidDataException>(() => Planned("infra", null)).Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_machine_that_never_enrolled_through_blocks_keeps_its_offer_when_another_writes_one()
+    {
+        // Auto Accept on one machine writes its block with nobody involved. Another machine pulling that must not lose its agent.
+        File.WriteAllText(
+            LaunchFile,
+            """
+            { "parleyAgentId": "9f2c1a77-3b41-4e0e-8a6f-7c4b2d9e5011",
+              "mcpServers": { "parley-acme": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "infra", "PARLEY_PROJECT": "acme" } } },
+              "parleyMachines": { "server": { "parley-acme": { "PARLEY_OWNS": "Makes changes." } } } }
+            """);
+
+        var file = Path.Combine(_root, "node.json");
+
+        File.WriteAllText(
+            file,
+            new JsonObject { ["agents"] = new JsonObject { ["9f2c1a77-3b41-4e0e-8a6f-7c4b2d9e5011"] = new JsonObject { ["command"] = "x", ["workspace"] = Workspace } } }.ToJsonString());
+
+        Assert.Contains("infra", NodeCatalogue.ReadFrom(file).Announceable("acme").Names);
     }
 
     [Fact]

@@ -109,6 +109,25 @@ public static class AutostartCommand
         };
     }
 
+    /// <summary>Why an entry for a node cannot be installed for a project, or null when it can.</summary>
+    /// <param name="project">The project named.</param>
+    /// <param name="described">The projects this machine describes.</param>
+    /// <returns>The refusal, or null.</returns>
+    public static string? NodeEntryRefusal(string? project, IEnumerable<string> described)
+    {
+        ArgumentNullException.ThrowIfNull(described);
+
+        if (string.IsNullOrWhiteSpace(project))
+        {
+            return "An entry for a node names the project it joins. Add --project.";
+        }
+
+        return described.Contains(project, StringComparer.Ordinal)
+            ? $"This machine describes '{project}', so it is served here and has no need of an address. "
+              + "`parley autostart install` with no address runs a broker and this machine's node together."
+            : null;
+    }
+
     /// <summary>Installs the entry that runs only a node, for a project this machine reaches by address.</summary>
     /// <param name="root">This machine's root.</param>
     /// <param name="project">The project, which the broker has already said it serves.</param>
@@ -208,7 +227,10 @@ public static class AutostartCommand
     {
         if (supervisor == Supervisor.ScheduledTask)
         {
-            return OperatingSystem.IsWindows() ? ScheduledTasks.Named(AutostartPlan.NodePrefix) : [];
+            return OperatingSystem.IsWindows()
+                ? [.. ScheduledTasks.Named(AutostartPlan.NodePrefix)
+                    .Where(label => Parley.Core.ProjectName.TryCreate(label[AutostartPlan.NodePrefix.Length..], out _))]
+                : [];
         }
 
         var folder = Path.GetDirectoryName(

@@ -166,16 +166,6 @@ public static class OwnershipLine
             {
                 servers = root["mcpServers"] as JsonObject;
                 (key, existing) = LaunchEntries.Landing(servers, project);
-
-                // A surface on a machine with only a tunnel shows its broker as a window, which is no project's name. Anything
-                // less certain than one entry is refused below, as a project with no entry is (SPEC.md §4.1.2).
-                if (existing is null
-                    && string.Equals(project, ProjectManifest.WindowName, StringComparison.Ordinal)
-                    && MachineBlocks.ThroughAWindow(root, LaunchEntries.Read(servers), agent.Machine) is { } through
-                    && Names(through, agent))
-                {
-                    (key, existing) = (through.Key, through);
-                }
             }
             catch (Exception ambiguous) when (ambiguous is InvalidDataException or ArgumentException)
             {

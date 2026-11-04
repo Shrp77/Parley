@@ -4,7 +4,7 @@
     Copies the test metrics CI recorded into the local metrics folder.
 
 .DESCRIPTION
-    The build and nightly workflows each keep their run's metrics as an artifact named test-metrics-<os>
+    The build, smoke and nightly workflows each keep their run's metrics as an artifact named test-metrics-<os>
     (scripts/test.ps1 -Source ci). This downloads every such artifact not yet copied and appends its runs.jsonl and
     tests.jsonl to the local ones, so local and CI runs sit in one history. A run is copied once: imported.txt
     remembers each artifact taken.

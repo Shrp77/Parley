@@ -99,7 +99,8 @@ which is the map of the deployment step 1 keeps out of this report, and nothing 
 you which of its entries are still registered.
 
 Say instead, in one line, where the person can see it: retiring or purging an agent in the terminal
-removes its `.mcp.json` entry and its catalogue line when the repository is on that machine. An
+removes this machine's part of its `.mcp.json`, the entry too once no other machine uses it, and its catalogue line, when the
+repository is on that machine. An
 entry outlives its agent when the agent was retired or purged in the web console, which changes
 nothing on disk, or from another machine; when a withdrawal printed a note that it could not
 remove something; and when the agent was retired because its repository's folder was gone, which

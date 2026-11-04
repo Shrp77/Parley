@@ -468,12 +468,17 @@ public static class Enrolment
             && first[2] == 0xBF;
     }
 
-    // An entry names a role and the registry a whole name, so the terminal's withdrawal must match either spelling.
-    private static string RoleOf(string agent)
+    // An entry names a role and the registry a whole name, so the terminal's withdrawal matches either spelling, and a whole name
+    // only for this machine: another machine's agent has its file on that machine, whatever is at the same path here.
+    private static string? RoleHere(string agent)
     {
         var at = agent.IndexOf('@', StringComparison.Ordinal);
 
-        return at < 0 ? agent : agent[..at];
+        return at < 0
+            ? agent
+            : string.Equals(agent[(at + 1)..], MachineName.Current, StringComparison.Ordinal)
+                ? agent[..at]
+                : null;
     }
 
     /// <summary>What a launch configuration is written back in: with a byte-order mark if it had one.</summary>
@@ -966,6 +971,15 @@ public static class Enrolment
 
         try
         {
+            // The workspace is what a registry row reported, so it is never looked up when it leads off this machine: the lookup
+            // alone would offer the person's sign-in to that host.
+            if (OffMachineLinks.LeadsOffThisMachine(workspace) || OffMachineLinks.LeadsOffThisMachine(launchPath))
+            {
+                notes.Add($"{launchPath}: left alone, it leads to another machine");
+
+                return new Outcome(notes, written);
+            }
+
             if (!File.Exists(launchPath))
             {
                 notes.Add($"{launchPath}: already absent");
@@ -1039,15 +1053,8 @@ public static class Enrolment
                         // an enrolment into this project would have written at, and nothing else. Two
                         // rules would drift, and the direction they drift in leaves a repository still
                         // announcing itself as an agent of somewhere it was removed from.
-                        //
-                        // A window onto a broker shown by address is no project's name: on a machine with only a tunnel, the
-                        // entry meant is the one this machine's block reaches a broker through.
                         var candidates = project is null
                             ? entries
-                            : string.Equals(project, ProjectManifest.WindowName, StringComparison.Ordinal)
-                                ? MachineBlocks.ThroughAWindow(root, entries, MachineName.Current) is { } through
-                                    ? [through]
-                                    : []
                             : LaunchEntries.Landing(servers, project).Existing is { } landed
                                 ? (IReadOnlyList<LaunchEntry>)[landed]
                                 : [];
@@ -1088,7 +1095,7 @@ public static class Enrolment
                         }
                         else if (named is not null
                                  && !string.Equals(named, agent, StringComparison.Ordinal)
-                                 && !string.Equals(named, RoleOf(agent), StringComparison.Ordinal))
+                                 && !string.Equals(named, RoleHere(agent), StringComparison.Ordinal))
                         {
                             // Somebody else's. The workspace comes from the registry, which is what the
                             // agent said about itself and may be some time old, so a repository

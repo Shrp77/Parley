@@ -56,7 +56,9 @@ is usually missing is a project:
 parley project list
 ```
 
-If it names none, have the user name one on the first screen of the terminal:
+If this machine only runs agents and reaches its broker by a tunnel, it should name none: install with `--agent-only`, then run
+`parley enroll <folder> --project <its name> --broker <its address>` and `parley autostart install --project <its name> --broker
+<its address>`. Otherwise, if it names none, have the user name one on the first screen of the terminal:
 
 ```
 parley

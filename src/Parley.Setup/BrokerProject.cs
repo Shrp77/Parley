@@ -1,5 +1,6 @@
 using Grpc.Core;
 using Grpc.Net.Client;
+using Parley.Configuration;
 using Parley.Core;
 using Wire = Parley.Transport;
 
@@ -51,13 +52,9 @@ public static class BrokerProject
                 .DescribeRegistryAsync(new Wire.Empty(), deadline: DateTime.UtcNow + Patience, cancellationToken: cancellationToken)
                 .ResponseAsync.ConfigureAwait(false);
 
-            var seat = registry.Rows
-                .Select(row => row.Name)
-                .FirstOrDefault(name => name.StartsWith(PersonSeat.Role + "@", StringComparison.Ordinal));
-
-            return seat is null
-                ? (null, $"The broker at {endpoint} has no seat for a person, so which project it is cannot be told.")
-                : (seat[(PersonSeat.Role.Length + 1)..], null);
+            return FromSeat(registry.Rows.Select(row => row.Name)) is { } project
+                ? (project, null)
+                : (null, $"The broker at {endpoint} has no seat for a person, so which project it is cannot be told.");
         }
         catch (RpcException failure)
         {
@@ -95,7 +92,37 @@ public static class BrokerProject
 
         return string.Equals(served, name, StringComparison.Ordinal)
             ? (new ProjectSettings(project, string.Empty, BrokerEndpoint.Read(_ => address), null), null)
-            : (null, $"The broker at {BrokerEndpoint.Read(_ => address)} serves project '{(ProjectName.TryCreate(served, out var named) ? named.Value : "with a name that cannot be shown")}', not '{name}'. Nothing has been changed.");
+            : (null, $"The broker at {BrokerEndpoint.Read(_ => address)} serves project '{served}', not '{name}'. Nothing has been changed.");
+    }
+
+    /// <summary>The project a registry belongs to, from its person's seat.</summary>
+    /// <param name="names">Every name in the registry.</param>
+    /// <returns>The project, or null when no seat says.</returns>
+    public static string? FromSeat(IEnumerable<string> names)
+    {
+        ArgumentNullException.ThrowIfNull(names);
+
+        var seat = names.FirstOrDefault(name => name.StartsWith(PersonSeat.Role + "@", StringComparison.Ordinal));
+
+        return seat is not null && ProjectName.TryCreate(seat[(PersonSeat.Role.Length + 1)..], out var project)
+            ? project.Value
+            : null;
+    }
+
+    /// <summary>The name a write should use for what a surface has open.</summary>
+    /// <param name="shown">What the surface calls it.</param>
+    /// <param name="names">Every name in that broker's registry, asked for only when needed.</param>
+    /// <returns>
+    /// The project. A window onto a broker is no project's name, so its own registry says, and the write then finds that project's
+    /// entry or none: never another project's because it happened to be the one with an address.
+    /// </returns>
+    public static async Task<string?> ForWritingAsync(string? shown, Func<Task<IEnumerable<string>>> names)
+    {
+        ArgumentNullException.ThrowIfNull(names);
+
+        return string.Equals(shown, ProjectManifest.WindowName, StringComparison.Ordinal)
+            ? FromSeat(await names().ConfigureAwait(false)) ?? shown
+            : shown;
     }
 
     /// <summary>Whether this machine reaches a project by address and holds nothing of it.</summary>

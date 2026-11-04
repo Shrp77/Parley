@@ -52,7 +52,7 @@ process, no clock it does not own, no environment it does not inject, and no UI.
   request, and the merge needs it green on the commit that merges. It has five minutes of testing: `pwsh scripts/test.ps1
   -Category Smoke` does the same here, and warns when it runs over. A test is in unless marked `[Slow]`. The marks came from the
   full run's timings: an integration class costing about seven seconds or more of test time, or a test within one. One real path
-  through each thing a person relies on stays in whatever it costs, and the guards stay. When the run nears its budget, mark the next slowest classes.
+  through each thing a person relies on stays in whatever it costs. When the run nears its budget, mark the next slowest classes.
 - **The `nightly` workflow runs everything** on Windows and Linux, every night against `main`. A failure there is fixed
   like any other. A pull request may ask for it with the `full-tests` label (`gh pr edit <number> --add-label full-tests`), which
   is worth doing when a change could only show in a `[Slow]` test: `gh workflow run nightly.yml --ref <branch>` does the same.

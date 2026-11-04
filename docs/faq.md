@@ -87,7 +87,8 @@ works over SSH, and the web console can be reached through a tunnel too.
 
 ## Can two projects share a repository?
 
-Yes. A repository can take part in as many projects as you like, with one entry per project in its
+Yes, except on a machine that reaches its broker by a tunnel, where a checkout is in one project. A repository can
+otherwise take part in as many projects as you like, with one entry per project in its
 `.mcp.json`. Either project can start it unattended, and two asking at once still start one
 process, so there are never two models editing one checkout.
 

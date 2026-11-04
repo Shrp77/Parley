@@ -508,12 +508,16 @@ protocol: a broker's registry holds `human-user@<project>` (§4.1.1), and they c
   they do not. `parley up --keep-trying` takes the name as given, because the tunnel may not be up yet. Every other command
   still refuses a project this machine does not describe.
 - `parley autostart install`, given a project and an address, does the same, and installs an entry
-  that runs only a node. That node takes the name it was given. It refuses a project this machine describes, whose entry
-  already runs a node.
+  that runs only a node. That node takes the name it was given. It refuses a project this machine describes, which is
+  served here and needs no address.
 
-**One project per checkout on such a machine.** A node is one process per broker, and an agent it started is known only to that
-process, so a second project would take it for one somebody opened by hand and never wake it. Enrolling a second project by
-address from the same checkout is refused; use a second checkout.
+**A checkout reached by address is in one project on that machine.** A node is one process per broker, and an agent it
+started is known only to that process, so another project would take it for one somebody opened by hand and never wake it.
+Enrolling into a second project is refused while the first is by address, in either order.
+
+**A window is not a project.** A surface given a broker by address, on a machine with no projects, shows it under the name
+`this-machine`, which no project can take. Nothing is enrolled through one. A line accepted or an agent withdrawn through one
+uses the project that broker's registry names, and another machine's agent is never withdrawn from this machine's files.
 
 **An agent-only machine stays startable with nobody there.** A node started from such an entry keeps
 trying while the broker cannot be reached, at first join and after losing it, and keeps the agents it is

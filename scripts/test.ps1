@@ -5,7 +5,7 @@
 
 .DESCRIPTION
     Each test class is [Unit] or [Integration] (tests/TestCategories.cs). Unit tests run on every push and between
-    review rounds; everything runs nightly and before a pull request merges.
+    review rounds; the smoke run gates a merge; everything runs nightly.
 
     Every run appends to the metrics folder (git-ignored, .test-metrics by default):
       runs.jsonl   one line per run: when, where, which commit, which category, the counts and the time taken

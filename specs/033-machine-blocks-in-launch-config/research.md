@@ -40,7 +40,7 @@ New entries have no `PARLEY_WORKSPACE` at all (FR-014). So the file must be foun
 **Decision.** In order:
 
 1. The folder in `PARLEY_WORKSPACE`, if it holds a `.mcp.json` with a matching entry. An old entry's path from another machine fails this and is ignored.
-2. The folder the adapter was started in, then each parent, stopping at the first that holds `.git` or `.mcp.json`.
+2. The folder the adapter was started in. Inside a repository, each parent too, stopping at the first that holds `.git` or `.mcp.json`.
 
 Each step checks `OffMachineLinks` before looking, as every other lookup does. A file found this way counts only if one of its entries names this launch's role and project (R5). Otherwise the launch has no block.
 
@@ -88,9 +88,9 @@ The name comes from `human-user@<project>` in the broker's registry (R6), which 
 
 **The crash in R1 is fixed in the same place:** enrolling with an address and no project stops with a sentence asking for `--project`.
 
-**Terminal and web enrolment stay as they are.** On a machine with only a tunnel, enrolment is `parley enroll`. A surface showing `this-machine` refuses to enrol, naming that command, because it would otherwise write `parley-this-machine`. To be checked while building: what they do today.
+**On a machine with only a tunnel, enrolment is `parley enroll`.** A surface showing `this-machine` refuses to enrol, naming that command, before its form, because it would otherwise write `parley-this-machine`.
 
-**A line accepted from a `this-machine` window** must reach the real entry (spec, US3 scenario 4). Today it would look for project `this-machine` and find no entry. `OwnershipLine` takes that window's name to mean the one entry for this agent that this machine's block reaches a broker through, and refuses anything less certain. No wire call is needed.
+**A line accepted from a `this-machine` window** must reach the real entry (spec, US3 scenario 4). The surface asks that broker's own registry for the project, from `human-user@<project>`, and uses that name. An earlier version guessed from the file and overwrote another project's line.
 
 ## R8. One implementation for the waiting hook
 

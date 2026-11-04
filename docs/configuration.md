@@ -313,14 +313,14 @@ On this machine, run `--agent-only` again: the install stops the node, replaces 
 install stops and asks, so a routine upgrade does not add a broker.
 
 **One project per checkout.** A node is one process per broker, so a checkout in two projects on such a machine could not be
-woken in the second. Enrolling a second project by address from one checkout is refused. Use a second checkout.
+woken in the second. Enrolling into a second project is refused while the first is by address.
 
 ### Watching a remote broker from a machine with no projects
 
 The terminal and the web console list the projects this machine has. A laptop that only watches a
 broker running elsewhere has none, so they would open empty. Give them the broker's address and
-they show it as one project called `this-machine`. It is a window onto that broker. Nothing is
-created on your laptop.
+they show it as one project called `this-machine`. It is a window onto that broker, and no real project can
+take that name. Nothing is created on your laptop, and nothing can be enrolled from a window: use `parley enroll`.
 
 With the tunnel from above up:
 

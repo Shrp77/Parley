@@ -6,6 +6,12 @@
 
 <h1>Register an agent in @Model.Project</h1>
 
+@if (string.Equals(Model.Project, Parley.Configuration.ProjectManifest.WindowName, StringComparison.Ordinal))
+{
+    <p>@Parley.Setup.EnrollmentPlan.AWindowEnrolsNothing</p>
+    return;
+}
+
 <p>
     Prefer to point at a folder? <a href="/?tab=agents&amp;project=@Model.Project">Register from the agents page</a> instead.
     This page is for writing the file yourself. An agent's name comes from its launch configuration and nowhere else.
