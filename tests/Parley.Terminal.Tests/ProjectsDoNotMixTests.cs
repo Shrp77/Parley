@@ -18,6 +18,7 @@ namespace Parley.Terminal.Tests;
 /// identifier alone, or drawn from a read without asking which project is on screen, can cross between them.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ProjectsDoNotMixTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

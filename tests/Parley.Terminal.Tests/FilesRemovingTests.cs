@@ -12,6 +12,7 @@ namespace Parley.Terminal.Tests;
 /// door, and checks what is left in the location rather than what was said.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class FilesRemovingTests : IAsyncDisposable
 {
     private readonly FileLocationFixture _files = new();

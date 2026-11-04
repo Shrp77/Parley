@@ -22,6 +22,7 @@ namespace Parley.Terminal.Tests;
 /// </remarks>
 [Collection(nameof(OwnsTheMarshal))]
 [Integration]
+[Slow]
 public sealed class GivenUpWorkLeavesNoFalseRecordTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

@@ -107,6 +107,11 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
                 UseShellExecute = false,
             });
 
+            // Read, because the help is longer than a pipe holds: left unread, the tool blocks writing it and this waits out
+            // the whole minute, on every run of this class.
+            _ = probe?.StandardOutput.ReadToEndAsync();
+            _ = probe?.StandardError.ReadToEndAsync();
+
             probe?.WaitForExit(milliseconds: 60_000);
         }
         catch (SystemException)
@@ -390,6 +395,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         return specific.GetProperty("additionalContext").GetString()!;
     }
 
+    [Slow]
     [Theory]
     [InlineData("PostToolBatch")]
     [InlineData("Stop")]
@@ -408,6 +414,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.DoesNotContain("systemMessage", output, StringComparison.Ordinal);
     }
 
+    [Slow]
     [Fact]
     public async Task A_turn_already_continuing_is_not_held_a_second_time()
     {
@@ -422,6 +429,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.Empty(Run("Stop", new { stop_hook_active = true }));
     }
 
+    [Slow]
     [Theory]
     [InlineData("PostToolBatch")]
     [InlineData("Stop")]
@@ -438,6 +446,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.Empty(Run(hookEvent, new { agent_id = "sub-1" }));
     }
 
+    [Slow]
     [Theory]
     [InlineData("SessionStart")]
     [InlineData("UserPromptSubmit")]
@@ -455,6 +464,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.DoesNotContain("hookSpecificOutput", output, StringComparison.Ordinal);
     }
 
+    [Slow]
     [Theory]
     [InlineData("SessionStart")]
     [InlineData("UserPromptSubmit")]
@@ -481,6 +491,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.DoesNotContain("billing@test", output, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Slow]
     [Theory]
     [InlineData("SessionStart")]
     [InlineData("UserPromptSubmit")]
@@ -509,6 +520,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.Contains("carry on with what you were asked", output, StringComparison.Ordinal);
     }
 
+    [Slow]
     [Theory]
     [InlineData("SessionStart")]
     [InlineData("UserPromptSubmit")]
@@ -532,6 +544,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.Empty(Run(hookEvent));
     }
 
+    [Slow]
     [Theory]
     [InlineData("SessionStart")]
     [InlineData("UserPromptSubmit")]
@@ -550,6 +563,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.DoesNotContain("uncollected message", output, StringComparison.Ordinal);
     }
 
+    [Slow]
     [Fact]
     public async Task A_file_gone_notice_alone_does_not_hold_a_turn_open()
     {
@@ -561,6 +575,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.Empty(Run("Stop", new { stop_hook_active = false }));
     }
 
+    [Slow]
     [Fact]
     public async Task An_event_the_script_does_not_know_is_silent()
     {
@@ -616,6 +631,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         File.WriteAllText(Path.Combine(_workspace, ".mcp.json"), JsonSerializer.Serialize(new { mcpServers = servers }));
     }
 
+    [Slow]
     [Theory]
     [InlineData("UserPromptSubmit")]
     [InlineData("PostToolBatch")]
@@ -645,6 +661,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.Contains("1 uncollected message", Run("UserPromptSubmit"), StringComparison.Ordinal);
     }
 
+    [Slow]
     [Fact]
     public async Task A_repository_answering_in_two_projects_hears_from_the_one_that_answers()
     {
@@ -659,6 +676,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.Contains("1 uncollected message", Run("UserPromptSubmit"), StringComparison.Ordinal);
     }
 
+    [Slow]
     [Fact]
     public async Task An_entry_that_connects_by_address_is_asked_on_a_machine_naming_several_projects()
     {
@@ -674,6 +692,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
     /// <summary>The machine name the hook's own environment carries in a test that sets one, or null.</summary>
     private string? _machine;
 
+    [Slow]
     [Fact]
     public async Task A_launch_configuration_naming_a_role_is_asked_about_that_role_on_this_machine()
     {
@@ -692,6 +711,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.Contains("1 uncollected message", Run("UserPromptSubmit"), StringComparison.Ordinal);
     }
 
+    [Slow]
     [Fact]
     public async Task A_machine_the_entry_names_completes_the_role_rather_than_the_hosts_own()
     {
@@ -710,6 +730,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.Contains("1 uncollected message", Run("UserPromptSubmit"), StringComparison.Ordinal);
     }
 
+    [Slow]
     [Fact]
     public async Task A_project_whose_broker_never_answers_does_not_silence_the_others()
     {
@@ -754,6 +775,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         }
     }
 
+    [Slow]
     [Fact]
     public async Task A_repository_that_has_no_parley_configuration_is_silent()
     {

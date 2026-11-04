@@ -12,6 +12,7 @@ namespace Parley.Terminal.Tests;
 /// characters pushed the proposer and every item off the dialog while Confirm stayed on it.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ALongProposalTitleHidesNothingTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

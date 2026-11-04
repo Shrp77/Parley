@@ -16,6 +16,7 @@ namespace Parley.Server.Tests;
 /// such a run is read with, so it is held to saying what it claims.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class BrokerDiagnosticsTests
 {
     private static readonly System.Text.RegularExpressions.Regex Beat = new(@" heartbeat \d+: ");

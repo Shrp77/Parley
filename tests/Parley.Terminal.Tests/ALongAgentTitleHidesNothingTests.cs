@@ -24,6 +24,7 @@ namespace Parley.Terminal.Tests;
 /// blank lines hid words Accept records.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ALongAgentTitleHidesNothingTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

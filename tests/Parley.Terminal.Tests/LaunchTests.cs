@@ -14,6 +14,7 @@ namespace Parley.Terminal.Tests;
 /// manifest or a broker.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class LaunchTests
 {
     [Theory]

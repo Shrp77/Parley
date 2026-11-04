@@ -23,6 +23,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class RoomTests
 {
     private static readonly AgentName Billing = AgentName.Create("billing@test");

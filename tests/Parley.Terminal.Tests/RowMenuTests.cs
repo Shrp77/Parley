@@ -19,6 +19,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class RowMenuTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

@@ -23,6 +23,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class MessagesAreShownTests
 {
     [Fact]

@@ -23,6 +23,7 @@ namespace Parley.Cli.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ProjectDestroyTests : IDisposable
 {
     private readonly string _directory =

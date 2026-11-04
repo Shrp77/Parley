@@ -164,11 +164,12 @@ The command line keeps `serve`, `up`, `autostart`,
 ```
 dotnet build
 pwsh scripts/test.ps1                 # unit tests, seconds
+pwsh scripts/test.ps1 -Category Smoke # all but [Slow], under 5 minutes
 pwsh scripts/test.ps1 -Category All  # everything, ~25 minutes
 ```
 
-Every test class is `[Unit]` or `[Integration]` (`tests/TestCategories.cs`). Pushes run the unit
-tests; the `nightly` workflow runs everything, and on a pull request before it merges. Every run is
+Every test class is `[Unit]` or `[Integration]` (`tests/TestCategories.cs`), and `[Slow]` leaves an integration test out of the
+smoke run. Pushes run the unit tests; a pull request must pass the `smoke` workflow; the `nightly` workflow runs everything against `main`. Every run is
 recorded in the git-ignored `.test-metrics/`.
 
 Tests run on Microsoft.Testing.Platform, selected in `global.json` under `"test"` beside
@@ -237,7 +238,7 @@ once the parent's own floor catches up (`dotnet nuget why`).
 ## Review gate
 
 A pull request merges after three clean runs of each of three lenses (correctness and concurrency, security and data
-integrity, API surface and maintainability) on the same shipped code, with the full test run (the `nightly` workflow, which the `full-tests` label starts on a pull request) green on the commit that merges; a commit
+integrity, API surface and maintainability) on the same shipped code, with the smoke run (the `smoke` workflow) green on the commit that merges; a commit
 that changes only tests, CI, docs or plugin prose keeps the counts. The rules live in
 [`review/`](review/README.md), one file for how the gate runs and one per lens, each with what counts as medium, how to
 probe, and what the owner has settled. Read the gate's file and the lens's file before a pass; a lens file, not this

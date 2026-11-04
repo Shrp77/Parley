@@ -26,6 +26,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class DoorsAreReadableTests
 {
     /// <summary>What a hostile value tries to do to the screen.</summary>

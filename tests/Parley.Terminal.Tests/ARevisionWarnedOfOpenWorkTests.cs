@@ -19,6 +19,7 @@ namespace Parley.Terminal.Tests;
 /// did not catch it. Going ahead now reads the roadmap again (as the web does) and changes nothing if more is open.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ARevisionWarnedOfOpenWorkTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

@@ -32,6 +32,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class WaitingOnScreenTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

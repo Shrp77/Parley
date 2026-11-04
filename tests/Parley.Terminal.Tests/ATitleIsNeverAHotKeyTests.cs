@@ -19,6 +19,7 @@ namespace Parley.Terminal.Tests;
 /// the terminal, in about one draw in twenty-five.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ATitleIsNeverAHotKeyTests
 {
     private static ConversationExport WithItem(string title) =>

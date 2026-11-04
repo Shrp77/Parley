@@ -25,6 +25,7 @@ namespace Parley.Server.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class WakeCoalescingTests
 {
     private static readonly TimeSpan Settle = TimeSpan.FromMilliseconds(250);

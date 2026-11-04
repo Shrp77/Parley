@@ -15,6 +15,7 @@ namespace Parley.Cli.Tests;
 /// <see cref="ServeCommand.Rereader"/>, the function the program itself uses.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class AHalfEditedProjectKeepsServingTests : IDisposable
 {
     private readonly string _root =

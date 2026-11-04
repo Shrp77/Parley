@@ -14,6 +14,7 @@ namespace Parley.Web.Tests;
 /// and clicked purge has to have been told.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ActingTests : IClassFixture<WebApplicationFactory<Program>>
 {
     private readonly WebApplicationFactory<Program> _console;

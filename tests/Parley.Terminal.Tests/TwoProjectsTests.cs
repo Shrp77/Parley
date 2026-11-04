@@ -28,6 +28,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class TwoProjectsTests : IAsyncDisposable
 {
     private readonly string _root =

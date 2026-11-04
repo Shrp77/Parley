@@ -19,6 +19,7 @@ namespace Parley.Terminal.Tests;
 /// again first (<c>Revising.StillCoveredAsync</c>). The going-ahead, stale, leave and unreadable cases held.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class AnEditWarnsOfWorkStartedWhileTypingTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

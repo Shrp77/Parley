@@ -24,6 +24,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class UnreachableBrokerSeatsNobodyTests
 {
     /// <summary>A loopback port with nothing listening, so the dial is refused rather than slow.</summary>
