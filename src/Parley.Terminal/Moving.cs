@@ -88,7 +88,7 @@ internal static class Moving
             .Select(e => (e.Id, Row: new Tickable(Label(e, []), string.Empty, e.Id == under)))
             .ToList();
 
-        var ticking = new TickDialog(Title, Picking, [.. rows.Select(r => r.Row)]);
+        var ticking = new TickDialog(Title, Picking, [.. rows.Select(r => r.Row)], showsWholeRow: true);
         var opened = Prompting.Open(app, ticking);
 
         ticking.Done += (_, chosen) =>
@@ -137,7 +137,7 @@ internal static class Moving
             .Select(e => new Tickable(Label(e, ticked), string.Empty, Ticked: true))
             .ToList();
 
-        var reviewing = new TickDialog(ReviewTitle, Describe(preview, source, ticked), rows);
+        var reviewing = new TickDialog(ReviewTitle, Describe(preview, source, ticked), rows, showsWholeRow: true);
         var opened = Prompting.Open(app, reviewing);
 
         reviewing.Done += (_, chosen) =>
@@ -219,7 +219,9 @@ internal static class Moving
                 "What is the new conversation called?\n\n" + ConversationName.Rule,
                 problem: said => string.IsNullOrWhiteSpace(said) || ConversationName.Correct(said.Trim()) != said.Trim()
                     ? ConversationName.Rule
-                    : null);
+                    : null,
+                correct: ConversationName.Correct,
+                corrected: ConversationName.WasCorrected);
 
             var asked = Prompting.Open(app, naming);
 
@@ -312,11 +314,20 @@ internal static class Moving
     }
 
     /// <remarks>
-    /// Whether it is open and whether it was added come before the words. A note in a column of its own would start past the
-    /// widest row's words, off the side of the dialog, where no key reaches it.
+    /// What a person decides on comes first, then the words that tell two rows apart, and who and how many last. A row can be
+    /// wider than the dialog and no key scrolls sideways, so the dialog also draws the row under the cursor whole.
     /// </remarks>
-    private static string Label(MovePreviewExchange exchange, IReadOnlyCollection<long> ticked) =>
-        Safe.Text(string.Create(
+    private static string Label(MovePreviewExchange exchange, IReadOnlyCollection<long> ticked)
+    {
+        IEnumerable<string> marks =
+        [
+            .. exchange.Open ? ["still open"] : Array.Empty<string>(),
+            .. AddedBecause(exchange, ticked) is null ? Array.Empty<string>() : ["added"],
+        ];
+        var marked = string.Join(", ", marks);
+
+        return Safe.Text(string.Create(
             CultureInfo.InvariantCulture,
-            $"{exchange.Id}: {exchange.Requester.Value} to {exchange.Receiver.Value}, {exchange.Messages} message{(exchange.Messages == 1 ? string.Empty : "s")}{(exchange.Open ? ", still open" : string.Empty)}{(AddedBecause(exchange, ticked) is null ? string.Empty : ", added")}: {exchange.FirstWords}"));
+            $"{exchange.Id}: {(marked.Length == 0 ? string.Empty : marked + ": ")}{exchange.FirstWords} ({exchange.Requester.Value} to {exchange.Receiver.Value}, {exchange.Messages} message{(exchange.Messages == 1 ? string.Empty : "s")})"));
+    }
 }

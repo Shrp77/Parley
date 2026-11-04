@@ -372,6 +372,32 @@ public sealed class SpinOffAndMovePagesTests
     }
 
     [Fact]
+    public async Task Both_name_fields_correct_as_they_are_typed_as_the_rule_under_them_says()
+    {
+        using var console = Console();
+        using var client = console.CreateClient();
+
+        var correct = $"data-correct=\"{WebUtility.HtmlEncode(Parley.Client.ConversationName.Allowed)}\"";
+
+        Assert.Contains(correct, await client.GetStringAsync(At(Move("&x=1")), Ct), StringComparison.Ordinal);
+        Assert.Contains(correct, await client.GetStringAsync(At(Spin()), Ct), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_lone_surrogate_in_a_message_does_not_stop_the_page()
+    {
+        using var console = new TranscriptConsole();
+
+        console.Broker.Stored(1, Orders, Billing, Wire.MessageType.Request, """{"ask":"hello \ud800 there"}""");
+
+        using var client = console.CreateClient();
+
+        using var response = await client.GetAsync(At($"/Conversations/Detail?project={Project}&id=shared"), Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
     public async Task The_panel_says_when_a_conversation_was_made_by_a_move_rather_than_spun_off()
     {
         using var console = Console();

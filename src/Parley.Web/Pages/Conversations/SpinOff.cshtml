@@ -30,7 +30,7 @@
     <p>
         <label for="name">What it is called</label><br />
         <input id="name" name="Name" type="text" required autocomplete="off" spellcheck="false" maxlength="@Parley.Client.ConversationName.Longest"
-               pattern="@Parley.Client.ConversationName.Pattern" title="@Parley.Client.ConversationName.Rule" value="@Model.Name" />
+               pattern="@Parley.Client.ConversationName.Pattern" data-correct="@Parley.Client.ConversationName.Allowed" title="@Parley.Client.ConversationName.Rule" value="@Model.Name" />
         <br /><small>@Parley.Client.ConversationName.Rule</small>
     </p>
 

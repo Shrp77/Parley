@@ -91,7 +91,7 @@ else if (Model.Preview is { Refused: null } preview)
                 A new conversation, called
             </label>
             <input name="NewName" type="text" autocomplete="off" spellcheck="false" maxlength="@Parley.Client.ConversationName.Longest"
-                   pattern="@Parley.Client.ConversationName.Pattern" title="@Parley.Client.ConversationName.Rule" value="@Model.NewName" aria-label="The new conversation's name" />
+                   pattern="@Parley.Client.ConversationName.Pattern" data-correct="@Parley.Client.ConversationName.Allowed" title="@Parley.Client.ConversationName.Rule" value="@Model.NewName" aria-label="The new conversation's name" />
             <small>@Parley.Client.ConversationName.Rule</small>
             @if (Model.Destinations.Count > 0)
             {

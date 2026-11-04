@@ -61,6 +61,9 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
     /// <summary>The space between two columns.</summary>
     private const string Gutter = "   ";
 
+    /// <summary>How many rows the row under the cursor gets when it is drawn whole.</summary>
+    private const int WholeRows = 4;
+
     /// <summary>What the tick column is as wide as, so the heading lines up with the names under it.</summary>
     private const string Box = "[ ] ";
 
@@ -71,6 +74,8 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
     private readonly List<Tickable> _items;
     private readonly string _described;
     private readonly Plain _count;
+    private readonly Plain _whole;
+    private readonly bool _showsWhole;
     private ObservableCollection<string> _drawn = [];
     private int _page;
 
@@ -78,8 +83,12 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
     /// <param name="title">What the dialog is called.</param>
     /// <param name="description">What is being decided, said before anything is offered.</param>
     /// <param name="items">The rows.</param>
+    /// <param name="showsWholeRow">
+    /// Whether the row under the cursor is also drawn whole, wrapped, under the list. For rows longer than a dialog is wide,
+    /// because the arrows that would scroll sideways turn the page here.
+    /// </param>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
-    internal TickDialog(string title, string description, IReadOnlyList<Tickable> items)
+    internal TickDialog(string title, string description, IReadOnlyList<Tickable> items, bool showsWholeRow = false)
     {
         HotKeySpecifier = Plain.NoHotKey;
         ArgumentNullException.ThrowIfNull(items);
@@ -90,6 +99,10 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
 
         _items = [.. items];
         _described = description;
+        _showsWhole = showsWholeRow;
+
+        var wholeRows = showsWholeRow ? WholeRows : 0;
+
         // A column is at least as wide as its heading, or a short column would push the next heading
         // out of line with what is under it. A column nobody has anything in is left out entirely.
         var notes = _items.Max(item => (int?)item.Note.Length) ?? 0;
@@ -109,7 +122,7 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
         // dialog rather than on the shell's status line, because a modal takes the screen and the
         // line underneath it is describing a surface the person cannot reach.
         Height = Dim.Func(
-            view => Math.Min(wants + headed + Math.Min(_items.Count, PageSize) + Edges, Room(view)),
+            view => Math.Min(wants + headed + Math.Min(_items.Count, PageSize) + wholeRows + Edges, Room(view)),
             this);
 
         var said = new Plain
@@ -142,10 +155,22 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
 
             // Whatever is left, never one row per item: the viewport has to be true or the toolkit
             // will not scroll, and a terminal shorter than a page still has to work.
-            Height = Dim.Fill(2),
+            Height = Dim.Fill(2 + wholeRows),
         };
 
         KeyRouting.TableFirst(_rows, this);
+
+        _whole = new Plain
+        {
+            X = 1,
+            Y = Pos.AnchorEnd(2 + wholeRows),
+            Width = Dim.Fill(2),
+            Height = wholeRows,
+            Visible = showsWholeRow,
+        };
+
+        _whole.TextFormatter.WordWrap = true;
+        _rows.ValueChanged += (_, _) => ShowWholeRow();
 
         _count = new Plain
         {
@@ -164,7 +189,7 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
 
         ShowPage(0, 0);
 
-        Add(said, heading, _rows, _count, keys);
+        Add(said, heading, _rows, _whole, _count, keys);
     }
 
     /// <summary>Raised when the person has chosen, or declined to.</summary>
@@ -173,6 +198,9 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
     /// has not said "enrol none of them", they have said "not now".
     /// </remarks>
     internal event EventHandler<IReadOnlyList<Tickable>?>? Done;
+
+    /// <summary>What the line under the list says of the row under the cursor, or empty.</summary>
+    internal string WholeRow => _whole.Text;
 
     /// <summary>What is being decided, as the dialog states it.</summary>
     internal string Described => _described;
@@ -389,5 +417,14 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
         _rows.SetSource(_drawn);
         _rows.SelectedItem = _drawn.Count > 0 ? Math.Clamp(row, 0, _drawn.Count - 1) : null;
         _count.Text = Counted;
+        ShowWholeRow();
+    }
+
+    /// <summary>Draws the row under the cursor whole, when this dialog does that.</summary>
+    private void ShowWholeRow()
+    {
+        var at = (_page * PageSize) + At;
+
+        _whole.Text = _showsWhole && at < _items.Count ? _items[at].Label : string.Empty;
     }
 }

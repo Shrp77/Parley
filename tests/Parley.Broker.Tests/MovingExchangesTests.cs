@@ -1016,6 +1016,51 @@ public sealed class MovingExchangesTests : IDisposable
         return (persons, question);
     }
 
+    [Theory]
+    [InlineData("owns-x", "ownership")]
+    [InlineData("rm1-1", "roadmap")]
+    public async Task Storage_refuses_moving_out_of_what_it_refuses_moving_into(string kept, string says)
+    {
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+
+        // Put there past the trigger, which is what is being asked about: nothing else can put it there.
+        var trigger = _connection.ExecuteScalar<string>("SELECT sql FROM sqlite_master WHERE name = 'tr_a_moved_exchange_may_go_there';")!;
+
+        _connection.Execute(
+            """
+            DROP TRIGGER tr_a_moved_exchange_may_go_there;
+            PRAGMA foreign_keys = OFF;
+            INSERT INTO conversations (id, state, opened_utc) VALUES (@kept, 'OPEN', '2026-11-03T09:00:00Z');
+            UPDATE exchanges SET conversation_id = @kept WHERE id = @going;
+            UPDATE messages SET conversation_id = @kept WHERE exchange_id = @going;
+            PRAGMA foreign_keys = ON;
+            """,
+            new { kept, going });
+
+        if (kept.StartsWith("rm", StringComparison.Ordinal))
+        {
+            _connection.Execute(
+                """
+                PRAGMA foreign_keys = OFF;
+                INSERT INTO roadmap_item_conversations (item_id, conversation_id) VALUES (1, @kept);
+                PRAGMA foreign_keys = ON;
+                """,
+                new { kept });
+        }
+
+        _connection.Execute(trigger);
+
+        var failure = Assert.Throws<SqliteException>(() =>
+        {
+            using var transaction = _connection.BeginTransaction();
+
+            _connection.Execute("PRAGMA defer_foreign_keys = ON;", transaction: transaction);
+            _connection.Execute("UPDATE exchanges SET conversation_id = 'pricing' WHERE id = @going;", new { going }, transaction);
+        });
+
+        Assert.Contains(says, failure.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task An_archived_conversation_with_everything_moved_out_is_counted_as_it_is_listed()
     {

@@ -409,6 +409,7 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
         var reviewing = (TickDialog)driving.Find(Moving.ReviewTitle);
 
         Assert.Contains(Parley.Client.Rendering.MovePicking.SentTogether, reviewing.Described, StringComparison.Ordinal);
+        driving.Resize(80, 24);
         Assert.Contains(", added:", driving.Text(), StringComparison.Ordinal);
     }
 
@@ -836,14 +837,12 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task Whether_a_row_is_open_is_drawn_however_long_its_first_words_are()
+    public async Task At_80_columns_a_row_shows_what_is_open_and_its_words_and_the_row_under_the_cursor_is_whole()
     {
         var (shell, driving, _) = await SeatedAsync();
         using var held = shell;
 
-        var longest = string.Join(' ', Enumerable.Repeat("words", 40));
-
-        _ = await AskPersonAsync(shell, longest);
+        _ = await AskPersonAsync(shell, string.Join(' ', Enumerable.Repeat("words", 40)));
 
         await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
         await shell.Settled;
@@ -852,15 +851,191 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
 
         var ticking = (TickDialog)driving.Find(Moving.Title);
 
-        Assert.Equal(2, ticking.Rows.Source!.Count);
-        Assert.Equal(2, Regex.Count(driving.Text(), "still open"));
+        driving.Resize(80, 24);
+
+        var picking = driving.Text();
+
+        Assert.Equal(2, Regex.Count(picking, @"\[.\] \d+: still open: "));
+        Assert.Contains("the disk is full", picking, StringComparison.Ordinal);
+        Assert.Contains("words words", picking, StringComparison.Ordinal);
+
+        // The row under the cursor, whole: who it is between is past the edge of the list at this width.
+        Assert.Contains("human-user@test, 1 message)", picking, StringComparison.Ordinal);
 
         ticking.NewKeyDownEvent(Key.A.WithAlt);
         await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         _ = (TickDialog)driving.Find(Moving.ReviewTitle);
 
-        Assert.Equal(2, Regex.Count(driving.Text(), "still open"));
+        driving.Resize(80, 24);
+        Assert.Equal(2, Regex.Count(driving.Text(), @"\[.\] \d+: still open: "));
+    }
+
+    [Fact]
+    public async Task The_row_under_the_cursor_is_drawn_whole_as_the_cursor_moves()
+    {
+        var (shell, driving, _) = await SeatedAsync();
+        using var held = shell;
+
+        _ = await AskPersonAsync(shell, "another question");
+
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+        await shell.MoveEntries();
+        await shell.Settled;
+
+        var ticking = (TickDialog)driving.Find(Moving.Title);
+
+        ticking.Rows.SelectedItem = 0;
+        Assert.Equal(ticking.Items[0].Label, ticking.WholeRow);
+
+        ticking.Rows.SelectedItem = 1;
+        Assert.Equal(ticking.Items[1].Label, ticking.WholeRow);
+    }
+
+    [Fact]
+    public async Task A_moves_name_is_corrected_as_it_is_typed_as_the_rule_under_it_says()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        Assert.True(shell.Transcript.Reach(message));
+
+        await shell.MoveEntries();
+        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        driving.Row(((ChoiceDialog)driving.Find(Moving.WhereTitle)).Choices, Moving.New);
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        var naming = (TextDialog)driving.Find(Moving.NameTitle);
+
+        foreach (var key in "bad name")
+        {
+            naming.NewKeyDownEvent(new Key(key));
+        }
+
+        Assert.Equal("bad-name", naming.Typed);
+
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        Assert.Contains("to bad-name", shell.Said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_source_a_move_is_refused_from_says_why_on_the_terminal()
+    {
+        var (shell, _, message) = await SeatedAsync();
+        using var held = shell;
+
+        System.Data.Common.DbConnection raw = _connection;
+
+        using (var item = raw.CreateCommand())
+        {
+            item.CommandText =
+                """
+                PRAGMA foreign_keys = OFF;
+                INSERT INTO roadmap_item_conversations (item_id, conversation_id) VALUES (1, 'room');
+                PRAGMA foreign_keys = ON;
+                """;
+            item.ExecuteNonQuery();
+        }
+
+        Assert.True(shell.Transcript.Reach(message));
+
+        await shell.MoveEntries();
+        await shell.Settled;
+
+        Assert.Contains("roadmap", shell.Said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task What_moved_away_while_it_was_being_picked_says_so_on_the_terminal()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        var exchange = (await Client.ExportAsync(Conversation, Ct)).Messages.Single(m => m.Id == message).ExchangeId;
+
+        Assert.True(shell.Transcript.Reach(message));
+
+        await shell.MoveEntries();
+        await shell.Settled;
+
+        Assert.True((await Client.MoveExchangesAsync(Conversation, "elsewhere", true, [exchange], Ct)).Moved);
+
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        Assert.Contains("may have moved already", shell.Said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_row_added_because_it_went_to_a_role_gives_the_brokers_reason_on_the_terminal()
+    {
+        var (shell, driving, _) = await SeatedAsync();
+        using var held = shell;
+
+        var seat = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await seat.StartAsync(shell.Held!.Seat.Name, T0, Ct);
+
+        var one = await seat.RequestAsync(shell.Held!.Seat.Name, Orders, "model-a", """{"ask":"a"}""", T0, Conversation, Ct);
+        var two = await seat.RequestAsync(shell.Held!.Seat.Name, Billing, "model-a", """{"ask":"b"}""", T0, Conversation, Ct);
+
+        System.Data.Common.DbConnection raw = _connection;
+
+        using (var group = raw.CreateCommand())
+        {
+            group.CommandText = $"UPDATE exchanges SET request_group = 'g1' WHERE id IN ({one.Exchange!.Id}, {two.Exchange!.Id});";
+            group.ExecuteNonQuery();
+        }
+
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+
+        Assert.True(shell.Transcript.Reach(one.Request!.Id));
+
+        await shell.MoveEntries();
+        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        var reviewing = (TickDialog)driving.Find(Moving.ReviewTitle);
+
+        Assert.Contains("asked of a role", reviewing.Described, StringComparison.Ordinal);
+        Assert.DoesNotContain(Parley.Client.Rendering.MovePicking.SentTogether, reviewing.Described, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_door_counts_messages_and_mentions_open_work_only_when_there_is_some()
+    {
+        var (shell, driving, _) = await SeatedAsync();
+        using var held = shell;
+
+        var seat = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+        var agent = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await seat.StartAsync(shell.Held!.Seat.Name, T0, Ct);
+        await agent.StartAsync(Billing, T0, Ct);
+
+        var asked = await seat.RequestAsync(shell.Held!.Seat.Name, Billing, "model-a", """{"ask":"finished one"}""", T0, Conversation, Ct);
+
+        _ = await agent.ResultAsync(
+            asked.Exchange!.Id, Billing, "model-a", $$"""{"outcomes":[{"id":"{{PayloadShape.WholeRequest}}","outcome":"done","text":"done"}]}""", T0.AddMinutes(1), Ct);
+
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+
+        Assert.True(shell.Transcript.Reach(asked.Request!.Id));
+
+        await shell.MoveEntries();
+        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        var reviewing = (TickDialog)driving.Find(Moving.ReviewTitle);
+
+        Assert.Contains("1 exchange and 2 messages", reviewing.Described, StringComparison.Ordinal);
+        Assert.DoesNotContain("Open work", reviewing.Described, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -882,6 +1057,19 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
 
         Assert.Equal("disk-cleanup", shell.Transcript.Open);
         Assert.Equal(string.Empty, shell.Line.Written.Trim());
+
+        // Nobody ticked: words sent from here reach no agent and start nothing.
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Line));
+
+        foreach (var key in "mine")
+        {
+            shell.NewKeyDownEvent(new Key(key));
+        }
+
+        shell.NewKeyDownEvent(Key.Enter);
+        await shell.Settled;
+
+        Assert.Empty((await Client.ExportAsync("disk-cleanup", Ct)).Messages);
     }
 
     [Fact]
@@ -1285,8 +1473,22 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
 
         await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
-        Assert.Contains("Nothing moved", shell.Said, StringComparison.Ordinal);
-        _ = (ChoiceDialog)driving.Find(Moving.WhereTitle);
+        Assert.Contains("Nothing moved: ", shell.Said, StringComparison.Ordinal);
+        Assert.Contains("already", shell.Said, StringComparison.Ordinal);
+
+        driving.Row(((ChoiceDialog)driving.Find(Moving.WhereTitle)).Choices, Moving.New);
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        var again = (TextDialog)driving.Find(Moving.NameTitle);
+
+        foreach (var key in "second-try")
+        {
+            again.NewKeyDownEvent(new Key(key));
+        }
+
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        Assert.Single((await Client.ExportAsync("second-try", Ct)).Messages, m => m.Id == message);
     }
 
     [Fact]
