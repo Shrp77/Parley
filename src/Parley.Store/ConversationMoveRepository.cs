@@ -610,7 +610,7 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
     {
         if (!ValidName().IsMatch(name))
         {
-            return "A conversation's name is letters, digits, '.', '_' and '-', up to 64 characters.";
+            return "A conversation's name is letters, digits, '.', '_' and '-', up to 64 characters, and no '..'.";
         }
 
         if (IsOwnership(name))

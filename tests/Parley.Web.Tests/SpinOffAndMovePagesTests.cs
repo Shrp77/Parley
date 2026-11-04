@@ -687,6 +687,33 @@ public sealed class SpinOffAndMovePagesTests
     }
 
     [Fact]
+    public async Task Choosing_from_the_list_with_no_name_means_the_list_though_the_radio_did_not_follow()
+    {
+        using var console = Console();
+        using var client = NoRedirects(console);
+
+        var (response, _) = await PostAsync(client, Move("&x=1"), ("Exchanges", "1"), ("Where", "new"), ("Existing", "other-work"), ("NewName", " "));
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+
+        var asked = Assert.Single(console.Broker.MovesAsked);
+
+        Assert.Equal(("other-work", false), (asked.Destination, asked.NewConversation));
+    }
+
+    [Fact]
+    public async Task A_new_name_and_a_chosen_conversation_together_move_nothing_and_say_why()
+    {
+        using var console = Console();
+        using var client = console.CreateClient();
+
+        var (_, body) = await PostAsync(client, Move("&x=1"), ("Exchanges", "1"), ("Where", "new"), ("Existing", "other-work"), ("NewName", "typed-earlier"));
+
+        Assert.Contains("both given", body, StringComparison.Ordinal);
+        Assert.Empty(console.Broker.MovesAsked);
+    }
+
+    [Fact]
     public async Task An_existing_conversation_not_chosen_moves_nothing()
     {
         using var console = Console();

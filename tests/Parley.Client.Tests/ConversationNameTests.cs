@@ -86,6 +86,13 @@ public sealed class ConversationNameTests
     }
 
     [Fact]
+    public void A_browser_can_compile_the_pattern()
+    {
+        // Browsers compile `pattern` in the mode that refuses a bare hyphen in a class, and then ignore the attribute silently.
+        Assert.DoesNotMatch(@"[^\\]-\]", ConversationName.Pattern);
+    }
+
+    [Fact]
     public void The_rule_the_console_enforces_is_the_rule_this_applies()
     {
         // `Pattern` is what a browser with no scripts holds a field to and `Allowed` is what the

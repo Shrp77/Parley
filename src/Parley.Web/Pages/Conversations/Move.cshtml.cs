@@ -99,6 +99,22 @@ public sealed class MoveModel(BrokerDirectory directory, Parley.Web.Notification
 
         var token = HttpContext.RequestAborted;
         var isNew = !string.Equals(Where, "existing", StringComparison.Ordinal);
+
+        // The radio doesn't follow the list by itself, so a person who only chose from the list meant the list, and one who
+        // both named and chose hasn't said which. Nothing moves on a guess.
+        if (isNew && !string.IsNullOrWhiteSpace(Existing))
+        {
+            if (!string.IsNullOrWhiteSpace(NewName))
+            {
+                Problem = "A new name and an existing conversation were both given, so nothing moved. Clear the one you don't mean.";
+                await DrawAsync(project, Exchanges).ConfigureAwait(false);
+
+                return Page();
+            }
+
+            isNew = false;
+        }
+
         var destination = (isNew ? NewName : Existing)?.Trim();
 
         if (string.IsNullOrEmpty(destination))
