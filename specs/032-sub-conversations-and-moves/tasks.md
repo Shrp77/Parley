@@ -38,4 +38,4 @@
 
 - [x] T018 CLI refuses `spin-off` and `move`, naming the terminal. `docs/operating.md`, plugin prose, `parley-operator` skill, MCP tool description.
 - [x] T019 `CLAUDE.md` state: version, protocol, schema, feature list, migration note for 027 (now 007), the move and spin-off behaviour.
-- [ ] T020 Full run, drive the pages in a browser, hygiene check, PR, review gate.
+- [x] T020 Full run, drive the pages in a browser, hygiene check, PR, review gate.
