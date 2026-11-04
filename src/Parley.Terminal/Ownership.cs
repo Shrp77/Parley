@@ -695,10 +695,19 @@ internal static class Ownership
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done)
     {
-        project = await BrokerProject.ForWritingAsync(
-                project,
-                async () => (await client.RegistryAsync(cancellationToken).ConfigureAwait(false)).Select(row => row.Name.Value))
-            .ConfigureAwait(false);
+        try
+        {
+            project = await BrokerProject.ForWritingAsync(
+                    project,
+                    async () => (await client.RegistryAsync(cancellationToken).ConfigureAwait(false)).Select(row => row.Name.Value))
+                .ConfigureAwait(false);
+        }
+        catch (Grpc.Core.RpcException failure)
+        {
+            await done($"Not recorded: the broker did not answer ({failure.StatusCode}).").ConfigureAwait(false);
+
+            return;
+        }
 
         var wrong = await OwnershipLine
             .WriteAsync(workspace, project, agent, acceptance.Statement, cancellationToken)

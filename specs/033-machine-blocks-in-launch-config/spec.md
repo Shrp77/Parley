@@ -163,7 +163,7 @@ The server only runs agents. The person installs Parley there with no broker, te
 - **FR-027**: Installing such an entry MUST say plainly when it will stop at logout or need a sign-in to start, and give the exact remedy. It MUST NOT change that system setting itself.
 - **FR-028**: An install, an `--only` of the `parley` tool and an uninstall MUST stop node entries' processes before replacing or removing the tools. An install MUST start them again, and an uninstall MUST remove the entries.
 - **FR-029**: A node MUST state its protocol version when it joins, and the broker MUST refuse a different one, naming both, as it does for an adapter.
-- **FR-031**: A checkout reached by address MUST be in one project on that machine. Enrolling into another MUST be refused while the first is by address, in either order, because a node is one process per broker and could not wake an agent another node started.
+- **FR-031**: A checkout reached by address MUST be in one project on that machine. Enrolling into another MUST be refused when either of the two is by address, because a node is one process per broker and could not wake an agent another node started.
 - **FR-030**: Agent-only mode MUST NOT be combinable with `--only` or `--reset`, and MUST say why when asked.
 
 **Writing**
@@ -211,6 +211,6 @@ The server only runs agents. The person installs Parley there with no broker, te
 - An agent-only machine needs the .NET 10 SDK, Git and a checkout of Parley to build from (Parley is not on nuget.org), and the agent's client, signed in. The Claude Code plugin is needed only for the waiting hook. It holds no broker, project or store.
 - Autostart stays user-level, because the node starts agents that must be signed in as the person. A system service is out of scope.
 - A committed file now shows machine names and a tunnel port to anybody who can read the repository. It shows fewer folder paths than today, because new entries hold none. The docs must say this, and a repository that should not show them keeps its file gitignored.
-- A tunnel-only machine was tried on 2026-11-04 (research R1). The adapter and node connect by address, and enrolment does not. A node actually starting an agent over an address has not been run yet.
+- A tunnel-only machine was tried on 2026-11-04 (research R1). Tests now hold a node starting a stand-in command over an address. A real agent over an address has not been run.
 - Feature 027 (session-owned delivery, uncommitted) is separate and untouched. No schema change is expected, so this feature should not take migration 007.
 - Out of scope: writing a launch configuration for another machine, provisioning a machine over SSH, a recorded answers/executes label, and blocking write tools on an instance.

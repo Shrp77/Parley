@@ -14,7 +14,7 @@ A top-level member, `parleyMachines`, beside `mcpServers` and `parleyAgentId`.
 
 **Validation.** A section breaking any rule makes the file *could not be read*, for every reader and every machine. That includes a block for another machine: every reader must reach the same answer (FR-005), and a typing mistake must not wait for the day that machine restarts.
 
-Values follow the rules for the same setting elsewhere: `OwnershipStatement` for the line, `BrokerEndpoint` for the address. The folder the file was found in still goes through `LocalStorage` and `OffMachineLinks`.
+Values follow the rules for the same setting elsewhere: `OwnershipStatement` for the line, `BrokerEndpoint` for the address. The folder the file was found in goes through `OffMachineLinks`, and the adapter holds it to `LocalStorage`.
 
 ## Effective settings
 
@@ -22,7 +22,7 @@ Values follow the rules for the same setting elsewhere: `OwnershipStatement` for
 
 ```
 input:  the file, machine name, launch key, the launch environment
-output: Owns, Broker, Workspace, and whether the broker came from a block
+output: Owns, Broker, and whether the broker came from a block
 ```
 
 For `Owns` and `Broker`, in order:
@@ -44,7 +44,7 @@ Every write goes through the existing held-file route, so its locking and byte-o
 | Enrol, new entry | Shared: `command`, `PARLEY_AGENT`, `PARLEY_PROJECT`. Block: owns and the address, each if there is one, and created even if empty. Identifier if the file has none. No folder path. `node.json` still gets this machine's folder. |
 | Enrol, entry exists | This machine's block. The shared line and responder stay while the role does (FR-018); a folder and an address go. A block's address goes when none was given. **Refused** if the role differs from the entry's and another machine has a block for this key, because that would rename the other machine's agent. |
 | Accept, edit or remove a line | This machine's block, that key only. Removing a line takes the value out and keeps the block, because the machine is still enrolled. |
-| Withdraw | This machine's block for the key. If no other machine's block names the key, the entry goes as it does today. The identifier goes only with the last entry. A machine with no blocks left is removed, and so is a section with no machines left. |
+| Withdraw | This machine's block for the key, and a `withdrawn` note in this machine's `node.json` when another machine's block keeps the entry. If no other machine's block names the key, the entry goes as it does today. The identifier goes only with the last entry. A machine with no blocks left is removed, and so is a section with no machines left. |
 
 **Machine for a write:** `agent.Machine`, which `OwnershipLine.NotHere` has already checked is this machine.
 

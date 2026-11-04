@@ -88,6 +88,12 @@ public static class OwnershipLine
             return wrong;
         }
 
+        // A window's name is no project's, and looking it up would land on an unpinned entry. Callers ask the broker first.
+        if (string.Equals(project, ProjectManifest.WindowName, StringComparison.Ordinal))
+        {
+            return "which project this is could not be told. Nothing has been written.";
+        }
+
         // The workspace is what the agent's adapter reported on attach, so it is never looked up when it, its .mcp.json
         // or a link along either leads off this machine: Auto Accept would otherwise offer the person's sign-in to a
         // host with no click at all (review, lens 2 run 71).

@@ -513,7 +513,11 @@ protocol: a broker's registry holds `human-user@<project>` (§4.1.1), and they c
 
 **A checkout reached by address is in one project on that machine.** A node is one process per broker, and an agent it
 started is known only to that process, so another project would take it for one somebody opened by hand and never wake it.
-Enrolling into a second project is refused while the first is by address, in either order.
+Enrolling into another project is refused when either of the two is by address.
+
+**What a machine withdrew from is recorded on that machine,** in its catalogue, because the shared file cannot say: one machine's
+block looks the same whichever machine's act left it there. A node does not offer an entry its catalogue says it withdrew from,
+unless a block for it has been written since, which is what enrolling again does.
 
 **A window is not a project.** A surface given a broker by address, on a machine with no projects, shows it under the name
 `this-machine`, which no project can take. Nothing is enrolled through one. A line accepted or an agent withdrawn through one

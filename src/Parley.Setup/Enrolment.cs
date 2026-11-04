@@ -956,12 +956,20 @@ public static class Enrolment
         var written = new List<string>();
         var launchPath = LaunchPath(workspace);
 
+        // A window's name is no project's, and looking it up would land on an unpinned entry. Callers ask the broker first.
+        if (string.Equals(project, ProjectManifest.WindowName, StringComparison.Ordinal))
+        {
+            return new Outcome([$"{launchPath}: left alone, which project this is could not be told"], []);
+        }
+
         // **Which agent this repository is, and whether it is still one when this is done.** The catalogue
         // is keyed by identity and one entry serves every project the checkout answers in, so withdrawing
         // from one of two projects must leave it there: taking it would stop the other project being able
         // to start the repository, which nobody asked for. Both are filled in from the file below.
         var withdrawn = default(AgentIdentity);
         var stillAnAgent = false;
+        string? keptForAnother = null;
+        IReadOnlyList<(string Key, bool HasBlock)> remaining = [];
 
         // Catalogue before launch, the same order AddAsync takes them in. Two runs acquiring in
         // opposite orders is how each comes to hold the half the other is waiting for.
@@ -1135,6 +1143,8 @@ public static class Enrolment
                                     $"{launchPath}: this machine has no block for {Quoting.Flat(candidates[0].Key)}; "
                                     + $"the entry stays for {string.Join(", ", others)}");
                             }
+
+                            keptForAnother = candidates[0].Key;
                         }
                         else if (servers.Remove(candidates[0].Key))
                         {
@@ -1177,10 +1187,9 @@ public static class Enrolment
                         // others remain, the entry belongs to another agent and was left, the file was left
                         // alone for a reason — and all three must keep the catalogue line.
                         //
-                        // **On this machine.** The catalogue is this machine's, so an entry another machine still answers
-                        // through is no reason to keep this machine's line.
-                        stillAnAgent = LaunchEntries.Read(servers)
-                            .Any(entry => MachineBlocks.AnswersHere(root, MachineName.Current, entry.Key));
+                        // **On this machine**, which the catalogue below decides, since it records what this machine withdrew from.
+                        remaining = [.. LaunchEntries.Read(servers)
+                            .Select(entry => (entry.Key, MachineBlocks.Has(root, MachineName.Current, entry.Key)))];
                     }
                     else
                     {
@@ -1210,6 +1219,30 @@ public static class Enrolment
 
                 if (catalogue["agents"] is JsonObject agents)
                 {
+                    var line = withdrawn.Known ? agents[withdrawn.ToString()] as JsonObject : null;
+                    var left = (line?[NodeCatalogue.WithdrawnMember] as JsonArray)?
+                        .Select(item => item?.ToString())
+                        .ToList() ?? [];
+
+                    if (keptForAnother is not null && !left.Contains(keptForAnother))
+                    {
+                        left.Add(keptForAnother);
+                    }
+
+                    stillAnAgent = remaining.Any(entry => entry.HasBlock || !left.Contains(entry.Key));
+
+                    // The file stays for the other machine, so this machine's own record is what stops its node offering it.
+                    if (stillAnAgent && keptForAnother is not null && line is not null)
+                    {
+                        line[NodeCatalogue.WithdrawnMember] = new JsonArray([.. left.Select(key => (JsonNode?)key)]);
+
+                        await SaveHeldCatalogueAsync(catalogueHeld, catalogueFile, catalogue, cancellationToken)
+                            .ConfigureAwait(false);
+
+                        written.Add(catalogueFile);
+                        notes.Add($"{catalogueFile}: this machine's node stops offering {Quoting.Flat(keptForAnother)}");
+                    }
+
                     // Left where the repository still answers somewhere. One entry says this machine may
                     // start this checkout, and every project it answers in is started through that one
                     // entry — so removing it because one project let it go would take the others' ability

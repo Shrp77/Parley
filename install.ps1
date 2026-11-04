@@ -1103,6 +1103,11 @@ if ($replacingBroker) {
 if ($AgentOnly) {
     Write-Host ''
     Write-Host 'This machine runs agents and has no broker.' -ForegroundColor Green
+
+    if (Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue) {
+        Write-Warning 'An earlier install left a broker entry, which starts at logon. To take it out: parley autostart remove'
+    }
+
     Write-Host 'With a tunnel to the broker up:'
     Write-Host '  parley enroll <folder> --project <its name> --broker <its address>'
     Write-Host '  parley autostart install --project <its name> --broker <its address>'

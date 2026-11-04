@@ -339,7 +339,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
         if (record.Recorded)
         {
             _ = await OwnershipLine
-                .AfterRecordedAsync(known.Workspace, project.Name.Value, agent, acceptance.Statement, token)
+                .AfterRecordedAsync(known.Workspace, entry, agent, acceptance.Statement, token)
                 .ConfigureAwait(false);
         }
 

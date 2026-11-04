@@ -5,7 +5,7 @@
 
 ## Summary
 
-A repository's `.mcp.json` gains `parleyMachines`: what differs per machine, for each project entry. One method in `LaunchConfiguration` works out a machine's effective settings, and every reader uses it. Writers change only this machine's block. A machine with only a tunnel can enrol and run a node by naming the project and the address, once the seat in that broker's registry agrees. An agent-only install puts the tools on such a machine with no broker, and a node autostart entry keeps its agents startable across reboots and dropped tunnels. The approach and its evidence are in [research.md](research.md).
+A repository's `.mcp.json` gains `parleyMachines`: what differs per machine, for each project entry. One method in `LocatedLaunch` works out a machine's effective settings, and every reader uses it. Writers change only this machine's block. A machine with only a tunnel can enrol and run a node by naming the project and the address, once the seat in that broker's registry agrees. An agent-only install puts the tools on such a machine with no broker, and a node autostart entry keeps its agents startable across reboots and dropped tunnels. The approach and its evidence are in [research.md](research.md).
 
 ## Technical Context
 
@@ -69,7 +69,7 @@ src/Parley.Setup/OwnershipLine.cs           write this machine's block
 src/Parley.Setup/BrokerProject.cs           compare a name with the seat in a broker's registry
 src/Parley.Cli/Program.cs                   enroll and up by address; --launch-key for `waiting`; the crash; a pinged channel
 src/Parley.Cli/NodeCommand.cs               --keep-trying; send the protocol
-src/Parley.Setup/OwnershipLine.cs, Enrolment.cs, EnrollmentPlan.cs   a this-machine window: the real entry for a line and a withdrawal, refusal for enrolling
+src/Parley.Setup/BrokerProject.cs           a this-machine window asks its broker's registry for the real project; every door refuses to enrol
 plugins/parley/hooks/parley_waiting.py      --launch-key, no block logic
 SPEC.md, docs/configuration.md, docs/launch-configuration.md, CLAUDE.md
 Directory.Build.props                       0.53.0
@@ -117,4 +117,4 @@ tests/Parley.Server.Tests                    attach refusal and Describe over a 
 
 - **The tunnel is still the person's.** The node waits for it, but nothing brings it up. The docs name `autossh`, a systemd unit or a scheduled task.
 - **User-level autostart:** on Windows and macOS the entry starts at logon, so a machine nobody signs in to will not run it. On Linux, lingering fixes that. The install says which applies.
-- **One project per checkout** on such a machine: a node is one process per broker, and an agent it started is known only to that process, so a second project could not wake it. Enrolling a second project by address from one checkout is refused.
+- **One project for a checkout reached by address**: a node is one process per broker, and an agent it started is known only to that process, so another project could not wake it.

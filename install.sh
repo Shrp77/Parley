@@ -938,6 +938,11 @@ fi
 if [ "$agent_only" = "1" ]; then
     echo ""
     echo "${green}This machine runs agents and has no broker.${plain}"
+
+    if [ -e "$HOME/.config/systemd/user/$task.service" ] || [ -e "$HOME/Library/LaunchAgents/$task.plist" ]; then
+        echo "warning: an earlier install left a broker entry, which starts at logon. To take it out: parley autostart remove" >&2
+    fi
+
     echo "With a tunnel to the broker up:"
     echo "  parley enroll <folder> --project <its name> --broker <its address>"
     echo "  parley autostart install --project <its name> --broker <its address>"

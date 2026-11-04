@@ -313,7 +313,7 @@ On this machine, run `--agent-only` again: the install stops the node, replaces 
 install stops and asks, so a routine upgrade does not add a broker.
 
 **One project per checkout.** A node is one process per broker, so a checkout in two projects on such a machine could not be
-woken in the second. Enrolling into a second project is refused while the first is by address.
+woken in the second. Enrolling into another project is refused when either of the two is by address.
 
 ### Watching a remote broker from a machine with no projects
 

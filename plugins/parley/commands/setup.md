@@ -34,7 +34,8 @@ to step 2.
 
 If either is missing, Parley is in alpha and **not yet published to NuGet**, so installing it
 means building it from a clone. The clone's install script does it all - the tools, the broker
-registered to start at logon, and a check that the broker answers. Tell the user that, show them
+registered to start at logon, and a check that the broker answers. On a machine that only runs agents and reaches its
+broker by a tunnel, add `--agent-only` (`-AgentOnly` on Windows), which registers no broker. Tell the user that, show them
 these commands, and ask before running them:
 
 ```

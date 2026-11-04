@@ -487,14 +487,16 @@ public static class EnrollmentPlan
         // node that started it, so another project would take it for one somebody opened by hand and never wake it. Either order.
         var alongside = LaunchEntries.Read(servers).FirstOrDefault(other =>
             !string.Equals(other.Key, key, StringComparison.Ordinal)
-            && MachineBlocks.Block(root, machine, other.Key) is { } theirs
-            && (!string.IsNullOrWhiteSpace(brokerAddress) || theirs[BrokerVariable] is not null));
+            && MachineBlocks.AnswersHere(root, machine, other.Key)
+            && (!string.IsNullOrWhiteSpace(brokerAddress)
+                || MachineBlocks.Block(root, machine, other.Key)?[BrokerVariable] is not null));
 
         if (alongside is not null)
         {
             throw new InvalidDataException(
                 $"this checkout is already in '{alongside.Key}' on this machine, and a checkout reached by address can be in "
-                + "only one project, because a node could not wake it in the other. Withdraw it there first");
+                + "only one project, because a node could not wake it in the other. Take this machine's part of "
+                + $"'{alongside.Key}' out of .mcp.json first");
         }
 
         // What is shared, written new every time rather than merged into: a `command` or a `PATH` adopted from what is there

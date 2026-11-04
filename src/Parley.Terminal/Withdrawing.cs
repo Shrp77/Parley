@@ -397,13 +397,25 @@ internal static class Withdrawing
             return;
         }
 
+        // Asked apart, and said rather than thrown: the broker has already changed, and a tunnel that dropped since must not lose
+        // the report of it.
         try
         {
             project = await BrokerProject.ForWritingAsync(
                     project,
                     async () => (await client.RegistryAsync(cancellationToken).ConfigureAwait(false)).Select(known => known.Name.Value))
                 .ConfigureAwait(false);
+        }
+        catch (Grpc.Core.RpcException failure)
+        {
+            said.Add($"The broker did not answer ({failure.StatusCode}), so which project this is could not be told and its launch "
+                + "configuration was left as it is.");
 
+            return;
+        }
+
+        try
+        {
             var outcome = await Enrolment
                 .WithdrawAsync(workspace, row.Name, project, catalogueFile, cancellationToken)
                 .ConfigureAwait(false);

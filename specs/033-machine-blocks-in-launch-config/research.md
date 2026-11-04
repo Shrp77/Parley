@@ -46,7 +46,7 @@ Each step checks `OffMachineLinks` before looking, as every other lookup does. A
 
 **A file with no `parleyMachines` member changes nothing.** Workspace and identity come out as they do today (FR-004). That includes the address-only case in R1, which keeps registering by name alone.
 
-**To confirm while building:** the folder Claude Code starts an MCP server in, when it was launched from a subfolder. The parent walk exists for that case. A node always starts agents in the catalogue's folder (`ResidentAgent`).
+**Not confirmed:** the folder Claude Code starts an MCP server in, when it was launched from a subfolder. The parent walk exists for that case. A node always starts agents in the catalogue's folder (`ResidentAgent`).
 
 ## R4. No workspace in a block
 
@@ -60,7 +60,6 @@ Each step checks `OffMachineLinks` before looking, as every other lookup does. A
 
 **What it does not change.** A checkout moved on one machine is still refused when it attaches, naming both folders (§4.1.1), since the broker cannot tell a move from a clone. An earlier draft of this document said it would keep working. That was wrong: reading `BrokerRuntime` showed otherwise.
 
-**Also to fix:** the comment at `EnrollmentPlan.cs:460` says a node uses `PARLEY_WORKSPACE` as its working directory. The code does not.
 
 ## R4a. An empty block
 

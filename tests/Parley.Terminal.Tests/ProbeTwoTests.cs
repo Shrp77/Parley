@@ -199,6 +199,7 @@ public sealed class ProbeTwoTests
                 "TryReadFrom",
                 "TryResolve",
                 "Unreadable",
+                "WithdrawnMember",
                 "WorkspaceFor",
                 "Workspaces",
             ],

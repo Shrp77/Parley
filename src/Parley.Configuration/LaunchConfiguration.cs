@@ -82,20 +82,6 @@ public sealed record LaunchConfiguration
             ? block
             : null;
 
-    /// <summary>Whether a node on a machine offers an entry.</summary>
-    /// <param name="machine">The machine.</param>
-    /// <param name="key">The entry's key.</param>
-    /// <returns>
-    /// <see langword="false"/> only when the machine has blocks in this file and none for this entry, and another machine has
-    /// one: it withdrew from that project and stays in another. A machine with no blocks at all has not enrolled through them, whatever
-    /// another machine has since written, so it keeps what it had: its catalogue line is what says it may start this checkout.
-    /// </returns>
-    public bool OffersHere(string machine, string key) =>
-        BlockFor(machine, key) is not null
-        || Machines is null
-        || !Machines.ContainsKey(machine)
-        || !Machines.Values.Any(blocks => blocks.ContainsKey(key));
-
     /// <summary>The entry a launch is, when exactly one fits.</summary>
     /// <param name="agent">What the launch's <c>PARLEY_AGENT</c> holds: a role, or a whole name.</param>
     /// <param name="project">What its <c>PARLEY_PROJECT</c> holds, if anything.</param>

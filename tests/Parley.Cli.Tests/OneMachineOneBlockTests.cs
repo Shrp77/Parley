@@ -370,6 +370,134 @@ public sealed class OneMachineOneBlockTests : IDisposable
             StringComparison.Ordinal);
     }
 
+    private string Catalogue()
+    {
+        var file = Path.Combine(_root, "node.json");
+
+        File.WriteAllText(
+            file,
+            new JsonObject { ["agents"] = new JsonObject { ["9f2c1a77-3b41-4e0e-8a6f-7c4b2d9e5011"] = new JsonObject { ["command"] = "x", ["workspace"] = Workspace } } }.ToJsonString());
+
+        return file;
+    }
+
+    private void TwoEntries(string machines) =>
+        File.WriteAllText(
+            LaunchFile,
+            $$"""
+            { "parleyAgentId": "9f2c1a77-3b41-4e0e-8a6f-7c4b2d9e5011",
+              "mcpServers": {
+                "parley-acme": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "infra", "PARLEY_PROJECT": "acme" } },
+                "parley-beta": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "infra", "PARLEY_PROJECT": "beta" } } },
+              "parleyMachines": {{machines}} }
+            """);
+
+    [Fact]
+    public async Task Withdrawing_a_last_block_stops_this_machines_offer_and_keeps_the_rest()
+    {
+        TwoEntries($$"""{ "{{Here}}": { "parley-acme": { } }, "server": { "parley-acme": { } } }""");
+
+        var file = Catalogue();
+
+        _ = await Enrolment.WithdrawAsync(Workspace, "infra", "acme", file, TestContext.Current.CancellationToken);
+
+        var catalogue = NodeCatalogue.ReadFrom(file);
+
+        Assert.DoesNotContain("infra", catalogue.Announceable("acme").Names);
+        Assert.Contains("infra", catalogue.Announceable("beta").Names);
+    }
+
+    [Fact]
+    public async Task Withdrawing_with_no_block_here_stops_the_offer_and_keeps_the_line_for_the_other_project()
+    {
+        TwoEntries("""{ "server": { "parley-acme": { }, "parley-beta": { } } }""");
+
+        var file = Catalogue();
+
+        _ = await Enrolment.WithdrawAsync(Workspace, "infra", "acme", file, TestContext.Current.CancellationToken);
+
+        var catalogue = NodeCatalogue.ReadFrom(file);
+
+        Assert.DoesNotContain("infra", catalogue.Announceable("acme").Names);
+        Assert.Contains("infra", catalogue.Announceable("beta").Names);
+
+        // And from the other too: nothing is left to offer, so the line goes.
+        _ = await Enrolment.WithdrawAsync(Workspace, "infra", "beta", file, TestContext.Current.CancellationToken);
+
+        Assert.Empty(JsonNode.Parse(File.ReadAllText(file))!["agents"]!.AsObject());
+    }
+
+    [Fact]
+    public async Task Enrolling_again_undoes_a_withdrawal()
+    {
+        TwoEntries($$"""{ "{{Here}}": { "parley-acme": { }, "parley-beta": { } }, "server": { "parley-acme": { } } }""");
+
+        var file = Catalogue();
+
+        _ = await Enrolment.WithdrawAsync(Workspace, "infra", "acme", file, TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain("infra", NodeCatalogue.ReadFrom(file).Announceable("acme").Names);
+
+        var plan = EnrollmentPlan.Describe(
+            new EnrollmentEntry(Workspace, "infra", null, Unattended: true), File.ReadAllText(LaunchFile), "x\n## Peers\n", true, "acme", nodeWorkspace: Workspace);
+
+        File.WriteAllText(LaunchFile, plan.LaunchConfiguration!);
+
+        Assert.Contains("infra", NodeCatalogue.ReadFrom(file).Announceable("acme").Names);
+    }
+
+    [Fact]
+    public void Enrolling_into_a_second_project_leaves_the_first_offered()
+    {
+        TwoEntries("""{ "server": { "parley-acme": { } } }""");
+
+        var file = Catalogue();
+        var plan = EnrollmentPlan.Describe(
+            new EnrollmentEntry(Workspace, "infra", null, Unattended: true), File.ReadAllText(LaunchFile), "x\n## Peers\n", true, "beta", nodeWorkspace: Workspace);
+
+        File.WriteAllText(LaunchFile, plan.LaunchConfiguration!);
+
+        var catalogue = NodeCatalogue.ReadFrom(file);
+
+        Assert.Contains("infra", catalogue.Announceable("acme").Names);
+        Assert.Contains("infra", catalogue.Announceable("beta").Names);
+    }
+
+    [Fact]
+    public void An_entry_from_before_blocks_counts_when_enrolling_by_address()
+    {
+        File.WriteAllText(
+            LaunchFile,
+            """{ "mcpServers": { "parley-beta": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "infra", "PARLEY_PROJECT": "beta" } } } }""");
+
+        Assert.Contains(
+            "one project",
+            Assert.Throws<InvalidDataException>(() => Planned("infra", null, address: "http://127.0.0.1:19100")).Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_windows_own_name_never_reaches_an_unpinned_entry()
+    {
+        // With no seat to ask, the name is all there is, and the unpinned `parley` entry must not answer to it.
+        File.WriteAllText(
+            LaunchFile,
+            $$"""
+            { "mcpServers": { "parley": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "infra" } } },
+              "parleyMachines": { "{{Here}}": { "parley": { "PARLEY_OWNS": "Unpinned's." } } } }
+            """);
+
+        var before = File.ReadAllText(LaunchFile);
+
+        Assert.NotNull(await OwnershipLine.WriteAsync(
+            Workspace, ProjectManifest.WindowName, Agent, "Mine.", TestContext.Current.CancellationToken));
+
+        _ = await Enrolment.WithdrawAsync(
+            Workspace, "infra", ProjectManifest.WindowName, null, TestContext.Current.CancellationToken);
+
+        Assert.Equal(before, File.ReadAllText(LaunchFile));
+    }
+
     [Fact]
     public void A_machine_that_never_enrolled_through_blocks_keeps_its_offer_when_another_writes_one()
     {

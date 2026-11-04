@@ -167,10 +167,11 @@ goes in this machine's block. No project, store or port is created here. Under a
 for that project, enrolling is refused, because the role is shared and the change would rename that machine's agent.
 
 **Withdrawing takes this machine's block.** The entry stays while another machine's block names it, and
-`parleyAgentId` stays while any entry remains. This machine's node stops offering the agent in that project.
+`parleyAgentId` stays while any entry remains. This machine's `node.json` records that it withdrew, under
+`withdrawn`, so its node stops offering the agent in that project. Enrolling again undoes it.
 
-**A checkout reached by address is in one project on that machine.** Enrolling into a second project is refused while the
-first is by address, in either order. Withdraw it from the first.
+**A checkout reached by address is in one project on that machine.** Enrolling into another project is refused when either
+of the two is by address. To move it, take this machine's part of the first out of `.mcp.json`.
 
 ## What every reader owes
 

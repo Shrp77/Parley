@@ -122,7 +122,7 @@ internal static class MachineBlocks
     /// <param name="key">The entry's key.</param>
     /// <returns>
     /// <see langword="true"/> when it has a block, or when no machine has one: an entry from before blocks belongs to
-    /// whichever machine opens it.
+    /// whichever machine opens it. For enrolling, which must not put a checkout reached by address in a second project.
     /// </returns>
     public static bool AnswersHere(JsonObject root, string machine, string key) =>
         Has(root, machine, key) || OthersHolding(root, machine, key).Count == 0;
