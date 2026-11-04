@@ -21,6 +21,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class NamingTests : IDisposable
 {
     private readonly string _directory =

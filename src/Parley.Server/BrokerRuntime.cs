@@ -714,6 +714,12 @@ public sealed class BrokerRuntime : IAsyncDisposable
             await agents.RegisterIfAbsentAsync(registration, cancellationToken)
                 .ConfigureAwait(false);
 
+            if (registration.Workspace is { Length: > 0 } saidHere)
+            {
+                _ = await agents.RecordWorkspaceIfNoneAsync(registration.Name, saidHere, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             // Then the one column the attach owns, which the insert will not have written if the
             // agent was already known. Without this an agent could say what it owns exactly once
             // -- on its first attach ever -- and never correct it, and every peer routes by that

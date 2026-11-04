@@ -88,6 +88,12 @@ public static class OwnershipLine
             return wrong;
         }
 
+        // A window's name is no project's, and looking it up would land on an unpinned entry. Callers ask the broker first.
+        if (string.Equals(project, ProjectManifest.WindowName, StringComparison.Ordinal))
+        {
+            return "which project this is could not be told. Nothing has been written.";
+        }
+
         // The workspace is what the agent's adapter reported on attach, so it is never looked up when it, its .mcp.json
         // or a link along either leads off this machine: Auto Accept would otherwise offer the person's sign-in to a
         // host with no click at all (review, lens 2 run 71).
@@ -135,6 +141,7 @@ public static class OwnershipLine
             var mark = Enrolment.HeldHasByteOrderMark(held);
 
             JsonObject root;
+            string original;
 
             try
             {
@@ -142,8 +149,14 @@ public static class OwnershipLine
                 // any other unreadable one, never a throw through the facilitator's pass.
                 var text = await Enrolment.ReadHeldAsync(held, cancellationToken).ConfigureAwait(false);
 
+                original = text;
                 root = StrictJson.Parse(text) as JsonObject
                        ?? throw new InvalidDataException("the file is not a JSON object.");
+
+                if (!LaunchConfiguration.TryParse(text, path, out _, out var broken, out var machinesBroken) && machinesBroken)
+                {
+                    throw new InvalidDataException(broken ?? "its machine section cannot be read.");
+                }
             }
             catch (Exception unreadable) when (unreadable is System.Text.Json.JsonException or InvalidDataException)
             {
@@ -188,25 +201,37 @@ public static class OwnershipLine
                 return $"{path} has no entry at '{key}'. Nothing has been written.";
             }
 
-            if (entry["env"] is not JsonObject environment)
-            {
-                environment = [];
-                entry["env"] = environment;
-            }
+            // This machine's block and nothing else (SPEC.md §4.1.2). NotHere has already said this is the agent's machine.
+            var machine = agent.Machine;
+            var environment = entry["env"] as JsonObject;
 
             if (statement is null)
             {
-                environment.Remove(EnrollmentPlan.OwnsVariable);
+                // Taking a line out must leave none, and a shared one would come back through the fallback. It goes only
+                // when nobody else reads it.
+                if (environment?[EnrollmentPlan.OwnsVariable] is not null)
+                {
+                    if (MachineBlocks.OthersHolding(root, machine, key) is { Count: > 0 } others)
+                    {
+                        return $"{path} has a shared line for '{key}', and {string.Join(", ", others)} may be reading it. " +
+                               "Give this machine its own line instead. Nothing has been written.";
+                    }
+
+                    _ = environment.Remove(EnrollmentPlan.OwnsVariable);
+                }
+
+                // Kept when emptied: the block is what says this machine is enrolled.
+                _ = MachineBlocks.Block(root, machine, key)?.Remove(EnrollmentPlan.OwnsVariable);
             }
             else
             {
-                environment[EnrollmentPlan.OwnsVariable] = statement;
+                MachineBlocks.Ensure(root, machine, key)[EnrollmentPlan.OwnsVariable] = statement;
             }
 
             await Enrolment.OverwriteHeldAsync(
                 held,
                 path,
-                root.ToJsonString(SerialisationOptions.Indented) + "\n",
+                LaunchText.Render(root, original),
                 cancellationToken,
                 mark ? Marked : Plain).ConfigureAwait(false);
 

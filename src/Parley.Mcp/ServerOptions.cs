@@ -167,11 +167,55 @@ public sealed record ServerOptions(
     /// other test running at that moment, and the failure would be intermittent and blamed on
     /// something else.
     /// </remarks>
-    public static ServerOptions Read(Func<string, string?> read)
+    public static ServerOptions Read(Func<string, string?> read) => Read(read, Directory.GetCurrentDirectory());
+
+    /// <summary>Reads the configuration, given the folder this launch started in.</summary>
+    /// <param name="read">Returns a variable's value, or <see langword="null"/> if it is unset.</param>
+    /// <param name="startFolder">Where to start looking for the launch configuration.</param>
+    /// <returns>The options this server was launched with.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// A required variable is missing, one carries a value that cannot be used, or the file's machine section breaks the
+    /// rules.
+    /// </exception>
+    /// <remarks>
+    /// <b>This machine's block goes on top of what the launch was given</b> (SPEC.md §4.1.2), by wrapping
+    /// <paramref name="read"/>, so everything below reads one answer. The client has already merged the entry's values into
+    /// the environment, so a person's variable and an old entry's value look the same here, and the block beats both.
+    /// </remarks>
+    public static ServerOptions Read(Func<string, string?> read, string startFolder)
     {
         ArgumentNullException.ThrowIfNull(read);
 
-        var (broker, brokerNotice) = Where(read);
+        var named = Blank(read(ProjectVariable));
+        var located = LocatedLaunch.Find(read(WorkspaceVariable), read(AgentVariable), named, startFolder);
+
+        if (located?.Problem is { } broken)
+        {
+            throw new InvalidOperationException(broken);
+        }
+
+        var settings = located?.SettingsFor(MachineName.Current, read);
+
+        // A file with no section behaves as it always did, so nothing changes until a machine has a block.
+        var sectioned = located?.Configuration.Machines is not null;
+
+        string? Effective(string variable) => variable switch
+        {
+            BrokerVariable when settings is not null => settings.Broker,
+            OwnsVariable when settings is not null => settings.Owns,
+            WorkspaceVariable when sectioned => located!.Folder,
+            _ => read(variable),
+        };
+
+        var (broker, brokerNotice) = settings is { BrokerFromBlock: true }
+            ? (BrokerEndpoint.Read(Effective), null)
+            : Where(Effective, located);
+
+        return Rest(Effective, broker, brokerNotice);
+    }
+
+    private static ServerOptions Rest(Func<string, string?> read, string broker, string? brokerNotice)
+    {
         var agentName = Require(read, AgentVariable);
 
         // A launch configuration names a role; the machine half is detected here and appended.
@@ -251,6 +295,7 @@ public sealed record ServerOptions(
     /// Works out which broker this launch means, from an endpoint or from a project.
     /// </summary>
     /// <param name="read">The source of variables.</param>
+    /// <param name="located">The launch configuration, when one has an entry for this launch.</param>
     /// <returns>The address, and anything the launch configuration should be told about it.</returns>
     /// <exception cref="InvalidOperationException">
     /// A project was named that this machine does not describe, or the manifest could not be read.
@@ -277,7 +322,7 @@ public sealed record ServerOptions(
     /// in a binary an MCP client does not launch.
     /// </para>
     /// </remarks>
-    private static (string Broker, string? Notice) Where(Func<string, string?> read)
+    private static (string Broker, string? Notice) Where(Func<string, string?> read, LocatedLaunch? located)
     {
         var named = Blank(read(ProjectVariable));
         var endpoint = Blank(read(BrokerVariable));
@@ -326,7 +371,11 @@ public sealed record ServerOptions(
                 $"{ProjectVariable} is '{named}', which {manifest} does not describe. {configured} " +
                 $"Name it in `parley`, or set {BrokerVariable} to the broker's address. " +
                 "This server will not guess: connecting to another project's broker would put " +
-                "this agent in a roster it does not belong to.");
+                "this agent in a roster it does not belong to." +
+                (located?.Configuration.Machines is { Count: > 0 } machines
+                    ? $" This machine is {MachineName.Current}, and {located.Folder} has blocks for: " +
+                      $"{string.Join(", ", machines.Keys.Order(StringComparer.Ordinal))}."
+                    : string.Empty));
         }
 
         return (project.Endpoint, null);

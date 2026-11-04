@@ -1,0 +1,135 @@
+# Research: One launch configuration for every machine
+
+## R1. What a machine with only a tunnel does today
+
+Tried on 2026-11-04 with build 0.52.0 (6acd90b): a broker for project `alpha` in one root, and a second root with no projects and `PARLEY_MACHINE=server`. Loopback only. The probe was not committed.
+
+| Step | Result |
+|---|---|
+| `parley enroll <dir> --all --project alpha` | Refused, exit 78: "No project named 'alpha'". |
+| The same with `--broker <address>` | Refused the same way. `ExplicitBrokerSelectionTests` holds this rule. |
+| `parley enroll <dir> --all --broker <address>` | **Crashes**: unhandled `DirectoryNotFoundException` on `<root>/projects/.lock`. Also with `PARLEY_BROKER`. An existing bug. |
+| `parley up --broker <address>` | Works: "Node server joined … Can start: infra", and the agent reads `startable`. |
+| Adapter, `PARLEY_PROJECT` only | Stops, exit 78, and says to set `PARLEY_BROKER`. |
+| Adapter, project and address | Connects, with the notice. |
+| Adapter, address only, no workspace | Connects as `infra@server`. **No identity is sent**, because the file is only looked for in `PARLEY_WORKSPACE`. |
+| Adapter, wrong project name and an address | **Connects to the other project**, with only the notice. |
+
+**Not tried:** a node actually starting an agent over the address. The probe's command did not exist on purpose. The test in `tasks` covers it.
+
+**From the code, not run:** a node with no project "accepts every claim" (`NodeCommand.RunAsync`), so `up --broker` on a repository in two projects announces the other project's names too.
+
+**Conclusion.** The adapter and node need small changes. Enrolment needs a real route. The wrong-project hazard is real.
+
+## R2. Does a person's own variable beat a block?
+
+**Decision: a block beats the environment, for the two settings a block can hold (`PARLEY_OWNS`, `PARLEY_BROKER`).**
+
+**Why.** A client merges the entry's `env` into the adapter's environment before the adapter runs. So the adapter sees one value and cannot tell a person's variable from an old entry's shared value. "A person's variable wins" would therefore also mean "an old shared value wins", which breaks FR-003 on every file enrolled before this feature.
+
+**What a person does instead.** Edit that machine's block, or set `PARLEY_MACHINE` to use another block.
+
+**`PARLEY_WORKSPACE` is not in a block (R4), so this question no longer applies to it.** It says where to look for the file first (R3). That also covers the override it offers today: point it at a checkout, and that checkout is the workspace.
+
+**Alternatives rejected.** The environment wins: fails as above. A separate override variable: another setting for a case nobody has asked for.
+
+## R3. How the adapter finds the file
+
+New entries have no `PARLEY_WORKSPACE` at all (FR-014). So the file must be found another way.
+
+**Decision.** In order:
+
+1. The folder in `PARLEY_WORKSPACE`, if it holds a `.mcp.json` with a matching entry. An old entry's path from another machine fails this and is ignored.
+2. The folder the adapter was started in. Inside a repository, each parent too, stopping at the first that holds `.git` or `.mcp.json`.
+
+Each step checks `OffMachineLinks` before looking, as every other lookup does. A file found this way counts only if one of its entries names this launch's role and project (R5). Otherwise the launch has no block.
+
+**A file with no `parleyMachines` member changes nothing.** Workspace and identity come out as they do today (FR-004). That includes the address-only case in R1, which keeps registering by name alone.
+
+**Not confirmed:** the folder Claude Code starts an MCP server in, when it was launched from a subfolder. The parent walk exists for that case. A node always starts agents in the catalogue's folder (`ResidentAgent`).
+
+## R4. No workspace in a block
+
+**Decision (owner, 2026-11-04): a block holds no workspace.** The first draft allowed one. The adapter must find the file before it can read a block, so it already knows the folder. A block's value could only repeat that or be out of date.
+
+**Auto-launch does not use it.** The broker's `StartAgent` carries a name, a reason and an identity, and no folder. The node takes the folder from its own `node.json` (`NodeCommand`, `NodeCatalogue`) and starts the agent there (`ResidentAgent`). `node.json` is per machine and already holds an absolute path.
+
+**Every other use is still served.** When a file has a machine section, the found folder is the workspace. It sets the file tools' root (`RepositoryPaths`), and the adapter reports it on attach. The registry records it, and `OwnershipLine` uses that record to find the file.
+
+**What this gains.** The committed file shows no folder paths, and each machine has no second copy of a path to drift.
+
+**What it does not change.** A checkout moved on one machine is still refused when it attaches, naming both folders (§4.1.1), since the broker cannot tell a move from a clone. An earlier draft of this document said it would keep working. That was wrong: reading `BrokerRuntime` showed otherwise.
+
+
+## R4a. An empty block
+
+**Decision: enrolment writes a block even when it would be empty.** Withdrawal keeps a project's entry while another machine's block names it (FR-017), so a block must mean "this machine is enrolled". Without this, a server with no line and no address would have no block, and withdrawing on the laptop would remove the entry the server depends on. It also means a freshly enrolled file always has a section, so FR-005a applies from the start.
+
+## R5. Which block a launch uses
+
+**Machine:** `MachineName.Sanitise` of the entry's `PARLEY_MACHINE` if it has one, otherwise `MachineName.Current`. This is the name the agent will carry.
+
+**Project entry:** the adapter is not told its key. It finds the entry whose `PARLEY_AGENT` and project (environment first, then key, as `LaunchConfiguration.Declared` already reads them) match its own launch. Other readers already hold the key.
+
+## R6. Telling the adapter and the broker apart on the project check
+
+**Decision (owner, 2026-11-04): the adapter makes no check.** The first design added `expected_project` to `AttachRequest` and a `Nodes.ServedProject` call. `SpecConsistencyTests` refused it: §4.1 says the protocol has no concept of a project and must not acquire one. The owner confirmed that: a project is a broker's way of grouping agents, the protocol cares about agents and how to reach them, and membership is which endpoint an agent connects to. So the address in a block is the membership, and a wrong port shows as the agent in the wrong roster.
+
+**What remains is a client's check.** `parley enroll`, `parley up` and `parley autostart install` read `human-user@<project>` from the broker's registry and compare. That sends the broker nothing new.
+
+## R7. Enrolling on a tunnel-only machine
+
+**Decision.** `parley enroll <dir> --project <name> --broker <address>`, and the same for `parley up`. If the machine does not describe the project and an address was given explicitly, these two verbs read that broker's registry and go ahead only if it is the one named. Every other verb keeps today's refusal, which `ExplicitBrokerSelectionTests` still holds.
+
+The name comes from `human-user@<project>` in the broker's registry (R6), which every project's registry holds. No new call.
+
+`up --broker` with no `--project` announces every name the catalogued repositories declare, as a node with no project always has. A repository in several projects names one.
+
+**The crash in R1 is fixed in the same place:** enrolling with an address and no project stops with a sentence asking for `--project`.
+
+**On a machine with only a tunnel, enrolment is `parley enroll`.** A surface showing `this-machine` refuses to enrol, naming that command, before its form, because it would otherwise write `parley-this-machine`.
+
+**A line accepted from a `this-machine` window** must reach the real entry (spec, US3 scenario 4). The surface asks that broker's own registry for the project, from `human-user@<project>`, and uses that name. An earlier version guessed from the file and overwrote another project's line.
+
+## R8. One implementation for the waiting hook
+
+`parley_waiting.py` reads the file itself and passes `--broker` or `--project`. Adding block logic in Python would be a second implementation of FR-005, and would need a second copy of the name normalisation that the hook already avoids.
+
+**Decision.** The hook passes `--launch-key <key>`, and for `waiting` alone the CLI takes the address from this machine's block. No other command follows a repository's block: a clone's file would otherwise receive the person's files and their node's join.
+
+**Rollout.** The plugin cache is a copy keyed by commit, so the hook changes only when the plugin is reinstalled. An old hook on a machine using blocks reports nothing waiting, which is the direction it already treats as safe.
+
+## R9. "Every byte unchanged" is not achievable as written
+
+`OwnershipLine` and `Enrolment` parse the file and write it back with `ToJsonString(Indented)` and a final `\n`. Hand formatting and CRLF are normalised today. Keeping them would need a format-preserving JSON editor, which is a large addition for little gain.
+
+**Decision: correct the spec.** Other machines' blocks and the shared values keep their **values and member order**. A file already in the writer's format is byte-identical outside what changed, which is what keeps git merges small. FR-016 and SC-003 are changed to say so. The byte-order mark is still kept.
+
+## R10. Versions
+
+No schema change, so no migration, and 007 stays with feature 027. One additive wire field, a node's `protocol_version`: protocol 0.13. Package 0.53.0, since the protocol moves and enrolment writes a new shape.
+
+## R11. An agent-only machine (added by the owner, 2026-11-04)
+
+**What exists, from reading the code. None of this was run for this section.**
+
+| Thing | Today | Consequence |
+|---|---|---|
+| `install.sh`, `install.ps1` | Always register autostart and start a broker. | A broker on the server, serving nothing. |
+| `AutostartPlan` | One entry, `parley-broker`, which runs `serve`. | It has no way to run only a node. With no project, its node serves nothing. |
+| `NodeCommand` | Returns `Unavailable` on `StatusCode.Unavailable`. | A dropped tunnel ends the node. It also matters at boot, if the tunnel is not up yet. |
+| `Nodes.Join` | I found no protocol check in `NodesService`. | A node on an old build may join. Across machines, "one build" is no longer guaranteed. |
+| Autostart scope | User-level by design: logon to logout. | Wrong for a server nobody logs in to, unless Linux lingering is on. |
+
+**Decisions.**
+
+- **Entry:** a new `AutostartPlan.DescribeNode`, labelled `parley-node-<project>`, running `up --project <p> --broker <a> --keep-trying --log <path>`. One entry per project, since each runs one node. It has its own label, so it never collides with `parley-broker` on a machine that has both.
+- **Retrying:** `--keep-trying` on `up`. `Unavailable` then waits and tries again, from 2 seconds doubling to at most 30, for ever: nothing times out. Agents the node runs are kept, as they already are across a rejoin. A refusal is not retried, because the broker answered: another protocol. The supervisor must not restart a node after those, so they exit with `Config` and the unit restarts only on failure codes other than that. A second node is retried, and said once: after a reboot or a dead tunnel, a broker that has not noticed the old connection die says the same thing, and stopping for it would leave nobody's machine with no node.
+- **Without the flag,** `parley up` still exits on `Unavailable`, because a person typing it wants to know.
+- **Lingering:** the install checks `loginctl show-user` and prints `loginctl enable-linger <user>` when it is off. It does not run it. It changes a system setting, and may need privilege.
+- **Why not a system service:** the node starts agents that must be signed in as the person, which is why autostart is already user-level.
+- **Default surface is the terminal:** lines must be accepted on this machine (`OwnershipLine.NotHere`), the machine is reached over SSH, and no broker exists to start a web UI as its child. `docs/operating.md` already recommends the terminal for SSH.
+- **Upgrades:** the scripts stop `parley-broker` by name today. They also stop each `parley-node-*` and start it again afterwards. To be checked while building: an agent the node was running ends with it, as it does when a broker stops today.
+- **Remembering the mode:** the scripts do not record it. If `parley-node-*` entries exist and `--agent-only` was not passed, the install stops and asks for the flag or `--force`. Otherwise a routine upgrade would quietly add a broker.
+
+**Rejected.** A separate `parley-node` tool: `up` already exists, and the install already has four packages. A restart loop left to the supervisor alone: a restart ends the node's agents, and the scheduled task and launchd entries would each need it done differently.

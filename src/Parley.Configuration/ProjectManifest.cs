@@ -25,6 +25,12 @@ public static class ProjectManifest
     /// <summary>The directory, under the platform's configuration location, that holds it.</summary>
     public const string DirectoryName = "Parley";
 
+    /// <summary>What a surface calls a broker it was given by address, on a machine with no project of its own.</summary>
+    /// <remarks>
+    /// A window onto a broker and not a project's name, so nothing may write it into a launch configuration.
+    /// </remarks>
+    public const string WindowName = "this-machine";
+
 
     /// <summary>
     /// Where the manifest lives when nothing names one.

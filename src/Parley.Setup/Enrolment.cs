@@ -107,7 +107,7 @@ public static class Enrolment
                 {
                     var path = LaunchPath(workspace);
 
-                    await OverwriteHeldAsync(held, path, launch, cancellationToken).ConfigureAwait(false);
+                    await OverwriteHeldAsync(held, path, launch, cancellationToken, LaunchEncoding(held)).ConfigureAwait(false);
                     written.Add(path);
                 }
 
@@ -467,6 +467,25 @@ public static class Enrolment
             && first[1] == 0xBB
             && first[2] == 0xBF;
     }
+
+    // An entry names a role and the registry a whole name, so the terminal's withdrawal matches either spelling, and a whole name
+    // only for this machine: another machine's agent has its file on that machine, whatever is at the same path here.
+    private static string? RoleHere(string agent)
+    {
+        var at = agent.IndexOf('@', StringComparison.Ordinal);
+
+        return at < 0
+            ? agent
+            : string.Equals(agent[(at + 1)..], MachineName.Current, StringComparison.Ordinal)
+                ? agent[..at]
+                : null;
+    }
+
+    /// <summary>What a launch configuration is written back in: with a byte-order mark if it had one.</summary>
+    /// <param name="held">The file, as held.</param>
+    /// <returns>The encoding, or null for the default when the file is new.</returns>
+    private static Encoding? LaunchEncoding(FileStream? held) =>
+        held is null ? null : HeldHasByteOrderMark(held) ? Utf8WithMark : Utf8;
 
     /// <summary>Replaces what a held file holds, or writes one that was not there.</summary>
     /// <param name="stream">The handle, or null when the file did not exist.</param>
@@ -849,7 +868,7 @@ public static class Enrolment
 
                     if (plan.LaunchConfiguration is { } text)
                     {
-                        await OverwriteHeldAsync(launch, launchPath, text, cancellationToken).ConfigureAwait(false);
+                        await OverwriteHeldAsync(launch, launchPath, text, cancellationToken, LaunchEncoding(launch)).ConfigureAwait(false);
                         written.Add(launchPath);
                     }
 
@@ -937,12 +956,20 @@ public static class Enrolment
         var written = new List<string>();
         var launchPath = LaunchPath(workspace);
 
+        // A window's name is no project's, and looking it up would land on an unpinned entry. Callers ask the broker first.
+        if (string.Equals(project, ProjectManifest.WindowName, StringComparison.Ordinal))
+        {
+            return new Outcome([$"{launchPath}: left alone, which project this is could not be told"], []);
+        }
+
         // **Which agent this repository is, and whether it is still one when this is done.** The catalogue
         // is keyed by identity and one entry serves every project the checkout answers in, so withdrawing
         // from one of two projects must leave it there: taking it would stop the other project being able
         // to start the repository, which nobody asked for. Both are filled in from the file below.
         var withdrawn = default(AgentIdentity);
         var stillAnAgent = false;
+        string? keptForAnother = null;
+        IReadOnlyList<(string Key, bool HasBlock)> remaining = [];
 
         // Catalogue before launch, the same order AddAsync takes them in. Two runs acquiring in
         // opposite orders is how each comes to hold the half the other is waiting for.
@@ -952,6 +979,15 @@ public static class Enrolment
 
         try
         {
+            // The workspace is what a registry row reported, so it is never looked up when it leads off this machine: the lookup
+            // alone would offer the person's sign-in to that host.
+            if (OffMachineLinks.LeadsOffThisMachine(workspace) || OffMachineLinks.LeadsOffThisMachine(launchPath))
+            {
+                notes.Add($"{launchPath}: left alone, it leads to another machine");
+
+                return new Outcome(notes, written);
+            }
+
             if (!File.Exists(launchPath))
             {
                 notes.Add($"{launchPath}: already absent");
@@ -1065,7 +1101,9 @@ public static class Enrolment
                             notes.Add(
                                 $"{launchPath}: left alone, {Quoting.Quoted(stranger.Key)} is not an entry this wrote");
                         }
-                        else if (named is not null && !string.Equals(named, agent, StringComparison.Ordinal))
+                        else if (named is not null
+                                 && !string.Equals(named, agent, StringComparison.Ordinal)
+                                 && !string.Equals(named, RoleHere(agent), StringComparison.Ordinal))
                         {
                             // Somebody else's. The workspace comes from the registry, which is what the
                             // agent said about itself and may be some time old, so a repository
@@ -1075,8 +1113,43 @@ public static class Enrolment
                                 $"{launchPath}: left alone, its {Quoting.Quoted(candidates[0].Key)} entry is "
                                 + $"{Quoting.Quoted(named)} rather than {Quoting.Quoted(agent)}");
                         }
+                        else if (LaunchConfiguration.TryParse(text, launchPath, out _, out var broken, out var machinesBroken) is false
+                                 && machinesBroken)
+                        {
+                            // Rewriting a file this cannot read is the second, unasked-for change above.
+                            notes.Add($"{launchPath}: left alone, {broken}");
+                        }
+                        else if (MachineBlocks.OthersHolding(root, MachineName.Current, candidates[0].Key) is { Count: > 0 } others)
+                        {
+                            // Another machine still answers through this entry (SPEC.md §4.1.2), so only this machine's
+                            // part of the file goes.
+                            if (MachineBlocks.Remove(root, MachineName.Current, candidates[0].Key))
+                            {
+                                await OverwriteHeldAsync(
+                                    held,
+                                    launchPath,
+                                    LaunchText.Render(root, text),
+                                    cancellationToken,
+                                    LaunchEncoding(held)).ConfigureAwait(false);
+
+                                written.Add(launchPath);
+                                notes.Add(
+                                    $"{launchPath}: this machine's block for {Quoting.Flat(candidates[0].Key)} removed; "
+                                    + $"the entry stays for {string.Join(", ", others)}");
+                            }
+                            else
+                            {
+                                notes.Add(
+                                    $"{launchPath}: this machine has no block for {Quoting.Flat(candidates[0].Key)}; "
+                                    + $"the entry stays for {string.Join(", ", others)}");
+                            }
+
+                            keptForAnother = candidates[0].Key;
+                        }
                         else if (servers.Remove(candidates[0].Key))
                         {
+                            _ = MachineBlocks.Remove(root, MachineName.Current, candidates[0].Key);
+
                             var left = LaunchEntries.Read(servers).Count;
 
                             // **The identity goes with the last entry and not before it.** It belongs to
@@ -1094,8 +1167,9 @@ public static class Enrolment
                             await OverwriteHeldAsync(
                                 held,
                                 launchPath,
-                                root.ToJsonString(SerialisationOptions.Indented) + "\n",
-                                cancellationToken).ConfigureAwait(false);
+                                LaunchText.Render(root, text),
+                                cancellationToken,
+                                LaunchEncoding(held)).ConfigureAwait(false);
 
 
                             written.Add(launchPath);
@@ -1112,7 +1186,10 @@ public static class Enrolment
                         // those paths leave the repository answering somewhere — the entry was removed and
                         // others remain, the entry belongs to another agent and was left, the file was left
                         // alone for a reason — and all three must keep the catalogue line.
-                        stillAnAgent = LaunchEntries.Read(servers).Count > 0;
+                        //
+                        // **On this machine**, which the catalogue below decides, since it records what this machine withdrew from.
+                        remaining = [.. LaunchEntries.Read(servers)
+                            .Select(entry => (entry.Key, MachineBlocks.Has(root, MachineName.Current, entry.Key)))];
                     }
                     else
                     {
@@ -1142,6 +1219,30 @@ public static class Enrolment
 
                 if (catalogue["agents"] is JsonObject agents)
                 {
+                    var line = withdrawn.Known ? agents[withdrawn.ToString()] as JsonObject : null;
+                    var left = (line?[NodeCatalogue.WithdrawnMember] as JsonArray)?
+                        .Select(item => item?.ToString())
+                        .ToList() ?? [];
+
+                    if (keptForAnother is not null && !left.Contains(keptForAnother))
+                    {
+                        left.Add(keptForAnother);
+                    }
+
+                    stillAnAgent = remaining.Any(entry => entry.HasBlock || !left.Contains(entry.Key));
+
+                    // The file stays for the other machine, so this machine's own record is what stops its node offering it.
+                    if (stillAnAgent && keptForAnother is not null && line is not null)
+                    {
+                        line[NodeCatalogue.WithdrawnMember] = new JsonArray([.. left.Select(key => (JsonNode?)key)]);
+
+                        await SaveHeldCatalogueAsync(catalogueHeld, catalogueFile, catalogue, cancellationToken)
+                            .ConfigureAwait(false);
+
+                        written.Add(catalogueFile);
+                        notes.Add($"{catalogueFile}: this machine's node stops offering {Quoting.Flat(keptForAnother)}");
+                    }
+
                     // Left where the repository still answers somewhere. One entry says this machine may
                     // start this checkout, and every project it answers in is started through that one
                     // entry — so removing it because one project let it go would take the others' ability

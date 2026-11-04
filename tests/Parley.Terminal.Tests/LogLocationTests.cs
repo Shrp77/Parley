@@ -15,6 +15,7 @@ namespace Parley.Terminal.Tests;
 /// writing hours earlier and called it live.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class LogLocationTests
 {
     private static readonly ProjectSettings Alpha = new(

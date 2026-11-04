@@ -21,6 +21,7 @@ namespace Parley.Store.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class RoadmapStoreTests : IDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 6, 9, 0, 0, TimeSpan.Zero);

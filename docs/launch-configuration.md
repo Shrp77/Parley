@@ -15,21 +15,26 @@ each reader owes the rules below.
       "command": "parley-mcp",
       "env": {
         "PARLEY_AGENT": "inventory",        // the agent's name in this project
-        "PARLEY_PROJECT": "alpha",          // matches the key's suffix, always
-        "PARLEY_OWNS": "Stock levels and reservations. Not pricing.",
-        "PARLEY_WORKSPACE": "${PARLEY_WORKSPACE:-/src/inventory}"
+        "PARLEY_PROJECT": "alpha"           // matches the key's suffix, always
       }
     },
     "parley-beta": {                        // the same repository, a second roster
       "command": "parley-mcp",
       "env": {
         "PARLEY_AGENT": "stock",            // a different name, because beta chose it
-        "PARLEY_PROJECT": "beta",
-        "PARLEY_OWNS": "What is on hand, and what is promised.",
-        "PARLEY_WORKSPACE": "${PARLEY_WORKSPACE:-/src/inventory}"
+        "PARLEY_PROJECT": "beta"
       }
     },
     "some-other-server": { }                // never touched, never counted, never removed
+  },
+  "parleyMachines": {                       // what differs per machine
+    "laptop": {
+      "parley-alpha": { "PARLEY_OWNS": "Stock levels and reservations. Not pricing." },
+      "parley-beta": { "PARLEY_OWNS": "What is on hand, and what is promised." }
+    },
+    "server": {
+      "parley-alpha": { "PARLEY_BROKER": "http://127.0.0.1:19100" }
+    }
   }
 }
 ```
@@ -64,11 +69,45 @@ namespace tools. The variable is what the adapter reads to find a broker. Nothin
 the other at run time, so they are written together and checked together. An entry whose key and
 variable name different projects is refused, not guessed at.
 
-`PARLEY_OWNS` is written only when the agent already has an ownership line. Enrolling never makes
-one up. Accepting an agent's answer to the ownership question writes it here.
+## One file on every machine
 
-`PARLEY_WORKSPACE` is written as `${PARLEY_WORKSPACE:-<path>}` so a teammate can override the path.
-A path containing `}` or `$` is written plainly, because the expansion has no escape.
+A repository checked out on two machines is two agents, because the machine is part of the name. One
+committed file describes both. An infrastructure repository on a laptop and on the server it manages gives
+`infra@laptop`, which answers questions about the system, and `infra@server`, which makes changes:
+
+```jsonc
+"parleyMachines": {
+  "laptop": { "parley-acme": { "PARLEY_OWNS": "Answers questions about the infrastructure. Changes nothing." } },
+  "server": { "parley-acme": { "PARLEY_OWNS": "Makes infrastructure changes on this host.",
+                               "PARLEY_BROKER": "http://127.0.0.1:19100" } }
+}
+```
+
+**An ownership line describes an instance and does not limit it.** Nothing in Parley stops `infra@laptop`
+changing something. What an instance can do is decided by that machine's own permissions and credentials. The
+line tells peers which one to ask. A sender asks one by its full name, and a request to bare `infra` still
+reaches both.
+
+**A block is filed by machine name, then by the entry's key, and holds `PARLEY_OWNS` and `PARLEY_BROKER`.** Nothing
+else. It may be empty, which says this machine is enrolled in that project and differs in nothing.
+
+**A block wins.** For that machine and that entry, a value in the block beats the entry and the environment. A
+value it does not give comes from the entry. The machine is the name the agent will carry, so `PARLEY_MACHINE`
+chooses a block too.
+
+**The workspace is not in the file.** When a file has `parleyMachines`, an agent's workspace is the folder the
+file was found in. A node starts an agent from the folder in that machine's own `node.json`. A checkout moved on one
+machine is refused when it attaches, naming both folders, because a name belongs to one repository and a clone looks the
+same to the broker. Give it a different role, or purge the old name, and enrol again from the new folder.
+
+**A mistake stops the whole file,** whichever machine it concerns: a setting that cannot go in a block, a name that
+can never be a machine's, a block for an entry the file does not have. It is reported by machine, entry and setting.
+
+**A committed file shows machine names and a tunnel's port** to anybody who can read the repository. A repository
+that should not show them keeps its file out of git, and each machine writes its own.
+
+`PARLEY_OWNS` is written only when the agent already has an ownership line. Enrolling never makes
+one up. Accepting an agent's answer to the ownership question writes it to this machine's block.
 
 ## What the adapter reads
 
@@ -80,11 +119,15 @@ A path containing `}` or `$` is written plainly, because the expansion has no es
 | `PARLEY_PROJECT` | The project whose broker to reach. The name is looked up in this machine's configuration. An unknown name is refused, not guessed. |
 | `PARLEY_BROKER` | A broker address, used instead of a project. For a tunnel's local end, for example. |
 | `PARLEY_OWNS` | What the agent is responsible for. |
-| `PARLEY_WORKSPACE` | The directory the agent works in. Unset means unknown. |
+| `PARLEY_WORKSPACE` | Where to look for this file first. Without a `parleyMachines` section, the directory the agent works in; unset means unknown. |
 | `PARLEY_RESPONDER` | The model named on each message. Defaults to `unknown-model`. |
 | `PARLEY_MACHINE` | The machine half of the agent's name. Unset means this machine's own name. |
 
 An agent a node starts also carries `PARLEY_LAUNCH_TOKEN`. It is not written to the file.
+
+It looks for this file in `PARLEY_WORKSPACE`'s folder if a file there has an entry for this launch, then in the
+folder it started in. Inside a repository it also looks in each parent, up to the first holding `.git` or `.mcp.json`.
+It lays this machine's block over what it was given.
 
 ## How a repository is enrolled
 
@@ -99,7 +142,10 @@ There are three ways, and they write the same thing:
 
 For each repository, enrolling:
 
-1. Creates or updates the project's entry in `.mcp.json`, leaving every other server as it was.
+1. Creates or updates the project's entry in `.mcp.json`, leaving every other server as it was, and writes this
+   machine's block, even if it would be empty. Another machine's block is never touched. An ownership line or a
+   `PARLEY_RESPONDER` already in the entry stays for machines with no line of their own. A folder or an address
+   already in the entry is taken out.
 2. Mints `parleyAgentId` if the file has none.
 3. Adds the agent to this machine's `node.json` when it is to be started unattended. That is the
    consent to start it: a peer's request can then start it with nobody watching.
@@ -109,6 +155,23 @@ For each repository, enrolling:
 The whole set is checked before anything is written. Two repositories with one name, two names
 over one folder, a folder that is not there, a folder not on this machine's own disks, and a name
 the registry would refuse all stop the run with nothing changed.
+
+**Enrolling on a machine that has only a tunnel.** Give the project's name and the broker's address:
+
+```bash
+parley enroll /srv --project acme --broker http://127.0.0.1:19100
+```
+
+The name is checked against that broker's registry, and nothing is written if it is another project. The address
+goes in this machine's block. No project, store or port is created here. Under another role while another machine has a block
+for that project, enrolling is refused, because the role is shared and the change would rename that machine's agent.
+
+**Withdrawing takes this machine's block.** The entry stays while another machine's block names it, and
+`parleyAgentId` stays while any entry remains. This machine's `node.json` records that it withdrew, under
+`withdrawn`, so its node stops offering the agent in that project. Enrolling again undoes it.
+
+**A checkout reached by address is in one project on that machine.** Enrolling into another project is refused when either
+of the two is by address. To move it, take this machine's part of the first out of `.mcp.json`.
 
 ## What every reader owes
 

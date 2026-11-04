@@ -68,9 +68,13 @@ Each repository describes itself in `.mcp.json`:
       "command": "parley-mcp",
       "env": {
         "PARLEY_AGENT": "orders",              // the name shown; changing it renames the agent
-        "PARLEY_PROJECT": "acme",
-        "PARLEY_OWNS": "Carts, orders, line totals. No tax, no stock."  // written when its answer is accepted
+        "PARLEY_PROJECT": "acme"
       }
+    }
+  },
+  "parleyMachines": {
+    "laptop": {                                // this machine's own part
+      "parley-acme": { "PARLEY_OWNS": "Carts, orders, line totals. No tax, no stock." }  // written when its answer is accepted
     }
   }
 }

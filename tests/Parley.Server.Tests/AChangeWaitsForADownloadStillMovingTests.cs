@@ -17,6 +17,7 @@ namespace Parley.Server.Tests;
 /// while it waits.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class AChangeWaitsForADownloadStillMovingTests
 {
     private const string Orders = "orders@alpha";

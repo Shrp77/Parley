@@ -149,11 +149,11 @@ else
 
     if command -v parley >/dev/null 2>&1; then
         if [ "$dry_run" -eq 1 ]; then
-            note 'would run `parley autostart remove`'
+            note 'would run `parley autostart remove --all`'
         else
             # Best effort: an entry that is not installed is not a failure. What matters is that
             # nothing is holding a store afterwards.
-            parley autostart remove 2>&1 | while IFS= read -r line; do note "$line"; done
+            parley autostart remove --all 2>&1 | while IFS= read -r line; do note "$line"; done
         fi
     else
         note '`parley` is not on PATH; skipping the autostart entry.'

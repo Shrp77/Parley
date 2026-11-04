@@ -16,6 +16,7 @@ namespace Parley.Terminal.Tests;
 /// no longer shortens the idle period, and the dialog says so.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ClosingSaysHowLongTextIsKeptTests
 {
     [Fact]

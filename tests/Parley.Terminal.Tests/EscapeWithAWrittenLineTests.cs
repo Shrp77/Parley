@@ -12,6 +12,7 @@ namespace Parley.Terminal.Tests;
 /// property is what the key does and not what a method does.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class EscapeWithAWrittenLineTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

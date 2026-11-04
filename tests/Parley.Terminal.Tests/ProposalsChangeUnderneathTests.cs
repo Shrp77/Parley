@@ -22,6 +22,7 @@ namespace Parley.Terminal.Tests;
 /// double click on Edit opens one form.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ProposalsChangeUnderneathTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

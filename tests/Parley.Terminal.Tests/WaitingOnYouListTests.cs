@@ -21,6 +21,7 @@ namespace Parley.Terminal.Tests;
 /// per agent reading "waiting for your reply", pointing at one question picked by the order the broker listed them.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class WaitingOnYouListTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

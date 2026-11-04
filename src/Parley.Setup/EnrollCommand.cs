@@ -451,7 +451,12 @@ public static class EnrollCommand
             // reports all three separately, as evidence rather than as a default.
             var entry = Existing(workspace)?.FirstOrDefault();
 
-            return (entry?.Agent, entry?.Owns);
+            // This machine's own line first, which is what it answers with.
+            var owns = entry is not null && LaunchConfiguration.TryRead(workspace, out var declared, out _)
+                ? declared.BlockFor(MachineName.Current, entry.Key)?.Owns ?? entry.Owns
+                : entry?.Owns;
+
+            return (entry?.Agent, owns);
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException
                                        or UnauthorizedAccessException or FormatException)
@@ -643,6 +648,14 @@ public static class EnrollCommand
         CancellationToken cancellationToken,
         EnrolmentOutcome? outcome = null)
     {
+        // Before anything is looked at, so the person is told this and not something about a file.
+        if (string.Equals(project?.Name.Value, ProjectManifest.WindowName, StringComparison.Ordinal))
+        {
+            await error.WriteLineAsync(EnrollmentPlan.AWindowEnrolsNothing).ConfigureAwait(false);
+
+            return Config;
+        }
+
         // Held for the whole run: validation and writing are far apart by design (everything is refused
         // before anything is written), so a gate spanning only one of them would leave a window.
         using var gate = await Catalogues.GateAsync(projectManifest, cancellationToken).ConfigureAwait(false);
@@ -860,7 +873,8 @@ public static class EnrollCommand
                 instructions,
                 listed.ContainsKey(entry.Agent),
                 project?.Name.Value,
-                nodeWorkspace: listed[entry.Agent]?["workspace"]?.GetValue<string>());
+                nodeWorkspace: listed[entry.Agent]?["workspace"]?.GetValue<string>(),
+                brokerAddress: BrokerProject.ReachedByAddress(project) ? project!.Endpoint : null);
 
             try
             {

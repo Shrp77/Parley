@@ -44,6 +44,11 @@
 #                                being unlinked. SPEC.md section 11.1 says the node stopping tells
 #                                every agent it started to quit, and the process is what held
 #                                everything that agent had learned.
+#   ./install.sh --agent-only    for a machine that only runs agents and reaches its broker by a
+#                                tunnel: `parley`, `parley-mcp` and the terminal, and no broker and no
+#                                broker entry. An entry from `parley autostart install --project <p>
+#                                --broker <address>` is stopped, and started again once the tools are
+#                                replaced. --surfaces still says which surface.
 #   ./install.sh --force         end whatever is holding the tools, rather than refusing
 #   ./install.sh --hidden        register a logon entry that opens no console window, by
 #                                passing --hidden to `parley autostart install`. The entry
@@ -95,6 +100,7 @@ surfaces=""
 only=""
 reset=0
 repositories=""
+agent_only=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -106,6 +112,7 @@ while [ $# -gt 0 ]; do
         --force) force=1; shift ;;
         --hidden) hidden=1; shift ;;
         --reset) reset=1; shift ;;
+        --agent-only) agent_only=1; shift ;;
         --repositories) repositories="${2:-}"; shift 2 ;;
         --repositories=*) repositories="${1#--repositories=}"; shift ;;
         # Every comment line after the shebang, not a line range: it reads to the first
@@ -114,7 +121,7 @@ while [ $# -gt 0 ]; do
         -h|--help) awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 { exit }' "${BASH_SOURCE[0]}"; exit 0 ;;
         *)
             echo "Unknown argument: $1" >&2
-            echo "Usage: ./install.sh [--surfaces terminal|web-ui|both|none] [--only <command>] [--uninstall] [--force] [--hidden] [--reset [--repositories <dir>]]" >&2
+            echo "Usage: ./install.sh [--agent-only] [--surfaces terminal|web-ui|both|none] [--only <command>] [--uninstall] [--force] [--hidden] [--reset [--repositories <dir>]]" >&2
             exit 64
             ;;
     esac
@@ -123,6 +130,16 @@ done
 # Checked before anything is stopped or built, so a combination that makes no sense costs nothing.
 if [ "$reset" = "1" ] && [ "$uninstall" = "1" ]; then
     echo "--reset and --uninstall together make no sense: --uninstall removes what was installed and installs nothing." >&2
+    exit 64
+fi
+
+if [ "$agent_only" = "1" ] && [ "$reset" = "1" ]; then
+    echo "--agent-only and --reset together make no sense: --reset wipes a deployment, and this machine holds none." >&2
+    exit 64
+fi
+
+if [ "$agent_only" = "1" ] && [ -n "$only" ]; then
+    echo "--agent-only says which tools a machine has, and --only names them outright. Use one or the other." >&2
     exit 64
 fi
 
@@ -149,6 +166,12 @@ surface_of=("" "" "terminal" "web-ui")
 # no browser, and a terminal nobody has a session on is a package installed to be never run.
 if [ -z "$surfaces" ]; then
     surfaces="web-ui"
+
+    # The terminal on a machine that only runs agents: it is reached over SSH, a line is accepted from a surface on the
+    # machine holding the file, and no broker is there to start a web UI as its child.
+    if [ "$agent_only" = "1" ]; then
+        surfaces="terminal"
+    fi
 fi
 
 case "$surfaces" in
@@ -231,6 +254,38 @@ note() { printf '%s    %s%s\n' "$grey" "$1" "$plain"; }
 #
 # A broker somebody started by hand is left alone: ending a process a person launched themselves
 # is their decision, and the checks downstream report honestly when it blocks them.
+# What `parley autostart install --project <p> --broker <address>` left here: one line per node entry, as its label.
+node_entries() {
+    for unit in "$HOME/.config/systemd/user"/parley-node-*.service "$HOME/Library/LaunchAgents"/parley-node-*.plist; do
+        [ -e "$unit" ] || continue
+        unit="${unit##*/}"
+        printf '%s\n' "${unit%.*}"
+    done
+}
+
+# Stops each node entry's process, for the reason `stop_broker` stops the broker: replacing a binary it is running is the
+# request. It ends the agents that node started, as stopping a broker does.
+stop_nodes() {
+    for label in $(node_entries); do
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl --user stop "$label.service" >/dev/null 2>&1 || true
+        elif command -v launchctl >/dev/null 2>&1; then
+            launchctl bootout "gui/$(id -u)/$label" >/dev/null 2>&1 || true
+        fi
+    done
+}
+
+start_nodes() {
+    for label in $(node_entries); do
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl --user start "$label.service" >/dev/null 2>&1 || echo "warning: could not start $label" >&2
+        elif command -v launchctl >/dev/null 2>&1; then
+            launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/$label.plist" >/dev/null 2>&1 \
+                || echo "warning: could not start $label" >&2
+        fi
+    done
+}
+
 stop_broker() {
     if command -v systemctl >/dev/null 2>&1; then
         systemctl --user stop "$task.service" >/dev/null 2>&1 || true
@@ -376,6 +431,7 @@ if [ "$uninstall" = "1" ]; then
     # delete the binary that broker is running.
     step "Stopping the broker"
 
+    stop_nodes
     stop_broker
 
     # Anything left is a broker somebody started by hand. Ending a process a person launched
@@ -402,7 +458,7 @@ if [ "$uninstall" = "1" ]; then
     step "Removing the autostart entry"
 
     if command -v parley >/dev/null 2>&1; then
-        parley autostart remove >/dev/null 2>&1 || true
+        parley autostart remove --all >/dev/null 2>&1 || true
     else
         note "parley is not on PATH; nothing to remove it with"
     fi
@@ -499,6 +555,14 @@ built=$(find "$root/src/Parley.Cli/bin/Release" -maxdepth 1 -name 'Parley.Cli.*.
 if [ -z "$built" ]; then
     echo "Nothing was packed. The build produced no package." >&2
     exit 1
+fi
+
+# A routine upgrade must not quietly put a broker on a machine that only runs agents. Asked before the reset, and before
+# anything is stopped.
+if [ "$agent_only" != "1" ] && [ "$force" != "1" ] && [ -z "$only" ] && [ "$reset" != "1" ] && [ -n "$(node_entries)" ]; then
+    echo "This machine runs a node with no broker of its own: $(node_entries | tr '\n' ' ')" >&2
+    echo "Run this with --agent-only to keep it that way, or --force to add a broker here. Nothing has been changed." >&2
+    exit 64
 fi
 
 # ------------------------------------------------------------------- reset ---
@@ -615,7 +679,20 @@ for i in "${!commands[@]}"; do
     fi
 done
 
-if [ "$replacing_broker" = "1" ]; then
+# `--only parley` on a machine that only runs agents is the same run: a node's tools are replaced, and no broker is added.
+# Any other tool under --only is left to the branch below, which touches nothing that is running.
+if [ -n "$only" ] && [ "$replacing_broker" = "1" ] && [ -n "$(node_entries)" ] \
+    && [ ! -e "$HOME/.config/systemd/user/$task.service" ] && [ ! -e "$HOME/Library/LaunchAgents/$task.plist" ]; then
+    agent_only=1
+fi
+
+if [ "$agent_only" = "1" ]; then
+    step "Stopping this machine's nodes"
+    note "there is no broker on this machine to ask what is open"
+
+    stop_nodes
+    stop_broker
+elif [ "$replacing_broker" = "1" ]; then
     # **What stopping it will interrupt, said before it is stopped.**
     #
     # SPEC.md section 11.1: the node stopping tells every agent it started to quit, and the process
@@ -684,6 +761,7 @@ if [ "$replacing_broker" = "1" ]; then
 
     step "Stopping any running broker"
 
+    stop_nodes
     stop_broker
 else
     step "Leaving the broker alone"
@@ -853,6 +931,25 @@ done
 #
 # Nothing here is needed for a surface: a terminal is not registered with a supervisor, does not
 # listen on a port, and has no store. There is nothing to configure and nothing to prove.
+if [ "$replacing_broker" = "1" ]; then
+    start_nodes
+fi
+
+if [ "$agent_only" = "1" ]; then
+    echo ""
+    echo "${green}This machine runs agents and has no broker.${plain}"
+
+    if [ -e "$HOME/.config/systemd/user/$task.service" ] || [ -e "$HOME/Library/LaunchAgents/$task.plist" ]; then
+        echo "warning: an earlier install left a broker entry, which starts at logon. To take it out: parley autostart remove" >&2
+    fi
+
+    echo "With a tunnel to the broker up:"
+    echo "  parley enroll <folder> --project <its name> --broker <its address>"
+    echo "  parley autostart install --project <its name> --broker <its address>"
+
+    exit 0
+fi
+
 if [ "$replacing_broker" != "1" ]; then
     echo ""
     echo "${green}The broker was not touched, and is still serving whatever it was serving.${plain}"

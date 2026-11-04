@@ -41,7 +41,8 @@ machine names - but that is needed at restart time, not now.
 every command below takes `--project <name>` to say which one is being enrolled into. It matters
 here because the key written into each repository is `parley-<project>`, so a run against the
 wrong one leaves every repository answering in a deployment nobody meant. With one project
-configured, or none, nothing needs saying.
+configured, nothing needs saying. A machine that only runs agents names none, and takes
+`--project <its name> --broker <its address>` on every command below.
 
 ## 2. Enrol them
 

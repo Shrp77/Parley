@@ -31,6 +31,7 @@ namespace Parley.Client.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class LostSeatTests
 {
     private static readonly ProjectSettings Alpha =

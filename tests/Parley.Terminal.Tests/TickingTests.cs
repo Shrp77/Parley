@@ -21,6 +21,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class TickingTests
 {
     private static TickDialog Over(params string[] labels) =>

@@ -137,9 +137,16 @@ public sealed class MultiProjectEnrolmentTests
         // repository that declares none is genuinely changed by an enrolment — it gains one — so the
         // file below would be rewritten and the run would be right to say so. That case is its own
         // test rather than this one's silence.
-        var plan = EnrollmentPlan.Describe(
+        var first = EnrollmentPlan.Describe(
             Entry("inventory", "Stock levels and reservations. Not pricing."),
             InAlpha,
+            null,
+            false,
+            project: "alpha");
+
+        var plan = EnrollmentPlan.Describe(
+            Entry("inventory", "Stock levels and reservations. Not pricing."),
+            first.LaunchConfiguration,
             null,
             false,
             project: "alpha");

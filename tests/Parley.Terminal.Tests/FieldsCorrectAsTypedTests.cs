@@ -30,6 +30,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class FieldsCorrectAsTypedTests
 {
     private static void Type(Driving.Session driving, string text)

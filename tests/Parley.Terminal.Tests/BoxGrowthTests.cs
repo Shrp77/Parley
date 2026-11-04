@@ -12,6 +12,7 @@ namespace Parley.Terminal.Tests;
 /// tall, twice, and both times the owner found it rather than the suite.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class BoxGrowthTests
 {
     [Fact]

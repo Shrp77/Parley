@@ -178,15 +178,15 @@ def expand(value: str) -> str:
     )
 
 
-def launches(root: Path) -> list[tuple[str, str, str, str]]:
-    """Every Parley launch entry in this repository's .mcp.json: its agent, broker, project and machine."""
+def launches(root: Path) -> list[tuple[str, str, str, str, str]]:
+    """Every Parley launch entry in this repository's .mcp.json: its agent, broker, project, machine and key."""
     manifest = root / ".mcp.json"
 
     if not manifest.is_file():
         return []
 
     servers = json.loads(manifest.read_text(encoding="utf-8-sig")).get("mcpServers", {})
-    found: list[tuple[str, str, str, str]] = []
+    found: list[tuple[str, str, str, str, str]] = []
 
     # `parley` is the key a repository enrolled into no named project holds;
     # enrolment into a project writes `parley-<project>`, one for each project the
@@ -221,7 +221,10 @@ def launches(root: Path) -> list[tuple[str, str, str, str]]:
         # normalisation being written here to drift from the adapter's.
         machine = expand(env.get("PARLEY_MACHINE", "")).strip()
 
-        entry = (agent, broker, project, machine)
+        # The key goes with it because this machine's block may name another broker
+        # (SPEC.md section 4.1.2). `parley` reads the block, so the rule has one
+        # implementation and this file holds no copy of it.
+        entry = (agent, broker, project, machine, key)
 
         if entry not in found:
             found.append(entry)
@@ -236,6 +239,7 @@ def waiting(
     machine: str = "",
     root: Path | None = None,
     budget: float = TIMEOUT,
+    key: str = "",
 ) -> tuple[int, int, int]:
     """Ask the broker what is waiting: uncollected messages, polls owed a vote, and file gone notices."""
     # Asked rather than read. One process owns the store (SPEC.md section 4), it
@@ -252,6 +256,9 @@ def waiting(
         return 0, 0, 0
 
     command = [tool]
+
+    if key:
+        command += ["--launch-key", key]
 
     if broker:
         command += ["--broker", broker]
@@ -421,7 +428,7 @@ def main() -> int:
     unread = owed = notices = 0
     deadline = time.monotonic() + BUDGET
 
-    for agent, broker, project, machine in entries:
+    for agent, broker, project, machine, key in entries:
         left = deadline - time.monotonic()
 
         # Bounded across the entries as well as within one, because this runs in
@@ -431,7 +438,7 @@ def main() -> int:
             break
 
         more_unread, more_owed, more_notices = waiting(
-            broker, agent, project, machine, root, min(TIMEOUT, left)
+            broker, agent, project, machine, root, min(TIMEOUT, left), key
         )
 
         unread += more_unread

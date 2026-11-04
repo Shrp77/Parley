@@ -13,6 +13,7 @@ namespace Parley.Server.Tests;
 /// run ended started nothing; and a sweep stopped part way moved a file to quarantine and recorded nothing.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class TheSweepAndTheHoldsLoseNothingTests
 {
     private const string Orders = "orders@test";

@@ -34,6 +34,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class PaintedTests
 {
     private static BrokerDirectory Directory() =>

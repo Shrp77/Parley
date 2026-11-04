@@ -52,6 +52,10 @@ internal static class Catalogues
         // readers are untouched, and an enrolment and a project rewrite exclude each other.
         var lockPath = ProjectManifest.LockFor(path);
 
+        // A machine that only runs agents has a root and no project yet, so nothing has made the folder this lives in. An
+        // empty folder is no project: the machine's projects are the folders inside it.
+        _ = Directory.CreateDirectory(Path.GetDirectoryName(lockPath)!);
+
         for (var attempt = 0; ; attempt++)
         {
             try

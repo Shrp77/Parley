@@ -317,6 +317,16 @@ public static class ProjectCommand
             return Usage;
         }
 
+        // Reserved: it is what a surface calls a broker it was given by address, and writers take it to mean that.
+        if (string.Equals(name.Value, ProjectManifest.WindowName, StringComparison.Ordinal))
+        {
+            await error.WriteLineAsync(
+                $"'{requested}' is what a surface calls a broker shown by address, so no project can have that name.")
+                .ConfigureAwait(false);
+
+            return Usage;
+        }
+
         // A project's store and file location live under the root, so the root must be this machine's own disk (the owner's
         // rule, 2026-10-29): a sync client copying a store mid-write, or a share, is where a deployment's records go wrong.
         if (LocalStorage.Problem(root) is { } notLocal)

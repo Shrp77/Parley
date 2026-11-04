@@ -58,6 +58,7 @@ public static class AutostartCommand
     /// <param name="output">Where to report what happened.</param>
     /// <param name="error">Where to report why it could not.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
+    /// <param name="removeEverything">Whether removing takes every node's entry as well, for an uninstall.</param>
     /// <param name="hidden">
     /// Whether an installed entry should tell the broker to let go of its console window. A logon
     /// entry starts a console program in the person's own session, so without this one appears on
@@ -75,7 +76,8 @@ public static class AutostartCommand
         TextWriter output,
         TextWriter error,
         CancellationToken cancellationToken = default,
-        bool hidden = false)
+        bool hidden = false,
+        bool removeEverything = false)
     {
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(error);
@@ -97,11 +99,198 @@ public static class AutostartCommand
                 cancellationToken, hidden)
                 .ConfigureAwait(false),
 
-            "remove" => await RemoveAsync(output, error, cancellationToken).ConfigureAwait(false),
+            "remove" when removeEverything => await RemoveEverythingAsync(output, error, cancellationToken).ConfigureAwait(false),
+
+            "remove" => await RemoveAsync(project, output, error, cancellationToken).ConfigureAwait(false),
 
             "status" => await StatusAsync(output, cancellationToken).ConfigureAwait(false),
 
             _ => await UnknownAsync(action, error).ConfigureAwait(false)
+        };
+    }
+
+    /// <summary>Why an entry for a node cannot be installed for a project, or null when it can.</summary>
+    /// <param name="project">The project named.</param>
+    /// <param name="described">The projects this machine describes.</param>
+    /// <returns>The refusal, or null.</returns>
+    public static string? NodeEntryRefusal(string? project, IEnumerable<string> described)
+    {
+        ArgumentNullException.ThrowIfNull(described);
+
+        if (string.IsNullOrWhiteSpace(project))
+        {
+            return "An entry for a node names the project it joins. Add --project.";
+        }
+
+        return described.Contains(project, StringComparer.Ordinal)
+            ? $"This machine describes '{project}', so it is served here and has no need of an address. "
+              + "`parley autostart install` with no address runs a broker and this machine's node together."
+            : null;
+    }
+
+    /// <summary>Installs the entry that runs only a node, for a project this machine reaches by address.</summary>
+    /// <param name="root">This machine's root.</param>
+    /// <param name="project">The project, which the broker has already said it serves.</param>
+    /// <param name="address">Where the broker is reached.</param>
+    /// <param name="nodeConfig">The machine's catalogue.</param>
+    /// <param name="output">Where to report.</param>
+    /// <param name="error">Where to report what failed.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <param name="hidden">Whether it should let go of its console window.</param>
+    /// <returns>The exit code.</returns>
+    public static async Task<int> InstallNodeAsync(
+        string root,
+        string project,
+        string address,
+        string nodeConfig,
+        TextWriter output,
+        TextWriter error,
+        CancellationToken cancellationToken = default,
+        bool hidden = false)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+        ArgumentNullException.ThrowIfNull(error);
+
+        if (AutostartPlan.Detect() == Supervisor.Unsupported)
+        {
+            await error.WriteLineAsync(
+                "Parley does not know how to start a node automatically on this platform. Run `parley up "
+                + "--keep-trying` from whatever this system uses to keep a process running.").ConfigureAwait(false);
+
+            return Unavailable;
+        }
+
+        var plan = AutostartPlan.DescribeNode(root, project, address, nodeConfig, hidden: hidden);
+
+        _ = Directory.CreateDirectory(Path.GetDirectoryName(plan.LogPath)!);
+
+        var installed = plan.Supervisor switch
+        {
+            Supervisor.ScheduledTask when OperatingSystem.IsWindows() =>
+                await InstallScheduledTaskAsync(plan, error, cancellationToken).ConfigureAwait(false),
+
+            Supervisor.SystemdUser =>
+                await InstallSystemdAsync(plan, error, cancellationToken).ConfigureAwait(false),
+
+            Supervisor.LaunchAgent =>
+                await InstallLaunchAgentAsync(plan, error, cancellationToken).ConfigureAwait(false),
+
+            _ => false
+        };
+
+        if (!installed)
+        {
+            return Unavailable;
+        }
+
+        await output.WriteLineAsync(
+            $"This machine's node for '{project}' is running, and will start when you log in, as {Describe(plan.Supervisor, plan.Label)}. "
+            + "There is no broker on this machine.").ConfigureAwait(false);
+        await output.WriteLineAsync($"  runs:  {plan.CommandLine()}").ConfigureAwait(false);
+        await output.WriteLineAsync($"  logs:  {plan.LogPath}").ConfigureAwait(false);
+        await output.WriteLineAsync(
+            "  The tunnel is yours to keep up. The node waits for it, and keeps its agents meanwhile.").ConfigureAwait(false);
+        await output.WriteLineAsync(await SessionNoticeAsync(plan.Supervisor, cancellationToken).ConfigureAwait(false))
+            .ConfigureAwait(false);
+
+        return 0;
+    }
+
+    /// <summary>What must be true for an entry to run with nobody there, on this platform.</summary>
+    /// <param name="supervisor">The supervisor.</param>
+    /// <param name="cancellationToken">Cancels the question.</param>
+    /// <returns>The sentence.</returns>
+    /// <remarks>
+    /// <b>Said and never done.</b> An entry is user-level because the node starts agents signed in as the person, so it runs
+    /// only in their session. Turning lingering on changes a system setting, and may need privilege: the person decides.
+    /// </remarks>
+    private static async Task<string> SessionNoticeAsync(Supervisor supervisor, CancellationToken cancellationToken)
+    {
+        if (supervisor != Supervisor.SystemdUser)
+        {
+            return "  It starts at logon, so a machine nobody signs in to will not run it.";
+        }
+
+        var user = Environment.UserName;
+        var asked = await RunAsync("loginctl", ["show-user", user, "--property=Linger"], cancellationToken)
+            .ConfigureAwait(false);
+
+        return asked.Output.Contains("Linger=yes", StringComparison.Ordinal)
+            ? "  Lingering is on, so it runs with nobody logged in."
+            : $"  Lingering is not on, so it stops at logout. To keep it running, run: loginctl enable-linger {user}";
+    }
+
+    /// <summary>The nodes this machine has entries for.</summary>
+    /// <param name="supervisor">The supervisor.</param>
+    /// <returns>Their labels.</returns>
+    internal static IReadOnlyList<string> NodeLabels(Supervisor supervisor)
+    {
+        if (supervisor == Supervisor.ScheduledTask)
+        {
+            return OperatingSystem.IsWindows()
+                ? [.. ScheduledTasks.Named(AutostartPlan.NodePrefix)
+                    .Where(label => Parley.Core.ProjectName.TryCreate(label[AutostartPlan.NodePrefix.Length..], out _))]
+                : [];
+        }
+
+        var folder = Path.GetDirectoryName(
+            AutostartPlan.DescribeNode("placeholder", "placeholder", "placeholder", "placeholder").UnitPath);
+
+        return folder is null || !Directory.Exists(folder)
+            ? []
+            : [.. Directory.EnumerateFiles(folder, AutostartPlan.NodePrefix + "*" + (supervisor == Supervisor.SystemdUser ? ".service" : ".plist"))
+                .Select(file => Path.GetFileNameWithoutExtension(file))
+
+                // Only what `install` could have written. Anything else in that folder is not ours to name or to remove.
+                .Where(label => Parley.Core.ProjectName.TryCreate(label[AutostartPlan.NodePrefix.Length..], out _))
+                .Order(StringComparer.Ordinal)];
+    }
+
+    private static async Task<int> RemoveEverythingAsync(TextWriter output, TextWriter error, CancellationToken cancellationToken)
+    {
+        var nodes = NodeLabels(AutostartPlan.Detect());
+        var failed = false;
+
+        foreach (var node in nodes)
+        {
+            if (await RemoveNodeAsync(node, cancellationToken).ConfigureAwait(false))
+            {
+                await output.WriteLineAsync($"Removed {node}.").ConfigureAwait(false);
+            }
+            else
+            {
+                failed = true;
+                await error.WriteLineAsync($"Could not remove {node}.").ConfigureAwait(false);
+            }
+        }
+
+        var plan = AutostartPlan.Describe("placeholder");
+        var hasBroker = plan.Supervisor == Supervisor.ScheduledTask
+            ? OperatingSystem.IsWindows() && ScheduledTasks.Exists(plan.Label)
+            : File.Exists(plan.UnitPath);
+
+        // A machine that only runs agents has no broker entry, and that is not something having gone wrong.
+        if (!hasBroker && nodes.Count > 0)
+        {
+            return failed ? 1 : 0;
+        }
+
+        var broker = await RemoveAsync(null, output, error, cancellationToken).ConfigureAwait(false);
+
+        return failed ? 1 : broker;
+    }
+
+    private static async Task<bool> RemoveNodeAsync(string label, CancellationToken cancellationToken)
+    {
+        var project = label[AutostartPlan.NodePrefix.Length..];
+        var plan = AutostartPlan.DescribeNode("placeholder", project, "placeholder", "placeholder");
+
+        return plan.Supervisor switch
+        {
+            Supervisor.ScheduledTask when OperatingSystem.IsWindows() => ScheduledTasks.Delete(plan.Label),
+            Supervisor.SystemdUser => await RemoveSystemdAsync(plan, cancellationToken).ConfigureAwait(false),
+            Supervisor.LaunchAgent => await RemoveLaunchAgentAsync(plan, cancellationToken).ConfigureAwait(false),
+            _ => false
         };
     }
 
@@ -301,6 +490,12 @@ public static class AutostartCommand
 
         try
         {
+            // A node already running keeps its old address otherwise: the task ignores a second start while one runs.
+            if (plan.IsNode)
+            {
+                ScheduledTasks.Stop(plan.Label);
+            }
+
             ScheduledTasks.Register(plan.Label, plan.ScheduledTaskXml(CurrentUser()));
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -441,6 +636,13 @@ public static class AutostartCommand
             "systemctl", ["--user", "enable", "--now", plan.Label + ".service"], cancellationToken)
             .ConfigureAwait(false);
 
+        // A node already running keeps its old address otherwise, and `enable --now` starts only what is stopped.
+        if (enabled.ExitCode == 0 && plan.IsNode)
+        {
+            _ = await RunAsync("systemctl", ["--user", "restart", plan.Label + ".service"], cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         if (enabled.ExitCode == 0)
         {
             return true;
@@ -499,10 +701,44 @@ public static class AutostartCommand
     /// stopping one would end every attached agent's session mid-exchange, and somebody removing
     /// an autostart entry is usually rearranging their machine rather than asking for that.
     /// </remarks>
+    /// <param name="project">The project whose node entry to remove, when one was named.</param>
     private static async Task<int> RemoveAsync(
-        TextWriter output, TextWriter error, CancellationToken cancellationToken)
+        string? project, TextWriter output, TextWriter error, CancellationToken cancellationToken)
     {
         var plan = AutostartPlan.Describe("placeholder");
+
+        // A node's entry, when that is what was named, or all there is: an entry nobody named is never taken from several.
+        var nodes = NodeLabels(plan.Supervisor);
+        var hasBroker = plan.Supervisor == Supervisor.ScheduledTask
+            ? OperatingSystem.IsWindows() && ScheduledTasks.Exists(plan.Label)
+            : File.Exists(plan.UnitPath);
+        var node = project is { Length: > 0 }
+            ? nodes.FirstOrDefault(label => string.Equals(label, AutostartPlan.NodePrefix + project, StringComparison.Ordinal))
+            : !hasBroker && nodes.Count == 1 ? nodes[0] : null;
+
+        if (node is not null)
+        {
+            if (!await RemoveNodeAsync(node, cancellationToken).ConfigureAwait(false))
+            {
+                await error.WriteLineAsync($"Could not remove {node}.").ConfigureAwait(false);
+
+                return 1;
+            }
+
+            await output.WriteLineAsync(
+                $"Removed {node}. A node that is already running keeps running; stop it yourself.").ConfigureAwait(false);
+
+            return 0;
+        }
+
+        if (!hasBroker && nodes.Count > 1)
+        {
+            await error.WriteLineAsync(
+                $"This machine has several node entries: {string.Join(", ", nodes)}. Name one with --project.")
+                .ConfigureAwait(false);
+
+            return 64;
+        }
 
         var removed = plan.Supervisor switch
         {
@@ -627,6 +863,11 @@ public static class AutostartCommand
     {
         var plan = AutostartPlan.Describe("placeholder");
 
+        foreach (var label in NodeLabels(plan.Supervisor))
+        {
+            await output.WriteLineAsync($"This machine's node runs as {Describe(plan.Supervisor, label)}.").ConfigureAwait(false);
+        }
+
         var present = plan.Supervisor switch
         {
             Supervisor.ScheduledTask when OperatingSystem.IsWindows() =>
@@ -644,6 +885,13 @@ public static class AutostartCommand
         var enabled = !present || plan.Supervisor == Supervisor.ScheduledTask
             ? null
             : await EnabledAsync(plan, cancellationToken).ConfigureAwait(false);
+
+        if (!present && NodeLabels(plan.Supervisor).Count > 0)
+        {
+            await output.WriteLineAsync("There is no broker entry on this machine, which only runs agents.").ConfigureAwait(false);
+
+            return 0;
+        }
 
         await output.WriteLineAsync(
             (present, enabled) switch
@@ -744,11 +992,13 @@ public static class AutostartCommand
     /// <summary>Names a supervisor the way somebody would look for it.</summary>
     /// <param name="supervisor">The supervisor.</param>
     /// <returns>Its name, and where to find it.</returns>
-    private static string Describe(Supervisor supervisor) => supervisor switch
+    private static string Describe(Supervisor supervisor) => Describe(supervisor, AutostartPlan.Name);
+
+    private static string Describe(Supervisor supervisor, string label) => supervisor switch
     {
-        Supervisor.ScheduledTask => $"a scheduled task called '{AutostartPlan.Name}'",
-        Supervisor.SystemdUser => $"the systemd user unit '{AutostartPlan.Name}.service'",
-        Supervisor.LaunchAgent => $"the launch agent '{AutostartPlan.Name}'",
+        Supervisor.ScheduledTask => $"a scheduled task called '{label}'",
+        Supervisor.SystemdUser => $"the systemd user unit '{label}.service'",
+        Supervisor.LaunchAgent => $"the launch agent '{label}'",
         _ => "nothing this build knows about"
     };
 

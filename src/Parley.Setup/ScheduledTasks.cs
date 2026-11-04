@@ -159,6 +159,49 @@ public static class ScheduledTasks
         return false;
     }
 
+    /// <summary>Stops a task's running instance, if it has one.</summary>
+    /// <param name="name">The task.</param>
+    public static void Stop(string name)
+    {
+        try
+        {
+            dynamic folder = RootFolder();
+
+            folder.GetTask(name).Stop(0);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // Not there yet, or not running: nothing to stop.
+        }
+    }
+
+    /// <summary>The tasks whose names start with a prefix.</summary>
+    /// <param name="prefix">The prefix.</param>
+    /// <returns>Their names, empty when the scheduler cannot be asked.</returns>
+    public static IReadOnlyList<string> Named(string prefix)
+    {
+        var found = new List<string>();
+
+        try
+        {
+            dynamic folder = RootFolder();
+
+            foreach (dynamic task in folder.GetTasks(1))
+            {
+                if (((string)task.Name).StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    found.Add((string)task.Name);
+                }
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return [];
+        }
+
+        return found;
+    }
+
     /// <summary>Connects to the scheduler and returns its root folder.</summary>
     /// <returns>The folder.</returns>
     /// <exception cref="InvalidOperationException">The scheduler is not available.</exception>

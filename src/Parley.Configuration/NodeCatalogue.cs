@@ -43,10 +43,18 @@ public sealed class NodeCatalogue
     /// <summary>Keys in the file that are not identities, for a node to report rather than swallow.</summary>
     public IReadOnlyList<string> Unreadable { get; private init; } = [];
 
+    /// <summary>The member of an entry listing what this machine has withdrawn from.</summary>
+    public const string WithdrawnMember = "withdrawn";
+
     /// <summary>One agent this machine can start.</summary>
     /// <param name="Command">How to start it.</param>
     /// <param name="Workspace">Where to start it, or null to use the node's own directory.</param>
-    private sealed record Entry(string Command, string? Workspace);
+    /// <param name="Withdrawn">
+    /// The entries this machine has withdrawn from while another machine still uses them. Here and not in the repository, because
+    /// the repository's file is shared: nothing in it can say what one machine decided, as another machine's block looks
+    /// the same whichever of them wrote it. A block for the entry outranks this, so enrolling again takes effect by itself.
+    /// </param>
+    private sealed record Entry(string Command, string? Workspace, IReadOnlyList<string> Withdrawn);
 
     /// <summary>The machine this catalogue describes.</summary>
     /// <remarks>
@@ -176,7 +184,14 @@ public sealed class NodeCatalogue
                         ? directory.GetString()
                         : null;
 
-                    entries[identity] = new Entry(text, workspace);
+                    IReadOnlyList<string> withdrawn = entry.Value.TryGetProperty(WithdrawnMember, out var left)
+                        && left.ValueKind == JsonValueKind.Array
+                            ? [.. left.EnumerateArray()
+                                .Where(item => item.ValueKind == JsonValueKind.String)
+                                .Select(item => item.GetString()!)]
+                            : [];
+
+                    entries[identity] = new Entry(text, workspace, withdrawn);
                 }
             }
 
@@ -248,7 +263,12 @@ public sealed class NodeCatalogue
             found.Add(new CataloguedWorkspace(
                 identity,
                 entry.Workspace,
-                read ? declared.Memberships : [],
+                // Not what this machine withdrew from, though the entry stays while another machine's block names it (SPEC.md §4.1.2).
+                read
+                    ? [.. declared.Memberships.Where(membership =>
+                        !entry.Withdrawn.Contains(membership.Key, StringComparer.Ordinal)
+                        || declared.BlockFor(Machine, membership.Key) is not null)]
+                    : [],
                 problem));
         }
 

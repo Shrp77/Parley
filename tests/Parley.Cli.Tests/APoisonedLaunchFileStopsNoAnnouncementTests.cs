@@ -11,7 +11,7 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// Lens 2 run 138. A lone surrogate escape at the top level, inside <c>mcpServers</c> or in a value threw
-/// <see cref="InvalidOperationException"/> out of <see cref="LaunchConfiguration.TryRead"/>, through
+/// <see cref="InvalidOperationException"/> out of <see cref="LaunchConfiguration.TryRead(string?, out LaunchConfiguration, out string?)"/>, through
 /// <see cref="NodeCatalogue.Announceable"/>, and ended the node, which under <c>parley up</c> stops every resident agent
 /// on the machine. The value case was older than the strict parse: it threw when the agent's name was read.
 /// </remarks>

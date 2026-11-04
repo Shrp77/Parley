@@ -85,6 +85,9 @@ parley autostart install              start the broker whenever you log in, serv
 parley autostart remove               stop doing that
 parley autostart status               say whether it is set up, and what it serves
 parley up                             run this machine's node, so its agents can be started
+parley autostart install --project <p> --broker <address>
+                                      on a machine that only runs agents: a node at logon, no broker
+parley autostart remove --all         every entry, nodes included
 parley web-ui [<url>]                 the web UI in a browser; loopback by default
                                       (its own tool: parley-web-ui, installed separately)
 parley                                the terminal; needs a real one

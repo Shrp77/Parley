@@ -16,6 +16,7 @@ namespace Parley.Server.Tests;
 /// its paths reach 32,767 characters, where Linux and macOS stop a tree far shallower than the stack.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ADeepTreeByHandStopsNothingTests : IDisposable
 {
     private const string Orders = "orders@alpha";

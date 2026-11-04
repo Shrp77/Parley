@@ -62,6 +62,14 @@ public static class EnrollmentPlan
     /// </remarks>
     public const string BrokerVariable = "PARLEY_BROKER";
 
+    /// <summary>What is said instead of enrolling into a broker shown by address.</summary>
+    public const string AWindowEnrolsNothing =
+        "This machine shows a broker by address and has no project of its own, so nothing is enrolled from here. "
+        + "Use: parley enroll <folder> --project <its name> --broker <its address>";
+
+    /// <summary>The variable naming which model answers, carried across a re-enrolment.</summary>
+    public const string ResponderVariable = "PARLEY_RESPONDER";
+
     /// <summary>The launch variable saying what an agent owns.</summary>
     /// <remarks>
     /// A constant for the reason <see cref="AgentVariable"/> is one: it is read as well as written.
@@ -349,6 +357,10 @@ public static class EnrollmentPlan
     /// <param name="identity">
     /// The identity to write when the repository declares none, or the default to mint one here.
     /// </param>
+    /// <param name="brokerAddress">
+    /// The address this machine reaches the project's broker at, when it describes no such project itself. Written to this
+    /// machine's block.
+    /// </param>
     public static RepositoryPlan Describe(
         EnrollmentEntry entry,
         string? launchConfiguration,
@@ -357,10 +369,18 @@ public static class EnrollmentPlan
         string? project = null,
         IReadOnlyDictionary<string, string>? endpoints = null,
         string? nodeWorkspace = null,
-        AgentIdentity identity = default)
+        AgentIdentity identity = default,
+        string? brokerAddress = null)
     {
         ArgumentNullException.ThrowIfNull(entry);
 
+        // A window onto a broker shown by address, and its name is no project's. Here so that every way of enrolling is held to it.
+        if (string.Equals(project, ProjectManifest.WindowName, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(AWindowEnrolsNothing);
+        }
+
+        var machine = MachineName.Current;
         var notes = new List<string>();
         var owns = (entry.Owns ?? string.Empty).Trim();
 
@@ -443,6 +463,49 @@ public static class EnrollmentPlan
             landed = null;
         }
 
+        // A section that breaks the rules is refused before it is merged into, like every other shape this cannot read: a
+        // reader would call the file unreadable, and this must not say it enrolled.
+        if (launchConfiguration is not null
+            && !LaunchConfiguration.TryParse(launchConfiguration, LaunchConfiguration.FileName, out _, out var broken, out var machinesBroken)
+            && machinesBroken)
+        {
+            throw new InvalidDataException(broken ?? "its machine section cannot be read");
+        }
+
+        // The role is shared (SPEC.md §4.1.2), so changing it here renames the agent on every other machine at its next
+        // start. Refused rather than said in a note, because the machine it happens to is not this one.
+        if (landed?.Agent is { Length: > 0 } role
+            && !string.Equals(role, entry.Agent, StringComparison.Ordinal)
+            && MachineBlocks.OthersHolding(root, machine, key) is { Count: > 0 } holding)
+        {
+            throw new InvalidDataException(
+                $"'{key}' is {Quoting.Quoted(role)} and {string.Join(", ", holding)} has a block for it. Enrolling as "
+                + $"{Quoting.Quoted(entry.Agent)} would rename that machine's agent too. Use the same role, or withdraw it there first");
+        }
+
+        // One project for a checkout reached by address. A node is one process per broker, and an agent can only be known to the
+        // node that started it, so another project would take it for one somebody opened by hand and never wake it. Either order.
+        var alongside = LaunchEntries.Read(servers).FirstOrDefault(other =>
+            !string.Equals(other.Key, key, StringComparison.Ordinal)
+            && MachineBlocks.AnswersHere(root, machine, other.Key)
+            && (!string.IsNullOrWhiteSpace(brokerAddress)
+                || MachineBlocks.Block(root, machine, other.Key)?[BrokerVariable] is not null));
+
+        if (alongside is not null)
+        {
+            throw new InvalidDataException(
+                $"this checkout is already in '{alongside.Key}' on this machine, and a checkout reached by address can be in "
+                + "only one project, because a node could not wake it in the other. Take this machine's part of "
+                + $"'{alongside.Key}' out of .mcp.json first");
+        }
+
+        // What is shared, written new every time rather than merged into: a `command` or a `PATH` adopted from what is there
+        // is whatever that file chose, launched by the person's client in the belief that it is Parley.
+        //
+        // **Two settings another machine may be reading are carried across** (FR-018), and only while this is still the same
+        // agent: a line written for another role says nothing true about this one. A folder is not carried, being no use to any
+        // other machine, and once the file has a section it would only send a clone looking in the original. An address is not,
+        // for the reason it never was: the project is named, and an address is a port number that moves.
         var env = new JsonObject { [AgentVariable] = entry.Agent };
 
         if (project is not null)
@@ -450,26 +513,64 @@ public static class EnrollmentPlan
             env[ProjectVariable] = project;
         }
 
-        if (owns.Length > 0)
+        if (landed?.Agent is { Length: > 0 } same
+            && string.Equals(same, entry.Agent, StringComparison.Ordinal)
+            && servers[key]?["env"] is JsonObject shared)
         {
-            env[OwnsVariable] = owns;
+            foreach (var kept in new[] { OwnsVariable, ResponderVariable })
+            {
+                if (shared[kept] is not { } value)
+                {
+                    continue;
+                }
+
+                // Held to what a line typed here is held to: a client expands `${...}`, so a value carried across would report
+                // somebody's secret on attach.
+                if (OwnershipStatement.IsLaunchable(value.ToString(), out _))
+                {
+                    env[kept] = value.DeepClone();
+                }
+                else
+                {
+                    notes.Add($".mcp.json: {kept} is not carried across, because the client would expand it");
+                }
+            }
         }
 
-        // The ${VAR:-default} form is environment-variable expansion, which .mcp.json supports.
-        // The file is usually committed and the path is machine-specific, so the default is what
-        // this machine uses and a teammate overrides it by setting the variable.
-        //
-        // **A path holding `}` or `$` is written plainly instead, because JSON-safe is not
-        // configuration-safe.** The mini-syntax has no escape: a directory called `or}ders` — legal
-        // on every platform this runs on — closes the expansion early, and everything after it
-        // becomes literal text in the value the agent's server is launched with. The workspace is
-        // what the registry records and what a node uses as a working directory, so getting it
-        // silently wrong is worse than losing the override, which is a convenience.
-        var workspace = entry.Workspace.Replace('\\', '/');
+        var desired = new JsonObject { ["command"] = AdapterCommand, ["env"] = env };
 
-        env[WorkspaceVariable] = workspace.AsSpan().ContainsAny('}', '$')
-            ? workspace
-            : "${" + WorkspaceVariable + ":-" + workspace + "}";
+        // What is this machine's. No folder: a node starts an agent from the folder in this machine's own catalogue.
+        var section = root[LaunchConfiguration.MachinesMember]?.DeepClone();
+        var scratch = new JsonObject();
+
+        if (section is not null)
+        {
+            scratch[LaunchConfiguration.MachinesMember] = section;
+        }
+
+        var block = MachineBlocks.Ensure(scratch, machine, key);
+
+        // A line written for another role says nothing true about this one.
+        if (landed?.Agent is { Length: > 0 } before && !string.Equals(before, entry.Agent, StringComparison.Ordinal))
+        {
+            _ = block.Remove(OwnsVariable);
+        }
+
+        if (owns.Length > 0)
+        {
+            block[OwnsVariable] = owns;
+        }
+
+        if (!string.IsNullOrWhiteSpace(brokerAddress))
+        {
+            block[BrokerVariable] = brokerAddress;
+        }
+        else if (block.Remove(BrokerVariable))
+        {
+            // Enrolling into a project this machine describes means that project's broker, and a block's address would quietly
+            // beat it, whether stale or planted.
+            notes.Add($".mcp.json: this machine's block named a broker; it is taken out, because this machine describes '{project}'");
+        }
 
         // The identity is kept where it is found and minted only where there is none. It sits beside
         // `mcpServers` rather than inside an entry, because it belongs to the repository and not to any
@@ -478,10 +579,10 @@ public static class EnrollmentPlan
         var declared = Declared(root);
         var chosen = declared.Known ? declared : identity.Known ? identity : AgentIdentity.Mint();
 
-        var desired = new JsonObject { ["command"] = AdapterCommand, ["env"] = env };
         var existing = servers[key];
         var already = existing is not null
             && JsonNode.DeepEquals(existing, desired)
+            && JsonNode.DeepEquals(root[LaunchConfiguration.MachinesMember], scratch[LaunchConfiguration.MachinesMember])
             && declared == chosen;
 
         string? launchOutput = null;
@@ -502,7 +603,13 @@ public static class EnrollmentPlan
             var others = servers.Count(pair => !string.Equals(pair.Key, key, StringComparison.Ordinal));
 
             servers[key] = desired;
-            launchOutput = root.ToJsonString(SerialisationOptions.Indented) + "\n";
+
+            // Copied in only now, so a run that is already correct, or refused above, rewrites nothing.
+            var written = scratch[LaunchConfiguration.MachinesMember]!;
+            _ = scratch.Remove(LaunchConfiguration.MachinesMember);
+            root[LaunchConfiguration.MachinesMember] = written;
+
+            launchOutput = LaunchText.Render(root, launchConfiguration);
             notes.Add(others > 0
                 ? $".mcp.json: {(existing is null ? "create" : "update")} {key} entry, leaving {others} other server(s)"
                 : $".mcp.json: {(existing is null ? "create" : "update")} {key} entry");

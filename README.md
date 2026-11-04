@@ -97,6 +97,10 @@ cd Parley
 On Linux and macOS the install leaves the terminal out unless you ask for it
 (`./install.sh --surfaces both`), and the web console does everything below.
 
+A machine that only runs agents, such as a server you reach by SSH, needs the same prerequisites and
+`--agent-only` (`-AgentOnly` on Windows), which starts no broker there. See
+[A machine that only runs agents](docs/configuration.md#a-machine-that-only-runs-agents).
+
 Then add your repositories. You can do this in the terminal or in the web console:
 
 1. Open the terminal with `parley`, or the web console at <http://127.0.0.1:5280>.

@@ -18,6 +18,7 @@ namespace Parley.Store.Tests;
 /// writes one message, which never splits anything.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class TextASplitMovedIsWipedTests : IDisposable
 {
     private static readonly DateTimeOffset T0 = new(2026, 10, 30, 9, 0, 0, TimeSpan.Zero);

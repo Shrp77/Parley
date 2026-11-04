@@ -121,7 +121,7 @@ if ($FilesOnly) {
         if ($PSCmdlet.ShouldProcess('this machine''s autostart entry', 'Remove')) {
             # Best effort: an entry that is not installed is not a failure. What matters is that
             # nothing is holding a store afterwards.
-            & parley autostart remove 2>&1 |
+            & parley autostart remove --all 2>&1 |
                 ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
         }
     } else {

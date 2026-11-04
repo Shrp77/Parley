@@ -32,6 +32,7 @@ namespace Parley.Mcp.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ConcurrentLaunchTests : IDisposable
 {
     // Six at a time, ten times over, because the window is narrow and a test that catches a

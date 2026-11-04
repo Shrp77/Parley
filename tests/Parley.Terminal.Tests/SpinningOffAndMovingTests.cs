@@ -14,6 +14,7 @@ namespace Parley.Terminal.Tests;
 
 /// <summary>The terminal's two doors onto SPEC.md §5.0, pressed through a real shell against a real broker.</summary>
 [Integration]
+[Slow]
 public sealed class SpinningOffAndMovingTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

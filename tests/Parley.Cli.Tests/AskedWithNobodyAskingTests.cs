@@ -130,7 +130,9 @@ public sealed class AskedWithNobodyAskingTests : IAsyncDisposable
 
         // In the launch configuration, where the adapter reads it on its next start.
         var launch = JsonNode.Parse(File.ReadAllText(Path.Combine(_workspace, ".mcp.json")))!;
-        Assert.Equal(Line, launch["mcpServers"]![$"parley-{Project}"]!["env"]!["PARLEY_OWNS"]!.GetValue<string>());
+        Assert.Equal(
+            Line,
+            launch["parleyMachines"]![Orders.Machine]![$"parley-{Project}"]!["PARLEY_OWNS"]!.GetValue<string>());
 
         // And in the record, as accepted automatically, with the agent's own length.
         var row = Assert.Single(

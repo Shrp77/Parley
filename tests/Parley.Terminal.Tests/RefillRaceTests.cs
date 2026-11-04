@@ -35,6 +35,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class RefillRaceTests
 {
     /// <summary>How many draws each region is hammered for.</summary>

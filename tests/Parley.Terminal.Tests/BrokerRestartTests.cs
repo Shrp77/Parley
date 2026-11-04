@@ -36,6 +36,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class BrokerRestartTests
 {
     private static readonly ProjectSettings Alpha =

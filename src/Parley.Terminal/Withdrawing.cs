@@ -335,7 +335,7 @@ internal static class Withdrawing
 
         if (changed)
         {
-            await WithdrawAsync(row, project, catalogueFile, said, cancellationToken).ConfigureAwait(false);
+            await WithdrawAsync(client, row, project, catalogueFile, said, cancellationToken).ConfigureAwait(false);
         }
 
         await done(Reports.Sentences(said)).ConfigureAwait(false);
@@ -367,7 +367,7 @@ internal static class Withdrawing
 
         if (gone)
         {
-            await WithdrawAsync(row, project, catalogueFile, said, cancellationToken).ConfigureAwait(false);
+            await WithdrawAsync(client, row, project, catalogueFile, said, cancellationToken).ConfigureAwait(false);
         }
 
         await done(Reports.Sentences(said)).ConfigureAwait(false);
@@ -375,6 +375,7 @@ internal static class Withdrawing
 
     /// <summary>Takes the launch configuration and the catalogue line away, and lists what went.</summary>
     private static async Task WithdrawAsync(
+        BrokerClient client,
         AgentRow row,
         string? project,
         string? catalogueFile,
@@ -384,6 +385,31 @@ internal static class Withdrawing
         if (row.Workspace is not { Length: > 0 } workspace || workspace == "—")
         {
             said.Add("No workspace is recorded for it, so there was no launch configuration to remove.");
+
+            return;
+        }
+
+        // Another machine's agent has its files on that machine, whatever is at the same path here.
+        if (AgentName.TryCreate(row.Name, out var name) && OwnershipLine.NotHere(name) is not null)
+        {
+            said.Add($"Its launch configuration is on {name.Machine}, so nothing here was changed. Withdraw it there.");
+
+            return;
+        }
+
+        // Asked apart, and said rather than thrown: the broker has already changed, and a tunnel that dropped since must not lose
+        // the report of it.
+        try
+        {
+            project = await BrokerProject.ForWritingAsync(
+                    project,
+                    async () => (await client.RegistryAsync(cancellationToken).ConfigureAwait(false)).Select(known => known.Name.Value))
+                .ConfigureAwait(false);
+        }
+        catch (Grpc.Core.RpcException failure)
+        {
+            said.Add($"The broker did not answer ({failure.StatusCode}), so which project this is could not be told and its launch "
+                + "configuration was left as it is.");
 
             return;
         }

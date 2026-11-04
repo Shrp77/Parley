@@ -34,7 +34,8 @@ to step 2.
 
 If either is missing, Parley is in alpha and **not yet published to NuGet**, so installing it
 means building it from a clone. The clone's install script does it all - the tools, the broker
-registered to start at logon, and a check that the broker answers. Tell the user that, show them
+registered to start at logon, and a check that the broker answers. On a machine that only runs agents and reaches its
+broker by a tunnel, add `--agent-only` (`-AgentOnly` on Windows), which registers no broker. Tell the user that, show them
 these commands, and ask before running them:
 
 ```
@@ -56,7 +57,9 @@ is usually missing is a project:
 parley project list
 ```
 
-If it names none, have the user name one on the first screen of the terminal:
+If this machine only runs agents and reaches its broker by a tunnel, it should name none: install with `--agent-only`, then run
+`parley enroll <folder> --project <its name> --broker <its address>` and `parley autostart install --project <its name> --broker
+<its address>`. Otherwise, if it names none, have the user name one on the first screen of the terminal:
 
 ```
 parley
@@ -93,8 +96,9 @@ Preview it first with `--describe`, which says what would change and changes not
 Enrolling:
 
 - merges an entry into this repository's `.mcp.json` - key `parley-<project>`, naming
-  `PARLEY_AGENT`, `PARLEY_PROJECT` and `PARLEY_WORKSPACE` - and records the repository's identity
-  there as `parleyAgentId`. Other servers in the file are left alone;
+  `PARLEY_AGENT` and `PARLEY_PROJECT` - adds this machine's block under `parleyMachines`, and records
+  the repository's identity there as `parleyAgentId`. Other servers in the file and other machines'
+  blocks are left alone;
 - adds the repository to this machine's `node.json`, which is the consent to start it. A peer's
   request may then start this agent with nobody watching, which spends whatever the agent costs
   to run. The command names the count before it configures anything, and **the user should be

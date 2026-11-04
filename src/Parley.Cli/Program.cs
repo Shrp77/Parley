@@ -88,8 +88,9 @@ const string Help = """
                                                        the terminal
 
       parley up [--node-config <path>]                 run this machine's node: report it to
-                                                       the broker and start the agents on it
-                                                       when a question arrives
+                [--keep-trying]                        the broker and start the agents on it
+                                                       when a question arrives; --keep-trying
+                                                       waits for a broker it cannot reach
 
       parley enroll <dir> [--all | --none]             find the repositories under a directory,
                     [--describe]                       tick the ones to enroll, and configure and
@@ -165,6 +166,13 @@ const string Help = """
     the schema, which nothing else does. Pruning, in the terminal and the web UI, applies the policy
     the broker was started with, from PARLEY_RETENTION_IDLE_HOURS and PARLEY_RETENTION_MAX_AGE_HOURS
     on the broker's machine; it removes text permanently, so save a discussion first if you want it.
+
+    A machine that only runs agents holds no project. enroll and up accept a project it does not describe, given
+    --broker or PARLEY_BROKER with its address, once that broker's registry names that project (up --keep-trying
+    takes the name as given, because the tunnel may not be up). autostart install does too, given --broker only:
+    `parley autostart install --project <p> --broker <address>` runs a node at logon and no broker, and
+    `parley autostart remove [--project <p>] [--all]` takes an entry, or every one. Every other command still
+    refuses such a project. up also takes --log <path>, and --hidden with it.
 
     up runs until you stop it. It tells the broker this machine is here, which is what makes the
     agents registered to it startable rather than stranded, and starts one when a question
@@ -260,6 +268,7 @@ var hidden = TakeFlag("--hidden");
 var heartbeat = TakeFlag("--heartbeat");
 var webUiOn = TakeOption("--web-ui", null);
 var noWebUi = TakeFlag("--no-web-ui");
+var keepTrying = TakeFlag("--keep-trying");
 var withFiles = TakeFlag("--with-files");
 var shellName = TakeOption("--shell", null);
 var clearProject = TakeFlag("--clear");
@@ -276,6 +285,7 @@ var webUiAddress = webUiAt ?? WebUiAddress.Loopback;
 var projectName = TakeOption("--project", "-p");
 var configPath = TakeOption("--config", null);
 var nodeConfigPath = TakeOption("--node-config", null);
+var launchKey = TakeOption("--launch-key", null);
 var projectDescription = TakeOption("--description", null);
 
 if (Repeated() is { } repeated)
@@ -1001,6 +1011,48 @@ if (verb == "serve" && rest.Length == 0)
 // nobody is watching. Where a broker listens comes from the project and from nothing else.
 if (verb == "autostart" && rest.Length == 1)
 {
+    // **A node's entry, for a project this machine reaches by address** (SPEC.md §4.1.2). The one exception to the paragraph
+    // above, and only with the address given on this command line: a variable is exactly the thing that paragraph refuses.
+    // What it installs binds nothing, and it checks the name with the broker first.
+    if (rest[0] == "install" && !string.IsNullOrWhiteSpace(brokerAddress))
+    {
+        if (AutostartCommand.NodeEntryRefusal(projectName, configuredProjects.Select(p => p.Name.Value)) is { } notThis)
+        {
+            await Console.Error.WriteLineAsync(notThis).ConfigureAwait(false);
+
+            return Config;
+        }
+
+        var (confirmed, refusal) = await BrokerProject.ConfirmAsync(projectName!, brokerAddress).ConfigureAwait(false);
+
+        if (confirmed is null)
+        {
+            await Console.Error.WriteLineAsync(refusal).ConfigureAwait(false);
+
+            return Config;
+        }
+
+        return await AutostartCommand.InstallNodeAsync(
+            manifestPath,
+            projectName!,
+            confirmed.Endpoint,
+            AutostartCommand.MachineCatalogue(nodeConfigPath, manifestPath),
+            Console.Out,
+            Console.Error,
+            CancellationToken.None,
+            hidden).ConfigureAwait(false);
+    }
+
+    // Removing names an entry, which may be a node's for a project this machine holds nothing of.
+    if (rest[0] == "remove"
+        && !string.IsNullOrWhiteSpace(projectName)
+        && AutostartCommand.NodeLabels(AutostartPlan.Detect()).Contains(AutostartPlan.NodePrefix + projectName))
+    {
+        return await AutostartCommand.RunAsync(
+            rest[0], manifestPath, projectName, null, null, null, Console.Out, Console.Error, CancellationToken.None)
+            .ConfigureAwait(false);
+    }
+
     // **A project named is the only way to narrow this.** An entry serves this machine, or the one
     // project it names.
     ProjectSettings? named = null;
@@ -1060,19 +1112,95 @@ if (verb == "autostart" && rest.Length == 1)
         Console.Out,
         Console.Error,
         CancellationToken.None,
-        hidden).ConfigureAwait(false);
+        hidden,
+        removeEverything: selectAllRepositories).ConfigureAwait(false);
+}
+
+var addressFromBlock = false;
+
+// **What a repository's own entry says about this machine** (SPEC.md §4.1.2), for the waiting hook, which must not hold a second
+// copy of the rule. An address in this machine's block wins over what was passed; with none, what was passed stands.
+//
+// **`waiting` and nothing else.** It takes counts and sends nothing. Any other command typed inside a repository must not be
+// redirected by that repository's file: a clone's block would otherwise receive the person's files and their node's join.
+if (!string.IsNullOrWhiteSpace(launchKey) && verb == "waiting")
+{
+    if (!LaunchConfiguration.TryRead(Environment.CurrentDirectory, out var declared, out var unreadable, out var machinesBroken)
+        && machinesBroken)
+    {
+        await Console.Error.WriteLineAsync(unreadable).ConfigureAwait(false);
+
+        return Config;
+    }
+
+    if (declared.BlockFor(MachineName.Current, launchKey)?.Broker is { } blockAddress)
+    {
+        brokerAddress = blockAddress;
+        projectName = null;
+        addressFromBlock = true;
+    }
 }
 
 // **The project a command acts on comes from its context**, in this order: --project; PARLEY_PROJECT, which `parley use`
 // prints the line to set for one terminal; the repository the command runs in, when its .mcp.json names exactly one
 // project this machine describes; and the only project on the machine. Otherwise it is refused and the projects listed.
 // `ProjectResolution.TrySelect` carries why this and not a saved current project.
-var projectFromVariable = Environment.GetEnvironmentVariable(EnrollmentPlan.ProjectVariable);
+var projectFromVariable = addressFromBlock ? null : Environment.GetEnvironmentVariable(EnrollmentPlan.ProjectVariable);
 var projectFromRepository = RepositoryProjects.Read(Environment.CurrentDirectory);
 
-if (!ProjectResolution.TrySelect(
+// **Two verbs may name a project this machine does not describe, given an address, once that broker's registry says it is that project**
+// (SPEC.md §4.1.2): they are how a machine with only a tunnel comes to run an agent. Every other verb is refused below.
+var addressGiven = !string.IsNullOrWhiteSpace(brokerAddress)
+    ? brokerAddress
+    : Environment.GetEnvironmentVariable(BrokerEndpoint.Variable);
+
+var namedHere = !string.IsNullOrWhiteSpace(projectName) ? projectName : projectFromVariable;
+
+ProjectSettings? reached = null;
+
+if (verb is "enroll" or "up"
+    && !string.IsNullOrWhiteSpace(addressGiven)
+    && !string.IsNullOrWhiteSpace(namedHere)
+    && !configuredProjects.Any(p => string.Equals(p.Name.Value, namedHere, StringComparison.Ordinal)))
+{
+    // A node told to keep trying takes the name it was given: the tunnel may simply not be up yet, and its entry looked when
+    // it was installed.
+    if (verb == "up" && keepTrying && ProjectName.TryCreate(namedHere, out var nameOnly))
+    {
+        try
+        {
+            reached = new ProjectSettings(nameOnly, string.Empty, BrokerEndpoint.Read(_ => addressGiven), null);
+        }
+        catch (InvalidOperationException notAnAddress)
+        {
+            await Console.Error.WriteLineAsync(notAnAddress.Message).ConfigureAwait(false);
+
+            return Config;
+        }
+    }
+    else
+    {
+        var (confirmed, refusal) = await BrokerProject.ConfirmAsync(namedHere, addressGiven).ConfigureAwait(false);
+
+        if (confirmed is null)
+        {
+            await Console.Error.WriteLineAsync(refusal).ConfigureAwait(false);
+
+            return Config;
+        }
+
+        reached = confirmed;
+    }
+}
+
+var project = reached;
+string? projectSource = reached is null ? null : "named, and confirmed by its broker";
+string? selectionProblem = null;
+
+if (reached is null
+    && !ProjectResolution.TrySelect(
         projectName, projectFromVariable, projectFromRepository, configuredProjects,
-        out var project, out var projectSource, out var selectionProblem))
+        out project, out projectSource, out selectionProblem))
 {
     // **An address given explicitly is a choice, and is not refused for naming no project.** --broker and PARLEY_BROKER
     // say exactly where to connect, which is all a project would have added for a client, and the help says explicit
@@ -1091,6 +1219,16 @@ if (!ProjectResolution.TrySelect(
         await Console.Error.WriteLineAsync(selectionProblem).ConfigureAwait(false);
         return Config;
     }
+}
+
+// An address says where to connect and enrolling writes which project, so an address alone says too little.
+if (verb == "enroll" && project is null && !string.IsNullOrWhiteSpace(addressGiven))
+{
+    await Console.Error.WriteLineAsync(
+        "Enrolling writes the project's name into each repository, and an address does not say it. Add --project.")
+        .ConfigureAwait(false);
+
+    return Config;
 }
 
 // Said on a machine naming several, because that is where a command could have acted on another deployment: which one,
@@ -1158,7 +1296,17 @@ catch (InvalidOperationException ex)
     return Config;
 }
 
-using var channel = GrpcChannel.ForAddress(endpoint);
+// Pinged, as the adapter's connection is: a node waiting on a stream cannot otherwise tell a tunnel that went silent from a quiet
+// broker, and would stay "joined" to nothing for as long as the machine is up.
+using var channel = GrpcChannel.ForAddress(endpoint, new GrpcChannelOptions
+{
+    HttpHandler = new System.Net.Http.SocketsHttpHandler
+    {
+        KeepAlivePingDelay = TimeSpan.FromSeconds(60),
+        KeepAlivePingTimeout = TimeSpan.FromSeconds(30),
+        EnableMultipleHttp2Connections = true,
+    },
+});
 
 try
 {
@@ -1274,16 +1422,37 @@ catch (RpcException failure)
 // PARLEY_NODE_CONFIG and fall back to the working directory. A supervisor starts a process with no
 // shell environment and no working directory worth relying on, which is exactly where the two
 // resolutions disagree, and the result reads as a machine that has no agents listed on it.
-async Task<int> UpAsync() =>
-    await UntilInterrupted(token =>
+async Task<int> UpAsync()
+{
+    if (hidden && string.IsNullOrWhiteSpace(logPath))
+    {
+        await Console.Error.WriteLineAsync(
+            "--hidden closes the console this would report to, so it needs somewhere to report instead: pass --log <path>.")
+            .ConfigureAwait(false);
+
+        return Usage;
+    }
+
+    // Written by the node itself, for the reason `serve` is: a supervisor runs a program, not a command line.
+    using var log = Logging.Open(logPath, Console.Error);
+
+    if (hidden && Windowless.Detach())
+    {
+        Console.SetOut(TextWriter.Null);
+        Console.SetError(TextWriter.Null);
+    }
+
+    return await UntilInterrupted(token =>
         NodeCommand.RunAsync(
             channel,
             endpoint,
             resolvedNodeConfig.Value ?? NodeCatalogue.DefaultFileName,
-            Console.Out,
+            log is null ? Console.Out : new TeeWriter(Console.Out, log),
             project?.Name.Value,
             null,
-            token)).ConfigureAwait(false);
+            token,
+            keepTrying: keepTrying)).ConfigureAwait(false);
+}
 
 // Runs something that would otherwise never return, and gives the terminal back on Ctrl+C.
 //

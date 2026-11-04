@@ -5,7 +5,7 @@
 
 .DESCRIPTION
     Each test class is [Unit] or [Integration] (tests/TestCategories.cs). Unit tests run on every push and between
-    review rounds; everything runs nightly and before a pull request merges.
+    review rounds; the smoke run gates a merge; everything runs nightly.
 
     Every run appends to the metrics folder (git-ignored, .test-metrics by default):
       runs.jsonl   one line per run: when, where, which commit, which category, the counts and the time taken
@@ -15,7 +15,7 @@
     The suites run one after another, never in parallel: the machine this was written on is short of memory.
 
 .PARAMETER Category
-    Unit (the default), Integration, or All.
+    Unit (the default), Smoke (all but what is marked [Slow], under five minutes), Integration, or All.
 
 .PARAMETER Project
     A wildcard over the test project names without the Parley. prefix and .Tests suffix, such as Store or C*.
@@ -43,12 +43,13 @@
 
 .EXAMPLE
     pwsh scripts/test.ps1
+    pwsh scripts/test.ps1 -Category Smoke -Build
     pwsh scripts/test.ps1 -Category All -Build
     pwsh scripts/test.ps1 -Category Integration -Project Server
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('Unit', 'Integration', 'All')]
+    [ValidateSet('Unit', 'Smoke', 'Integration', 'All')]
     [string] $Category = 'Unit',
     [string] $Project = '*',
     [string] $Configuration = 'Debug',
@@ -102,6 +103,8 @@ Remove-Item Env:PARLEY_NODE_CONFIG -ErrorAction SilentlyContinue
 $filter = switch ($Category) {
     'Unit' { @('-trait', 'Category=Unit') }
     'Integration' { @('-trait', 'Category=Integration') }
+    # Everything but what is marked [Slow], so a new test is in until somebody says otherwise.
+    'Smoke' { @('-trait-', 'Speed=Slow') }
     default { @() }
 }
 
@@ -191,5 +194,12 @@ Write-Host ""
 Write-Host ("{0} tests: {1} passed, {2} failed, {3} skipped, {4} not run, in {5}s ({6})." -f `
         $totals.total, $totals.passed, $totals.failed, $totals.skipped, $totals.not_run, $run.seconds, $Category)
 if ($failedProjects) { Write-Host "A suite ended badly without a failed test: $($failedProjects -join ', ')." }
+
+# The smoke run's one promise. Said rather than failed: a loaded machine is no reason to refuse a commit, and the fix is to
+# mark something [Slow] from the timings this run just recorded.
+$smokeBudgetSeconds = 300
+if ($Category -eq 'Smoke' -and $run.seconds -gt $smokeBudgetSeconds) {
+    Write-Warning "The smoke run took $($run.seconds)s and its budget is ${smokeBudgetSeconds}s. Mark the slowest classes [Slow]."
+}
 
 exit ($totals.failed -gt 0 -or $failedProjects.Count -gt 0) ? 1 : 0
