@@ -1017,6 +1017,29 @@ public sealed class MovingExchangesTests : IDisposable
     }
 
     [Fact]
+    public async Task An_archived_conversation_with_everything_moved_out_is_counted_as_it_is_listed()
+    {
+        var going = await AskAsync(Orders, Billing, "is it gross or net?");
+
+        Assert.True((await MoveAsync("tax-questions", true, going)).Moved);
+        Assert.True(await _console.SetConversationArchivedAsync("pricing", true, T0.AddMinutes(9), Ct));
+
+        Assert.Contains((await _console.ListConversationsAsync(includeArchived: true, cancellationToken: Ct)), c => c.Id == "pricing");
+        Assert.Equal(1, await _console.CountArchivedConversationsAsync(cancellationToken: Ct));
+    }
+
+    [Fact]
+    public async Task A_lone_surrogate_in_a_payload_does_not_stop_the_preview()
+    {
+        var going = await AskAsync(Orders, Billing, """hello \ud800 there""");
+
+        var preview = await _console.PreviewMoveAsync("pricing", [going], Ct);
+
+        Assert.Null(preview.Refused);
+        Assert.Equal(string.Empty, Assert.Single(preview.Exchanges).FirstWords);
+    }
+
+    [Fact]
     public async Task A_settled_pair_no_move_has_split_is_not_said_to_be_elsewhere()
     {
         _ = await SettledPairAsync();

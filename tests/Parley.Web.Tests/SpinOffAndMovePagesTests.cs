@@ -14,6 +14,10 @@ public sealed class SpinOffAndMovePagesTests
     private const string Billing = "billing@test";
     private const string Project = TranscriptConsole.Project;
 
+    private const string Alert = "class=\"unreachable\" role=\"alert\"";
+
+    private const string EmptyBox = """<textarea id="says" name="Says"[^>]*>\s*</textarea>""";
+
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private static Uri At(string path) => new(path, UriKind.Relative);
@@ -90,6 +94,7 @@ public sealed class SpinOffAndMovePagesTests
 
         Assert.Contains("not in this conversation any more", page, StringComparison.Ordinal);
         Assert.DoesNotMatch("""name="Targets" value="[^"]*" checked""", page);
+        Assert.Matches(EmptyBox, page);
     }
 
     [Fact]
@@ -101,6 +106,7 @@ public sealed class SpinOffAndMovePagesTests
         var page = await client.GetStringAsync(At(Spin()), Ct);
 
         Assert.DoesNotContain("said in shared", page, StringComparison.Ordinal);
+        Assert.Matches(EmptyBox, page);
     }
 
     [Fact]
@@ -361,7 +367,135 @@ public sealed class SpinOffAndMovePagesTests
         Assert.InRange(note, page.IndexOf("id=\"m1\"", StringComparison.Ordinal), page.IndexOf("id=\"m2\"", StringComparison.Ordinal));
         Assert.Contains("Spun off from", page, StringComparison.Ordinal);
         Assert.Contains("id=logging", page, StringComparison.Ordinal);
-        Assert.Contains("child-one", page, StringComparison.Ordinal);
+        Assert.Matches("""<a target="_top" href="[^"]*id=child-one">child-one</a>""", page);
+        Assert.Matches("""<a target="_top" href="[^"]*id=disk-cleanup">Open disk-cleanup</a>""", page);
+    }
+
+    [Fact]
+    public async Task The_panel_says_when_a_conversation_was_made_by_a_move_rather_than_spun_off()
+    {
+        using var console = Console();
+        console.Broker.Parent = "logging";
+        console.Broker.ParentByMove = true;
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At($"/Conversations/Detail?project={Project}&id=shared"), Ct);
+
+        Assert.Contains("Made by moving entries out of", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("Spun off from", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_destroyed_conversation_still_reads_as_linked_by_name()
+    {
+        using var console = Console();
+        console.Broker.Parent = "logging";
+        console.Broker.Children.Add("child-one");
+        console.Broker.Gone = new Wire.DestroyedConversation { ConversationId = "shared", DestroyedUtc = "2026-09-16T11:00:00Z", Messages = 2 };
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At($"/Conversations/Detail?project={Project}&id=shared"), Ct);
+
+        Assert.Contains("Spun off from", page, StringComparison.Ordinal);
+        Assert.Matches("""<a target="_top" href="[^"]*id=logging">logging</a>""", page);
+        Assert.Matches("""<a target="_top" href="[^"]*id=child-one">child-one</a>""", page);
+    }
+
+    [Fact]
+    public async Task A_confirmation_says_why_a_whole_exchange_goes_and_how_each_row_stands()
+    {
+        using var console = Console();
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At(Move("&x=1")), Ct);
+
+        Assert.Contains("a whole exchange goes", page, StringComparison.Ordinal);
+        Assert.Matches("""1 message, still open:\s+the first words""", page);
+    }
+
+    [Fact]
+    public async Task A_confirmation_gives_the_brokers_reason_when_the_broker_says_why_a_row_was_added()
+    {
+        const string Reason = "It was asked of a role with the others, which go together.";
+
+        using var console = Console();
+        console.Broker.PreviewAddedBecause = Reason;
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At(Move("&x=1&x=2")), Ct);
+
+        Assert.Contains($"Added: {Reason}", page, StringComparison.Ordinal);
+        Assert.DoesNotContain(MovePicking.SentTogether, page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_refused_move_keeps_the_conversation_that_was_chosen()
+    {
+        using var console = Console();
+        console.Broker.MoveRefusal = "That conversation has closed.";
+        console.Broker.AlsoListed.Add(new Wire.ConversationSummary { ConversationId = "other-work" });
+        using var client = console.CreateClient();
+
+        var (_, body) = await PostAsync(client, Move("&x=1"), ("Exchanges", "1"), ("Where", "existing"), ("Existing", "other-work"));
+
+        Assert.Contains("That conversation has closed.", body, StringComparison.Ordinal);
+        Assert.Matches("""<input[^>]*name="Where"[^>]*value="existing"[^>]*checked""", body);
+        Assert.Matches("""<option value="other-work" selected""", body);
+    }
+
+    [Fact]
+    public async Task A_move_page_says_so_when_the_broker_cannot_be_read()
+    {
+        using var console = Console();
+        console.Broker.FailsOn = "/Export";
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At(Move("&x=1")), Ct);
+
+        Assert.Contains(Alert, page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_move_says_so_when_the_broker_goes_at_the_last_step()
+    {
+        using var console = Console();
+        using var client = console.CreateClient();
+
+        var form = await client.GetStringAsync(At(Move("&x=1")), Ct);
+
+        console.Broker.FailsOn = "/MoveExchanges";
+
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["__RequestVerificationToken"] = Token(form), ["Exchanges"] = "1", ["Where"] = "new", ["NewName"] = "disk-cleanup",
+        });
+        using var response = await client.PostAsync(At(Move("&x=1")), content, Ct);
+
+        Assert.Contains(Alert, await response.Content.ReadAsStringAsync(Ct), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_spin_off_says_so_when_the_broker_goes_at_the_last_step_and_keeps_the_words()
+    {
+        using var console = Seated();
+        using var client = console.CreateClient();
+
+        var form = await client.GetStringAsync(At(Spin()), Ct);
+
+        console.Broker.FailsOn = "/SpinOff";
+
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["__RequestVerificationToken"] = Token(form), ["Name"] = "disk-cleanup", ["Says"] = "my own words", ["Targets"] = Orders,
+        });
+        using var response = await client.PostAsync(At(Spin()), content, Ct);
+        var body = await response.Content.ReadAsStringAsync(Ct);
+
+        Assert.Contains("Nothing was sent", body, StringComparison.Ordinal);
+        Assert.Contains(Alert, body, StringComparison.Ordinal);
+        Assert.Matches("role=\"alert\">Nothing was sent: [^<]+<", body);
+        Assert.Contains("my own words", body, StringComparison.Ordinal);
+        Assert.Empty(console.Broker.Requested);
     }
 
     [Fact]

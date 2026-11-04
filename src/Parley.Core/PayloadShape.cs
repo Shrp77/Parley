@@ -72,8 +72,9 @@ public static class PayloadShape
 
             return string.Join(" ", words).Trim();
         }
-        catch (JsonException)
+        catch (Exception e) when (e is JsonException or InvalidOperationException)
         {
+            // InvalidOperationException: a lone surrogate escape passes json_valid, and reading it as a string throws.
             return string.Empty;
         }
     }
@@ -118,7 +119,7 @@ public static class PayloadShape
             outcomes = read;
             return read.Count > 0;
         }
-        catch (JsonException)
+        catch (Exception e) when (e is JsonException or InvalidOperationException)
         {
             return false;
         }

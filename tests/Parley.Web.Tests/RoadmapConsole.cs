@@ -103,6 +103,9 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <summary>What a spin-off answers, when it should refuse.</summary>
     public string SpinOffRefusal { get; set; } = string.Empty;
 
+    /// <summary>The end of the one operation's path that cannot reach the broker, when one should fail.</summary>
+    public string FailsOn { get; set; } = string.Empty;
+
     /// <summary>Every spin-off asked for.</summary>
     public List<Wire.SpinOffRequest> SpunOff { get; } = [];
 
@@ -147,6 +150,11 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <inheritdoc/>
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        if (FailsOn.Length > 0 && request.RequestUri!.AbsolutePath.EndsWith(FailsOn, StringComparison.Ordinal))
+        {
+            throw new HttpRequestException("The scripted broker is down for this operation.");
+        }
+
         ArgumentNullException.ThrowIfNull(request);
 
         var body = request.Content is null ? [] : await request.Content.ReadAsByteArrayAsync(cancellationToken);

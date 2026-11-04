@@ -101,6 +101,18 @@ public sealed class ScriptedExport : HttpMessageHandler
     /// <summary>The children every export names.</summary>
     public List<string> Children { get; } = [];
 
+    /// <summary>Whether every export says the parent link came from a move.</summary>
+    public bool ParentByMove { get; set; }
+
+    /// <summary>What every export says was destroyed, when it should.</summary>
+    public Wire.DestroyedConversation? Gone { get; set; }
+
+    /// <summary>Why every previewed exchange was added, when the broker should say.</summary>
+    public string PreviewAddedBecause { get; set; } = string.Empty;
+
+    /// <summary>The end of the one operation's path that cannot reach the broker, when one should fail.</summary>
+    public string FailsOn { get; set; } = string.Empty;
+
     /// <summary>How many exports were asked for.</summary>
     public int Exports { get; private set; }
 
@@ -176,6 +188,11 @@ public sealed class ScriptedExport : HttpMessageHandler
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        if (FailsOn.Length > 0 && request.RequestUri!.AbsolutePath.EndsWith(FailsOn, StringComparison.Ordinal))
+        {
+            throw new HttpRequestException("The scripted broker is down for this operation.");
+        }
 
         var sent = request.Content is null ? [] : await request.Content.ReadAsByteArrayAsync(cancellationToken);
 
@@ -278,7 +295,15 @@ public sealed class ScriptedExport : HttpMessageHandler
         reply.Moves.AddRange(Moves);
         reply.SettledElsewhere.AddRange(SettledElsewhere);
         reply.Parent = Parent;
+        reply.ParentByMove = ParentByMove;
         reply.Children.AddRange(Children);
+
+        if (Gone is not null)
+        {
+            reply.Destroyed = Gone;
+            reply.Messages.Clear();
+            reply.Exchanges.Clear();
+        }
 
         return reply;
     }
@@ -300,6 +325,7 @@ public sealed class ScriptedExport : HttpMessageHandler
             Receiver = "billing@test",
             Messages = 1,
             FirstWords = "the first words",
+            AddedBecause = PreviewAddedBecause,
         }));
 
         return reply;

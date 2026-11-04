@@ -10,8 +10,8 @@ namespace Parley.Store;
 /// <remarks>
 /// <para>
 /// <b>The one place an exchange changes conversation.</b> Nothing else writes <c>exchanges.conversation_id</c> after an
-/// exchange opens. Only the operator side reaches this, because an agent that could split a line of work is what §5.0
-/// exists to prevent.
+/// exchange opens. Only the operator side moves anything, because an agent that could split a line of work is what §5.0
+/// exists to prevent. An agent's collection reads and marks its own notices here, and nothing more.
 /// </para>
 /// <para>
 /// <b>Every refusal says why, and storage holds the ones that matter.</b> The checks here exist to give a sentence;

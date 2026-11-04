@@ -20,7 +20,7 @@ internal readonly record struct Tickable(string Label, string Note, bool Ticked,
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Here because enrolling a folder is the one act on this surface that takes many answers.</b>
+/// <b>Here because enrolling a folder and picking entries to move take many answers.</b>
 /// Every other dialog asks for one — a choice, a name, a form — and <see cref="ChoiceDialog"/>
 /// returns the row the cursor is on. Enrolment has to offer thirty repositories and take the
 /// twenty-one somebody wants, which is a different question and needs a different answer.

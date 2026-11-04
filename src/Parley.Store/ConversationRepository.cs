@@ -967,6 +967,7 @@ public sealed class ConversationRepository(SqliteConnection connection)
                      WHERE m.id IS NOT NULL
                         OR EXISTS (SELECT 1 FROM conversation_participants p WHERE p.conversation_id = c.id)
                         OR EXISTS (SELECT 1 FROM shared_files f WHERE f.conversation_id = c.id)
+                        OR EXISTS (SELECT 1 FROM conversation_moves mv WHERE mv.source = c.id)
                 )
                 SELECT count(*)
                   FROM conversations c

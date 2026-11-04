@@ -6,6 +6,7 @@ using Parley.Client.Seating;
 using Parley.Client.Views;
 using Parley.Core;
 using Parley.Store;
+using System.Text.RegularExpressions;
 using Terminal.Gui.Input;
 using Xunit;
 
@@ -378,6 +379,37 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
         Assert.Contains(
             choosing.Choices.Source!.ToList().Cast<string>(),
             row => row.Contains($"kid - spinoff from {Conversation}", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_row_added_to_a_move_says_so_and_the_door_says_why()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        var seat = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await seat.StartAsync(shell.Held!.Seat.Name, T0, Ct);
+        Assert.True((await seat.RequestAsync(shell.Held!.Seat.Name, Orders, "model-a", """{"ask":"same words"}""", T0.AddMinutes(1), Conversation, Ct)).Succeeded);
+        Assert.True((await seat.RequestAsync(shell.Held!.Seat.Name, Billing, "model-a", """{"ask":"same words"}""", T0.AddMinutes(1), Conversation, Ct)).Succeeded);
+
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+
+        var said = (await Client.ExportAsync(Conversation, Ct)).Messages.First(m => m.PayloadJson.Contains("same words", StringComparison.Ordinal));
+
+        Assert.True(shell.Transcript.Reach(said.Id));
+
+        await shell.MoveEntries();
+        await shell.Settled;
+
+        _ = (TickDialog)driving.Find(Moving.Title);
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        var reviewing = (TickDialog)driving.Find(Moving.ReviewTitle);
+
+        Assert.Contains(Parley.Client.Rendering.MovePicking.SentTogether, reviewing.Described, StringComparison.Ordinal);
+        Assert.Contains(", added:", driving.Text(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -754,7 +786,7 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
         var rows = reviewing.Rows.Source!.ToList().Cast<string>().ToList();
 
         Assert.Equal(2, rows.Count);
-        Assert.Contains(rows, row => row.Contains(two.Exchange!.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":", StringComparison.Ordinal) && row.Contains("Added:", StringComparison.Ordinal));
+        Assert.Contains(rows, row => row.Contains(two.Exchange!.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":", StringComparison.Ordinal) && row.Contains(", added:", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -798,6 +830,92 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
 
         Assert.Contains("13 exchanges", reviewing.Described, StringComparison.Ordinal);
         Assert.Contains("These files stay in room: notes.md", reviewing.Described, StringComparison.Ordinal);
+        Assert.Equal(13, reviewing.Items.Count);
+        Assert.Equal(2, reviewing.Pages);
+        Assert.Equal(TickDialog.PageSize, reviewing.Rows.Source!.Count);
+    }
+
+    [Fact]
+    public async Task Whether_a_row_is_open_is_drawn_however_long_its_first_words_are()
+    {
+        var (shell, driving, _) = await SeatedAsync();
+        using var held = shell;
+
+        var longest = string.Join(' ', Enumerable.Repeat("words", 40));
+
+        _ = await AskPersonAsync(shell, longest);
+
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+        await shell.MoveEntries();
+        await shell.Settled;
+
+        var ticking = (TickDialog)driving.Find(Moving.Title);
+
+        Assert.Equal(2, ticking.Rows.Source!.Count);
+        Assert.Equal(2, Regex.Count(driving.Text(), "still open"));
+
+        ticking.NewKeyDownEvent(Key.A.WithAlt);
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        _ = (TickDialog)driving.Find(Moving.ReviewTitle);
+
+        Assert.Equal(2, Regex.Count(driving.Text(), "still open"));
+    }
+
+    [Fact]
+    public async Task A_spin_off_with_the_cursor_on_no_message_opens_an_empty_box_for_nobody()
+    {
+        var (shell, driving, _) = await SeatedAsync();
+        using var held = shell;
+
+        shell.Transcript.List.SelectedItem = null;
+        Assert.Null(shell.Transcript.Under);
+
+        await shell.SpinOff();
+
+        var form = (FormDialog)driving.Find(SpinningOff.Title);
+
+        form.Fill(0, "disk-cleanup");
+        form.Finish(taken: true);
+        await shell.Settled;
+
+        Assert.Equal("disk-cleanup", shell.Transcript.Open);
+        Assert.Equal(string.Empty, shell.Line.Written.Trim());
+    }
+
+    [Fact]
+    public async Task A_move_record_says_who_moved_it_and_when_across_the_wire()
+    {
+        var (shell, _, message) = await SeatedAsync();
+        using var held = shell;
+
+        var exchange = (await Client.ExportAsync(Conversation, Ct)).Messages.Single(m => m.Id == message).ExchangeId;
+        var before = DateTimeOffset.UtcNow.AddMinutes(-1);
+
+        Assert.True((await Client.MoveExchangesAsync(Conversation, "disk-cleanup", true, [exchange], Ct)).Moved);
+
+        var move = Assert.Single((await Client.ExportAsync(Conversation, Ct)).Moves!);
+
+        Assert.Equal(shell.Held!.Seat.Name.Value, move.MovedBy);
+        Assert.InRange(move.MovedUtc, before, DateTimeOffset.UtcNow.AddMinutes(1));
+    }
+
+    [Fact]
+    public async Task A_destroyed_conversation_still_says_what_it_is_linked_to()
+    {
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        var exchange = (await Client.ExportAsync(Conversation, Ct)).Messages.Single(m => m.Id == message).ExchangeId;
+
+        Assert.True((await Client.MoveExchangesAsync(Conversation, "disk-cleanup", true, [exchange], Ct)).Moved);
+        _ = await Client.DestroyAsync("disk-cleanup", Ct);
+
+        await Walking.GoAsync(shell, Viewing.Conversation, "disk-cleanup");
+        await shell.Settled;
+
+        Assert.Contains($"Made by moving entries out of {Conversation}", shell.Transcript.Written, StringComparison.Ordinal);
     }
 
     [Fact]

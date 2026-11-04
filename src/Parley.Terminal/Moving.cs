@@ -85,7 +85,7 @@ internal static class Moving
         }
 
         var rows = everything.Exchanges
-            .Select(e => (e.Id, Row: new Tickable(Label(e), e.Open ? "still open" : string.Empty, e.Id == under)))
+            .Select(e => (e.Id, Row: new Tickable(Label(e, []), string.Empty, e.Id == under)))
             .ToList();
 
         var ticking = new TickDialog(Title, Picking, [.. rows.Select(r => r.Row)]);
@@ -134,10 +134,10 @@ internal static class Moving
         var destinations = await MovePicking.DestinationsAsync(client, source, token).ConfigureAwait(false);
 
         var rows = preview.Exchanges
-            .Select(e => new Tickable(Label(e), Note(e, ticked), Ticked: true))
+            .Select(e => new Tickable(Label(e, ticked), string.Empty, Ticked: true))
             .ToList();
 
-        var reviewing = new TickDialog(ReviewTitle, Describe(preview, source), rows);
+        var reviewing = new TickDialog(ReviewTitle, Describe(preview, source, ticked), rows);
         var opened = Prompting.Open(app, reviewing);
 
         reviewing.Done += (_, chosen) =>
@@ -154,7 +154,7 @@ internal static class Moving
             IReadOnlyList<long> left =
             [
                 .. preview.Exchanges
-                    .Where(e => chosen.Any(c => c.Ticked && c.Label == Label(e)))
+                    .Where(e => chosen.Any(c => c.Ticked && c.Label == Label(e, ticked)))
                     .Select(e => e.Id),
             ];
 
@@ -271,17 +271,12 @@ internal static class Moving
             destination).ConfigureAwait(false);
     }
 
-    /// <summary>What a row says beside an exchange: why it was added, and whether it is still open.</summary>
-    private static string Note(MovePreviewExchange exchange, IReadOnlyCollection<long> ticked)
-    {
-        var added = exchange.AddedBecause ?? (ticked.Contains(exchange.Id) ? null : MovePicking.SentTogether);
-        var open = exchange.Open ? "still open" : string.Empty;
-
-        return added is null ? open : Safe.Text(open.Length == 0 ? $"Added: {added}" : $"{open}. Added: {added}");
-    }
+    /// <summary>Why an exchange goes though it was not picked, or null when it was picked.</summary>
+    private static string? AddedBecause(MovePreviewExchange exchange, IReadOnlyCollection<long> ticked) =>
+        exchange.AddedBecause ?? (ticked.Count == 0 || ticked.Contains(exchange.Id) ? null : MovePicking.SentTogether);
 
     /// <summary>The door: what happens to what is listed below it.</summary>
-    private static string Describe(MovePreview preview, string source)
+    private static string Describe(MovePreview preview, string source, IReadOnlyCollection<long> ticked)
     {
         var messages = preview.Exchanges.Sum(e => e.Messages);
         var said = new StringBuilder(string.Create(
@@ -293,6 +288,11 @@ internal static class Moving
         if (preview.Exchanges.Any(e => e.Open))
         {
             said.Append("Open work carries on in the new place; agents aren't woken, and are told when they next collect. ");
+        }
+
+        foreach (var because in preview.Exchanges.Select(e => AddedBecause(e, ticked)).OfType<string>().Distinct(StringComparer.Ordinal))
+        {
+            said.Append(Safe.Text($"A row marked added goes though you didn't tick it: {because} "));
         }
 
         said.Append("Anything asked as a result stays behind unless you ticked it. ");
@@ -311,8 +311,12 @@ internal static class Moving
         return said.Append("Untick anything you meant to leave; a message to several, or to a role, goes whole.").ToString();
     }
 
-    private static string Label(MovePreviewExchange exchange) =>
+    /// <remarks>
+    /// Whether it is open and whether it was added come before the words. A note in a column of its own would start past the
+    /// widest row's words, off the side of the dialog, where no key reaches it.
+    /// </remarks>
+    private static string Label(MovePreviewExchange exchange, IReadOnlyCollection<long> ticked) =>
         Safe.Text(string.Create(
             CultureInfo.InvariantCulture,
-            $"{exchange.Id}: {exchange.Requester.Value} to {exchange.Receiver.Value}, {exchange.Messages} message{(exchange.Messages == 1 ? string.Empty : "s")}: {exchange.FirstWords}"));
+            $"{exchange.Id}: {exchange.Requester.Value} to {exchange.Receiver.Value}, {exchange.Messages} message{(exchange.Messages == 1 ? string.Empty : "s")}{(exchange.Open ? ", still open" : string.Empty)}{(AddedBecause(exchange, ticked) is null ? string.Empty : ", added")}: {exchange.FirstWords}"));
 }

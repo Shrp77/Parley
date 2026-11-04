@@ -724,9 +724,9 @@ Result, and does its own part with it (principle 2.6). It does not answer "not m
 and it does not send the requester off to ask someone else.
 
 **A Result names its sources.** Where the outcome relied on another participant's Result,
-`sources` lists who. Every one of those exchanges is in the same conversation under its own
-author's identity (§11.3), so the person running the deployment can see exactly whose claim is
-whose, how confident each was, and where two disagreed. A source must name a registered participant, and the schema enforces it (§9.3).
+`sources` lists who. Every one of those exchanges is in the same conversation, unless a move has
+since put it in another (§5.0), under its own author's identity (§11.3), so the person running the
+deployment can see exactly whose claim is whose, how confident each was, and where two disagreed. A source must name a registered participant, and the schema enforces it (§9.3).
 
 ```jsonc
 {
