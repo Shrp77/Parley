@@ -89,6 +89,6 @@ Every page of `src/Parley.Web` and every kind of control on it, with what each b
 
 | Phase | State |
 |---|---|
-| Foundations (F1–F6) | not started |
-| Controls (C1–C28) | not started |
-| Pages | not started |
+| Foundations (F1–F6) | done: fb24598d |
+| Controls (C1–C28) | done: f34f0eb6 |
+| Pages | done: all 24 rendered pages captured in light and dark at 1400px, eight busiest at 400 and 900px; nothing overflows at 400px; 108 colour pairs pass WCAG AA in both themes |

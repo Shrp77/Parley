@@ -1308,7 +1308,8 @@
         .view .field { display: flex; flex-direction: column; gap: 0.2rem; flex: 1 1 11rem; min-width: 0; }
         .view .field.wide { flex-grow: 3; }
         /* Pill-shaped here; the base rules own everything else about a field, the chevron included. */
-        .view .field input, .view .field select { width: 100%; }
+        /* Not stretched by the column they stand in: a narrow screen's rule gives an input a flex size, which in a column is its height. */
+        .view .field input, .view .field select, dialog .field input { width: 100%; flex: none; }
         .view .view-filters button, .view .view-filters .button { align-self: flex-end; margin-bottom: 0.25rem; }
         .conversations { display: flex; flex-direction: column; gap: 0.75rem; }
         .new-conversation { margin: 0; }
@@ -2027,7 +2028,8 @@
             /* The health page carries six columns and there is no longer width for
                them. Scrolled inside its own box rather than squeezed, because a
                figure shrunk to fit is a figure nobody reads. */
-            table { display: block; overflow-x: auto; }
+            /* Positioned, so text kept for a screen reader inside it is held in the scroller rather than widening the page. */
+            table { display: block; overflow-x: auto; position: relative; }
         }
 
         @@media (max-width: 40rem) {

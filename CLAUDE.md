@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.55.3, protocol 0.14, schema 7. Nothing has been released, but **live stores hold work
+- Version 0.55.4, protocol 0.14, schema 7. Nothing has been released, but **live stores hold work
   in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
   `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
   upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
@@ -18,6 +18,8 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
   machine is one build: **the wire, enums and protocol still change freely**, with no
   compatibility caveats.
 - Features 019–026 and 028–032 are merged; the latest is `specs/032-sub-conversations-and-moves/`.
+- Feature 035, Material 3 across the web console, is in progress: `specs/035-material-3-web-ui/`, with its audit
+  of every page and control in `audit.md`.
   Feature 027, session-owned delivery, is not committed yet; its plan predates the rule above and must move its schema
   change into migration 008 (003 holds file problems, 004 when an agent was first asked what it owns and first refreshed,
   005 a message's limit and the record of its length, 006 conversation links, moves and move notices, 007 image file names).

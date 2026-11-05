@@ -103,6 +103,40 @@ public sealed partial class MaterialTokensTests
     }
 
     [Fact]
+    public void Every_control_shows_material_3s_focus_indicator()
+    {
+        Assert.Contains(":focus-visible { outline: 3px solid var(--md-sys-color-secondary); outline-offset: 2px; }", Layout, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Buttons_hover_press_and_focus_through_state_layers()
+    {
+        foreach (var state in new[] { "hover", "focus", "pressed" })
+        {
+            Assert.Contains($"color-mix(in srgb, currentColor var(--md-sys-state-{state}), transparent)", Layout, StringComparison.Ordinal);
+        }
+
+        Assert.DoesNotContain("filter: brightness", Layout, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("src/Parley.Web/Pages/Conversations/Destroy.cshtml")]
+    [InlineData("src/Parley.Web/Pages/Projects/Files.cshtml")]
+    public void A_destructive_act_is_filled_in_the_error_colour(string page)
+    {
+        Assert.Contains("class=\"danger act\"", File.ReadAllText(RepositoryPath(page)), StringComparison.Ordinal);
+        Assert.Contains("button.danger.act, .button.danger.act { --md-btn-container: var(--md-sys-color-error);", Layout, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Labels_are_in_sentence_case()
+    {
+        var components = Layout[Layout.IndexOf("/* ---- Material 3 components", StringComparison.Ordinal)..];
+
+        Assert.Matches(@"th, \.dgrid-head, \.grid-head[^{]*\{\s*text-transform: none;", components);
+    }
+
+    [Fact]
     public void Motion_stops_for_a_person_who_asks_for_less()
     {
         Assert.Matches(@"@@media \(prefers-reduced-motion: reduce\) \{\s*:root \{ --md-sys-motion-duration-short: 0ms;", Layout);
