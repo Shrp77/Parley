@@ -34,6 +34,13 @@
 - [x] T019 [US4] Contrast check every text/surface pair the stylesheet uses, in both themes
 - [ ] T020 [US4] Check pages without script and with reduced motion in a browser (not done: only the stylesheet rule for reduced motion is tested; no script was added or removed); commit phase 3 (done: 65cca720)
 
+## Phase 4b: Settings for Parley as a whole (owner, 2026-11-05)
+
+- [x] T022 Add a Parley-wide Settings page at src/Parley.Web/Pages/Settings.cshtml, reached from the main navigation: theme (system, light, dark) and density (comfortable, compact) kept in this browser, and what is on this machine (web console build, deployment root, each project's broker build, protocol, address and store), read only
+- [x] T023 Apply the chosen theme and density before the stylesheet is read in src/Parley.Web/Pages/Shared/_Layout.cshtml; the chosen dark is the system's dark (MaterialTokensTests); re-cut the icon font with the settings icon added
+- [x] T024 Add tests/Parley.Web.Tests/ParleySettingsTests.cs and break each new guard on purpose
+- [ ] T025 Defaults for new projects, machine settings (autostart, starting the web console with the broker) and the machine-wide agent registry: each changes the deployment, so each needs the same setting on every surface; a Spec Kit feature of its own
+
 ## Phase 5: Polish
 
 - [x] T021 Smoke run, hygiene check, mark the audit's status, report to the owner

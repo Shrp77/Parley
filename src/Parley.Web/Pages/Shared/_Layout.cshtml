@@ -57,6 +57,17 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    @* The theme and density the person chose on the Settings page, set before the stylesheet is read so a page never
+       flashes in the other theme. Kept in this browser; with no script, or nothing chosen, the system's theme is used. *@
+    <script>
+        (function () {
+            try {
+                var theme = localStorage.getItem("parley.theme"), density = localStorage.getItem("parley.density");
+                if (theme === "light" || theme === "dark") { document.documentElement.setAttribute("data-theme", theme); }
+                if (density === "compact") { document.documentElement.setAttribute("data-density", "compact"); }
+            } catch (e) { }
+        })();
+    </script>
     <title>@ViewData["Title"] — Parley console</title>
     <link rel="icon" href="/brand/icon.png" type="image/png" />
     @* Inline rather than a file, because a file has to survive `dotnet pack` into the tool that
@@ -126,8 +137,11 @@
             --md-ext-scrim: rgb(0 0 0 / 0.32);
         }
 
+        /* Dark follows the system unless the person chose a theme on the Settings page, which sets data-theme on <html>
+           before anything is drawn. The block is written twice, once for the system and once for the choice, because CSS
+           cannot make one rule answer to both a media query and an attribute; MaterialTokensTests holds the two equal. */
         @@media (prefers-color-scheme: dark) {
-            :root {
+            :root:not([data-theme="light"]) {
                 --md-sys-color-primary: #b5c4ff;
                 --md-sys-color-on-primary: #00297b;
                 --md-sys-color-primary-container: #2b5cd9;
@@ -174,8 +188,54 @@
             }
         }
 
+        :root[data-theme="dark"] {
+                --md-sys-color-primary: #b5c4ff;
+                --md-sys-color-on-primary: #00297b;
+                --md-sys-color-primary-container: #2b5cd9;
+                --md-sys-color-on-primary-container: #dee3ff;
+                --md-sys-color-secondary: #b6c4fd;
+                --md-sys-color-on-secondary: #1e2e5c;
+                --md-sys-color-secondary-container: #364474;
+                --md-sys-color-on-secondary-container: #a4b3ea;
+                --md-sys-color-tertiary: #f4aeff;
+                --md-sys-color-on-tertiary: #55006a;
+                --md-sys-color-tertiary-container: #983daf;
+                --md-sys-color-on-tertiary-container: #fdd8ff;
+                --md-sys-color-error: #ffb4ab;
+                --md-sys-color-on-error: #690005;
+                --md-sys-color-error-container: #93000a;
+                --md-sys-color-on-error-container: #ffdad6;
+                --md-sys-color-surface: #11131a;
+                --md-sys-color-on-surface: #e2e1ec;
+                --md-sys-color-surface-variant: #434654;
+                --md-sys-color-on-surface-variant: #c3c5d6;
+                --md-sys-color-surface-dim: #11131a;
+                --md-sys-color-surface-bright: #373941;
+                --md-sys-color-surface-container-lowest: #0c0e15;
+                --md-sys-color-surface-container-low: #191b23;
+                --md-sys-color-surface-container: #1e1f27;
+                --md-sys-color-surface-container-high: #282a32;
+                --md-sys-color-surface-container-highest: #33343d;
+                --md-sys-color-outline: #8d90a0;
+                --md-sys-color-outline-variant: #434654;
+                --md-sys-color-inverse-surface: #e2e1ec;
+                --md-sys-color-inverse-on-surface: #2e3038;
+                --md-sys-color-inverse-primary: #1f54d1;
+                --md-ext-color-present: #6fd59b;
+                --md-ext-color-card: var(--md-sys-color-surface-container-low);
+                --md-ext-slot-0: #a1b6ff;
+                --md-ext-slot-1: #64cba7;
+                --md-ext-slot-2: #ffa26f;
+                --md-ext-slot-3: #cfa7ff;
+                --md-ext-slot-4: #6dc5de;
+                --md-ext-slot-5: #ff9cb1;
+                --md-ext-slot-6: #afc16b;
+                --md-ext-slot-7: #97bbf0;
+                --md-ext-on-slot: #11131a;
+        }
+
         :root {
-            /* Type: Material 3's scale, in Roboto Flex. Size / line height / weight / tracking. */
+            /* Type:Material 3's scale, in Roboto Flex. Size / line height / weight / tracking. */
             --md-ref-typeface: "Roboto Flex", "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
             --md-ref-typeface-mono: ui-monospace, "Cascadia Code", "Roboto Mono", Consolas, monospace;
             --md-sys-typescale-headline-small: 400 1.5rem/2rem var(--md-ref-typeface);
@@ -251,6 +311,9 @@
                restyled) in the theme the page is in. */
             color-scheme: light dark;
         }
+
+        :root[data-theme="light"] { color-scheme: light; }
+        :root[data-theme="dark"] { color-scheme: dark; }
 
         /* Room for the scrollbar on every page, so a short page and a long one lay out alike and nothing shifts sideways */
         /* when one gains or loses it. */
@@ -419,8 +482,10 @@
         }
 
         @@media (prefers-color-scheme: dark) {
-            .brand img { filter: invert(1); }
+            :root:not([data-theme="light"]) .brand img { filter: invert(1); }
         }
+
+        :root[data-theme="dark"] .brand img { filter: invert(1); }
 
         /* One delivered message, in the inbox. Bordered rather than bubbled: these arrive out of
            whatever conversation they belong to, and dressing them as a transcript would suggest
@@ -1986,6 +2051,25 @@
         .seat-who { font: var(--md-sys-typescale-label-large); }
         header .build { font: var(--md-sys-typescale-body-small); }
 
+        /* Compact density, chosen on the Settings page: Material 3's density step of 8px off fields, buttons, menu rows and
+           table rows, and a smaller gap. Targets stay at least 32px, so nothing becomes too small to press. */
+        :root[data-density="compact"] { --gap: 1rem; }
+        :root[data-density="compact"] input:not([type="checkbox"], [type="radio"], [type="range"], [type="hidden"], [type="file"]),
+        :root[data-density="compact"] textarea, :root[data-density="compact"] select { min-height: 2.5rem; padding: 0.4375rem 0.875rem; }
+        :root[data-density="compact"] button, :root[data-density="compact"] .button,
+        :root[data-density="compact"] .convo-actions .file-button { min-height: 2rem; }
+        :root[data-density="compact"] th, :root[data-density="compact"] td { padding: 0.5rem 0.75rem; }
+        :root[data-density="compact"] option, :root[data-density="compact"] .pick .menu label,
+        :root[data-density="compact"] .export-list a, :root[data-density="compact"] .mention-list li { min-height: 2.5rem; }
+
+        /* The Parley-wide Settings page: each choice a group of radio buttons, each one a row with its words. */
+        .appearance { display: block; max-width: 40rem; }
+        .settings-section fieldset.choice { border: 0; background: none; padding: 0; margin: 0 0 1rem; }
+        .choice legend { font: var(--md-sys-typescale-title-small); color: var(--md-sys-color-on-surface); padding: 0; margin-bottom: 0.5rem; }
+        .choice label { display: flex; align-items: center; gap: 0.75rem; min-height: 2.5rem; color: var(--md-sys-color-on-surface); font: var(--md-sys-typescale-body-large); cursor: pointer; }
+        .about dt { font: var(--md-sys-typescale-title-small); color: var(--md-sys-color-on-surface); margin-top: 0.75rem; }
+        .about dd { margin: 0.25rem 0 0; font: var(--md-sys-typescale-body-medium); color: var(--md-sys-color-on-surface-variant); overflow-wrap: anywhere; }
+
         /* ---- Sizes -------------------------------------------------------------
 
            One set of breakpoints, so every column folds at the same widths.
@@ -2128,6 +2212,7 @@
             ("/", "Projects", "grid_view", path == "/" && !agentsView),
             ("/?tab=agents", "All Agents", "group", onAgentsTab),
             ("/Inbox", "Inbox", "inbox", path.StartsWith("/Inbox", StringComparison.Ordinal)),
+            ("/Settings", "Settings", "settings", path == "/Settings"),
         };
         var inProjectRail = new List<(string Href, string Label, string Icon, bool Current)>();
 

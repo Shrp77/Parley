@@ -1,0 +1,131 @@
+@page
+@model ParleySettingsModel
+@{
+    ViewData["Title"] = "Settings";
+}
+
+<h1>Settings</h1>
+
+<p class="lede">For Parley as a whole. Each project's own settings are on its Settings page.</p>
+
+<section aria-labelledby="appearance-heading" class="settings-section">
+    <h2 id="appearance-heading">Appearance</h2>
+
+    <p>Kept in this browser only, for every project.</p>
+
+    @* Hidden until script runs: the choice lives in this browser's storage, so with no script there is nowhere to keep
+       it, and the console follows the system's theme. *@
+    <form id="appearance" class="appearance" onsubmit="return false" hidden>
+        <fieldset class="choice">
+            <legend>Theme</legend>
+            <label><input type="radio" name="theme" value="system" checked /> Follow the system</label>
+            <label><input type="radio" name="theme" value="light" /> Light</label>
+            <label><input type="radio" name="theme" value="dark" /> Dark</label>
+        </fieldset>
+
+        <fieldset class="choice">
+            <legend>Density</legend>
+            <label><input type="radio" name="density" value="comfortable" checked /> Comfortable</label>
+            <label><input type="radio" name="density" value="compact" /> Compact: smaller fields, buttons and rows</label>
+        </fieldset>
+
+        <p id="appearance-saved" class="composer-note" role="status" aria-live="polite"></p>
+    </form>
+
+    <noscript>
+        <p class="unreachable">Choosing a theme needs script, because the choice is kept in this browser. The console follows the system's theme.</p>
+    </noscript>
+</section>
+
+<section aria-labelledby="about-heading" class="settings-section">
+    <h2 id="about-heading">About this machine</h2>
+
+    <dl class="about">
+        <dt>Web console</dt>
+        <dd>parley-web-ui @WebBuild.Version, speaking protocol @Parley.Core.ProtocolVersion.Current</dd>
+
+        <dt>Deployment</dt>
+        <dd>@(Model.Root ?? "None: this console was given its projects directly.")</dd>
+    </dl>
+
+    @if (Model.ManifestProblem is { Length: > 0 } problem)
+    {
+        <p class="unreachable" role="alert">@problem</p>
+    }
+
+    @if (Model.Projects.Count == 0)
+    {
+        <p>No projects yet. <a href="/">Create one.</a></p>
+    }
+    else
+    {
+        <h3 id="projects-heading">Projects</h3>
+        <table aria-labelledby="projects-heading">
+            <thead>
+                <tr><th scope="col">Project</th><th scope="col">Broker</th><th scope="col">Address</th><th scope="col">Store</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var row in Model.Projects)
+                {
+                    var warnings = row.Health.Warnings(WebBuild.Version);
+                    <tr>
+                        <th scope="row"><a href="/Projects/Agents?project=@Uri.EscapeDataString(row.Project.Name.Value)">@row.Project.Name.Value</a></th>
+                        <td>
+                            @if (!row.Health.Reachable)
+                            {
+                                <span>Not answering</span>
+                            }
+                            else
+                            {
+                                <span>@(row.Health.BrokerVersion is { Length: > 0 } build ? $"parley {build}" : "Build not said"), protocol @row.Health.Speaks</span>
+                            }
+                            @foreach (var warning in warnings)
+                            {
+                                <span class="unreachable">@warning</span>
+                            }
+                        </td>
+                        <td><code>@row.Project.Endpoint</code></td>
+                        <td><code>@row.Project.Store</code></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+<script>
+    (function () {
+        var form = document.getElementById("appearance");
+        var saved = document.getElementById("appearance-saved");
+        var root = document.documentElement;
+
+        function read(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+        function write(key, value) {
+            try { if (value) { localStorage.setItem(key, value); } else { localStorage.removeItem(key); } return true; } catch (e) { return false; }
+        }
+
+        var theme = read("parley.theme"), density = read("parley.density");
+        form.querySelector("input[name=theme][value=" + (theme === "light" || theme === "dark" ? theme : "system") + "]").checked = true;
+        form.querySelector("input[name=density][value=" + (density === "compact" ? "compact" : "comfortable") + "]").checked = true;
+        form.hidden = false;
+
+        form.addEventListener("change", function (e) {
+            var input = e.target;
+            var kept;
+
+            if (input.name === "theme") {
+                var chosen = input.value === "system" ? null : input.value;
+                if (chosen) { root.setAttribute("data-theme", chosen); } else { root.removeAttribute("data-theme"); }
+                kept = write("parley.theme", chosen);
+            } else if (input.name === "density") {
+                var compact = input.value === "compact";
+                if (compact) { root.setAttribute("data-density", "compact"); } else { root.removeAttribute("data-density"); }
+                kept = write("parley.density", compact ? "compact" : null);
+            } else {
+                return;
+            }
+
+            saved.textContent = kept ? "Saved in this browser." : "Applied to this page, but this browser would not keep it.";
+        });
+    })();
+</script>

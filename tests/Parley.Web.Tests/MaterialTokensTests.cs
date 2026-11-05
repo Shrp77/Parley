@@ -50,6 +50,21 @@ public sealed partial class MaterialTokensTests
     }
 
     [Fact]
+    public void Dark_chosen_on_the_settings_page_is_the_same_dark_the_system_gives()
+    {
+        static string Tokens(string block) =>
+            string.Join('\n', block.Split('\n').Select(line => line.Trim()).Where(line => line.StartsWith("--md-", StringComparison.Ordinal)));
+
+        var system = Dark[..Dark.IndexOf(":root[data-theme=\"dark\"] {", StringComparison.Ordinal)];
+        var chosen = Dark[Dark.IndexOf(":root[data-theme=\"dark\"] {", StringComparison.Ordinal)..];
+        chosen = chosen[..chosen.IndexOf('}', StringComparison.Ordinal)];
+
+        Assert.Contains(":root:not([data-theme=\"light\"]) {", system, StringComparison.Ordinal);
+        Assert.NotEmpty(Tokens(chosen));
+        Assert.Equal(Tokens(system), Tokens(chosen));
+    }
+
+    [Fact]
     public void The_seed_is_the_primary_container_so_the_console_keeps_its_blue()
     {
         Assert.Contains("--md-sys-color-primary-container: #2b5cd9;", Light, StringComparison.Ordinal);
