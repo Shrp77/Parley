@@ -19,5 +19,5 @@ Show the person what it says. On the machine running the project's broker it ope
 nothing and says which machine holds the file and at what path, because the file is not on this machine to open. If a
 name is in more than one conversation it says which; ask the person which one they mean and use `--conversation`.
 
-Only `.md` and `.txt` files are ever opened. **Do not read the file's contents into this conversation yourself**: opening
+Only `.md`, `.txt` and image files are ever opened. **Do not read the file's contents into this conversation yourself**: opening
 it is for the person, to read.

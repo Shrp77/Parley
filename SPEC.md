@@ -148,7 +148,7 @@ language they are written in.
 | **Conversation** | Every exchange belonging to one line of work: the request that began it and everything that request caused. Started only by a person, by an agent holding no request, or by the facilitator (principle 2.10). See §5.0. |
 | **Pair** | An unordered set of exactly two agents. Identifies traffic between them; see §7.1. |
 | **File location** | The place beside a broker's store where placed files live, one folder per conversation that has files. See §9.5. |
-| **Shared file** | A `.md` or `.txt` file in a conversation's folder, placed by an agent or by the person; only its placing agent or the person removes it. Never changed once placed: a new version is a new file. Fetched onto disk, never into a model's context. |
+| **Shared file** | A `.md`, `.txt` or image file in a conversation's folder, placed by an agent or by the person; only its placing agent or the person removes it. Never changed once placed: a new version is a new file. Fetched onto disk, never into a model's context. |
 | **Content hash** | The SHA-256 of a shared file's content, computed by the broker as it arrives. The same hash is the same content; it attests nothing about who wrote it. |
 | **Gone notice** | What an agent that fetched a file finds in its inbox when the file later goes, and what its placer finds too when it is found missing or tampered with — taken or changed on disk by something other than Parley. Not a message: it opens nothing and owes nothing. See §9.5. |
 | **Quarantine** | Where a sweep moves a placed file found tampered with: beside the file location, the person's, and never served. See §9.5. |
@@ -2217,7 +2217,9 @@ CREATE TABLE shared_files (
   -- and the name together are bounded by tr_shared_file_path_fits.
   name            TEXT    NOT NULL
                   CHECK (length(name) BETWEEN 4 AND 254
-                         AND (lower(name) GLOB '*.md' OR lower(name) GLOB '*.txt')
+                         AND (lower(name) GLOB '*.md' OR lower(name) GLOB '*.txt'
+                              OR lower(name) GLOB '*.png' OR lower(name) GLOB '*.jpg' OR lower(name) GLOB '*.jpeg'
+                              OR lower(name) GLOB '*.gif' OR lower(name) GLOB '*.webp')
                          AND name NOT GLOB '*[^A-Za-z0-9._-]*'
                          AND name NOT GLOB '.*'
                          AND upper(substr(name, 1, instr(name, '.') - 1)) NOT IN
@@ -3094,9 +3096,14 @@ not delete when it ran (§14) among them, for which the act logs what it left an
 A destroy's or a purge's delete finishes once its rows have gone, whether or
 not the operator who asked is still there.
 
-**A name ends in `.md` or `.txt`.** Code travels as text — `PriceSnapshot.cs.txt` — so nothing placed
-in a location has a handler that runs a program when a person opens it (§13). Only the name is
-checked; the bytes are never inspected. A name is made of `A`–`Z`, `a`–`z`, `0`–`9`, `.`, `_` and `-`
+**A name ends in `.md`, `.txt`, `.png`, `.jpg`, `.jpeg`, `.gif` or `.webp`.** Code travels as text — `PriceSnapshot.cs.txt` — so nothing placed
+in a location has a handler that runs a program when a person opens it (§13). SVG is not among them, because it can carry
+scripts. Only the name is checked; the bytes are never inspected.
+
+**Anyone may place an image, and that is a recorded reduction in the control.** A model that opens an image reads any words in
+it, so an image from one agent can carry instructions to another, as a message can, in a form the person reading the
+transcript does not see. Such words are inert data like any payload (§13). An operator surface shows a thumbnail only of what
+the person is attaching, and does not serve a placed image back to a browser. A name is made of `A`–`Z`, `a`–`z`, `0`–`9`, `.`, `_` and `-`
 and nothing else, does not begin with a dot, and is not a reserved device name (`CON`, `PRN`, `AUX`,
 `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`, with or without an extension). The folder, a separator and the
 name together are at most 255 characters, the location's own path not counted. Names are compared by a
@@ -3247,7 +3254,7 @@ else's. §10.2 is what the person running the deployment may do, which is everyt
 | `inbox()` | Drain pending messages, debts first (§7.3). One collection carries about 64,000 characters of messages and never fewer than one, or fewer messages when the caller asks for fewer (§7.3); the rest wait for the next and are counted, because a collection too large to arrive would never be delivered (principle 2.2). Delivered only when acknowledged (§6): a collection whose call ends first is handed over again by the next. Results arrive here, carrying the identifier `request` returned and the Request they close (§4.2, §13). Also surfaces the closure polls outstanding for the caller (§5.0), at most 200, oldest first, with a count of the rest, which stay outstanding until answered, and gone and tampered notices about files the caller fetched or placed, at most 200 at once with a count of the rest (§9.5), any open exchanges of the caller's the person moved to another conversation (§5.0), at most 50 with a count of the rest, and what became of the caller's own roadmap proposals, at most 50 at once with a count of the rest — confirmed, declined or superseded, each with the caller's own title cut to 200 characters as a heading is, never waking anybody (§5.7). A Request from the person arrives with the caller's own open questions to the person in that conversation, at most 20 with a count of the rest (§5.6). A Result answering one member of the caller's Request to a role carries how many that Request reached and how many have answered (§5.5). |
 | `conclude(conversation_id, finished)` | Say whether you are finished with a discussion. The first call opens a poll; later calls answer one. Saying finished in a roadmap item's conversation is refused, saying only the person closes it (§5.7). |
 | `file_place(path, name?, conversation_id?)` | Place a file from the caller's own repository (`path`; its bytes go to the broker, `name` defaults to the file's own) in a conversation's folder of the file location (§9.5). The conversation is assigned as a Request's is (§5.0), and placing makes the caller a participant. Returns the conversation, the name placed and, when characters outside the set renamed it, the name asked for, the size and the broker's content hash, and whether the file was placed or already current; or a refusal naming, where one exists, the agent that placed the name, or the file a renamed placement collides with. A name the conversation already holds with other content is refused, whoever placed it: a placed file is never changed, and a new version goes under a new name. A connection to the broker lost during the placement is said apart from any refusal, as `connectiondropped`: lost before the whole file was sent, nothing was placed; lost after, it may have been, and the caller lists the conversation's files before placing it again. |
-| `file_fetch(name, to, conversation_id?, expect_sha256?, replace?)` | Write one whole content of a file into the caller's own repository, at `to` (an existing folder keeps the file's name), never over a different file unless `replace` says so. Refused, writing nothing, when the file's hash is not the one expected, and when the destination is not a `.md` or `.txt` file, lies under a folder an agent's client reads its configuration from (`.git`, `.claude`, `.github`, `.cursor`, `.codex`, `.gemini`, `.windsurf`, `.clinerules`, `.roo`, `.kiro`, `.amazonq`, `.junie`, `.continue`), or is named as standing instructions (`CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENT.md`, `GEMINI.md`, `CONVENTIONS.md`) at any depth (§13); when it holds a colon, which on Windows names a hidden part of another file; and when it ends in a separator naming a folder that is not there. A file that arrives at the destination while the fetch streams is never written over unless replacing was asked for. Refused as tampered, writing nothing and starting a sweep, when the bytes on disk are not the bytes placed; refused too when the file is held for writing by another program or cannot be read. The adapter verifies what it wrote and reports it, and only then is the fetch recorded, so a gone notice follows if the file later goes (§9.5). Never returns the file's contents. |
+| `file_fetch(name, to, conversation_id?, expect_sha256?, replace?)` | Write one whole content of a file into the caller's own repository, at `to` (an existing folder keeps the file's name), never over a different file unless `replace` says so. Refused, writing nothing, when the file's hash is not the one expected, and when the destination is not a kind of file that can be placed (`.md`, `.txt`, `.png`, `.jpg`, `.jpeg`, `.gif` or `.webp`), lies under a folder an agent's client reads its configuration from (`.git`, `.claude`, `.github`, `.cursor`, `.codex`, `.gemini`, `.windsurf`, `.clinerules`, `.roo`, `.kiro`, `.amazonq`, `.junie`, `.continue`), or is named as standing instructions (`CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENT.md`, `GEMINI.md`, `CONVENTIONS.md`) at any depth (§13); when it holds a colon, which on Windows names a hidden part of another file; and when it ends in a separator naming a folder that is not there. A file that arrives at the destination while the fetch streams is never written over unless replacing was asked for. Refused as tampered, writing nothing and starting a sweep, when the bytes on disk are not the bytes placed; refused too when the file is held for writing by another program or cannot be read. The adapter verifies what it wrote and reports it, and only then is the fetch recorded, so a gone notice follows if the file later goes (§9.5). Never returns the file's contents. |
 | `file_list(conversation_id?, page_size?, page_token?)` | The files in the location: conversation, name, size, content hash, placer and when, with totals. Paged, and the broker bounds the page whatever is asked for. |
 | `file_remove(files)` | Remove files the caller placed. Every other name is refused, naming its placer, and so is a file whose size or time on disk is not what was placed, which starts a sweep (§9.5), without preventing the rest. |
 | `propose_roadmap(title, items, conversation_id?, revises?)` | Put forward a roadmap (§5.7): a short title and an ordered list of items, each one line with, where known, the agent it is meant for and the earlier items it needs. `conversation_id` says where it came from, and must be a conversation the caller took part in; `revises` names, by title only, a roadmap it would change. Stores a proposal and nothing else: it opens no exchange, writes no message, and creates no roadmap until a person confirms it. Returns the proposal's identifier. Refused, with a sentence the agent can act on, for an empty list, for a line break in the title or an item, for an intended agent that is not in the project or is Parley, which takes no work (an item may be the person's own, and starting it ticks nobody), for a conversation the caller took no part in, with the same sentence whether or not that conversation exists, and for the person seat and Parley, which propose nothing. There is no operation by which an agent reads, changes, reorders, removes or marks done a roadmap, and none may be added (principle 2.12). |
@@ -4074,8 +4081,8 @@ tool would read it as instructions, and that judgement, not the list, is what ho
 payload that does. Its content hash identifies the bytes and attests nothing about who wrote them.
 
 **Opening a file never runs one.** A person may open a placed file from an operator surface, in the
-application the operating system has registered for it (§10.2). Only `.md` and `.txt` files can be
-placed, and a surface opens nothing else, so no file another participant placed can run a program on
+application the operating system has registered for it (§10.2). Only text and image files can be
+placed (§9.5), and a surface opens nothing else, so no file another participant placed can run a program on
 the person's machine by being opened.
 
 Additional controls, annotated with what actually holds each one — the same discipline §8 applies to
@@ -4796,7 +4803,7 @@ decided is removed and its number is not reused, so the list has gaps.
 
 ## 18. Protocol version
 
-The protocol version is **0.14** and the storage schema version is **6**.
+The protocol version is **0.14** and the storage schema version is **7**.
 
 The version is `major.minor` and has no patch level, because a protocol change is either visible
 across the boundary or is not a protocol change at all. **While the major is zero, the minor

@@ -48,9 +48,10 @@ public enum SharedFileNameProblem
 /// (§9.3); this is the one that can say what was wrong.
 /// </para>
 /// <para>
-/// <b>Only <c>.md</c> and <c>.txt</c>.</b> A person may open a placed file with
+/// <b>Only text and images (<see cref="AllowedExtensions"/>).</b> A person may open a placed file with
 /// the application their system registers for it, and for most other extensions that application runs
-/// code. Code travels as text: <c>PriceSnapshot.cs.txt</c>. Only the name is checked; the bytes never are.
+/// code. Code travels as text: <c>PriceSnapshot.cs.txt</c>. SVG is not an image here, because it can carry scripts. Only the
+/// name is checked; the bytes never are.
 /// </para>
 /// <para>
 /// <b>Only letters A to Z, digits, <c>.</c>, <c>_</c> and <c>-</c>, and a placement is renamed rather than
@@ -69,6 +70,22 @@ public enum SharedFileNameProblem
 /// </remarks>
 public sealed class SharedFileName : IEquatable<SharedFileName>
 {
+    /// <summary>What a placed file's name may end in. The schema holds the same list (§9.3).</summary>
+    public static IReadOnlyList<string> AllowedExtensions { get; } = [".md", ".txt", ".png", ".jpg", ".jpeg", ".gif", ".webp"];
+
+    /// <summary>The same list, as a sentence would say it.</summary>
+    public const string AllowedExtensionsInWords = ".md, .txt, .png, .jpg, .jpeg, .gif or .webp";
+
+    /// <summary>Whether a name or path ends in an extension a placed file may have.</summary>
+    /// <param name="nameOrPath">The name or path.</param>
+    /// <returns>Whether it does, in any case.</returns>
+    public static bool HasAllowedExtension(string nameOrPath)
+    {
+        ArgumentNullException.ThrowIfNull(nameOrPath);
+
+        return AllowedExtensions.Any(extension => nameOrPath.EndsWith(extension, StringComparison.OrdinalIgnoreCase));
+    }
+
     /// <summary>The longest a file's path inside the location may be: its folder, a separator and its name.</summary>
     /// <remarks>
     /// Counted without the location's own path, so the same names are legal wherever a broker keeps its store.
@@ -171,8 +188,7 @@ public sealed class SharedFileName : IEquatable<SharedFileName>
             return SharedFileNameProblem.LeadingDot;
         }
 
-        if (!candidate.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
-            && !candidate.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
+        if (!HasAllowedExtension(candidate))
         {
             return SharedFileNameProblem.ExtensionNotAllowed;
         }
@@ -220,7 +236,7 @@ public sealed class SharedFileName : IEquatable<SharedFileName>
         SharedFileNameProblem.None => "The name is acceptable.",
         SharedFileNameProblem.Empty => "A file needs a name.",
         SharedFileNameProblem.ExtensionNotAllowed =>
-            "Only .md and .txt files can be placed. To place anything else, add .txt to its name, such as " +
+            $"Only {AllowedExtensionsInWords} files can be placed. To place anything else, add .txt to its name, such as " +
             "PriceSnapshot.cs.txt.",
         SharedFileNameProblem.DisallowedCharacter => $"A file name uses only {AllowedCharactersInWords}.",
         SharedFileNameProblem.LeadingDot => "A file name cannot begin with a dot.",

@@ -56,7 +56,9 @@ public sealed class LocalLauncherTests : IDisposable
     [InlineData("price-snapshot.md")]
     [InlineData("PriceSnapshot.cs.txt")]
     [InlineData("NOTES.MD")]
-    public void A_markdown_or_text_file_here_is_opened(string name)
+    [InlineData("shot.png")]
+    [InlineData("photo.jpeg")]
+    public void A_kind_of_file_that_can_be_placed_is_opened(string name)
     {
         var path = Write(name);
 
@@ -72,6 +74,7 @@ public sealed class LocalLauncherTests : IDisposable
     [InlineData("script.ps1")]
     [InlineData("shortcut.lnk")]
     [InlineData("PriceSnapshot.cs")]
+    [InlineData("drawing.svg")]
     public void Any_other_file_is_not_launched_and_its_path_is_given(string name)
     {
         // Nothing an agent places can have these names, so a file like this reached the location some other way —

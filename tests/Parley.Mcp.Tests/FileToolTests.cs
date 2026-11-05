@@ -138,7 +138,7 @@ public sealed class FileToolTests : IDisposable
     {
         // Found by review, round 62: a peer's file was written wherever the destination said, a settings file holding a
         // hook, an adapter's configuration and a git hook among them, though a fetched file "cannot change your
-        // configuration". It lands only as a .md or .txt file, outside .git and .claude. Round 65 and lens 1 run 59: a
+        // configuration". It lands only as a kind of file that can be placed, outside .git and .claude. Round 65 and lens 1 run 59: a
         // .md file can be standing instructions too, so CLAUDE.md, AGENTS.md and their kind are refused at any depth.
         await using var fixture = new ServerFixture(T0);
         var (_, billing) = await fixture.LaunchInAsync("billing@test", BillingRepository, Ct);
@@ -148,6 +148,48 @@ public sealed class FileToolTests : IDisposable
         _ = await billing.FilePlaceAsync("notes.md", conversation_id: "pricing", cancellationToken: Ct);
 
         var refused = await orders.FileFetchAsync("notes.md", destination, conversation_id: "pricing", replace: true, cancellationToken: Ct);
+
+        Assert.Equal("notadestination", refused["refused"]!.GetValue<string>());
+        Assert.False(File.Exists(Path.Combine(OrdersRepository, destination)));
+    }
+
+    [Fact]
+    public async Task An_image_goes_from_one_repository_to_another_byte_for_byte()
+    {
+        await using var fixture = new ServerFixture(T0);
+        var (_, billing) = await fixture.LaunchInAsync("billing@test", BillingRepository, Ct);
+        var (_, orders) = await fixture.LaunchInAsync("orders@test", OrdersRepository, Ct);
+
+        // Bytes no text encoding keeps: a NUL, a lone high byte and a line ending that must not be touched.
+        byte[] image = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0xFF, 0xFE, 0x80];
+
+        await File.WriteAllBytesAsync(Path.Combine(BillingRepository, "shot.png"), image, Ct);
+
+        var placed = await billing.FilePlaceAsync("shot.png", conversation_id: "pricing", cancellationToken: Ct);
+
+        Assert.Equal(Parley.Core.ContentHash.Of(image).Value, placed["sha256"]!.GetValue<string>());
+
+        var fetched = await orders.FileFetchAsync("shot.png", ".", conversation_id: "pricing", expect_sha256: placed["sha256"]!.GetValue<string>(), cancellationToken: Ct);
+
+        Assert.Equal("written", fetched["outcome"]?.GetValue<string>());
+        Assert.Equal(image, await File.ReadAllBytesAsync(Path.Combine(OrdersRepository, "shot.png"), Ct));
+    }
+
+    [Theory]
+    [InlineData(".claude/shot.png")]
+    [InlineData(".git/hooks/shot.png")]
+    [InlineData("shot.exe")]
+    [InlineData("shot.svg")]
+    public async Task An_image_is_kept_out_of_configuration_and_cannot_be_fetched_as_something_else(string destination)
+    {
+        await using var fixture = new ServerFixture(T0);
+        var (_, billing) = await fixture.LaunchInAsync("billing@test", BillingRepository, Ct);
+        var (_, orders) = await fixture.LaunchInAsync("orders@test", OrdersRepository, Ct);
+
+        await File.WriteAllBytesAsync(Path.Combine(BillingRepository, "shot.png"), [1, 2, 3], Ct);
+        _ = await billing.FilePlaceAsync("shot.png", conversation_id: "pricing", cancellationToken: Ct);
+
+        var refused = await orders.FileFetchAsync("shot.png", destination, conversation_id: "pricing", replace: true, cancellationToken: Ct);
 
         Assert.Equal("notadestination", refused["refused"]!.GetValue<string>());
         Assert.False(File.Exists(Path.Combine(OrdersRepository, destination)));

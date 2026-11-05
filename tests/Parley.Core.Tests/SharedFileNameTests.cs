@@ -31,6 +31,12 @@ public sealed class SharedFileNameTests
     [InlineData("log_2026-09-14.txt")]
     [InlineData("con-notes.md")]
     [InlineData("console.txt")]
+    [InlineData("shot.png")]
+    [InlineData("SHOT.PNG")]
+    [InlineData("photo.jpg")]
+    [InlineData("photo.jpeg")]
+    [InlineData("loop.gif")]
+    [InlineData("still.webp")]
     public void A_well_formed_name_is_accepted(string candidate)
     {
         Assert.Equal(SharedFileNameProblem.None, SharedFileName.Check(candidate));
@@ -45,6 +51,9 @@ public sealed class SharedFileNameTests
     [InlineData("notes")]
     [InlineData("notes.md.exe")]
     [InlineData("archive.zip")]
+    [InlineData("drawing.svg")]
+    [InlineData("shot.png.exe")]
+    [InlineData("page.html")]
     public void Any_other_extension_is_refused_with_the_way_to_place_it(string candidate)
     {
         Assert.Equal(SharedFileNameProblem.ExtensionNotAllowed, SharedFileName.Check(candidate));

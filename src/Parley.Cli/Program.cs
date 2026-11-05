@@ -99,7 +99,7 @@ const string Help = """
       parley registry                                  every registered agent, with its workspace
       parley files list [--conversation <id>]          the files placed: name, size, sha256,
                         [--full]                       who placed each, totals and placements
-      parley files place <path> --conversation <id>    place a .md or .txt file from this machine
+      parley files place <path> --conversation <id>    place a .md, .txt or image file from this machine
                         [--name <name>]                in a conversation, as the person
       parley files remove <name>... [--conversation <id>]  remove files whoever placed them;
                         [--yes]                        describes them and asks first

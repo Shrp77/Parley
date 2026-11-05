@@ -1421,6 +1421,18 @@
         .composer-closed > .composer-bar { margin: 0; }
         .composer-closed > :not(.composer-bar) { display: none; }
 
+        /* What is attached: a thumbnail, or a tile saying the kind of file, each with its name and a way to take it off. */
+        .attachments { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0 0 0.6rem; padding: 0; list-style: none; }
+        .attachments:not(:has(.attachment)) { display: none; }
+        .attachment { position: relative; width: 4.5rem; }
+        .attachment-tile { display: grid; place-items: center; width: 4.5rem; height: 4.5rem; object-fit: cover; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.05em; color: var(--ink-soft); background: var(--quiet-wash); border: 1px solid var(--rule); border-radius: 8px; }
+        .attachment-name { display: block; margin-top: 0.15rem; overflow: hidden; font-size: 0.68rem; color: var(--ink-faint); text-overflow: ellipsis; white-space: nowrap; }
+        .attachment-remove { position: absolute; top: -0.4rem; right: -0.4rem; display: grid; place-items: center; width: 1.3rem; height: 1.3rem; padding: 0; color: var(--ink); background: var(--card); border: 1px solid var(--rule); border-radius: 50%; }
+        .attachment-remove .icon { font-size: 0.9rem; }
+        .attach-note { margin: 0 0 0.6rem; font-size: 0.8rem; color: var(--ink-soft); }
+        .attach-note[hidden] { display: none; }
+        .composer.dropping { outline: 2px dashed var(--accent); outline-offset: -4px; }
+
         /* Keyboard focus and jumps stop short of the box rather than underneath it. */
         html { scroll-padding-bottom: calc(var(--composer-h, 0px) + 1rem); }
 

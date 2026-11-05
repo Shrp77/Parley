@@ -76,7 +76,7 @@ public static class PlacementSaid
             "that name already holds other content. A placed file is never changed: place the new version under a new name.",
         FileRejection.NamePlacedByAnother => "an agent placed that name, so it is theirs.",
         FileRejection.ConversationNotAssignable => "there is no such conversation.",
-        FileRejection.ExtensionNotAllowed => "only a .md or .txt file can be placed.",
+        FileRejection.ExtensionNotAllowed => $"only a {SharedFileName.AllowedExtensionsInWords} file can be placed.",
         _ => rejection.ToString() + ".",
     };
 }

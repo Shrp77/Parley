@@ -27,7 +27,7 @@ public sealed record Launched(bool Opened, string Said);
 /// name that happens to match cannot launch the wrong thing.
 /// </para>
 /// <para>
-/// <b>Only <c>.md</c> and <c>.txt</c>, and only a regular file.</b> Nothing else can be placed, so this is the second
+/// <b>Only what can be placed, and only a regular file.</b> Nothing else can be placed, so this is the second
 /// lock on that door rather than the first: "open with the registered application" runs a <c>.bat</c> on Windows,
 /// and a file in the location that got there by some other route must not be one click from running.
 /// </para>
@@ -66,12 +66,11 @@ public sealed class LocalLauncher(Func<string, bool, bool> open, string machine)
             return new Launched(false, $"{name} is on machine {location.Machine}, at {path}.");
         }
 
-        if (!path.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
-            && !path.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
+        if (!SharedFileName.HasAllowedExtension(path))
         {
             return new Launched(
                 false,
-                $"Only .md and .txt files are opened, and {name} is neither, so nothing was launched. It is at {path}.");
+                $"Only {SharedFileName.AllowedExtensionsInWords} files are opened, and {name} is none of those, so nothing was launched. It is at {path}.");
         }
 
         if (new FileInfo(path).LinkTarget is not null)

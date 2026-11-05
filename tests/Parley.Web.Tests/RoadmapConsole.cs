@@ -100,6 +100,105 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <summary>What the broker says it did about the receiver of a Request.</summary>
     public Wire.WakeOutcome RequestWake { get; set; }
 
+    /// <summary>Every placement as the person, with its header and bytes.</summary>
+    public List<(Wire.PlaceFileHeader Header, byte[] Bytes)> Placed { get; } = [];
+
+    /// <summary>What a placement comes to, given its header and bytes.</summary>
+    public Func<Wire.PlaceFileHeader, byte[], Wire.PlaceFileReply> Placing { get; set; } =
+        (header, bytes) => new Wire.PlaceFileReply
+        {
+            Outcome = Wire.PlaceOutcome.Placed,
+            Rejection = Wire.FileRejection.None,
+            ConversationId = header.ConversationId,
+            Name = header.Name,
+            SizeBytes = bytes.Length,
+            Sha256 = Parley.Core.ContentHash.Of(bytes).Value,
+        };
+
+    private HttpResponseMessage PlaceStreaming(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var pipe = new System.IO.Pipelines.Pipe();
+
+        var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+        {
+            Version = System.Net.HttpVersion.Version20,
+            RequestMessage = request,
+            Content = new StreamContent(pipe.Reader.AsStream()),
+        };
+
+        response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/grpc");
+
+        _ = Task.Run(
+            async () =>
+            {
+                var answers = pipe.Writer.AsStream();
+
+                try
+                {
+                    await WriteAnswerAsync(answers, new Wire.PlaceFileAnswer { GoAhead = new Wire.Empty() }, cancellationToken);
+
+                    var body = await request.Content!.ReadAsByteArrayAsync(cancellationToken);
+                    Wire.PlaceFileReply reply;
+
+                    lock (_lock)
+                    {
+                        reply = Place(body);
+                    }
+
+                    await WriteAnswerAsync(answers, new Wire.PlaceFileAnswer { Reply = reply }, cancellationToken);
+                    response.TrailingHeaders.Add("grpc-status", "0");
+                    await pipe.Writer.CompleteAsync();
+                }
+                catch (Exception failed)
+                {
+                    await pipe.Writer.CompleteAsync(failed);
+                }
+            },
+            cancellationToken);
+
+        return response;
+    }
+
+    private static async Task WriteAnswerAsync(Stream answers, Wire.PlaceFileAnswer answer, CancellationToken cancellationToken)
+    {
+        var message = answer.ToByteArray();
+        var prefix = new byte[5];
+
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(prefix.AsSpan(1), (uint)message.Length);
+        await answers.WriteAsync(prefix, cancellationToken);
+        await answers.WriteAsync(message, cancellationToken);
+        await answers.FlushAsync(cancellationToken);
+    }
+
+    private Wire.PlaceFileReply Place(byte[] body)
+    {
+        Wire.PlaceFileHeader? header = null;
+        using var bytes = new MemoryStream();
+
+        for (var at = 0; at + 5 <= body.Length;)
+        {
+            var length = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(body.AsSpan(at + 1, 4));
+            var frame = Wire.PlaceFileFrame.Parser.ParseFrom(body.AsSpan(at + 5, length));
+
+            if (frame.FrameCase == Wire.PlaceFileFrame.FrameOneofCase.Header)
+            {
+                header = frame.Header;
+            }
+            else
+            {
+                frame.Chunk.WriteTo(bytes);
+            }
+
+            at += 5 + length;
+        }
+
+        var content = bytes.ToArray();
+
+        Placed.Add((header!, content));
+
+        return Placing(header!, content);
+    }
+
     /// <summary>When set with <see cref="Seats"/>, the seat's stream says, after the attach, that the store is being rewritten.</summary>
     public bool Tidying { get; set; }
 
@@ -164,6 +263,11 @@ public sealed class RoadmapBroker : HttpMessageHandler
         }
 
         ArgumentNullException.ThrowIfNull(request);
+
+        if (Seats && request.RequestUri!.AbsolutePath == "/parley.v1.Operators/PlacePersonsFile")
+        {
+            return PlaceStreaming(request, cancellationToken);
+        }
 
         var body = request.Content is null ? [] : await request.Content.ReadAsByteArrayAsync(cancellationToken);
         var payload = body.Length > 5 ? body.AsSpan(5).ToArray() : [];

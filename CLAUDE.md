@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.54.0, protocol 0.14, schema 6. Nothing has been released, but **live stores hold work
+- Version 0.55.0, protocol 0.14, schema 7. Nothing has been released, but **live stores hold work
   in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
   `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
   upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
@@ -19,8 +19,8 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
   compatibility caveats.
 - Features 019–026 and 028–032 are merged; the latest is `specs/032-sub-conversations-and-moves/`.
   Feature 027, session-owned delivery, is not committed yet; its plan predates the rule above and must move its schema
-  change into migration 007 (003 holds file problems, 004 when an agent was first asked what it owns and first refreshed,
-  005 a message's limit and the record of its length, 006 conversation links, moves and move notices).
+  change into migration 008 (003 holds file problems, 004 when an agent was first asked what it owns and first refreshed,
+  005 a message's limit and the record of its length, 006 conversation links, moves and move notices, 007 image file names).
 - A person speaks to an agent only with a Request. An agent's row menu in the terminal has one
   ownership entry, *What this agent is responsible for* (`Alt+n`).
 - Design work runs through Spec Kit: `/speckit-specify`, `/speckit-plan`, `/speckit-tasks`
@@ -456,7 +456,7 @@ crosses between them. `parley_inbox` is pull rather than push - call it when you
 and again when you are waiting on a result.
 
 To hand over a file, place it with `parley_file_place` and name it and its sha256 in your
-request; fetch a file you are sent with `parley_file_fetch`. Only `.md` and `.txt` files can be
+request; fetch a file you are sent with `parley_file_fetch`. Only `.md`, `.txt` and image files can be
 placed, so code travels as `Name.cs.txt`.
 
 - The roster has not been read yet. Run `/parley:write-peers` to fill this in.

@@ -48,7 +48,7 @@ public sealed class FilesModel(BrokerDirectory directory) : PageModel
     /// </para>
     /// <para>
     /// Set here rather than left to the server's default, which is 30 MB on Kestrel and none at all elsewhere, so what
-    /// the console accepts does not depend on which server hosts it. 256 MiB is far past any <c>.md</c> or <c>.txt</c>
+    /// the console accepts does not depend on which server hosts it. 256 MiB is far past any file
     /// a person hands over; the command line and the terminal stream from disk and have no bound but the broker's
     /// disk.
     /// </para>
@@ -292,7 +292,7 @@ public sealed class FilesModel(BrokerDirectory directory) : PageModel
     /// <returns>The page, saying what happened.</returns>
     /// <remarks>
     /// From the query by choice: each file's button carries its own file in its action, so one form serves every row.
-    /// Opening changes nothing and opens only a <c>.md</c> or <c>.txt</c> file the broker holds, and a POST still needs
+    /// Opening changes nothing and opens only a kind of file that can be placed, that the broker holds, and a POST still needs
     /// the page's antiforgery token.
     /// </remarks>
     public async Task<IActionResult> OnPostOpenAsync([FromQuery] string? file, [FromQuery] string? inConversation)

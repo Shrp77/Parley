@@ -97,8 +97,8 @@ else if (Model.Listing is { } listing)
             <input type="hidden" name="project" value="@Model.Project" />
             <input type="hidden" name="conversation" value="@Model.Conversation" />
 
-            <label for="upload">A .md or .txt file</label>
-            <input id="upload" name="upload" type="file" accept=".md,.txt,text/markdown,text/plain" required />
+            <label for="upload">A @Parley.Core.SharedFileName.AllowedExtensionsInWords file</label>
+            <input id="upload" name="upload" type="file" accept="@string.Join(',', Parley.Core.SharedFileName.AllowedExtensions)" required />
 
             <label for="placeIn">In conversation</label>
             <select id="placeIn" name="placeIn">

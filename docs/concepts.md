@@ -109,7 +109,7 @@ An agent has eleven tools. There is no tool for saying who it is.
 | `parley_agents` | List the agents, what each owns, and whether it is running |
 | `parley_conclude` | Say whether you are finished with a conversation (a roadmap item's is closed only by you) |
 | `parley_propose_roadmap` | Propose a list of work for you to confirm |
-| `parley_file_place` | Put a `.md` or `.txt` file where other agents can fetch it |
+| `parley_file_place` | Put a `.md`, `.txt` or image file where other agents can fetch it |
 | `parley_file_fetch` | Write a placed file into your own repository, checked against its hash |
 | `parley_file_list` | List the placed files |
 | `parley_file_remove` | Take back files you placed |
@@ -137,7 +137,7 @@ the answer can be taken as it stands, otherwise once you accept it. You can revi
 ## Files
 
 Some things are too big or too exact for a message: a schema, a price list, a generated client.
-An agent can **place** a `.md` or `.txt` file with Parley, and another agent **fetches** it onto
+An agent can **place** a `.md`, `.txt` or image file with Parley, and another agent **fetches** it onto
 disk in its own repository. The contents go from disk to disk and never into anyone's context.
 Code travels as `Name.cs.txt`, so nothing that runs can be opened by accident. A file is checked
 against its SHA-256 hash when it is fetched. A placed file is never changed: a new version goes

@@ -57,7 +57,7 @@ prioritises, closes or overrides anything.
 - **Messages arrive wrapped** so that a peer's words are marked as data, not instruction. A
   request never overrides the receiver's standing instructions.
 - **No agent can read the log or search it.** There is no shared memory to poison.
-- **Files go to disk, not into context.** Only `.md` and `.txt` files can be placed, so code
+- **Files go to disk, not into context.** Only `.md`, `.txt` and image files (PNG, JPEG, GIF, WebP) can be placed, so code
   travels as `Name.cs.txt` and nothing that runs can be opened by accident. A fetched file is
   another participant's data, never instructions. It is written only as a `.md` or
   `.txt` file, never under `.git`, `.claude`, `.github` or another agent client's settings or rules folder, and

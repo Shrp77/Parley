@@ -32,7 +32,7 @@ internal static class FilesPlacing
     internal const string Choice = "Place a file…";
 
     /// <summary>What the form asks for first.</summary>
-    private const string PathLabel = "The file's path on this machine (.md or .txt):";
+    private const string PathLabel = "The file's path on this machine (" + Parley.Core.SharedFileName.AllowedExtensionsInWords + "):";
 
     /// <summary>What the form asks for second.</summary>
     private const string NameLabel = "The name to place it under (empty: the file's own name):";

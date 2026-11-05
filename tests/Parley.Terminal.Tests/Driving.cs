@@ -241,7 +241,7 @@ internal static class Driving
 
                 // **And files, before a Files dialog can open an editor on this machine.** The launcher still
                 // decides everything it decides — whether the broker's machine is this one, whether the file is a
-                // .md or .txt — and only the final launch is recorded instead of performed.
+                // kind that can be placed — and only the final launch is recorded instead of performed.
                 shell.FileLauncher = new Parley.Client.Files.LocalLauncher(
                     (path, _) =>
                     {

@@ -21,8 +21,13 @@ namespace Parley.Web.Pages.Conversations;
 /// <param name="directory">The projects and their brokers.</param>
 /// <param name="seats">The seats this console is holding, for the composer's voice.</param>
 /// <param name="notices">What the console tells the person, which the bell lists.</param>
+[RequestSizeLimit(Parley.Web.Pages.Projects.FilesModel.PlaceLimitBytes)]
+[RequestFormLimits(MultipartBodyLengthLimit = Parley.Web.Pages.Projects.FilesModel.PlaceLimitBytes)]
 public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parley.Web.Notifications.NotificationLog notices) : PageModel
 {
+    /// <summary>How long pasted text may be before it becomes a file instead of words in the box.</summary>
+    public const int PasteBecomesAFileOver = 4000;
+
     /// <summary>Which project this conversation belongs to.</summary>
     [BindProperty(SupportsGet = true)]
     public string? Project { get; set; }
@@ -199,6 +204,15 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// </remarks>
     [BindProperty, FromForm]
     public string? Says { get; set; }
+
+    /// <summary>What the person pasted or dropped into the box, to place and name in the message.</summary>
+    [BindProperty, FromForm]
+    public IList<IFormFile> Attachments { get; set; } = [];
+
+    /// <summary>Files an earlier press placed before its send failed, each as its name and hash, so they are not uploaded again.</summary>
+    /// <remarks>Only ever words in a message the person is sending: nothing is opened or fetched from these.</remarks>
+    [BindProperty, FromForm]
+    public IList<string> Attached { get; set; } = [];
 
     /// <summary>The exchange this is an answer to, when the person chose to reply to an agent's question.</summary>
     /// <remarks>
@@ -574,7 +588,9 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
             Targets = [.. Participants.Select(who => who.Value)];
         }
 
-        if ((ReplyTo is null && Targets.Count == 0) || string.IsNullOrWhiteSpace(Says))
+        var hasFiles = Attachments.Count > 0 || Attached.Count > 0;
+
+        if ((ReplyTo is null && Targets.Count == 0) || (string.IsNullOrWhiteSpace(Says) && !hasFiles))
         {
             SendProblem = ReplyTo is null && Targets.Count == 0
                 ? "Nobody was picked, so nothing was sent."
@@ -601,6 +617,29 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
             return Page();
         }
 
+        // **Placed before anything is sent**, so a message never names a file that is not there. The one exception is a
+        // conversation that does not exist yet: the person places only into one that does, so its first words start it
+        // and the files follow in a second message.
+        var broker = new BrokerClient(directory.ClientFor(project));
+        var placing = await PlaceAttachmentsAsync(broker, Id, token).ConfigureAwait(false);
+
+        if (placing.Problem is { } placeProblem)
+        {
+            SendProblem = placeProblem;
+
+            await OnGetAsync().ConfigureAwait(false);
+
+            return Page();
+        }
+
+        var words = Attaching.Message(Says, Attached);
+        var followWithFiles = placing.ConversationNotStarted;
+
+        if (followWithFiles)
+        {
+            words = string.IsNullOrWhiteSpace(Says) ? Attaching.FilesFollow : Says;
+        }
+
         // **A reply the person chose to give to a question**, on that exchange, so it answers the question rather than
         // standing beside it as a new Request that leaves the question open. The broker checks the exchange is theirs to
         // answer.
@@ -609,8 +648,8 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
             var speaking = new SeatVoice(directory.AgentsFor(project), hold.Seat);
 
             var answered = string.IsNullOrEmpty(Outcome)
-                ? await speaking.ClarifyAsync(hold, exchange, Says, token).ConfigureAwait(false)
-                : await speaking.ResultAsync(hold, exchange, [(PayloadShape.WholeRequest, Says, Outcome)], token)
+                ? await speaking.ClarifyAsync(hold, exchange, words, token).ConfigureAwait(false)
+                : await speaking.ResultAsync(hold, exchange, [(PayloadShape.WholeRequest, words, Outcome)], token)
                     .ConfigureAwait(false);
 
             Sent = [("Reply", answered.Says)];
@@ -620,6 +659,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
             if (answered.Closed)
             {
                 Says = null;
+                Attached = [];
                 ReplyTo = null;
                 Outcome = null;
             }
@@ -648,7 +688,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
 
         // Sent as written. An item's words reach the agent because they were in the box when its conversation opened,
         // where the person could change them, never as text added here that the person cannot see or shorten.
-        var said = Says;
+        var said = words;
 
         foreach (var target in Targets)
         {
@@ -675,11 +715,92 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
         if (sent.All(result => result.Item2.StartsWith("Sent.", StringComparison.Ordinal)))
         {
             Says = null;
+
+            if (!followWithFiles)
+            {
+                Attached = [];
+            }
+        }
+
+        var reached = sent
+            .Where(result => result.Item2.StartsWith("Sent.", StringComparison.Ordinal))
+            .Select(result => result.Item1)
+            .ToList();
+
+        if (followWithFiles && reached.Count > 0)
+        {
+            await SendFilesAfterTheFirstWordsAsync(broker, voice, reached, token).ConfigureAwait(false);
         }
 
         await OnGetAsync().ConfigureAwait(false);
 
         return Page();
+    }
+
+    private async Task<(string? Problem, bool ConversationNotStarted)> PlaceAttachmentsAsync(
+        BrokerClient broker, string conversation, CancellationToken token)
+    {
+        foreach (var file in Attachments.ToList())
+        {
+            var content = file.OpenReadStream();
+
+            await using (content.ConfigureAwait(false))
+            {
+                var placed = await BrokerDirectory.ReadAsync(
+                    () => broker.PlacePersonsFileAsync(conversation, Path.GetFileName(file.FileName), content, token)).ConfigureAwait(false);
+
+                if (placed.Value is { Rejection: FileRejection.ConversationNotAssignable })
+                {
+                    return (null, true);
+                }
+
+                if (placed.Value is { Outcome: PlaceOutcome.Placed or PlaceOutcome.AlreadyCurrent, Sha256: { } hash } done)
+                {
+                    Attached.Add(Attaching.Entry(done.Name, hash.Value));
+                    Attachments.Remove(file);
+                    continue;
+                }
+
+                var why = placed.Reachable
+                    ? Parley.Client.Files.PlacementSaid.Of(placed.Value!, file.FileName, bytes => $"{bytes} bytes")
+                    : placed.Problem;
+
+                return ($"Nothing was sent. {file.FileName} could not be attached, so attach it again: {why}", false);
+            }
+        }
+
+        return (null, false);
+    }
+
+    private async Task SendFilesAfterTheFirstWordsAsync(BrokerClient broker, SeatVoice voice, List<string> reached, CancellationToken token)
+    {
+        var placing = await PlaceAttachmentsAsync(broker, Id!, token).ConfigureAwait(false);
+
+        if (placing.Problem is { } problem || placing.ConversationNotStarted)
+        {
+            SendProblem = $"Your words went, and the files did not. {placing.Problem ?? "The conversation could not be found."}";
+            return;
+        }
+
+        var refused = false;
+
+        foreach (var target in reached)
+        {
+            if (AgentName.TryCreate(target, out var agent))
+            {
+                var said = await voice.RequestAsync(agent, Attaching.Message(null, Attached), Id, token).ConfigureAwait(false);
+
+                refused |= !said.StartsWith("Sent.", StringComparison.Ordinal);
+            }
+        }
+
+        if (refused)
+        {
+            SendProblem = "Your words went, and the message naming the files did not reach everybody. Press Send to try again.";
+            return;
+        }
+
+        Attached = [];
     }
 
     /// <summary>Keeps what the broker answered, for the bell.</summary>

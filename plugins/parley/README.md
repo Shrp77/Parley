@@ -15,7 +15,7 @@
 | `/parley:status` | Reports whether Parley is working here: the server bound, this agent registered, and the Peers section matching the live roster |
 | `/parley:write-peers` | Writes or refreshes the `## Peers` block in this repository's standing instructions, from the live roster |
 | `/parley:files-list` | Shows the files placed in the project: sizes, hashes, and who placed each |
-| `/parley:files-place` | Places a `.md` or `.txt` file from this machine in a conversation, as you |
+| `/parley:files-place` | Places a `.md`, `.txt` or image file from this machine in a conversation, as you |
 | `/parley:files-remove` | Removes named files, whoever placed them, after showing what goes and asking you |
 | `/parley:files-prune` | Removes every file in the project, behind the project's name typed back |
 | `/parley:files-open` | Opens a placed file to read, on the broker's machine |
