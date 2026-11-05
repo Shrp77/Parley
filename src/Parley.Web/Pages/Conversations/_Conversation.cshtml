@@ -94,9 +94,9 @@ else
                         <span class="stamp">@Parley.Client.Rendering.LocalTime.Clock(message.CreatedUtc)</span>
                     </p>
 
-                    @* Razor encodes every one of these. An agent wrote them, and they are content
-                       rather than markup: nothing here may alter the page or imitate a label the
-                       console speaks. *@
+                    @* An agent wrote these, and they are content: nothing here may alter the page or imitate a
+                       label the console speaks. Razor encodes what is written directly, and MarkdownText decides
+                       what a message's Markdown may become. *@
                     @if (said.Raw is { Length: > 0 } raw)
                     {
                         <pre>@raw</pre>
@@ -105,7 +105,7 @@ else
                     {
                         @if (said.Said is { Length: > 0 } body)
                         {
-                            <p class="said">@foreach (var part in Parley.Web.LinkedText.Split(body)) {if (part.Link is { } to) {<a href="@to.AbsoluteUri" target="_blank" rel="noopener noreferrer">@part.Text</a>} else {@part.Text}}</p>
+                            <div class="said">@Parley.Web.MarkdownText.Render(body)</div>
                         }
 
                         @if (said.Points.Count > 0)
@@ -118,7 +118,7 @@ else
                                         {
                                             <span class="label">@label</span>
                                         }
-                                        <span class="point-text">@foreach (var part in Parley.Web.LinkedText.Split(point.Text)) {if (part.Link is { } to) {<a href="@to.AbsoluteUri" target="_blank" rel="noopener noreferrer">@part.Text</a>} else {@part.Text}}</span>
+                                        <div class="point-text said">@Parley.Web.MarkdownText.Render(point.Text)</div>
                                         @if (point.Outcome is { Length: > 0 } || point.Sources.Count > 0)
                                         {
                                             @* On a line of their own: beside the text, several chips left it a narrow column. *@
@@ -184,6 +184,22 @@ else
                         @* How many of the agents a Request to a role reached have answered (SPEC.md 5.5). *@
                         <p class="settled">@role</p>
                     }
+                </div>
+            </li>
+        }
+        @* Until its answer arrives, when the next read draws that in its place. *@
+        @foreach (var working in Model.WorkingNow)
+        {
+            <li id="@($"working-{working.Agent.Value}")" data-agent="@working.Agent.Value" data-to=""
+                class="turn working slot-@Palette.SlotFor(working.Agent)">
+                <div class="who" aria-hidden="true">@Palette.BadgeFor(working.Agent)</div>
+
+                <div class="bubble">
+                    <p class="attribution">
+                        <strong>@working.Agent.Value</strong>
+                        <span class="arrow">working</span>
+                        <span class="stamp">@Parley.Web.Pages.Conversations.DetailModel.WorkingFor(working)</span>
+                    </p>
                 </div>
             </li>
         }

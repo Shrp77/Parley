@@ -144,6 +144,23 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     public IReadOnlyDictionary<AgentName, Activity> ParticipantActivity { get; private set; } =
         new Dictionary<AgentName, Activity>();
 
+    /// <summary>Who owes an answer here and has a turn running, drawn at the end of the transcript until the answer comes.</summary>
+    public IReadOnlyList<WorkingHere> WorkingNow { get; private set; } = [];
+
+    /// <summary>When an agent's turn started and how long it has run, on the reader's clock.</summary>
+    /// <param name="working">The agent.</param>
+    /// <returns>For example <c>started 08:14:03, running 3m</c>.</returns>
+    /// <remarks>
+    /// Whole minutes, so this region's digest moves once a minute rather than on every read, and a following page is not
+    /// rebuilt under its reader every few seconds.
+    /// </remarks>
+    public static string WorkingFor(WorkingHere working)
+    {
+        ArgumentNullException.ThrowIfNull(working);
+
+        return $"started {LocalTime.Clock(working.Since)}, running {Activities.For(working.Since, DateTimeOffset.UtcNow)}";
+    }
+
     /// <summary>What a participant is doing, in the words and mark both surfaces use, or null when there is nothing to say.</summary>
     /// <param name="who">The participant.</param>
     /// <returns>For example <c>■ stopped 2h48m — 1 permission refused</c>.</returns>
@@ -802,6 +819,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
                 .ConfigureAwait(false);
 
             ParticipantActivity = Activities.Of(read.Value, waiting.Value ?? [], roll.Value);
+            WorkingNow = Activities.WorkingOn(read.Value, waiting.Value ?? [], ParticipantActivity);
             WaitingOnYou = Parley.Client.Seating.WaitingOnYou.From(
                 read.Value, waiting.Value ?? [], PersonSeat.On(project.Name));
         }

@@ -45,6 +45,11 @@ public sealed record Activity(
 /// <param name="Working">Whether a turn is running for it.</param>
 public sealed record AgentNow(string Words, int Rank, bool Working = false);
 
+/// <summary>An agent with a turn running that owes an answer in this conversation.</summary>
+/// <param name="Agent">The agent.</param>
+/// <param name="Since">When the turn started.</param>
+public sealed record WorkingHere(AgentName Agent, DateTimeOffset Since);
+
 /// <summary>
 /// Derives what each participant in a conversation is doing, and how both surfaces say it.
 /// </summary>
@@ -120,6 +125,44 @@ public static class Activities
         }
 
         return result;
+    }
+
+    /// <summary>Who in this conversation owes an answer and has a turn running.</summary>
+    /// <param name="export">The conversation.</param>
+    /// <param name="waiting">The wait-for graph, deployment-wide.</param>
+    /// <param name="activity">What each participant is doing, from <see cref="Of"/>.</param>
+    /// <returns>One entry per agent, longest running first.</returns>
+    /// <remarks>
+    /// <b>A turn does not say which conversation it is for</b> (SPEC.md §11.6), so an agent owing answers in two
+    /// conversations reads as working in both. Owing one is required, so it never reads as working on a conversation it
+    /// has already answered. An agent whose turns nobody reports has no entry, because nothing is known.
+    /// </remarks>
+    public static IReadOnlyList<WorkingHere> WorkingOn(
+        ConversationExport export,
+        IReadOnlyList<WaitingEdge> waiting,
+        IReadOnlyDictionary<AgentName, Activity> activity)
+    {
+        ArgumentNullException.ThrowIfNull(export);
+        ArgumentNullException.ThrowIfNull(waiting);
+        ArgumentNullException.ThrowIfNull(activity);
+
+        var open = export.Exchanges
+            .Where(exchange => exchange.State == ExchangeState.Open)
+            .Select(exchange => exchange.ExchangeId)
+            .ToHashSet();
+
+        return
+        [
+            .. waiting
+                .Where(edge => open.Contains(edge.ExchangeId))
+                .Select(edge => edge.WaitedOn)
+                .Distinct()
+                .Select(agent => activity.TryGetValue(agent, out var doing) && doing is { Doing: Doing.Working, Since: { } since }
+                    ? new WorkingHere(agent, since)
+                    : null)
+                .OfType<WorkingHere>()
+                .OrderBy(entry => entry.Since),
+        ];
     }
 
     /// <summary>The word after a participant's name, or nothing.</summary>

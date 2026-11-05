@@ -35,6 +35,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Markdig" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Parley.Client\Parley.Client.csproj" />
     <ProjectReference Include="..\Parley.Configuration\Parley.Configuration.csproj" />
     <ProjectReference Include="..\Parley.Transport\Parley.Transport.csproj" />
