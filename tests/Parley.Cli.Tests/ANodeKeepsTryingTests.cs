@@ -369,6 +369,57 @@ public sealed class ANodeKeepsTryingTests : IAsyncDisposable
         Assert.False(second.HasExited);
     }
 
+    /// <summary>A broker that ends every node's stream cleanly, with no error for the node to read as an outage.</summary>
+    private sealed class EndingBroker : Parley.Transport.Nodes.NodesBase
+    {
+        private static int _joins;
+
+        public static int Joins => Volatile.Read(ref _joins);
+
+        public static void Reset() => Volatile.Write(ref _joins, 0);
+
+        public override Task Join(
+            Parley.Transport.JoinRequest request,
+            Grpc.Core.IServerStreamWriter<Parley.Transport.NodeCommand> responseStream,
+            Grpc.Core.ServerCallContext context)
+        {
+            _ = Interlocked.Increment(ref _joins);
+            return Task.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task A_stream_the_broker_ended_cleanly_is_waited_out_like_an_outage()
+    {
+        EndingBroker.Reset();
+
+        var builder = Microsoft.AspNetCore.Builder.WebApplication.CreateSlimBuilder();
+
+        Microsoft.Extensions.DependencyInjection.GrpcServicesExtensions.AddGrpc(builder.Services);
+        Microsoft.AspNetCore.Hosting.WebHostBuilderKestrelExtensions.ConfigureKestrel(
+            builder.WebHost,
+            options => options.Listen(
+                System.Net.IPAddress.Loopback,
+                _port,
+                listen => listen.Protocols = Microsoft.AspNetCore.Server.Kestrel.Core.HttpProtocols.Http2));
+
+        await using var broker = builder.Build();
+
+        Microsoft.AspNetCore.Builder.GrpcEndpointRouteBuilderExtensions.MapGrpcService<EndingBroker>(broker);
+        await broker.StartAsync(Ct);
+
+        var (node, lines) = Up("--keep-trying");
+
+        await UntilAsync(
+            () => Task.FromResult(EndingBroker.Joins >= 2),
+            $"it never came back after the stream ended. It said: {string.Join(" | ", lines)}");
+
+        Assert.False(node.HasExited);
+        Assert.Contains(lines, line => line.Contains("No broker is answering", StringComparison.Ordinal));
+
+        await broker.StopAsync(Ct);
+    }
+
     [Fact]
     public void Without_keep_trying_a_node_says_nobody_is_there_and_stops()
     {
