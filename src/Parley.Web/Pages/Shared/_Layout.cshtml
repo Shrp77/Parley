@@ -66,46 +66,190 @@
        alone: an unreachable project says it is unreachable, and a message nobody else saw names
        the agents who did not see it. *@
     <style>
+        /* ---- Material 3 foundations ------------------------------------------------------------------------------------
+           Colour roles are Material 3's content scheme (2021 specification) generated from the seed #2b5cd9 by Google's
+           Material Color Utilities; the primary container is the seed itself, so the console keeps its blue. Light here and
+           dark below, following the system. Everything else in this stylesheet reads these roles, directly or through the
+           console's older names further down, so no other rule names a colour of its own.
+           specs/035-material-3-web-ui/research.md says how each value was chosen. */
         :root {
-            /* How much of the top of the viewport the sticky frame occupies. Read by everything
-               else that sticks, so there is one number to change rather than four. */
-            --frame: 3.6rem;
-            --ink: #16181d;
-            --ink-soft: #5b6270;
-            --ink-faint: #667085;
-            --page: #f7f8fa;
-            --card: #ffffff;
-            --rule: #e3e6ec;
-            --accent: #2b5cd9;
-            --alarm: #a5252b;
-            --alarm-wash: #fdf3f3;
-            --quiet-wash: #f2f4f8;
-            --radius: 10px;
-            --gap: 1.25rem;
-            /* The text and glyphs that sit on --accent and --alarm. White in the light theme; in the dark one both
-               colours are light, and white on them is hard to read. */
-            --on-accent: #ffffff;
-            --on-alarm: #ffffff;
-            /* Tells the browser to draw what it draws itself (scrollbars, date pickers, the menu of a select that is not
-               restyled) in the theme the page is in. */
-            color-scheme: light dark;
+            --md-sys-color-primary: #0042bb;
+            --md-sys-color-on-primary: #ffffff;
+            --md-sys-color-primary-container: #2b5cd9;
+            --md-sys-color-on-primary-container: #dee3ff;
+            --md-sys-color-secondary: #4e5c8e;
+            --md-sys-color-on-secondary: #ffffff;
+            --md-sys-color-secondary-container: #b9c7ff;
+            --md-sys-color-on-secondary-container: #435283;
+            --md-sys-color-tertiary: #7c2094;
+            --md-sys-color-on-tertiary: #ffffff;
+            --md-sys-color-tertiary-container: #983daf;
+            --md-sys-color-on-tertiary-container: #fdd8ff;
+            --md-sys-color-error: #ba1a1a;
+            --md-sys-color-on-error: #ffffff;
+            --md-sys-color-error-container: #ffdad6;
+            --md-sys-color-on-error-container: #93000a;
+            --md-sys-color-surface: #faf8ff;
+            --md-sys-color-on-surface: #191b23;
+            --md-sys-color-surface-variant: #e0e1f3;
+            --md-sys-color-on-surface-variant: #434654;
+            --md-sys-color-surface-dim: #d9d9e4;
+            --md-sys-color-surface-bright: #faf8ff;
+            --md-sys-color-surface-container-lowest: #ffffff;
+            --md-sys-color-surface-container-low: #f3f3fe;
+            --md-sys-color-surface-container: #ededf8;
+            --md-sys-color-surface-container-high: #e7e7f2;
+            --md-sys-color-surface-container-highest: #e2e1ec;
+            --md-sys-color-outline: #747685;
+            --md-sys-color-outline-variant: #c3c5d6;
+            --md-sys-color-inverse-surface: #2e3038;
+            --md-sys-color-inverse-on-surface: #f0f0fb;
+            --md-sys-color-inverse-primary: #b5c4ff;
+            --md-sys-color-scrim: #000000;
+            --md-sys-color-shadow: #000000;
+            /* Not a scheme role: the person's presence, beside their own name and said in words there too. */
+            --md-ext-color-present: #1b7a46;
+            /* A card on the page: the lowest container in light, one step up in dark, so a card always sits above the page. */
+            --md-ext-color-card: var(--md-sys-color-surface-container-lowest);
+            /* The eight agent colours: today's hues re-toned in HCT to tone 40 here and 75 in dark, so each reads against the
+               surfaces and the eight stay apart. Decoration: every fact they tint is also written in words. */
+            --md-ext-slot-0: #1f54d1;
+            --md-ext-slot-1: #006c51;
+            --md-ext-slot-2: #9a460a;
+            --md-ext-slot-3: #793ebe;
+            --md-ext-slot-4: #00687b;
+            --md-ext-slot-5: #ad2b55;
+            --md-ext-slot-6: #566519;
+            --md-ext-slot-7: #3b608f;
+            /* What is written on an agent's colour: its initials, and a found word. */
+            --md-ext-on-slot: #ffffff;
+            --md-ext-scrim: rgb(0 0 0 / 0.32);
         }
 
         @@media (prefers-color-scheme: dark) {
             :root {
-                --ink: #e8eaf0;
-                --ink-soft: #a8b0c0;
-                --ink-faint: #97a0b4;
-                --page: #14161b;
-                --card: #1c1f26;
-                --rule: #2c313b;
-                --accent: #7ba0f5;
-                --alarm: #f08b90;
-                --alarm-wash: #2a1c1e;
-                --quiet-wash: #22262e;
-                --on-accent: #0d1a3f;
-                --on-alarm: #3a0d10;
+                --md-sys-color-primary: #b5c4ff;
+                --md-sys-color-on-primary: #00297b;
+                --md-sys-color-primary-container: #2b5cd9;
+                --md-sys-color-on-primary-container: #dee3ff;
+                --md-sys-color-secondary: #b6c4fd;
+                --md-sys-color-on-secondary: #1e2e5c;
+                --md-sys-color-secondary-container: #364474;
+                --md-sys-color-on-secondary-container: #a4b3ea;
+                --md-sys-color-tertiary: #f4aeff;
+                --md-sys-color-on-tertiary: #55006a;
+                --md-sys-color-tertiary-container: #983daf;
+                --md-sys-color-on-tertiary-container: #fdd8ff;
+                --md-sys-color-error: #ffb4ab;
+                --md-sys-color-on-error: #690005;
+                --md-sys-color-error-container: #93000a;
+                --md-sys-color-on-error-container: #ffdad6;
+                --md-sys-color-surface: #11131a;
+                --md-sys-color-on-surface: #e2e1ec;
+                --md-sys-color-surface-variant: #434654;
+                --md-sys-color-on-surface-variant: #c3c5d6;
+                --md-sys-color-surface-dim: #11131a;
+                --md-sys-color-surface-bright: #373941;
+                --md-sys-color-surface-container-lowest: #0c0e15;
+                --md-sys-color-surface-container-low: #191b23;
+                --md-sys-color-surface-container: #1e1f27;
+                --md-sys-color-surface-container-high: #282a32;
+                --md-sys-color-surface-container-highest: #33343d;
+                --md-sys-color-outline: #8d90a0;
+                --md-sys-color-outline-variant: #434654;
+                --md-sys-color-inverse-surface: #e2e1ec;
+                --md-sys-color-inverse-on-surface: #2e3038;
+                --md-sys-color-inverse-primary: #1f54d1;
+                --md-ext-color-present: #6fd59b;
+                --md-ext-color-card: var(--md-sys-color-surface-container-low);
+                --md-ext-slot-0: #a1b6ff;
+                --md-ext-slot-1: #64cba7;
+                --md-ext-slot-2: #ffa26f;
+                --md-ext-slot-3: #cfa7ff;
+                --md-ext-slot-4: #6dc5de;
+                --md-ext-slot-5: #ff9cb1;
+                --md-ext-slot-6: #afc16b;
+                --md-ext-slot-7: #97bbf0;
+                --md-ext-on-slot: #11131a;
             }
+        }
+
+        :root {
+            /* Type: Material 3's scale, in Roboto Flex. Size / line height / weight / tracking. */
+            --md-ref-typeface: "Roboto Flex", "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+            --md-ref-typeface-mono: ui-monospace, "Cascadia Code", "Roboto Mono", Consolas, monospace;
+            --md-sys-typescale-headline-small: 400 1.5rem/2rem var(--md-ref-typeface);
+            --md-sys-typescale-title-large: 400 1.375rem/1.75rem var(--md-ref-typeface);
+            --md-sys-typescale-title-medium: 500 1rem/1.5rem var(--md-ref-typeface);
+            --md-sys-typescale-title-small: 500 0.875rem/1.25rem var(--md-ref-typeface);
+            --md-sys-typescale-body-large: 400 1rem/1.5rem var(--md-ref-typeface);
+            --md-sys-typescale-body-medium: 400 0.875rem/1.25rem var(--md-ref-typeface);
+            --md-sys-typescale-body-small: 400 0.75rem/1rem var(--md-ref-typeface);
+            --md-sys-typescale-label-large: 500 0.875rem/1.25rem var(--md-ref-typeface);
+            --md-sys-typescale-label-medium: 500 0.75rem/1rem var(--md-ref-typeface);
+            --md-sys-typescale-label-small: 500 0.6875rem/1rem var(--md-ref-typeface);
+
+            /* Shape. */
+            --md-sys-shape-corner-extra-small: 4px;
+            --md-sys-shape-corner-small: 8px;
+            --md-sys-shape-corner-medium: 12px;
+            --md-sys-shape-corner-large: 16px;
+            --md-sys-shape-corner-extra-large: 28px;
+            --md-sys-shape-corner-full: 9999px;
+
+            /* Elevation: Material 3's two-layer shadows. A raised surface also takes a higher container tone. */
+            --md-sys-elevation-1: 0 1px 2px rgb(0 0 0 / 0.3), 0 1px 3px 1px rgb(0 0 0 / 0.15);
+            --md-sys-elevation-2: 0 1px 2px rgb(0 0 0 / 0.3), 0 2px 6px 2px rgb(0 0 0 / 0.15);
+            --md-sys-elevation-3: 0 1px 3px rgb(0 0 0 / 0.3), 0 4px 8px 3px rgb(0 0 0 / 0.15);
+
+            /* State layers, as a share of the content colour drawn over the container. */
+            --md-sys-state-hover: 8%;
+            --md-sys-state-focus: 10%;
+            --md-sys-state-pressed: 10%;
+            --md-sys-state-dragged: 16%;
+
+            /* Motion. */
+            --md-sys-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+            --md-sys-motion-duration-short: 150ms;
+            --md-sys-motion-duration-medium: 300ms;
+        }
+
+        @@media (prefers-reduced-motion: reduce) {
+            :root { --md-sys-motion-duration-short: 0ms; --md-sys-motion-duration-medium: 0ms; }
+            *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; }
+        }
+
+        @@font-face {
+            font-family: "Roboto Flex";
+            font-style: normal;
+            font-weight: 100 900;
+            font-display: swap;
+            src: url("/brand/roboto-flex.woff2") format("woff2");
+        }
+
+        :root {
+            /* How much of the top of the viewport the sticky frame occupies. Read by everything
+               else that sticks, so there is one number to change rather than four. */
+            --frame: 4rem;
+
+            /* The console's older names, kept so every rule below reads a Material 3 role through them. */
+            --ink: var(--md-sys-color-on-surface);
+            --ink-soft: var(--md-sys-color-on-surface-variant);
+            --ink-faint: var(--md-sys-color-on-surface-variant);
+            --page: var(--md-sys-color-surface);
+            --card: var(--md-ext-color-card);
+            --rule: var(--md-sys-color-outline-variant);
+            --accent: var(--md-sys-color-primary);
+            --on-accent: var(--md-sys-color-on-primary);
+            --alarm: var(--md-sys-color-error);
+            --on-alarm: var(--md-sys-color-on-error);
+            --alarm-wash: var(--md-sys-color-error-container);
+            --quiet-wash: var(--md-sys-color-surface-container-high);
+            --radius: var(--md-sys-shape-corner-medium);
+            --gap: 1.5rem;
+            /* Tells the browser to draw what it draws itself (scrollbars, date pickers, the menu of a select that is not
+               restyled) in the theme the page is in. */
+            color-scheme: light dark;
         }
 
         /* Room for the scrollbar on every page, so a short page and a long one lay out alike and nothing shifts sideways */
@@ -114,9 +258,8 @@
         * { box-sizing: border-box; }
 
         body {
-            font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-            font-size: 15px;
-            line-height: 1.6;
+            font: var(--md-sys-typescale-body-medium);
+            font-optical-sizing: auto;
             color: var(--ink);
             background: var(--page);
             margin: 0;
@@ -146,7 +289,7 @@
             padding: 0.9rem 0.6rem;
             background: var(--card);
             border-right: 1px solid var(--rule);
-            box-shadow: 8px 0 28px -18px rgb(0 0 0 / 0.25);
+            box-shadow: none;
         }
 
         .page { margin-left: var(--rail-w); padding: 0 clamp(0.85rem, 2vw, 2rem) 4rem; min-width: 0; }
@@ -344,8 +487,8 @@
             width: 0.5rem;
             height: 0.5rem;
             border-radius: 50%;
-            background: #1c7c48;
-            box-shadow: 0 0 0 2px color-mix(in srgb, #1c7c48 25%, transparent);
+            background: var(--md-ext-color-present);
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--md-ext-color-present) 25%, transparent);
         }
 
         .seat-waiting[hidden] { display: none; }
@@ -359,21 +502,19 @@
             padding: 0.05rem 0.4rem;
         }
 
+        /* Headings on the type scale: a page title is headline-small, a section title-large, a sub-section title-medium. */
         h1 {
-            font-size: 1.6rem;
-            line-height: 1.25;
-            letter-spacing: -0.02em;
-            margin: 0 0 0.35rem;
+            font: var(--md-sys-typescale-headline-small);
+            margin: 0 0 0.5rem;
         }
 
         h2 {
-            font-size: 1.05rem;
-            letter-spacing: 0.01em;
+            font: var(--md-sys-typescale-title-large);
             margin: 2rem 0 0.75rem;
             color: var(--ink);
         }
 
-        h3 { font-size: 0.95rem; margin: 1.5rem 0 0.5rem; color: var(--ink-soft); }
+        h3 { font: var(--md-sys-typescale-title-medium); margin: 1.5rem 0 0.5rem; color: var(--ink); }
 
         a { color: var(--accent); }
 
@@ -585,8 +726,8 @@
                 color: var(--ink);
                 background: var(--card);
                 border: 1px solid var(--rule);
-                border-radius: 14px;
-                box-shadow: 0 14px 34px -12px rgb(0 0 0 / 0.35), 0 2px 8px rgb(0 0 0 / 0.08);
+                border-radius: var(--md-sys-shape-corner-extra-small);
+                box-shadow: var(--md-sys-elevation-2);
             }
             option { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.75rem; border-radius: 9px; cursor: pointer; }
             option:hover, option:focus-visible { background: var(--quiet-wash); outline: none; }
@@ -756,7 +897,7 @@
             font-size: 0.72rem;
             font-weight: 700;
             letter-spacing: 0.02em;
-            color: #fff;
+            color: var(--md-ext-on-slot);
             background: var(--agent);
             margin-top: 0.2rem;
         }
@@ -797,8 +938,8 @@
         .said h2 { font-size: 1.06em; }
         .said ul, .said ol { padding-left: 1.4rem; }
         .said blockquote { padding-left: 0.7rem; border-left: 3px solid var(--ink-faint); color: var(--ink-soft); }
-        .said pre { padding: 0.5rem 0.7rem; overflow-x: auto; background: rgba(127, 127, 127, 0.12); border-radius: 6px; }
-        .said code { font-size: 0.92em; background: rgba(127, 127, 127, 0.12); border-radius: 3px; padding: 0.05em 0.25em; }
+        .said pre { padding: 0.5rem 0.75rem; overflow-x: auto; background: var(--md-sys-color-surface-container-highest); border-radius: var(--md-sys-shape-corner-small); }
+        .said code { font-family: var(--md-ref-typeface-mono); font-size: 0.92em; background: var(--md-sys-color-surface-container-highest); border-radius: var(--md-sys-shape-corner-extra-small); padding: 0.05em 0.25em; }
         .said pre code { background: none; padding: 0; }
         .said table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
         .said th, .said td { padding: 0.2rem 0.55rem; border: 1px solid var(--ink-faint); text-align: left; }
@@ -907,25 +1048,14 @@
 
         /* Eight slots, assigned from a hash of the agent's name so it never moves. Decoration:
            every fact these tint is also written in words beside them. */
-        .slot-0 { --agent: #2b5cd9; }
-        .slot-1 { --agent: #0f8a6a; }
-        .slot-2 { --agent: #b0561c; }
-        .slot-3 { --agent: #7a3fbf; }
-        .slot-4 { --agent: #0d7d94; }
-        .slot-5 { --agent: #a5254f; }
-        .slot-6 { --agent: #5c6b1f; }
-        .slot-7 { --agent: #34527a; }
-
-        @@media (prefers-color-scheme: dark) {
-            .slot-0 { --agent: #6d95f2; }
-            .slot-1 { --agent: #46b596; }
-            .slot-2 { --agent: #d98b52; }
-            .slot-3 { --agent: #a97ce0; }
-            .slot-4 { --agent: #4fadc2; }
-            .slot-5 { --agent: #e0698d; }
-            .slot-6 { --agent: #9aab4f; }
-            .slot-7 { --agent: #7f9ac4; }
-        }
+        .slot-0 { --agent: var(--md-ext-slot-0); }
+        .slot-1 { --agent: var(--md-ext-slot-1); }
+        .slot-2 { --agent: var(--md-ext-slot-2); }
+        .slot-3 { --agent: var(--md-ext-slot-3); }
+        .slot-4 { --agent: var(--md-ext-slot-4); }
+        .slot-5 { --agent: var(--md-ext-slot-5); }
+        .slot-6 { --agent: var(--md-ext-slot-6); }
+        .slot-7 { --agent: var(--md-ext-slot-7); }
 
         /* The conversation page: a panel that stays on screen, and the conversation beside it. The panel is what sticks, its
            height is capped, and its tools stay put while what is below them scrolls inside it.
@@ -1080,7 +1210,7 @@
         .settings-tree .tree li.group { display: block; }
         .settings-tree .tree li[class*="slot-"] { display: flex; align-items: center; gap: 0.5rem; }
         .settings-tree .pick-name { display: inline-flex; align-items: center; gap: 0.45rem; cursor: pointer; }
-        .settings-tree .who { width: 1.5rem; height: 1.5rem; border-radius: 50%; display: grid; place-items: center; font-size: 0.55rem; font-weight: 700; color: #fff; background: var(--agent); }
+        .settings-tree .who { width: 1.5rem; height: 1.5rem; border-radius: 50%; display: grid; place-items: center; font-size: 0.55rem; font-weight: 700; color: var(--md-ext-on-slot); background: var(--agent); }
         .settings-tree .name { font-size: 0.85rem; font-weight: 600; }
         .settings-tree .state { font-size: 0.72rem; color: var(--ink-faint); }
         .settings-tree input[type="checkbox"] { width: 1.1rem; height: 1.1rem; }
@@ -1098,7 +1228,7 @@
         .chip-x:hover, .chip-x:focus { color: var(--alarm); background: var(--alarm-wash); }
         .chip-x .icon { font-size: 1.05rem; }
         .default-dialog { position: fixed; inset: 0; margin: auto; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); color: var(--ink); padding: 1rem 1.2rem; width: min(30rem, 92vw); max-height: 80vh; overflow-y: auto; }
-        .default-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+        .default-dialog::backdrop { background: var(--md-ext-scrim); }
         .default-dialog h3 { margin: 0 0 0.6rem; }
         .dialog-actions { text-align: right; margin: 0.8rem 0 0; }
         .act-cards { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; gap: 0.7rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
@@ -1124,7 +1254,7 @@
         .view-title { display: flex; align-items: baseline; gap: 1rem; flex: none; }
         .view-title h1 { margin: 0; }
         .view-title .as-of { margin: 0 0 0 auto; }
-        .view-card { flex: none; background: var(--card); border: 1px solid var(--rule); border-radius: 20px; box-shadow: 0 10px 28px -12px rgb(0 0 0 / 0.18), 0 2px 6px rgb(0 0 0 / 0.04); }
+        .view-card { flex: none; background: var(--card); border: 1px solid var(--rule); border-radius: var(--md-sys-shape-corner-large); box-shadow: var(--md-sys-elevation-1); }
         .view-card .composer-note { margin: 0; }
 
         .view-create > summary { display: flex; align-items: center; gap: 0.7rem; padding: 0.7rem 1.1rem; font-weight: 650; cursor: pointer; list-style: none; }
@@ -1158,13 +1288,15 @@
         #new-conversation-dialog button { border-radius: 999px; padding: 0.5rem 1.4rem; font: inherit; font-weight: 600; cursor: pointer; }
         #new-conversation-dialog button.new-button { color: var(--on-accent); background: var(--accent); border: 1px solid transparent; }
         #new-conversation-dialog button.quiet { color: var(--ink-soft); background: none; border: 1px solid var(--rule); }
-        .view .view-filters .toggle { display: inline-flex; align-items: center; gap: 0.6rem; align-self: flex-end; padding: 0.45rem 1rem; border-radius: 999px; border: 1px solid var(--rule); background: var(--page); color: var(--ink-soft); font-size: 0.95rem; cursor: pointer; white-space: nowrap; }
-        .view .view-filters .toggle input { appearance: none; -webkit-appearance: none; position: relative; flex: none; width: 2rem; height: 1.15rem; margin: 0; border: 0; border-radius: 999px; background: var(--rule); cursor: pointer; transition: background 0.15s; }
-        .view .view-filters .toggle input::before { content: ""; position: absolute; top: 0.15rem; left: 0.15rem; width: 0.85rem; height: 0.85rem; border-radius: 50%; background: #fff; opacity: 1; transform: none; transition: transform 0.15s; }
-        .view .view-filters .toggle input:checked { background: var(--accent); }
-        .view .view-filters .toggle input:checked::before { transform: translateX(0.85rem); }
-        .view .view-filters .toggle:has(input:checked) { color: var(--ink); border-color: var(--accent); }
-        .view .view-filters .toggle:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+        /* A switch, as Material 3 draws one: a 52 by 32 track, outlined while off with a small handle, filled with the primary
+           colour while on with a larger handle in its "on" colour. The words beside it say what it switches. */
+        .view .view-filters .toggle { display: inline-flex; align-items: center; gap: 0.75rem; align-self: flex-end; min-height: 2.5rem; padding: 0 0.25rem; color: var(--ink); font: var(--md-sys-typescale-body-medium); cursor: pointer; white-space: nowrap; }
+        .view .view-filters .toggle input { appearance: none; -webkit-appearance: none; position: relative; flex: none; width: 3.25rem; height: 2rem; margin: 0; border: 2px solid var(--md-sys-color-outline); border-radius: var(--md-sys-shape-corner-full); background: var(--md-sys-color-surface-container-highest); cursor: pointer; transition: background-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard), border-color var(--md-sys-motion-duration-short); }
+        .view .view-filters .toggle input::before { content: ""; position: absolute; top: 50%; left: 0.375rem; width: 1rem; height: 1rem; border-radius: 50%; background: var(--md-sys-color-outline); opacity: 1; transform: translateY(-50%); transition: transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard), width var(--md-sys-motion-duration-short), height var(--md-sys-motion-duration-short), left var(--md-sys-motion-duration-short); }
+        .view .view-filters .toggle input:checked { background: var(--md-sys-color-primary); border-color: var(--md-sys-color-primary); }
+        .view .view-filters .toggle input:checked::before { left: 1.375rem; width: 1.5rem; height: 1.5rem; background: var(--md-sys-color-on-primary); }
+        .view .view-filters .toggle input:hover { box-shadow: 0 0 0 0.5rem color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
+        .view .view-filters .toggle:has(input:focus-visible) input { outline: 3px solid var(--md-sys-color-secondary); outline-offset: 2px; }
 
         /* On these pages the grid is the scroller, so the page itself must not be: the window is divided between the
            frame and the view. */
@@ -1388,8 +1520,8 @@
 
         mark[data-found] {
             background: var(--agent);
-            color: #fff;
-            border-radius: 3px;
+            color: var(--md-ext-on-slot);
+            border-radius: var(--md-sys-shape-corner-extra-small);
             padding: 0 0.15em;
         }
 
@@ -1414,7 +1546,7 @@
             border: 1px solid var(--rule);
             border-bottom: none;
             border-radius: var(--radius) var(--radius) 0 0;
-            box-shadow: 0 -6px 18px -12px rgba(0, 0, 0, 0.45);
+            box-shadow: var(--md-sys-elevation-2);
         }
 
         /* Hidden to read: the bar alone stays, saying who it would go to, with the button that brings the rest back. */
@@ -1527,7 +1659,7 @@
             place-items: center;
             font-size: 0.55rem;
             font-weight: 700;
-            color: #fff;
+            color: var(--md-ext-on-slot);
             background: var(--agent);
         }
 
@@ -1546,7 +1678,7 @@
         .bell > summary::-webkit-details-marker { display: none; }
         .bell > summary:hover, .bell[open] > summary { color: var(--ink); background: var(--quiet-wash); }
         .bell .icon { font-size: 1.4rem; }
-        .bell-list { position: absolute; right: 0; top: 100%; z-index: 30; width: min(26rem, 90vw); max-height: 70vh; overflow-y: auto; margin-top: 0.4rem; padding: 0.5rem 0.8rem; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12); }
+        .bell-list { position: absolute; right: 0; top: 100%; z-index: 30; width: min(26rem, 90vw); max-height: 70vh; overflow-y: auto; margin-top: 0.4rem; padding: 0.5rem 0.8rem; background: var(--card); border: 1px solid var(--rule); border-radius: var(--md-sys-shape-corner-extra-small); box-shadow: var(--md-sys-elevation-2); }
         .bell-list ul, .notices-all { list-style: none; margin: 0; padding: 0; }
         .notice { margin: 0; padding: 0.5rem 0; border-bottom: 1px solid var(--rule); font-size: 0.88rem; overflow-wrap: anywhere; }
         .notice:last-child { border-bottom: 0; }
@@ -1573,11 +1705,11 @@
         .convo-actions .file-button .icon { font-size: 1.2rem; }
         /* Offered when a message arrived further down than following may carry the page (see the script in the conversation
            page). Centred over the page rather than the window, clear of the composer pinned to the bottom. */
-        .new-below { position: fixed; z-index: 25; left: calc(var(--rail-w) + (100vw - var(--rail-w)) / 2); bottom: calc(var(--composer-h, 9rem) + 1rem); transform: translateX(-50%); color: var(--on-accent); background: var(--accent); box-shadow: 0 8px 24px -8px rgb(0 0 0 / 0.45); }
+        .new-below { position: fixed; z-index: 25; left: calc(var(--rail-w) + (100vw - var(--rail-w)) / 2); bottom: calc(var(--composer-h, 9rem) + 1rem); transform: translateX(-50%); color: var(--on-accent); background: var(--accent); box-shadow: var(--md-sys-elevation-3); }
         .new-below:active { transform: translateX(-50%) scale(0.98); }
         .new-below[hidden] { display: none; }
         .export-menu { position: relative; }
-        .export-list { position: absolute; left: 0; top: calc(100% + 0.3rem); z-index: 5; display: flex; flex-direction: column; min-width: 9rem; background: var(--card); border: 1px solid var(--rule); border-radius: 0.6rem; box-shadow: 0 6px 18px rgba(0,0,0,0.18); overflow: hidden; }
+        .export-list { position: absolute; left: 0; top: calc(100% + 0.3rem); z-index: 5; display: flex; flex-direction: column; min-width: 9rem; background: var(--card); border: 1px solid var(--rule); border-radius: var(--md-sys-shape-corner-extra-small); box-shadow: var(--md-sys-elevation-2); overflow: hidden; }
         .export-list a { padding: 0.5rem 0.9rem; color: var(--ink); text-decoration: none; white-space: nowrap; }
         .export-list a:hover { background: var(--rule); }
 
@@ -1651,7 +1783,7 @@
             border: 1px solid var(--rule);
             border-radius: 14px;
             padding: 0.6rem 0.8rem;
-            box-shadow: 0 14px 34px -12px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.08);
+            box-shadow: var(--md-sys-elevation-2);
             white-space: nowrap;
         }
 
@@ -1691,7 +1823,7 @@
         .sent-info > summary::-webkit-details-marker { display: none; }
         .sent-info > summary:hover, .sent-info[open] > summary { color: var(--ink); background: var(--quiet-wash); }
         .sent-info > summary .icon { font-size: 1.2rem; }
-        .sent-info > ul.sent { position: absolute; left: 0; right: 0; bottom: 100%; z-index: 20; margin: 0 0 0.4rem; padding: 0.5rem; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25); overflow-wrap: anywhere; }
+        .sent-info > ul.sent { position: absolute; left: 0; right: 0; bottom: 100%; z-index: 20; margin: 0 0 0.4rem; padding: 0.5rem; background: var(--card); border: 1px solid var(--rule); border-radius: var(--md-sys-shape-corner-extra-small); box-shadow: var(--md-sys-elevation-2); overflow-wrap: anywhere; }
 
         /* ---- Sizes -------------------------------------------------------------
 

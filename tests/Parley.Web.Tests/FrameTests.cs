@@ -73,7 +73,8 @@ public sealed class FrameTests
 
         // And the stylesheet still carries a real figure, because that is what a reader with no
         // scripts keeps.
-        Assert.Contains("--frame: 3.6rem", Layout, StringComparison.Ordinal);
+        // Material 3's top app bar is 64px.
+        Assert.Contains("--frame: 4rem", Layout, StringComparison.Ordinal);
     }
 
     [Theory]

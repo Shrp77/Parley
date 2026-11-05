@@ -233,14 +233,18 @@ public static class ConsoleHost
     /// manifest resource named by whatever a caller asked for, which is the same shape as
     /// serving a file named by a caller — and while assembly resources hold no directories to
     /// escape into, a lookup that can be pointed at anything is not worth having for the sake of
-    /// three entries. The font is Material Symbols Outlined (Apache License 2.0), cut down to
-    /// the icons the console names; see the comment beside it in the layout.
+    /// three entries. The icon font is Material Symbols Outlined (Apache License 2.0), cut down to
+    /// the icons the console names; see the comment beside it in the layout. The text face is Roboto Flex (SIL Open Font
+    /// License 1.1), cut to Latin with only its weight and optical size left to vary, and its licence is served beside it,
+    /// as the licence asks of anything that distributes the font.
     /// </remarks>
     private static readonly (string Route, string Resource, string ContentType)[] Brand =
     [
         ("icon.png", "Parley.Web.Brand.icon.png", "image/png"),
         ("wordmark.png", "Parley.Web.Brand.wordmark.png", "image/png"),
-        ("material-symbols.woff2", "Parley.Web.Brand.material-symbols.woff2", "font/woff2")
+        ("material-symbols.woff2", "Parley.Web.Brand.material-symbols.woff2", "font/woff2"),
+        ("roboto-flex.woff2", "Parley.Web.Brand.roboto-flex.woff2", "font/woff2"),
+        ("roboto-flex-license.txt", "Parley.Web.Brand.RobotoFlex-OFL.txt", "text/plain; charset=utf-8")
     ];
 
     /// <summary>Serves the brand images out of the assembly.</summary>
