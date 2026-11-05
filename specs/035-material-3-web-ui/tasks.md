@@ -30,9 +30,9 @@
 
 ## Phase 4: Pages (US4)
 
-- [x] T018 [US4] Capture every page light/dark at 400, 900 and 1400px from test consoles, and fix layout per the audit
+- [x] T018 [US4] Capture every page light/dark at 1400px from test consoles (done for all 24), the eight busiest also at 400 and 900px, measure every page for overflow at 400px, and fix layout per the audit
 - [x] T019 [US4] Contrast check every text/surface pair the stylesheet uses, in both themes
-- [x] T020 [US4] Check pages without script and with reduced motion; commit phase 3
+- [ ] T020 [US4] Check pages without script and with reduced motion in a browser (not done: only the stylesheet rule for reduced motion is tested; no script was added or removed); commit phase 3 (done: 65cca720)
 
 ## Phase 5: Polish
 
