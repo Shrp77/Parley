@@ -44,11 +44,24 @@ else
         @{
             var day = default(DateOnly?);
             var movesToNote = new Queue<Parley.Core.MoveRecord>(Model.Moves.Where(m => m.FirstMessage is not null).OrderBy(m => m.FirstMessage));
+            var wroteToNote = new Queue<Parley.Core.WroteElsewhere>(Model.WroteAcross.OrderBy(w => w.AfterMessage).ThenBy(w => w.Message));
+
+            // Straight to the message, so the reader lands on what was said rather than at the end of the other conversation.
+            Func<Parley.Core.WroteElsewhere, Microsoft.AspNetCore.Html.IHtmlContent> wroteNote = @<li class="moved-note">
+                @Parley.Client.Rendering.ConversationWording.WroteElsewhereLine(item)
+                <a target="_top" href="@Url.Page("/Conversations/Detail", null, new { project = Model.Project, id = item.Conversation }, null, null, $"m{item.Message}")">Open it</a>
+            </li>;
         }
         @foreach (var turn in Model.Turns())
         {
             var message = turn[0];
             var said = Payload.Read(message.PayloadJson);
+
+            @* After the message its agent last sent or received here, which is the last turn that started at or before it. *@
+            while (wroteToNote.Count > 0 && wroteToNote.Peek().AfterMessage < message.Id)
+            {
+                @wroteNote(wroteToNote.Dequeue())
+            }
 
             @* A move's note sits where the entries are, or were: by its earliest message's place in the broker's order. *@
             while (movesToNote.Count > 0 && movesToNote.Peek().FirstMessage <= message.Id)
@@ -186,6 +199,10 @@ else
                     }
                 </div>
             </li>
+        }
+        @foreach (var wrote in wroteToNote)
+        {
+            @wroteNote(wrote)
         }
         @* Until its answer arrives, when the next read draws that in its place. *@
         @foreach (var working in Model.WorkingNow)

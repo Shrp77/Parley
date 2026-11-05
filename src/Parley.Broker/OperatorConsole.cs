@@ -352,7 +352,8 @@ public sealed class OperatorConsole
             reserved is { } r ? new RoadmapItemRef(r.RoadmapId, r.RoadmapNumber, r.Title, r.ItemNumber, r.Removed) : null,
             await _moves.GetLinksAsync(conversationId, cancellationToken).ConfigureAwait(false),
             await _moves.GetMovesAsync(conversationId, cancellationToken).ConfigureAwait(false),
-            await _moves.GetSettledElsewhereAsync(conversationId, cancellationToken).ConfigureAwait(false));
+            await _moves.GetSettledElsewhereAsync(conversationId, cancellationToken).ConfigureAwait(false),
+            await _moves.GetWroteElsewhereAsync(conversationId, cancellationToken).ConfigureAwait(false));
     }
 
     /// <summary>Lists the project's roadmaps (§10.2's <c>roadmaps()</c>).</summary>

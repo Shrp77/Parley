@@ -1,6 +1,6 @@
 ﻿# Parley Protocol Specification
 
-**Version:** 0.13
+**Version:** 0.14
 **Status:** Unstable. Breaking changes expected before 1.0.
 **License:** Apache-2.0
 
@@ -96,6 +96,8 @@ language they are written in.
     asking another, that one asking a third, a question coming back to the first. The broker
     attaches the conversation; an agent does not choose it (principle 2.4). Only the person may
     move an exchange to another conversation (§5.0), and everything it causes from then on goes there.
+    - An agent writing because of work in one conversation writes in that conversation, even to an
+      agent it also has an older open exchange with elsewhere (§5.0).
     - An agent holding requests from one conversation sends every request it makes into that
       conversation, naming nothing.
     - An agent holding requests from several conversations names which one each new request
@@ -530,6 +532,20 @@ holds — a Request it has received and not yet sent a Result for:
 
 A Clarify or a Result always takes its exchange's conversation, as it stands when it is written.
 
+**So a Clarify is only for what its own exchange asked.** An agent with an exchange still open
+elsewhere can reach the same agent through it, and the words would land in that older conversation.
+Anything that work in this conversation prompts is a Request in this conversation, however closely
+the older exchange touched the subject. It is sent before the agent's Result, while the agent still
+holds the request it belongs to, naming the conversation if it holds requests from several.
+
+**The broker cannot enforce that**, because it sees who may write on an exchange and not what prompted
+the words. So what happened is shown instead. `export` reports each Request or Clarify an agent wrote to
+another agent in a different conversation when the last message it sent or received before that was in
+this one. It gives names and numbers, no text, and places them after that last message, so a person
+reading this conversation can follow the line of work to where it went. It describes the order
+of messages and claims nothing about why: an agent may have moved on to unrelated work. A message to or
+from the person, or the facilitator, is not reported, since they are not an agent's line of work moving.
+
 **Only the person moves an exchange** (`move_exchanges`, §10.2). A topic can turn out not to belong
 where it was raised, and the person is the one who follows the whole line of work, so the person may
 take exchanges out of a conversation into a new one or an open one. What this section refuses an agent
@@ -573,7 +589,10 @@ moves stay on record.
 **A conversation may have a parent** (`spin_off`, §10.2). A person who wants a focused conversation about
 something raised in another starts one from it, and the broker records the link before anything is sent,
 so a Request can never arrive in a spin-off with no link behind it. If that Request reaches nobody, the link is taken
-back, so no record says a conversation was started when nothing was said in it. A conversation made by a move has its
+back, so no record says a conversation was started when nothing was said in it. **A surface opens a spin-off's first Request
+with a line naming both conversations and, when a message is quoted, saying it is there to discuss that entry.** A quote alone
+tells an agent nothing, and it has no access to the parent. The surface tells the person this before they send, since the line
+goes out under their name. A conversation made by a move has its
 source as its parent too. A conversation has at most one parent and any number of children, to any depth.
 The link is the person's map and nothing else: it gives no agent any access to the other conversation, no
 agent operation reads or sets it, and nothing cascades along it. Closing or destroying one conversation
@@ -690,7 +709,8 @@ that participant a Request in the same conversation (§5.0) and carries on with 
 still open. Clarify exists so that asking the requester back does not open a second exchange
 waiting on the first: one edge flips instead of two pointing at each other, and the person
 reading the conversation sees one exchange going back and forth rather than two tangled into a
-loop (§7.2).
+loop (§7.2). The requester of an older exchange is no exception when the need comes from other
+work: that is a Request, in the conversation of that work (§5.0).
 
 **Depth is not capped.** Clarification is how two participants converge, and a limit that stops
 them converging before they have is the arbitrary cut-off principle 2.8 rules out. Each exchange is
@@ -3334,7 +3354,7 @@ other could.
 |---|---|
 | `registry()` | The whole registry, including the workspace directory each agent works in, and — beside the line each agent states — the line a person has accepted for it, when one has been accepted and differs. Both halves travel because "accepted but not yet read by peers" is those two differing rather than a flag anybody maintains (see `record_ownership` below): an agent's own line is refreshed from its launch environment on every attach (§12.3), so the two agree again on its next start with nothing to clear. A surface showing the line therefore has what it needs to say which is which. Each row's adapter says **whether it is the facilitator** (principle 2.11) — `parley-facilitator`, which storage ties to the reserved role in both directions, so no second field states it — and a surface shows that row as Parley rather than among agents or seats. Each row also says **how the accepted line was arrived at** (`record_ownership`'s source), so a surface can show a line accepted automatically apart from one a person decided. And each row carries the agent's **turn standing** (§11.6): whether its turns are reported at all, whether a turn is running and since when, and how its last turn ended — when, whether cleanly, and how many tool calls were refused for want of permission — so a surface can say *working* only while a turn runs and *stopped* when one ended with work still owed, and says neither for an agent whose turns nobody reports. Each row also says whether a running agent is **open outside Parley** (§11.7), so a surface can say that Parley cannot give it turns. Deliberately not named `agents`: §10.1 has an `agents()` an agent may call, and that one withholds the workspace. Two operations differing only in what they disclose, sharing a name across this boundary, is the mistake this section opens by warning about — so the name differs, as `force_conclude` differs from `conclude`. |
 | `implements()` | Which protocol version this broker speaks. First, and asked before anything else: without it a client cannot tell a broker of the wrong version from one that is switched off, and those two want different words in front of a person. It also says **which build is serving** and **how the store it serves differs from the shape that build expects**, because two things the protocol number cannot say are whether the programs on a machine are from one release and whether a store made by an earlier build has what has been added since. Both may be empty, and empty means *not said* and never *fine*; a surface warns about a build whose major and minor differ from its own, and about any difference in the store's shape. |
-| `export(conversation_id)` | Emit every message in a conversation, the state of every exchange those messages belong to, its parent and children, every move in or out of it, and any settled pair split across it and another (§5.0). The one query that reads across agents, which is why it is here and not in §10.1. The states travel with the messages rather than in a second call, because a reader wants both at one instant and two calls can disagree. **For a conversation that was destroyed, it returns the record §14 left instead of nothing** — an empty answer cannot be told from a store that lost something, and that is the whole reason the record exists. **It also names the roadmap item the conversation belongs to**, by the broker's reservation and by nothing in any message (§5.7), so a surface holding only a conversation can offer its roadmap. |
+| `export(conversation_id)` | Emit every message in a conversation, the state of every exchange those messages belong to, its parent and children, every move in or out of it, any settled pair split across it and another, and where a participant wrote elsewhere straight after this conversation (§5.0). The one query that reads across agents, which is why it is here and not in §10.1. The states travel with the messages rather than in a second call, because a reader wants both at one instant and two calls can disagree. **For a conversation that was destroyed, it returns the record §14 left instead of nothing** — an empty answer cannot be told from a store that lost something, and that is the whole reason the record exists. **It also names the roadmap item the conversation belongs to**, by the broker's reservation and by nothing in any message (§5.7), so a surface holding only a conversation can offer its roadmap. |
 | `conversations(participant?, since?, until?, archived?, page)` | Which conversations this broker holds, most recent activity first: the identifier, the participants derived from their exchanges, how many messages each carries, when it was first and last active, whether anything in it is still open, whether it has closed, its parent (§5.0), whether it is archived, and the roadmap item it belongs to when it is a reserved item conversation (§5.7), marked as having belonged to one once the item was removed. Archived ones are omitted unless `archived` asks for them, and the count of those omitted is returned either way — an archived conversation may go on receiving messages, so a caller that could not tell it was there would be hiding traffic rather than filing it. Paged, and the broker bounds the page whatever is asked for. |
 | `prune()` | Apply the retention policy immediately rather than waiting for the next retention pass, and report what it removed, what the floor kept, and the idle period and age cap it applied. |
 | `refusals()` | Report what the hard limit of rule 8.4 refused: how often, how far over, per agent and message type. Counts only; no refused text is kept. |
@@ -4776,7 +4796,7 @@ decided is removed and its number is not reused, so the list has gaps.
 
 ## 18. Protocol version
 
-The protocol version is **0.13** and the storage schema version is **6**.
+The protocol version is **0.14** and the storage schema version is **6**.
 
 The version is `major.minor` and has no patch level, because a protocol change is either visible
 across the boundary or is not a protocol change at all. **While the major is zero, the minor

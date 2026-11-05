@@ -46,6 +46,7 @@ public sealed record ExchangeSnapshot(
 /// <param name="Links">Its parent and children (SPEC.md §5.0), or <see langword="null"/> for none.</param>
 /// <param name="Moves">Every move in or out of it, oldest first (SPEC.md §5.0), or <see langword="null"/> for none.</param>
 /// <param name="SettledElsewhere">Settled pairs split across this and another conversation (SPEC.md §5.6), or <see langword="null"/> for none.</param>
+/// <param name="WroteElsewhere">Where an agent's next message went instead of here (SPEC.md §5.0), or <see langword="null"/> for none.</param>
 /// <remarks>
 /// <para>
 /// The two travel together rather than in two calls, so a client never holds one without the
@@ -66,7 +67,8 @@ public sealed record ConversationExport(
     RoadmapItemRef? Item = null,
     ConversationLinks? Links = null,
     IReadOnlyList<MoveRecord>? Moves = null,
-    IReadOnlyList<SettledElsewhere>? SettledElsewhere = null);
+    IReadOnlyList<SettledElsewhere>? SettledElsewhere = null,
+    IReadOnlyList<WroteElsewhere>? WroteElsewhere = null);
 
 /// <summary>
 /// What is left of a conversation an operator destroyed.

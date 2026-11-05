@@ -36,6 +36,23 @@ public sealed class WakeReportingTests
         };
 
     [Theory]
+    [InlineData(Wire.WakeOutcome.Started, true)]
+    [InlineData(Wire.WakeOutcome.AlreadyRunning, true)]
+    [InlineData(Wire.WakeOutcome.AlreadyComing, true)]
+    [InlineData(Wire.WakeOutcome.Unreachable, false)]
+    [InlineData(Wire.WakeOutcome.OpenOutside, false)]
+    public void A_send_goes_on_unaided_unless_nothing_can_give_its_receiver_a_turn(Wire.WakeOutcome outcome, bool unaided)
+    {
+        Assert.Equal(unaided, SeatVoice.GoesOnUnaided("Sent. Exchange 1 is open. " + SeatVoice.Waking(outcome, Orders)));
+    }
+
+    [Fact]
+    public void A_refused_send_does_not_go_on_unaided()
+    {
+        Assert.False(SeatVoice.GoesOnUnaided("That was refused."));
+    }
+
+    [Theory]
     [MemberData(nameof(Outcomes))]
     public void Every_outcome_names_the_recipient(Wire.WakeOutcome outcome)
     {

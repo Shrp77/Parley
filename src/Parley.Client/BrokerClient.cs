@@ -211,8 +211,11 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
 
         var settled = reply.SettledElsewhere.Select(s => new SettledElsewhere(s.ExchangeId, s.SettledBy, s.ConversationId));
 
+        var wrote = reply.WroteElsewhere.Select(w => new WroteElsewhere(
+            w.Message, w.AfterMessage, AgentName.Create(w.From), AgentName.Create(w.To), w.ConversationId));
+
         return new ConversationExport(
-            [.. messages], [.. exchanges], destroyed, ItemOf(reply.Item), links, [.. moves], [.. settled]);
+            [.. messages], [.. exchanges], destroyed, ItemOf(reply.Item), links, [.. moves], [.. settled], [.. wrote]);
     }
 
     /// <inheritdoc/>

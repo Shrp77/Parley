@@ -474,6 +474,26 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     /// </remarks>
     private static string Flat(string text) => text.ReplaceLineEndings(" ");
 
+    private const string NothingCanStart = "Nothing can start ";
+    private const string OpenOutsideParley = " is open outside Parley";
+
+    /// <summary>Whether a send's sentence says it went and the receiver will get to it without anybody doing anything.</summary>
+    /// <param name="said">The sentence a send returned.</param>
+    /// <returns><see langword="false"/> for a refusal, and for a Request stored with nothing able to give its receiver a turn.</returns>
+    /// <remarks>
+    /// A surface may put the first kind out of the way. The second has gone, and no answer will come until somebody starts or
+    /// prompts the agent, so it is for the person to read. An agent's name cannot contain a space, so these words cannot
+    /// come from a name.
+    /// </remarks>
+    public static bool GoesOnUnaided(string said)
+    {
+        ArgumentNullException.ThrowIfNull(said);
+
+        return said.StartsWith("Sent.", StringComparison.Ordinal)
+            && !said.Contains(NothingCanStart, StringComparison.Ordinal)
+            && !said.Contains(OpenOutsideParley, StringComparison.Ordinal);
+    }
+
     /// <summary>What became of the receiver, in words.</summary>
     /// <param name="wake">What the broker did about it.</param>
     /// <param name="to">Who it was sent to.</param>
@@ -488,14 +508,14 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         Wire.WakeOutcome.AlreadyRunning => $"{to.Value} is running and has been handed it.",
         Wire.WakeOutcome.AlreadyComing => $"{to.Value} is already being seen to, and will collect this with the rest.",
         Wire.WakeOutcome.Unreachable =>
-            $"Nothing can start {to.Value} right now; it collects this when it next runs, and you will see it " +
+            $"{NothingCanStart}{to.Value} right now; it collects this when it next runs, and you will see it " +
             "flagged if that takes too long.",
 
         // Only reachable if the person is ever the recipient of their own seat's send, which no surface offers — so this
         // is here so the switch never says "not reported" about a fact the broker did report.
         Wire.WakeOutcome.WithThePerson => $"{to.Value} is the person, and has it.",
         Wire.WakeOutcome.OpenOutside =>
-            $"{to.Value} is open outside Parley — somebody started it in an editor — so Parley cannot give it a turn; it " +
+            $"{to.Value}{OpenOutsideParley} — somebody started it in an editor — so Parley cannot give it a turn; it " +
             "reads this when somebody prompts it there.",
         _ => $"What became of {to.Value} was not reported.",
     };

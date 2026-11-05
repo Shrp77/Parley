@@ -86,6 +86,9 @@ public sealed class ScriptedExport : HttpMessageHandler
     /// <summary>Split settled pairs every export carries.</summary>
     public List<Wire.SettledElsewhere> SettledElsewhere { get; } = [];
 
+    /// <summary>What every export says an agent wrote in another conversation.</summary>
+    public List<Wire.WroteElsewhere> WroteElsewhere { get; } = [];
+
     /// <summary>Every listing of conversations asked for.</summary>
     public List<Wire.ListConversationsRequest> Listings { get; } = [];
 
@@ -294,6 +297,7 @@ public sealed class ScriptedExport : HttpMessageHandler
         reply.Exchanges.AddRange(Exchanges);
         reply.Moves.AddRange(Moves);
         reply.SettledElsewhere.AddRange(SettledElsewhere);
+        reply.WroteElsewhere.AddRange(WroteElsewhere);
         reply.Parent = Parent;
         reply.ParentByMove = ParentByMove;
         reply.Children.AddRange(Children);

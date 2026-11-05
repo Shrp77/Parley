@@ -140,11 +140,12 @@ public sealed class SpinOffModel(BrokerDirectory directory, SeatBook seats, Parl
 
         var voice = new SeatVoice(directory.AgentsFor(project), hold.Seat);
         var sent = new List<(string, string)>();
+        var opened = Quoting.Opened(name, Id, Says);
 
         foreach (var target in Targets)
         {
             sent.Add((target, AgentName.TryCreate(target, out var agent)
-                ? await voice.RequestAsync(agent, Says, name, token).ConfigureAwait(false)
+                ? await voice.RequestAsync(agent, opened, name, token).ConfigureAwait(false)
                 : "That is not a name an agent can have."));
         }
 

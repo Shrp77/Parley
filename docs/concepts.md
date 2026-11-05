@@ -24,7 +24,8 @@ way you would write to a colleague: what you want, and what it is for when that 
 
 **Clarify.** A question back to the requester, for something only the requester can give. The
 requester answers with a clarify of its own. This can go back and forth as long as the two sides
-need.
+need. A clarify stays in its exchange's conversation, so it is only for what that exchange asked; work
+elsewhere that prompts a message to the same agent is a new request in that work's conversation.
 
 **Result.** What the request came to, answered whole with one outcome and one text. The outcome is one of:
 

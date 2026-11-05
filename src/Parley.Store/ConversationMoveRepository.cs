@@ -497,6 +497,60 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
         return [.. rows.Select(r => new SettledElsewhere(r.Exchange, r.SettledBy, r.Conversation))];
     }
 
+    /// <summary>Reads where an agent's next message after this conversation went instead (SPEC.md §5.0).</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Each such message, in the broker's order.</returns>
+    /// <remarks>
+    /// <b>The last thing the agent sent or received before writing was here</b>, which is as near as the record comes to what
+    /// prompted it. Its reply to something that reached it elsewhere does not count, nor do the replies that follow, so a
+    /// busy pair talking in another conversation does not fill this one with notes. Results are left out because a Result
+    /// answers the exchange it closes. Only messages from the conversation's first onward are read, since an export is read
+    /// every few seconds while a page follows it.
+    /// </remarks>
+    public async Task<IReadOnlyList<WroteElsewhere>> GetWroteElsewhereAsync(
+        string conversationId, CancellationToken cancellationToken = default)
+    {
+        var rows = await _connection.QueryAsync<WroteElsewhereRow>(
+            new CommandDefinition(
+                """
+                WITH seen AS (
+                    SELECT id, conversation_id, type, from_agent AS agent, to_agent AS other, 1 AS wrote
+                      FROM messages
+                     WHERE id >= (SELECT MIN(id) FROM messages WHERE conversation_id = @Id)
+                    UNION ALL
+                    SELECT id, conversation_id, type, to_agent, from_agent, 0
+                      FROM messages
+                     WHERE id >= (SELECT MIN(id) FROM messages WHERE conversation_id = @Id)
+                ), ordered AS (
+                    SELECT id, conversation_id, type, agent, other, wrote,
+                           LAG(conversation_id) OVER (PARTITION BY agent ORDER BY id) AS before_conversation,
+                           LAG(id) OVER (PARTITION BY agent ORDER BY id) AS before_id
+                      FROM seen
+                )
+                SELECT id AS Message, before_id AS AfterMessage, agent AS Author, other AS Recipient,
+                       conversation_id AS Conversation
+                  FROM ordered
+                 WHERE wrote = 1
+                   AND before_conversation = @Id
+                   AND conversation_id <> @Id
+                   AND type IN ('request', 'clarify')
+                   AND agent NOT LIKE @Person AND other NOT LIKE @Person
+                   AND agent NOT LIKE @Facilitator AND other NOT LIKE @Facilitator
+                 ORDER BY id;
+                """,
+                new
+                {
+                    Id = conversationId,
+                    Person = PersonSeat.Role + "@%",
+                    Facilitator = Facilitation.Role + "@%",
+                },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return [.. rows.Select(r => new WroteElsewhere(
+            r.Message, r.AfterMessage, AgentName.Create(r.Author), AgentName.Create(r.Recipient), r.Conversation))];
+    }
+
     /// <summary>Reads the move notices waiting for an agent, oldest first, marking nothing.</summary>
     /// <param name="agent">The agent.</param>
     /// <param name="limit">The most to read.</param>
@@ -785,6 +839,19 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
         public long Exchange { get; init; }
 
         public long SettledBy { get; init; }
+
+        public string Conversation { get; init; } = string.Empty;
+    }
+
+    private sealed class WroteElsewhereRow
+    {
+        public long Message { get; init; }
+
+        public long AfterMessage { get; init; }
+
+        public string Author { get; init; } = string.Empty;
+
+        public string Recipient { get; init; } = string.Empty;
 
         public string Conversation { get; init; } = string.Empty;
     }

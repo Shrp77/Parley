@@ -107,6 +107,11 @@ public static class Transcript
             heading.AppendLine(OneLine(ConversationWording.SettledLine(pair)));
         }
 
+        foreach (var wrote in export.WroteElsewhere ?? [])
+        {
+            heading.AppendLine(OneLine(ConversationWording.WroteElsewhereLine(wrote)));
+        }
+
         var participants = Visibility.Participants(messages);
 
         // Assigned rather than ToDictionary'd. A broker that returned the same exchange twice is

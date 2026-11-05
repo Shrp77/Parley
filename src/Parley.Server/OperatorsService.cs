@@ -736,6 +736,15 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             ConversationId = s.Conversation,
         }));
 
+        reply.WroteElsewhere.AddRange((exported.WroteElsewhere ?? []).Select(w => new Wire.WroteElsewhere
+        {
+            Message = w.Message,
+            AfterMessage = w.AfterMessage,
+            From = w.From.Value,
+            To = w.To.Value,
+            ConversationId = w.Conversation,
+        }));
+
         reply.Messages.AddRange(exported.Messages.Select(Conversions.Out));
 
         reply.Exchanges.AddRange(exported.Exchanges.Select(e => new Wire.ExchangeSnapshot

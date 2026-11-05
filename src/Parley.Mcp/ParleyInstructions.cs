@@ -45,6 +45,10 @@ public static class ParleyInstructions
           and name it.
         - If you cannot tell what a request is for, or how far it goes, ask with parley_clarify rather
           than guessing. You may ask other agents too. Guessing at scope is how work is done twice.
+        - Keep each message in the conversation of the work that prompted it, so the person can follow it.
+          parley_clarify stays in its exchange's conversation, so use it only for what that exchange asked.
+          If work on one request makes you need something from an agent you also have an older exchange
+          with, send a parley_request instead, before your parley_result, while you still hold the request.
         - Resolve blockers by talking: ask the agent that can provide what you need; if none can, ask the
           person - the participant whose role is human-user, listed by parley_agents. They may be away.
           Your message waits for them, and waiting for their decision is correct; it is not a reason to

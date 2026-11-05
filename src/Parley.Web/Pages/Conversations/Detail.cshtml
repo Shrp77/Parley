@@ -159,7 +159,48 @@ else
    rule 7 refusal any other participant faces. When the broker cannot be reached as you, the first
    sentence in the panel says so. *@
 <form method="post" id="composer" class="composer"
+      data-keep-open="@(Model.SendProblem is { Length: > 0 } || (Model.Sent.Count > 0 && !Model.SentAsAsked) || Model.ReplyTo is not null || !string.IsNullOrEmpty(Model.Says) ? "true" : "false")"
       aria-label="Send to agents in this conversation">
+    @* Hidden or not is remembered in this browser, and set before the form is drawn so a hidden one does not flash open.
+       The outcome of a send and words still to be sent are never hidden by an earlier choice. *@
+    <script>
+        try {
+            if (document.getElementById("composer").getAttribute("data-keep-open") !== "true"
+                && window.localStorage.getItem("parley-convo-composer") === "closed") {
+                document.getElementById("composer").classList.add("composer-closed");
+            }
+        } catch (e) { }
+    </script>
+
+    @* Who it goes to is chosen in the tree beside the transcript, whose boxes belong to this form. Said here as
+       well, because the boxes can be a long way from the button. The button needs the page's script, so it starts
+       hidden, and without the script the box simply stays open. *@
+    @{
+        Func<object?, Microsoft.AspNetCore.Html.IHtmlContent> outcomes = @<ul class="sent" role="status">
+            @foreach (var (agent, outcome) in Model.Sent)
+            {
+                <li><strong>@agent</strong> @outcome</li>
+            }
+        </ul>;
+    }
+    <div class="composer-bar">
+        <p class="composer-to" id="to-summary" aria-live="polite"></p>
+        @* A send that went as asked needs no reading, so what became of it waits behind the icon. *@
+        @if (Model.SentAsAsked)
+        {
+            <details class="sent-info">
+                <summary title="What happened to what you sent" aria-label="What happened to what you sent">
+                    <span class="icon" aria-hidden="true">info</span>
+                </summary>
+                @outcomes(null)
+            </details>
+        }
+        <button type="button" id="composer-toggle" class="composer-toggle quiet" aria-controls="composer" aria-expanded="true" hidden>
+            <span class="icon" aria-hidden="true">expand_more</span>
+            <span id="composer-toggle-words">Hide</span>
+        </button>
+    </div>
+
     @* No note about the seat: sending takes it, and says why if it cannot. *@
 
     @if (Model.SendProblem is { Length: > 0 } trouble)
@@ -167,19 +208,10 @@ else
         <p class="unreachable" role="alert">@trouble</p>
     }
 
-    @if (Model.Sent.Count > 0)
+    @if (Model.Sent.Count > 0 && !Model.SentAsAsked)
     {
-        <ul class="sent" role="status">
-            @foreach (var (agent, outcome) in Model.Sent)
-            {
-                <li><strong>@agent</strong> @outcome</li>
-            }
-        </ul>
+        @outcomes(null)
     }
-
-    @* Who it goes to is chosen in the tree beside the transcript, whose boxes belong to this form. Said here as
-       well, because the boxes can be a long way from the button. *@
-    <p class="composer-to" id="to-summary" aria-live="polite"></p>
 
     @* Set by "Reply to this" on an agent's question, and cleared by Cancel or a send. *@
     <input type="hidden" name="ReplyTo" id="reply-to" value="@Model.ReplyTo" />
@@ -216,7 +248,6 @@ else
 
 @section Scripts {
     <style>
-        form.composer { position: relative; }
         .mention-list { position: absolute; left: 0; right: 0; bottom: 100%; margin: 0; padding: 0.25rem; list-style: none; max-height: 14rem; overflow: auto; background: var(--surface, Canvas); border: 1px solid var(--rule); border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18); z-index: 20; }
         .mention-list[hidden] { display: none; }
         .mention-list li { padding: 0.35rem 0.6rem; border-radius: 6px; cursor: pointer; overflow-wrap: anywhere; }
@@ -379,7 +410,8 @@ else
             // there while the reader does, as the terminal's transcript does. At the end means the end of
             // the newest message is on screen -- not the page's own bottom, because the composer sits below
             // it, and not merely its first line, because a reader on the message before it can see that
-            // much and is still reading back. Anywhere else the reader is not moved at all.
+            // much and is still reading back. On screen means clear of the composer, which is pinned over the window's
+            // bottom edge. Anywhere else the reader is not moved at all.
             function newest() {
                 var turns = region.querySelectorAll("li.turn");
                 return turns.length ? turns[turns.length - 1] : null;
@@ -387,7 +419,10 @@ else
 
             function atBottom() {
                 var last = newest();
-                return !last || last.getBoundingClientRect().bottom <= window.innerHeight + 8;
+                var composer = document.getElementById("composer");
+                var edge = composer ? Math.min(window.innerHeight, composer.getBoundingClientRect().top) : window.innerHeight;
+
+                return !last || last.getBoundingClientRect().bottom <= edge + 8;
             }
 
             // **Instant, never animated.** The stylesheet smooths scrolling for the reader's own jumps, and a smoothed
@@ -1031,12 +1066,74 @@ else
                 outcome.value = "";
                 outcome.hidden = !button.hasAttribute("data-request");
 
+                // The reader stays on the message being answered: the composer is already on screen, unless it was hidden.
+                document.dispatchEvent(new CustomEvent("parley:compose"));
+
                 var box = form.querySelector("textarea[name=Says]");
-                form.scrollIntoView({ block: "end" });
-                if (box) { box.focus(); }
+                if (box) { box.focus({ preventScroll: true }); }
             });
 
             cancel.addEventListener("click", clear);
+        })();
+
+        // Hiding the composer to read. Only its contents go, so words already typed and a reply already chosen are still
+        // there when it comes back, and the button says so.
+        (function () {
+            var form = document.getElementById("composer");
+            var toggle = document.getElementById("composer-toggle");
+            var words = document.getElementById("composer-toggle-words");
+
+            if (!form || !toggle || !words) { return; }
+
+            var box = form.querySelector("textarea[name=Says]");
+            var reply = document.getElementById("reply-to");
+            var icon = toggle.querySelector(".icon");
+
+            function closed() { return form.classList.contains("composer-closed"); }
+
+            function draw() {
+                var kept = box.value.trim() !== "" || reply.value !== "";
+
+                toggle.setAttribute("aria-expanded", closed() ? "false" : "true");
+                icon.textContent = closed() ? "expand_less" : "expand_more";
+                words.textContent = closed() ? (kept ? "Write (draft kept)" : "Write") : "Hide";
+            }
+
+            function set(hide) {
+                // A reader at the very end stays there, or the box coming back would cover the newest message.
+                var end = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 24;
+
+                form.classList.toggle("composer-closed", hide);
+                draw();
+
+                try {
+                    window.localStorage.setItem("parley-convo-composer", hide ? "closed" : "open");
+                } catch (e) { }
+
+                if (end) { window.scrollTo({ top: document.documentElement.scrollHeight, left: 0, behavior: "instant" }); }
+            }
+
+            toggle.addEventListener("click", function () {
+                var hide = !closed();
+
+                set(hide);
+                if (!hide) { box.focus({ preventScroll: true }); }
+            });
+
+            document.addEventListener("parley:compose", function () {
+                if (closed()) { set(false); }
+            });
+
+            // What else on the page keeps clear of it reads this: the minimap, and the new message button.
+            function measure() {
+                document.documentElement.style.setProperty("--composer-h", form.offsetHeight + "px");
+            }
+
+            if (window.ResizeObserver) { new ResizeObserver(measure).observe(form); }
+            measure();
+
+            toggle.hidden = false;
+            draw();
         })();
 
         // Closing the panel, and going through what is waiting on the person. The links are in `#followed-side` and are

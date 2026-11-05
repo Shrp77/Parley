@@ -7,8 +7,8 @@
 
 <h1>Spin off from @Model.Id</h1>
 <p class="lede">
-    A new conversation, linked to this one. Nothing exists and nothing is sent until you press Send. The agent gets exactly
-    what is in the box. It gets no access to @Model.Id from this.
+    A new conversation, linked to this one. Nothing exists and nothing is sent until you press Send. The agent gets a line
+    saying this is a side conversation from @Model.Id, and exactly what is in the box. It gets no access to @Model.Id from this.
 </p>
 
 @if (Model.Problem is { Length: > 0 } problem)
@@ -48,6 +48,7 @@
     <p>
         <label for="says">What you want to say</label><br />
         <textarea id="says" name="Says" rows="12" required>@Model.Says</textarea>
+        <br /><small>@Parley.Client.Rendering.Quoting.OpeningIsAdded</small>
     </p>
 
     <p class="move-actions">

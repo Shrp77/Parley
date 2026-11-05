@@ -219,6 +219,54 @@ public sealed class SpinOffAndMovePagesTests
     }
 
     [Fact]
+    public async Task A_quote_goes_out_under_a_line_saying_what_this_conversation_is_for()
+    {
+        using var console = Seated();
+        using var client = console.CreateClient();
+
+        var (response, _) = await PostAsync(
+            client,
+            Spin(),
+            ("Name", "disk-cleanup"),
+            ("Says", "orders@test said in shared:\n> The disk is full.\n"),
+            ("Targets", Orders));
+
+        Assert.True(response.IsSuccessStatusCode, response.StatusCode.ToString());
+
+        var ask = System.Text.Json.JsonDocument.Parse(Assert.Single(console.Broker.Requested).PayloadJson).RootElement.GetProperty("ask").GetString()!;
+
+        Assert.StartsWith(
+            "Side conversation disk-cleanup has been stood up to discuss the following conversation entry from shared.\n\n",
+            ask,
+            StringComparison.Ordinal);
+        Assert.Contains("> The disk is full.", ask, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_send_that_reached_nobody_leaves_the_box_as_written_with_no_line_added()
+    {
+        using var console = Seated();
+        console.Broker.RefusesRequestsTo.Add(Orders);
+        using var client = console.CreateClient();
+
+        var (_, body) = await PostAsync(client, Spin(), Spinning(Orders));
+
+        Assert.DoesNotContain("Side conversation disk-cleanup", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_person_is_told_about_the_line_before_sending()
+    {
+        using var console = Console();
+        using var client = console.CreateClient();
+
+        Assert.Contains(
+            Parley.Client.Rendering.Quoting.OpeningIsAdded,
+            await client.GetStringAsync(At(Spin("&from=1")), Ct),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_spin_off_with_no_message_opens_empty()
     {
         using var console = Console();
@@ -799,6 +847,47 @@ public sealed class SpinOffAndMovePagesTests
         var page = await client.GetStringAsync(At(Move("&x=1")), Ct);
 
         Assert.DoesNotContain("<option value=\"shared\"", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_agents_next_message_elsewhere_is_said_after_the_message_it_followed_and_links_to_it()
+    {
+        using var console = new TranscriptConsole();
+        console.Broker.Request(1, Orders, "billing@test", "first");
+        console.Broker.Request(5, Orders, "billing@test", "second");
+        console.Broker.WroteElsewhere.Add(new Wire.WroteElsewhere { Message = 3, AfterMessage = 1, From = Orders, To = "billing@test", ConversationId = "sync-around" });
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At($"/Conversations/Detail?project={Project}&id=shared"), Ct);
+        var note = page.IndexOf("next message went to billing@test in sync-around", StringComparison.Ordinal);
+
+        Assert.True(note > page.IndexOf("id=\"m1\"", StringComparison.Ordinal) && note < page.IndexOf("id=\"m5\"", StringComparison.Ordinal), "not between the two messages");
+        Assert.Contains("id=sync-around#m3\"", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_note_after_the_newest_message_is_drawn_and_any_export_file_carries_it()
+    {
+        using var console = new TranscriptConsole();
+        console.Broker.Request(1, Orders, "billing@test", "only");
+        console.Broker.WroteElsewhere.Add(new Wire.WroteElsewhere { Message = 3, AfterMessage = 1, From = Orders, To = "billing@test", ConversationId = "sync-around" });
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At($"/Conversations/Detail?project={Project}&id=shared"), Ct);
+
+        Assert.Contains("next message went to billing@test in sync-around", page[..page.IndexOf("</ol>", page.IndexOf("id=\"m1\"", StringComparison.Ordinal), StringComparison.Ordinal)], StringComparison.Ordinal);
+
+        var export = new Parley.Core.ConversationExport(
+            [],
+            [],
+            WroteElsewhere: [new Parley.Core.WroteElsewhere(3, 1, Parley.Core.AgentName.Create(Orders), Parley.Core.AgentName.Create("billing@test"), "sync-around")]);
+
+        var file = System.Text.Encoding.UTF8.GetString(Parley.Web.Pages.Conversations.DetailModel.RawExport("shared", export));
+
+        foreach (var expected in new[] { "wroteElsewhere", "afterMessage", "sync-around" })
+        {
+            Assert.Contains(expected, file, StringComparison.Ordinal);
+        }
     }
 
     [Fact]

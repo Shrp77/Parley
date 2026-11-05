@@ -323,6 +323,16 @@ internal sealed partial class Shell : Window
                 return;
             }
 
+            // The first message says what this is. Only the draft changes, so words that reach nobody stay in the box as written.
+            // An empty box stays empty, so it is refused as it always was rather than sending the line alone.
+            if (_spinningOff is { } opening
+                && opening.Project == place.Name.Value
+                && opening.Conversation == conversation
+                && !string.IsNullOrWhiteSpace(draft.Text))
+            {
+                draft.Text = Parley.Client.Rendering.Quoting.Opened(conversation, opening.Parent, draft.Text);
+            }
+
             var sent = await voice.SendAsync(hold, draft, conversation, token).ConfigureAwait(false);
 
             Said = sent.Says;

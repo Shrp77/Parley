@@ -478,6 +478,9 @@
             margin: 0.75rem 0 1.25rem;
         }
 
+        /* The display above would otherwise draw a form that is only ever submitted by a script as an empty card. */
+        form[hidden] { display: none; }
+
         label { color: var(--ink-soft); font-size: 0.9rem; }
 
         /* ---- Controls, Material style --------------------------------------------------------------------------------
@@ -1277,6 +1280,12 @@
             border-radius: var(--radius);
         }
 
+        /* Scrolls in the room the composer leaves it, rather than running on underneath it. */
+        @@media (min-width: 60.01rem) {
+            .timeline { max-height: calc(100vh - var(--frame) - var(--composer-h, 0px) - 2rem); overflow-y: auto; }
+            .timeline > * { flex: none; }
+        }
+
         .timeline .tick {
             display: block;
             height: 0.5rem;
@@ -1402,6 +1411,19 @@
             box-shadow: 0 -6px 18px -12px rgba(0, 0, 0, 0.45);
         }
 
+        /* Hidden to read: the bar alone stays, saying who it would go to, with the button that brings the rest back. */
+        .composer-bar { display: flex; align-items: center; gap: 0.8rem; margin: 0 0 0.6rem; }
+        .composer-bar .composer-to { flex: 1 1 auto; min-width: 0; margin: 0; }
+        .composer-toggle { flex: none; display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.15rem 0.7rem; font-size: 0.8rem; color: var(--ink-soft); background: none; border: 1px solid var(--rule); }
+        .composer-toggle[hidden] { display: none; }
+        .composer-toggle .icon { font-size: 1.1rem; }
+        .composer-closed { padding-block: 0.4rem; }
+        .composer-closed > .composer-bar { margin: 0; }
+        .composer-closed > :not(.composer-bar) { display: none; }
+
+        /* Keyboard focus and jumps stop short of the box rather than underneath it. */
+        html { scroll-padding-bottom: calc(var(--composer-h, 0px) + 1rem); }
+
         .composer-note {
             margin: 0 0 0.6rem;
             font-size: 0.85rem;
@@ -1447,6 +1469,9 @@
         }
 
         .recipients .count { margin-left: auto; font-weight: 400; font-size: 0.72rem; color: var(--ink-faint); }
+
+        /* A summary laid out as a row loses the browser's own marker, so nothing would say a heading folds. */
+        .recipients summary .chev, .settings-tree summary .chev { flex: none; font-size: 1.05rem; vertical-align: baseline; }
 
         .recipients details > ul {
             margin: 0.2rem 0 0.5rem 0.55rem;
@@ -1530,7 +1555,7 @@
         .convo-actions .file-button .icon { font-size: 1.2rem; }
         /* Offered when a message arrived further down than following may carry the page (see the script in the conversation
            page). Centred over the page rather than the window, clear of the composer pinned to the bottom. */
-        .new-below { position: fixed; z-index: 25; left: calc(var(--rail-w) + (100vw - var(--rail-w)) / 2); bottom: 10rem; transform: translateX(-50%); color: var(--on-accent); background: var(--accent); box-shadow: 0 8px 24px -8px rgb(0 0 0 / 0.45); }
+        .new-below { position: fixed; z-index: 25; left: calc(var(--rail-w) + (100vw - var(--rail-w)) / 2); bottom: calc(var(--composer-h, 9rem) + 1rem); transform: translateX(-50%); color: var(--on-accent); background: var(--accent); box-shadow: 0 8px 24px -8px rgb(0 0 0 / 0.45); }
         .new-below:active { transform: translateX(-50%) scale(0.98); }
         .new-below[hidden] { display: none; }
         .export-menu { position: relative; }
@@ -1614,7 +1639,7 @@
 
         .pick .menu label { display: flex; align-items: center; gap: 0.6rem; padding: 0.15rem 0; cursor: pointer; color: var(--ink); }
 
-        .composer textarea { width: 100%; min-height: 4.5rem; }
+        .composer textarea { width: 100%; min-height: 4.5rem; max-height: 40vh; }
 
         .composer-send {
             display: flex;
@@ -1641,6 +1666,14 @@
             background: var(--quiet-wash);
             border-radius: 6px;
         }
+
+        /* A send that went as asked: an icon in the composer's bar, opening above the box rather than pushing it about. */
+        .sent-info { flex: none; }
+        .sent-info > summary { display: grid; place-items: center; width: 1.8rem; height: 1.8rem; list-style: none; cursor: pointer; border-radius: 50%; color: var(--ink-faint); }
+        .sent-info > summary::-webkit-details-marker { display: none; }
+        .sent-info > summary:hover, .sent-info[open] > summary { color: var(--ink); background: var(--quiet-wash); }
+        .sent-info > summary .icon { font-size: 1.2rem; }
+        .sent-info > ul.sent { position: absolute; left: 0; right: 0; bottom: 100%; z-index: 20; margin: 0 0 0.4rem; padding: 0.5rem; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25); overflow-wrap: anywhere; }
 
         /* ---- Sizes -------------------------------------------------------------
 

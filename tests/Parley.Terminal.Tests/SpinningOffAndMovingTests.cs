@@ -128,6 +128,10 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
 
         Assert.Equal(Orders, sent.To);
         Assert.Contains("the disk is full", sent.PayloadJson, StringComparison.Ordinal);
+        Assert.Contains(
+            "Side conversation disk-cleanup has been stood up to discuss the following conversation entry from room.",
+            sent.PayloadJson,
+            StringComparison.Ordinal);
 
         var listed = (await Client.ConversationsAsync(cancellationToken: Ct)).Items.Single(c => c.Id == "disk-cleanup");
 

@@ -47,6 +47,18 @@ public sealed record MoveRecord(
 /// <param name="Conversation">The other conversation: whichever of the pair is not in the one being read.</param>
 public sealed record SettledElsewhere(long Exchange, long SettledBy, string Conversation);
 
+/// <summary>An agent's next message after this conversation, which went to another agent in a different one (SPEC.md §5.0).</summary>
+/// <param name="Message">The message, in the other conversation.</param>
+/// <param name="AfterMessage">The last message in this conversation the agent sent or received before it.</param>
+/// <param name="From">The agent that wrote it.</param>
+/// <param name="To">The agent it went to.</param>
+/// <param name="Conversation">The conversation it is in.</param>
+/// <remarks>
+/// Names and numbers only. It says what order things happened in and nothing about why, because the broker cannot see
+/// what prompted a message.
+/// </remarks>
+public sealed record WroteElsewhere(long Message, long AfterMessage, AgentName From, AgentName To, string Conversation);
+
 /// <summary>One exchange a move would take.</summary>
 /// <param name="Id">The exchange.</param>
 /// <param name="Open">Whether it is still in progress.</param>

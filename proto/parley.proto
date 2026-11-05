@@ -924,6 +924,15 @@ message SettledElsewhere {
   string conversation_id = 3;
 }
 
+// An agent's next message after this conversation went to another agent in a different one (section 5.0).
+message WroteElsewhere {
+  int64 message = 1;                  // the message, in the other conversation
+  int64 after_message = 2;            // the last message here the agent sent or received before it
+  string from = 3;
+  string to = 4;
+  string conversation_id = 5;
+}
+
 message CloseRequestRequest {
   int64 exchange_id = 1;
   // Empty when the person gave none.
@@ -1144,6 +1153,7 @@ message ExportReply {
   repeated string children = 7;
   repeated MoveRecord moves = 8;
   repeated SettledElsewhere settled_elsewhere = 9;
+  repeated WroteElsewhere wrote_elsewhere = 10;
 }
 
 // Facts and no content (section 9.4). There is no field to put message text in.

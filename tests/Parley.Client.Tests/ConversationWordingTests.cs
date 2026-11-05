@@ -153,6 +153,36 @@ public sealed class ConversationWordingTests
     }
 
     [Fact]
+    public void A_transcript_says_where_an_agents_next_message_went_straight_after_the_message_it_followed()
+    {
+        var export = new ConversationExport(
+            [Said(1, """{"ask":"first"}"""), Said(5, """{"ask":"second"}""")],
+            [],
+            WroteElsewhere: [new WroteElsewhere(3, 1, AgentName.Create("orders@test"), AgentName.Create("billing@test"), "other")]);
+
+        var lines = Reading.Lines(export, TimeZoneInfo.Utc, "pricing").Select(line => line.Text).ToList();
+        var note = lines.FindIndex(line => line.Contains("orders@test's next message went to billing@test in other", StringComparison.Ordinal));
+
+        Assert.InRange(
+            note,
+            lines.FindIndex(line => line.Contains("first", StringComparison.Ordinal)) + 1,
+            lines.FindIndex(line => line.Contains("second", StringComparison.Ordinal)) - 1);
+    }
+
+    [Fact]
+    public void A_note_after_the_last_message_is_not_lost()
+    {
+        var export = new ConversationExport(
+            [Said(1, """{"ask":"only"}""")],
+            [],
+            WroteElsewhere: [new WroteElsewhere(3, 1, AgentName.Create("orders@test"), AgentName.Create("billing@test"), "other")]);
+
+        Assert.Contains(
+            Reading.Lines(export, TimeZoneInfo.Utc, "pricing"),
+            line => line.Text.Contains("went to billing@test in other", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void A_transcript_says_what_a_split_settled_pair_is()
     {
         var export = new ConversationExport(

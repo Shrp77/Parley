@@ -97,6 +97,9 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// </summary>
     public bool Seats { get; set; }
 
+    /// <summary>What the broker says it did about the receiver of a Request.</summary>
+    public Wire.WakeOutcome RequestWake { get; set; }
+
     /// <summary>When set with <see cref="Seats"/>, the seat's stream says, after the attach, that the store is being rewritten.</summary>
     public bool Tidying { get; set; }
 
@@ -228,7 +231,7 @@ public sealed class RoadmapBroker : HttpMessageHandler
                 },
                 "/parley.v1.Agents/Request" when Seats => new Wire.RequestReply
                 {
-                    Outcomes = { new Wire.RequestOutcome { Ok = true, ExchangeId = 7, ConversationId = "rm1-1" } },
+                    Outcomes = { new Wire.RequestOutcome { Ok = true, ExchangeId = 7, ConversationId = "rm1-1", Wake = RequestWake } },
                 },
                 "/parley.v1.Agents/Waiting" when Seats => new Wire.Notice(),
                 _ => null,

@@ -196,7 +196,8 @@ timezone, sortable either way.
   you can leave it open or close it with an outcome. The Inbox lists what waits across every
   conversation and links to each message.
 - **Spin off a conversation** (`Alt+b` in a conversation, or **Spin off** on a message). A new conversation, linked to the
-  one you were reading, with that message quoted for you to edit. Nothing exists or is sent until you send. An agent gets
+  one you were reading, with that message quoted for you to edit. Nothing exists or is sent until you send. What you send
+  goes out under a line saying it is a side conversation and which conversation it came from. An agent gets
   exactly what you sent and no access to the other conversation. Lists show it as `name - spinoff from parent`. Closing or
   destroying one closes or destroys nothing in the other. The one thing that can change is under **Destroy**: a question
   a move split from what settled it reads as closed once what settled it is gone.

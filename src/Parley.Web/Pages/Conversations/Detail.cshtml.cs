@@ -82,6 +82,9 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// <summary>Settled pairs split across this and another conversation (SPEC.md §5.6).</summary>
     public IReadOnlyList<SettledElsewhere> SettledAcross { get; private set; } = [];
 
+    /// <summary>Where an agent's next message went instead of here (SPEC.md §5.0).</summary>
+    public IReadOnlyList<WroteElsewhere> WroteAcross { get; private set; } = [];
+
     /// <summary>What is waiting on the person in this project's other conversations, oldest first.</summary>
     public IReadOnlyList<Delivered> Elsewhere { get; private set; } = [];
 
@@ -274,6 +277,13 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
 
     /// <summary>What became of each message, once any were sent.</summary>
     public IReadOnlyList<(string Agent, string Outcome)> Sent { get; private set; } = [];
+
+    /// <summary>Whether everything went as asked, so what became of it is there to look up rather than to read.</summary>
+    /// <remarks>
+    /// Anything else stays in plain view: a refused send, or one whose receiver nothing can start, is something the person
+    /// has to act on.
+    /// </remarks>
+    public bool SentAsAsked => Sent.Count > 0 && Sent.All(result => Parley.Client.Seating.SeatVoice.GoesOnUnaided(result.Outcome));
 
     /// <summary>Why nothing could be sent, when nothing could.</summary>
     public string? SendProblem { get; private set; }
@@ -479,6 +489,14 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
                 children = export.Links?.Children ?? [],
                 moves = export.Moves ?? [],
                 settledElsewhere = export.SettledElsewhere ?? [],
+                wroteElsewhere = (export.WroteElsewhere ?? []).Select(w => new
+                {
+                    message = w.Message,
+                    afterMessage = w.AfterMessage,
+                    from = w.From.Value,
+                    to = w.To.Value,
+                    conversation = w.Conversation,
+                }).ToArray(),
                 destroyed = export.Destroyed is { } gone
                     ? new
                     {
@@ -787,6 +805,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
         Links = read.Value?.Links ?? ConversationLinks.None;
         Moves = read.Value?.Moves ?? [];
         SettledAcross = read.Value?.SettledElsewhere ?? [];
+        WroteAcross = read.Value?.WroteElsewhere ?? [];
         Participants = Visibility.Participants(Messages);
         Exchanges = Snapshots(read.Value?.Exchanges ?? []);
         Problem = read.Problem;

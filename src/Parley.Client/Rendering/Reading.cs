@@ -159,10 +159,19 @@ public static class Reading
         var moves = new Queue<MoveRecord>(
             conversation is null ? [] : (export.Moves ?? []).Where(m => m.FirstMessage is not null).OrderBy(m => m.FirstMessage));
 
+        // Each goes straight after the message the agent last sent or received here (SPEC.md §5.0).
+        var wrote = new Queue<WroteElsewhere>(
+            conversation is null ? [] : (export.WroteElsewhere ?? []).OrderBy(w => w.AfterMessage).ThenBy(w => w.Message));
+
         foreach (var line in Lines(export.Messages, zone))
         {
             if (line.Kind == LineKind.Header && line.Message is { } at)
             {
+                while (wrote.Count > 0 && wrote.Peek().AfterMessage < at)
+                {
+                    lines.Add(new TranscriptLine(Pad(ConversationWording.WroteElsewhereLine(wrote.Dequeue())), LineKind.Annotation, null));
+                }
+
                 while (moves.Count > 0 && moves.Peek().FirstMessage <= at)
                 {
                     lines.Add(new TranscriptLine(Pad(ConversationWording.MoveLine(moves.Dequeue(), conversation!, zone)), LineKind.Annotation, null));
@@ -191,6 +200,11 @@ public static class Reading
 
         if (conversation is not null)
         {
+            foreach (var left in wrote)
+            {
+                lines.Add(new TranscriptLine(Pad(ConversationWording.WroteElsewhereLine(left)), LineKind.Annotation, null));
+            }
+
             foreach (var move in moves.Concat((export.Moves ?? []).Where(m => m.FirstMessage is null)))
             {
                 lines.Add(new TranscriptLine(Pad(ConversationWording.MoveLine(move, conversation, zone)), LineKind.Annotation, null));

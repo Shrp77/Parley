@@ -170,6 +170,10 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         For anyone other than your requester — another agent that owns part of the work or knows what you
         need — send parley_request instead, in the same conversation. Don't make your requester relay it.
 
+        Only for what this exchange asked: what you write lands in this exchange's conversation, whatever
+        you are working on now. If other work prompted it, send parley_request in that work's conversation
+        instead, before your parley_result on it, even to this same agent.
+
         Replying to the person, you can also say which of your own questions to them their words settled:
         see settles.
         """)]
