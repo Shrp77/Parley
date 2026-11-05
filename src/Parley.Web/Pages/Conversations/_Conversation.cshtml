@@ -45,6 +45,7 @@ else
             var day = default(DateOnly?);
             var movesToNote = new Queue<Parley.Core.MoveRecord>(Model.Moves.Where(m => m.FirstMessage is not null).OrderBy(m => m.FirstMessage));
             var wroteToNote = new Queue<Parley.Core.WroteElsewhere>(Model.WroteAcross.OrderBy(w => w.AfterMessage).ThenBy(w => w.Message));
+            var lastExchanges = new HashSet<long>();
 
             // Straight to the message, so the reader lands on what was said rather than at the end of the other conversation.
             Func<Parley.Core.WroteElsewhere, Microsoft.AspNetCore.Html.IHtmlContent> wroteNote = @<li class="moved-note">
@@ -91,11 +92,28 @@ else
             {
                 <li id="@($"m{also.Id}")" hidden></li>
             }
+            @* The broker's order is kept, so the transcript still says what happened when. A message that continues an exchange
+               sits in from the one that opened it, and says which that was when something else came between them. *@
+            var threadStart = Model.ThreadStart(message);
+            var continues = threadStart.Id != message.Id;
+            var interrupted = continues && !lastExchanges.Contains(message.ExchangeId);
+            var threadSize = Model.ThreadSize(turn);
+
+            lastExchanges = [.. turn.Select(m => m.ExchangeId)];
+
             <li id="@($"m{message.Id}")" data-agent="@message.From.Value" data-to="@string.Join(' ', turn.Select(m => m.To.Value))"
-                class="turn slot-@Palette.SlotFor(message.From)@(ghost ? " ghosted" : null)">
+                data-exchanges="@string.Join(' ', turn.Select(m => m.ExchangeId))"
+                class="turn slot-@Palette.SlotFor(message.From)@(ghost ? " ghosted" : null)@(continues ? " in-thread" : null)">
                 <div class="who" aria-hidden="true">@Palette.BadgeFor(message.From)</div>
 
                 <div class="bubble">
+                    @if (interrupted)
+                    {
+                        <a class="thread-of" href="@($"#m{threadStart.Id}")" target="_self">
+                            <span aria-hidden="true">↳</span>
+                            <strong>@threadStart.From.Value</strong>: @Parley.Web.Pages.Conversations.DetailModel.ThreadExcerpt(threadStart)
+                        </a>
+                    }
                     <p class="attribution">
                         <strong>@Speaker.From(message)</strong>
                         <span class="arrow">to</span>
@@ -171,6 +189,11 @@ else
                         }
                         <span> · written by @message.ResponderModel</span>
                         <span> · <a class="spin-off" target="_top" href="@Url.Page("/Conversations/SpinOff", new { project = Model.Project, id = Model.Id, from = message.Id })">Spin off</a></span>
+                        @if (threadSize > 1)
+                        {
+                            @* The script reads the label and says "Show everything" while a thread is shown. *@
+                            <span> · <button type="button" class="thread-focus" data-exchanges="@string.Join(' ', turn.Select(m => m.ExchangeId))" data-label="Thread (@threadSize)">Thread (@threadSize)</button></span>
+                        }
                         @* Shown only while picking, by the page's script. Every exchange of a send to several goes together. *@
                         <label class="move-pick"><input type="checkbox" data-exchanges="@string.Join(' ', turn.Select(m => m.ExchangeId))" aria-label="Move this entry" /> Move</label>
                     </p>
@@ -179,7 +202,7 @@ else
                         @* The person chooses which question their words answer; the console never guesses (SPEC.md 5.6). *@
                         <p class="reply-line">
                             <strong>Waiting on you</strong>
-                            <button type="button" class="reply-to" data-exchange="@waiting.ExchangeId" data-agent="@waiting.From.Value" data-request="@(waiting.Type == Parley.Core.MessageType.Request ? "1" : null)">Reply to this</button>
+                            <button type="button" class="reply-to" data-exchange="@waiting.ExchangeId" data-agent="@waiting.From.Value" data-request="@(waiting.Type == Parley.Core.MessageType.Request ? "1" : "0")">Reply to this</button>
                             @* A button rather than a form here: a form carries an antiforgery token that differs at every
                                render, and this region is compared by digest, so it would be replaced every few seconds. The
                                form it submits sits outside the region. *@

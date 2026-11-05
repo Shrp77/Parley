@@ -306,6 +306,36 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// <returns>Each turn, in the order the broker recorded its first message.</returns>
     public IReadOnlyList<IReadOnlyList<Message>> Turns() => MovePicking.Turns(Messages);
 
+    /// <summary>The message that opened the exchange a message belongs to, as far as this conversation holds it.</summary>
+    /// <param name="message">A message in the conversation.</param>
+    /// <returns>The first of its exchange's messages here, which is the message itself when it opened the exchange.</returns>
+    public Message ThreadStart(Message message) => Threads[message.ExchangeId][0];
+
+    /// <summary>How many messages belong to the exchanges of one entry in the transcript.</summary>
+    /// <param name="turn">The entry: one message, or a Request sent to several, each its own exchange.</param>
+    /// <returns>The count.</returns>
+    public int ThreadSize(IReadOnlyList<Message> turn) => turn.Sum(message => Threads[message.ExchangeId].Count);
+
+    /// <summary>A few words of a message on one line, for saying which thread another message continues.</summary>
+    /// <param name="message">The message.</param>
+    /// <returns>The words, shortened. Razor encodes them, as it does every peer's words.</returns>
+    public static string ThreadExcerpt(Message message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+
+        const int Longest = 90;
+
+        var words = string.Join(' ', PayloadShape.Spoken(message.PayloadJson).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+        return words.Length <= Longest ? words : words[..Longest] + "…";
+    }
+
+    private Dictionary<long, List<Message>> Threads => _threads ??= Messages
+        .GroupBy(message => message.ExchangeId)
+        .ToDictionary(thread => thread.Key, thread => thread.ToList());
+
+    private Dictionary<long, List<Message>>? _threads;
+
     /// <summary>Says where the exchange a message belongs to stands.</summary>
     /// <param name="message">The message.</param>
     /// <returns>The state in words, or empty when the export did not include the exchange.</returns>

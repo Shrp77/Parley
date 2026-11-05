@@ -42,6 +42,39 @@ public sealed class WaitingOnYouOnThePageTests
     }
 
     [Fact]
+    public async Task Closing_is_offered_only_on_an_agents_request_and_the_script_reads_the_value_not_that_the_attribute_is_there()
+    {
+        using var console = Asked();
+
+        // The person's own Request, where the agent asked back: the question waits on them, and only the agent can close it.
+        console.Broker.Request(5, Person, Orders, "Export the invoices.");
+        console.Broker.Messages.Add(new Wire.Message
+        {
+            Id = 6,
+            ExchangeId = 5,
+            Type = Wire.MessageType.Clarify,
+            From = Orders,
+            To = Person,
+            ResponderModel = "test",
+            PayloadJson = """{"text":"Which schema?"}""",
+            ConversationId = "shared",
+            CreatedUtc = "2026-09-16T10:00:00Z",
+        });
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Orders, WaitedOn = Person, ExchangeId = 5 });
+
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+
+        // An attribute starting data- is written even when its value is null, so its being there says nothing. That offered
+        // to close the person's own Request, which only its receiver can, and the broker refused it.
+        Assert.Contains("data-exchange=\"5\" data-agent=\"" + Orders + "\" data-request=\"0\"", page, StringComparison.Ordinal);
+        Assert.Contains("data-exchange=\"1\" data-agent=\"" + Orders + "\" data-request=\"1\"", page, StringComparison.Ordinal);
+        Assert.Contains("button.getAttribute(\"data-request\") !== \"1\"", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("hasAttribute(\"data-request\")", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_request_waiting_on_the_person_can_be_answered_or_closed_where_it_was_asked()
     {
         using var console = Asked();

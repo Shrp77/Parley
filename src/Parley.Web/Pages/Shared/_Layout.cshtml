@@ -738,6 +738,12 @@
             max-width: min(56rem, 100%);
         }
 
+        /* A message continuing an exchange sits in from the one that opened it, with a rule showing what it hangs from. */
+        li.turn.in-thread { margin-left: 2.75rem; padding-left: 0.75rem; border-left: 2px solid var(--rule); max-width: min(52rem, calc(100% - 2.75rem)); }
+        .thread-of { display: block; margin: 0 0 0.4rem; overflow: hidden; font-size: 0.78rem; color: var(--ink-soft); text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+        .thread-of:hover { color: var(--ink); text-decoration: underline; }
+        .thread-focus { padding: 0; font: inherit; color: var(--accent); text-decoration: underline; cursor: pointer; background: none; border: none; }
+
         /* Initials rather than a picture, and hidden from a screen reader: it repeats the name
            written directly beside it, so announcing it twice is noise. */
         .who {

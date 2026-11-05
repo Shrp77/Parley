@@ -373,7 +373,7 @@ else
 
                 if (saved && saved.checked && saved.open) {
                     restore(saved);
-                } else if (document.querySelector(".recipients[data-new]")
+                } else if (document.querySelector('.recipients[data-new="true"]')
                     && !boxes().some(function (b) { return b.checked; })) {
                     // A conversation with no messages and nothing chosen yet: the project's default agent, from its
                     // settings page, is ticked first. Only a start; the person can untick it before sending.
@@ -659,6 +659,9 @@ else
             var note = document.getElementById("filtered");
             var chosen = {};
 
+            // One exchange's thread, when the person asked to read just that. Not remembered: it is a moment's reading.
+            var thread = [];
+
             // Sending is a full page load, which would otherwise throw the choice away at exactly the moment
             // somebody is watching for the answer. Kept for this conversation and this tab only; where storage
             // is refused the filter simply starts clear, as it did.
@@ -722,6 +725,10 @@ else
                 var from = turn.getAttribute("data-agent");
                 var to = (turn.getAttribute("data-to") || "").split(" ");
 
+                if (thread.length > 0) {
+                    return (turn.getAttribute("data-exchanges") || "").split(" ").some(function (x) { return thread.indexOf(x) >= 0; });
+                }
+
                 if (only.checked && from !== human && to.indexOf(human) < 0) { return false; }
 
                 return picked.length === 0 || picked.indexOf(from) >= 0
@@ -770,7 +777,12 @@ else
 
                 closeDay();
 
-                var active = only.checked || picked.length > 0;
+                var active = only.checked || picked.length > 0 || thread.length > 0;
+
+                // The way out is on the message being read, since the panel holding the filter may be closed.
+                document.querySelectorAll(".thread-focus").forEach(function (b) {
+                    b.textContent = thread.length > 0 ? "Show everything" : b.getAttribute("data-label");
+                });
 
                 label.textContent = picked.length === 0
                     ? "Any agent"
@@ -794,7 +806,22 @@ else
                 run();
             });
 
+            // Delegated, because the transcript is replaced as it is followed. The reader stays on the message they pressed.
+            document.addEventListener("click", function (e) {
+                var button = e.target.closest ? e.target.closest("button.thread-focus") : null;
+
+                if (!button) { return; }
+
+                var turn = button.closest("li.turn");
+
+                thread = thread.length > 0 ? [] : (button.getAttribute("data-exchanges") || "").split(" ");
+                run();
+
+                if (turn) { turn.scrollIntoView({ block: "center", behavior: "instant" }); }
+            });
+
             clear.addEventListener("click", function () {
+                thread = [];
                 only.checked = false;
                 chosen = {};
                 menu.querySelectorAll("input").forEach(function (i) { i.checked = false; });
@@ -1084,7 +1111,8 @@ else
                 said.textContent = "Replying to " + button.getAttribute("data-agent") + "'s question (exchange " + field.value + "). Your words answer it.";
                 bar.hidden = false;
                 outcome.value = "";
-                outcome.hidden = !button.hasAttribute("data-request");
+                // Only on an agent's Request. On the person's own, where an agent asked back, only that agent can send the Result.
+                outcome.hidden = button.getAttribute("data-request") !== "1";
 
                 // The reader stays on the message being answered: the composer is already on screen, unless it was hidden.
                 document.dispatchEvent(new CustomEvent("parley:compose"));

@@ -131,6 +131,22 @@ public sealed class RoomOnThePageTests
     }
 
     [Fact]
+    public async Task In_every_group_the_groups_inside_it_come_before_its_single_names()
+    {
+        using var console = Project();
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+        var start = page.IndexOf("aria-label=\"Who to talk to\"", StringComparison.Ordinal);
+        var to = page[start..page.IndexOf("</aside>", start, StringComparison.Ordinal)];
+
+        // Inside a state, "Not in it yet" before the agents that took part; under a machine, its states before the person.
+        Assert.True(to.IndexOf("/not-in-it\"", StringComparison.Ordinal) < to.IndexOf($"value=\"{Orders}\"", StringComparison.Ordinal), "an agent before the group beside it");
+        Assert.True(to.LastIndexOf("data-group=\"test/", StringComparison.Ordinal) < to.IndexOf($"value=\"{Orders}\"", StringComparison.Ordinal), "a name before a group");
+        Assert.True(to.IndexOf("data-group=\"alpha/", StringComparison.Ordinal) < 0 || to.IndexOf("data-group=\"alpha/", StringComparison.Ordinal) < to.IndexOf("value=\"human-user@alpha\"", StringComparison.Ordinal), "the person before a group");
+    }
+
+    [Fact]
     public async Task Every_heading_that_folds_shows_that_it_does()
     {
         using var console = Project();

@@ -45,12 +45,9 @@
                 </summary>
                 @if (Model.Pick)
                 {
-                    @* Under each machine, the people first and then one subgroup for each state the agents are in. *@
+                    @* Under each machine, one subgroup for each state the agents are in, and then the people. At every level the
+                       groups come first and the single rows after them, so a group never sits in the middle of a list of names. *@
                     <ul>
-                        @foreach (var person in group.Where(e => e.Name.Role == "human-user"))
-                        {
-                            @row(person)
-                        }
                         @foreach (var state in group.Where(e => e.Name.Role != "human-user").GroupBy(e => e.State).OrderBy(g => g.Key, StringComparer.Ordinal))
                         {
                             var outside = state.Where(e => !e.InIt).OrderBy(e => e.Name.Role, StringComparer.Ordinal).ToList();
@@ -64,10 +61,6 @@
                                         <span class="count">@state.Count()</span>
                                     </summary>
                                     <ul>
-                                        @foreach (var entry in state.Where(e => e.InIt).OrderBy(e => e.Name.Role, StringComparer.Ordinal))
-                                        {
-                                            @row(entry)
-                                        }
                                         @if (outside.Count > 0)
                                         {
                                             <li class="group subgroup">
@@ -87,9 +80,17 @@
                                                 </details>
                                             </li>
                                         }
+                                        @foreach (var entry in state.Where(e => e.InIt).OrderBy(e => e.Name.Role, StringComparer.Ordinal))
+                                        {
+                                            @row(entry)
+                                        }
                                     </ul>
                                 </details>
                             </li>
+                        }
+                        @foreach (var person in group.Where(e => e.Name.Role == "human-user"))
+                        {
+                            @row(person)
                         }
                     </ul>
                 }
