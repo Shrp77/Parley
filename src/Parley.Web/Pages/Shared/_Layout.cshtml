@@ -1664,8 +1664,10 @@
         .attach-note[hidden] { display: none; }
         .composer.dropping { outline: 2px dashed var(--accent); outline-offset: -4px; }
 
-        /* Keyboard focus and jumps stop short of the box rather than underneath it. */
-        html { scroll-padding-bottom: calc(var(--composer-h, 0px) + 1rem); }
+        /* Keyboard focus and jumps stop short of the box rather than underneath it. A margin on everything but the box,
+           never padding on the page: the browser keeps the caret clear of the page's padding as the person types, and the
+           box is pinned inside that padding, so every keystroke scrolled the page a line and the box never got clear. */
+        .page :not(.composer, .composer *) { scroll-margin-bottom: calc(var(--composer-h, 0px) + 1rem); }
 
         .composer-note {
             margin: 0 0 0.6rem;

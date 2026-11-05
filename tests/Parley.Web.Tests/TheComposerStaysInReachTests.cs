@@ -46,6 +46,19 @@ public sealed partial class TheComposerStaysInReachTests
     }
 
     [Fact]
+    public async Task Typing_in_the_pinned_box_does_not_scroll_a_reader_who_scrolled_up()
+    {
+        // The browser keeps the caret clear of the page's scroll padding as the person types. Padding the height of the
+        // pinned box put the box's own caret inside it, so each keystroke scrolled the page a line and the box, pinned,
+        // never got clear. Seen in Edge: 300, 404, 505, 608, 711, 814 over five keys. The room is kept as a margin on
+        // everything but the box.
+        var page = await PageAsync();
+
+        Assert.DoesNotMatch(@"scroll-padding(-bottom|-block)?\s*:\s*[^;]*composer-h", page);
+        Assert.Contains(".page :not(.composer, .composer *) { scroll-margin-bottom: calc(var(--composer-h, 0px) + 1rem); }", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_form_only_a_script_submits_draws_no_empty_card_below_it()
     {
         var page = await PageAsync();
