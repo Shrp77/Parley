@@ -88,8 +88,9 @@ const string Help = """
                                                        the terminal
 
       parley up [--node-config <path>]                 run this machine's node: report it to
-                                                       the broker and start the agents on it
-                                                       when a question arrives
+                [--keep-trying]                        the broker and start the agents on it
+                                                       when a question arrives; --keep-trying
+                                                       waits for a broker it cannot reach
 
       parley enroll <dir> [--all | --none]             find the repositories under a directory,
                     [--describe]                       tick the ones to enroll, and configure and
@@ -260,6 +261,7 @@ var hidden = TakeFlag("--hidden");
 var heartbeat = TakeFlag("--heartbeat");
 var webUiOn = TakeOption("--web-ui", null);
 var noWebUi = TakeFlag("--no-web-ui");
+var keepTrying = TakeFlag("--keep-trying");
 var withFiles = TakeFlag("--with-files");
 var shellName = TakeOption("--shell", null);
 var clearProject = TakeFlag("--clear");
@@ -411,6 +413,15 @@ if ((webUiAt is not null || noWebUi) && verb != "serve" && verb != "autostart")
         $"--web-ui and --no-web-ui are for `parley serve` and `parley autostart install`, "
         + $"which are the commands that host a console or install one. `parley {verb}` does "
         + "neither.").ConfigureAwait(false);
+
+    return Usage;
+}
+
+if (keepTrying && verb != "up")
+{
+    await Console.Error.WriteLineAsync(
+        $"--keep-trying is only for `parley up`, the node that waits for a broker. `parley {verb}` does not have it.")
+        .ConfigureAwait(false);
 
     return Usage;
 }
@@ -1158,7 +1169,17 @@ catch (InvalidOperationException ex)
     return Config;
 }
 
-using var channel = GrpcChannel.ForAddress(endpoint);
+// Pinged, as the adapter's connection is: a node waiting on a stream cannot otherwise tell a tunnel that went silent from a quiet
+// broker, and would stay "joined" to nothing for as long as the machine is up.
+using var channel = GrpcChannel.ForAddress(endpoint, new GrpcChannelOptions
+{
+    HttpHandler = new System.Net.Http.SocketsHttpHandler
+    {
+        KeepAlivePingDelay = TimeSpan.FromSeconds(60),
+        KeepAlivePingTimeout = TimeSpan.FromSeconds(30),
+        EnableMultipleHttp2Connections = true,
+    },
+});
 
 try
 {
@@ -1283,7 +1304,8 @@ async Task<int> UpAsync() =>
             Console.Out,
             project?.Name.Value,
             null,
-            token)).ConfigureAwait(false);
+            token,
+            keepTrying: keepTrying)).ConfigureAwait(false);
 
 // Runs something that would otherwise never return, and gives the terminal back on Ctrl+C.
 //

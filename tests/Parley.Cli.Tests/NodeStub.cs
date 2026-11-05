@@ -47,6 +47,7 @@ internal sealed class NodeStub : IAsyncDisposable
 
         var request = new Wire.JoinRequest
         {
+            ProtocolVersion = Parley.Core.ProtocolVersion.Current,
             Machine = MachineName.Current,
             Facts = new Wire.NodeFacts { Os = "test-os" }
         };

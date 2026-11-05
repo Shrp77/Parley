@@ -112,7 +112,7 @@ public sealed class ANodeReportsAWorkspaceGoneTests : IDisposable
         using var channel = GrpcChannel.ForAddress(broker.Address);
         var nodes = new Wire.Nodes.NodesClient(channel);
         using var join = nodes.Join(
-            new Wire.JoinRequest { Machine = NodeCatalogue.Machine, StartableRoles = { "billing" } }, cancellationToken: Ct);
+            new Wire.JoinRequest { ProtocolVersion = Parley.Core.ProtocolVersion.Current, Machine = NodeCatalogue.Machine, StartableRoles = { "billing" } }, cancellationToken: Ct);
         Assert.True(await join.ResponseStream.MoveNext(Ct), "the node was not acknowledged");
 
         var said = await StartAsync(catalogue, identity, new TurnReporter(nodes, NodeCatalogue.Machine, TextWriter.Null));

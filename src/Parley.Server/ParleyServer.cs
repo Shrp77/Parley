@@ -104,6 +104,12 @@ public sealed partial class ParleyServer : IAsyncDisposable
             // it on an unencrypted connection -- so it has to be told, rather than left to fall
             // back to HTTP/1.1 and fail every call with a protocol error that names neither
             // cause nor remedy.
+            //
+            // Pinged, so a connection that went silent is let go. A machine that died behind a tunnel otherwise stays joined for
+            // as long as nothing is written to it, and the node it restarts with is refused as a second one.
+            options.Limits.Http2.KeepAlivePingDelay = TimeSpan.FromSeconds(60);
+            options.Limits.Http2.KeepAlivePingTimeout = TimeSpan.FromSeconds(30);
+
             options.ConfigureEndpointDefaults(endpoint =>
             {
                 endpoint.Protocols = HttpProtocols.Http2;

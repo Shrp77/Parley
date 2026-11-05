@@ -1,6 +1,6 @@
 ﻿# Parley Protocol Specification
 
-**Version:** 0.12
+**Version:** 0.13
 **Status:** Unstable. Breaking changes expected before 1.0.
 **License:** Apache-2.0
 
@@ -265,6 +265,9 @@ holds it; the broker counts it connected while it is open and decrements when it
 it ends. There is no `Detach` and there must not be one — it could only ever be a second,
 optional way to say what the stream already says for certain, and the failure it invites is an
 agent that died without calling it. A node's `Join` works the same way, one level out.
+
+**`Attach` and `Join` each state a protocol version, and a different one is refused, naming both**
+(§18). A node is held to this as an adapter is, because two machines are not one build.
 
 **A notice carries counts and never words.** The broker pushes how much is waiting; the adapter
 drains to find out what it is. §13 has a peer's words reach a model wrapped as data, and the
@@ -4773,10 +4776,10 @@ decided is removed and its number is not reused, so the list has gaps.
 
 ## 18. Protocol version
 
-The protocol version is **0.12** and the storage schema version is **6**.
+The protocol version is **0.13** and the storage schema version is **6**.
 
 The version is `major.minor` and has no patch level, because a protocol change is either visible
 across the boundary or is not a protocol change at all. **While the major is zero, the minor
 carries breaking changes.** Two implementations whose minors differ do not interoperate, and
-§4.0's `Attach` refuses the pairing rather than discovering it later. The number moves only for a
+§4.0's `Attach` and `Join` each refuse the pairing rather than discovering it later. The number moves only for a
 change a second implementation could observe on the wire.
