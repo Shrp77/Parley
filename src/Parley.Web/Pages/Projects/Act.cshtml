@@ -58,7 +58,7 @@ else
             </p>
         }
 
-        <button type="submit">
+        <button type="submit" class="@(Model.Destroys ? "danger act" : null)">
             @(Model.Destroys ? "Yes, destroy it" : "Confirm")
         </button>
         <a href="/Projects/Agents?project=@Model.Project">Cancel</a>

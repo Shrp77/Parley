@@ -136,7 +136,7 @@
                                 <input type="hidden" name="archived" value="@(conversation.Archived ? "true" : "false")" />
                                 <input type="hidden" name="showArchived" value="@(Model.ShowArchived ? "true" : "false")" />
                                 <input type="hidden" name="sort" value="@Model.Sort" />
-                                <button type="submit">@(conversation.Archived ? "Bring back" : "Archive")</button>
+                                <button type="submit" class="tonal">@(conversation.Archived ? "Bring back" : "Archive")</button>
                             </form>
                             <a class="button danger" href="/Conversations/Destroy?project=@Model.Project&amp;id=@conversation.Id">Destroy…</a>
                         </div>
