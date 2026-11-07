@@ -90,6 +90,16 @@ public interface IParleyBrokerClient
     /// </remarks>
     Task<IReadOnlyList<WaitingEdge>> WaitingAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>Says which conversation an exchange is in now (§10.2 <c>locate_exchange()</c>).</summary>
+    /// <param name="exchangeId">The exchange, by number.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The conversation, or <see langword="null"/> when the store has no such exchange.</returns>
+    /// <remarks>
+    /// So a surface can open an exchange a message names (§5.6). Finds any exchange by number, whoever is on it, which is
+    /// what makes it an operator operation.
+    /// </remarks>
+    Task<string?> LocateExchangeAsync(long exchangeId, CancellationToken cancellationToken = default);
+
     /// <summary>What the size cap refused, per agent and message type.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The counts.</returns>

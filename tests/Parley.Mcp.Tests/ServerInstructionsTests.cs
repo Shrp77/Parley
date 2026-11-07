@@ -158,6 +158,15 @@ public sealed class ServerInstructionsTests : IDisposable
     }
 
     [Fact]
+    public void The_instructions_give_the_one_form_a_numbered_exchange_is_written_in()
+    {
+        // Owner, 2026-11-06: a reference opens the exchange where it is mentioned only in this form, so agents are told it.
+        var said = string.Join(' ', ParleyInstructions.Text.Split((char[])[' ', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
+
+        Assert.Contains("write exchange #351, or exchanges #349, #350 and #351", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_instructions_stay_within_a_message_of_their_own_budget()
     {
         // A standing charge against every agent's context on every session, so it is held to the

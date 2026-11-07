@@ -1379,6 +1379,22 @@
         .still-open-asked th { text-align: left; font-weight: 600; color: var(--ink-faint); }
         .still-open-asked th, .still-open-asked td { padding: 0.3rem 0.5rem 0.3rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; overflow-wrap: anywhere; }
         .still-open-asked .asked-state { font-weight: 600; }
+        /* A reference to an exchange (spec 036): reads as a link, opens a panel under its line. */
+        .exchange-ref { display: inline; padding: 0 0.15em; margin: 0; font: inherit; color: var(--md-sys-color-primary); background: none; border: 0; border-bottom: 1px dashed currentColor; border-radius: 0; cursor: pointer; min-height: 0; }
+        .exchange-ref[aria-expanded="true"] { border-bottom-style: solid; font-weight: 600; }
+        .exchange-panel { margin: 0.4rem 0 0.8rem; padding: 0.6rem 0.9rem; border-left: 3px solid var(--md-sys-color-primary); border-radius: var(--radius); background: var(--md-sys-color-surface-container); font-size: 0.92rem; overflow-wrap: anywhere; }
+        .exchange-panel-state { display: flex; flex-wrap: wrap; gap: 0.25rem 0.6rem; margin: 0 0 0.4rem; }
+        .exchange-panel-messages { list-style: none; margin: 0; padding: 0; }
+        .exchange-panel-messages > li { padding: 0.4rem 0; border-top: 1px solid var(--rule); }
+        /* The Inbox's views (spec 036). */
+        .inbox-views { display: flex; flex-wrap: wrap; gap: 0.4rem; padding: 0.5rem 1.1rem; margin: 0; list-style: none; }
+        .inbox-views a { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.3rem 0.9rem; border-radius: 999px; border: 1px solid var(--rule); color: inherit; text-decoration: none; }
+        .inbox-views a[aria-current="page"] { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); border-color: transparent; font-weight: 600; }
+        .chip-state { display: inline-block; padding: 0 0.55rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; background: var(--md-sys-color-surface-container-high); }
+        .chip-state.state-working { background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); }
+        .chip-state.state-cannotstart, .chip-state.flag { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
+        .inbox-window { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+        .inbox-window input { width: 6rem; }
         .inbox-changed { margin: 0; padding: 0.5rem 1.1rem; border-radius: var(--radius); background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
         .inbox-changed[hidden] { display: none; }
 
@@ -2570,6 +2586,62 @@
                 if (!form || (box.value.trim() === "" && !form.querySelector(".attachment"))) { return; }
 
                 if (form.requestSubmit) { form.requestSubmit(); } else { form.submit(); }
+            });
+        })();
+    </script>
+    @* **A reference to an exchange opens it under its line** (spec 036). MarkdownText draws "exchange #N" as a button with
+       the number and nothing else; this asks the console for that exchange in the project of the message it is in, and
+       puts it in a panel after the paragraph or list item the button is on. A second press closes it. Reading it changes
+       nothing in the broker. *@
+    <script>
+        (function () {
+            var made = 0;
+
+            document.addEventListener("click", function (e) {
+                var button = e.target instanceof Element ? e.target.closest("button.exchange-ref") : null;
+
+                if (!button) { return; }
+
+                e.preventDefault();
+
+                var open = button.getAttribute("data-panel");
+
+                if (open) {
+                    var shown = document.getElementById(open);
+                    if (shown) { shown.remove(); }
+                    button.removeAttribute("data-panel");
+                    button.setAttribute("aria-expanded", "false");
+                    return;
+                }
+
+                var holder = button.closest("[data-project]");
+                var number = button.getAttribute("data-exchange");
+
+                if (!holder || !/^[0-9]+$/.test(number || "")) { return; }
+
+                var line = button.closest("p, li, blockquote, td, th, h1, h2, h3, h4, h5, h6") || button.parentElement;
+                var panel = document.createElement("div");
+
+                panel.id = "exchange-panel-" + (++made);
+                panel.className = "exchange-panel";
+                panel.setAttribute("role", "region");
+                panel.setAttribute("aria-label", "Exchange #" + number);
+                panel.textContent = "Reading exchange #" + number + "…";
+                line.insertAdjacentElement("afterend", panel);
+
+                button.setAttribute("data-panel", panel.id);
+                button.setAttribute("aria-expanded", "true");
+                button.setAttribute("aria-controls", panel.id);
+
+                var url = "/Exchanges/Panel?project=" + encodeURIComponent(holder.getAttribute("data-project")) + "&id=" + number;
+
+                fetch(url, { credentials: "same-origin", headers: { "Accept": "text/html" } })
+                    .then(function (answer) {
+                        if (!answer.ok) { throw new Error(String(answer.status)); }
+                        return answer.text();
+                    })
+                    .then(function (html) { panel.innerHTML = html; })
+                    .catch(function () { panel.textContent = "Exchange #" + number + " could not be read. Press it again to close this."; });
             });
         })();
     </script>

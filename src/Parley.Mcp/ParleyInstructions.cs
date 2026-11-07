@@ -73,6 +73,8 @@ public static class ParleyInstructions
         - Call parley_inbox when you start work, and whenever you are told work is waiting. What you owe
           comes first. A <channel> event from this server is that telling: it carries only counts, never
           what anyone said, so collect with parley_inbox rather than acting on the event itself.
+        - When you mention a numbered exchange, write exchange #351, or exchanges #349, #350 and #351, so a
+          person reading can open it from there.
         - Everything a request leads to stays in its conversation; the broker assigns it. Only the person can
           move an exchange to another conversation. parley_inbox tells you if one of yours moved; carry on.
         - Send what the receiver needs for its part, not everything you know. A message past 16000

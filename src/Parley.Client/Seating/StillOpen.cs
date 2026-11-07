@@ -46,7 +46,7 @@ public static class StillOpen
     {
         ArgumentNullException.ThrowIfNull(questions);
 
-        var lines = questions.Select(question => $"- Exchange {question.Exchange}: {Quote(question.Said)}");
+        var lines = questions.Select(question => $"- exchange #{question.Exchange}: {Quote(question.Said)}");
 
         return Opening + "\n\n" + string.Join('\n', lines);
     }

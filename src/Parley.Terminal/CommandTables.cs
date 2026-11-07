@@ -34,6 +34,8 @@ internal static class CommandTables
         Listed<Health>(),
         Listed<Saying>(),
         Listed<StillOpenView>(),
+        Listed<InboxWindow>(),
+        Listed<ExchangeView>(),
     ];
 
     /// <summary>Every type with a table, in the order they are built.</summary>

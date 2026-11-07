@@ -814,6 +814,8 @@ service Operators {
   rpc Implements(Empty) returns (ImplementsReply);
   rpc ListConversations(ListConversationsRequest) returns (ListConversationsReply);
   rpc DescribeWaiting(Empty) returns (WaitingReply);
+  // Which conversation an exchange is in now, so a surface can open one a message names (section 5.6). Read only.
+  rpc LocateExchange(LocateExchangeRequest) returns (LocateExchangeReply);
 
   // Filing, not muting: delivery is unchanged and no participant is told.
   rpc Archive(ConversationRequest) returns (DidItReply);
@@ -1210,6 +1212,14 @@ message ConversationSummary {
   optional RoadmapItemRef item = 8;   // section 5.7: set when it is a reserved item conversation
   string parent = 9;                  // section 5.0: empty when it has none
   bool closed = 10;
+}
+
+message LocateExchangeRequest {
+  int64 exchange_id = 1;
+}
+
+message LocateExchangeReply {
+  string conversation_id = 1;   // empty when there is no such exchange in this store
 }
 
 message WaitingReply {

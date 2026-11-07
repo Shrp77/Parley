@@ -264,6 +264,21 @@ internal sealed partial class Shell : IKeyTable<Shell>
         new(KeyContext.Conversations, StillOpenKey, StillOpenTitle, s => s.AskWhichAreStillOpen(), s => s.Held is not null, Owing.Requesting),
         new(KeyContext.Room, StillOpenKey, StillOpenTitle, s => s.AskWhichAreStillOpen(), s => s.Held is not null, Owing.Requesting),
 
+        // **The Inbox** (spec 036): what waits on the person, what is in flight, and what closed, as the console's views.
+        // Reading needs no seat; a follow-up from it does, and says so.
+        new(KeyContext.Conversations, InboxKey, InboxTitle, s => s.OpenInbox(), s => s.Current is not null),
+        new(KeyContext.Room, InboxKey, InboxTitle, s => s.OpenInbox(), s => s.Current is not null),
+
+        // **An exchange a message names** ("exchange #351", spec 036): live only on a message that names one, and named for
+        // the exchange it opens, so the status line is how a reference is told from plain text here.
+        new(
+            KeyContext.Transcript,
+            ReferenceKey,
+            ReferenceTitle,
+            s => s.OpenReferences(),
+            s => s.ReferencesUnder.Count > 0,
+            Says: s => s.ReferenceSays),
+
         // **Confirmed roadmaps.** Enter on one opens it; named, since a key the surface takes and does not name is one
         // nobody finds.
         new(KeyContext.Plans, default, PlansRegion.OpenTitle, s => s.OpenSelectedPlan(), s => s.Plans.Selected is not null, Chord: Key.Enter),

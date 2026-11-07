@@ -88,6 +88,9 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <summary>Exchanges every export carries, as when retention has removed a conversation's messages and kept them.</summary>
     public List<Wire.ExchangeSnapshot> ExportExchanges { get; } = [];
 
+    /// <summary>What <c>DescribeFlags</c> answers; none by default.</summary>
+    public List<Wire.FlagView> Flags { get; } = [];
+
     /// <summary>Every Result the person sent, in order. Each one taken closes its exchange, as the broker does.</summary>
     public List<Wire.ResultRequest> Resulted { get; } = [];
 
@@ -362,6 +365,13 @@ public sealed class RoadmapBroker : HttpMessageHandler
                 },
                 "/parley.v1.Agents/Waiting" when Seats => new Wire.Notice(),
                 "/parley.v1.Agents/Result" when Seats => new Wire.SayReply { Ok = true, MessageId = 900 },
+                "/parley.v1.Operators/DescribeFlags" => new Wire.FlagsReply { Flags = { Flags } },
+                "/parley.v1.Operators/LocateExchange" => new Wire.LocateExchangeReply
+                {
+                    ConversationId = ExportMessages
+                        .FirstOrDefault(m => m.ExchangeId == Wire.LocateExchangeRequest.Parser.ParseFrom(payload).ExchangeId)
+                        ?.ConversationId ?? string.Empty,
+                },
                 _ => null,
             };
         }

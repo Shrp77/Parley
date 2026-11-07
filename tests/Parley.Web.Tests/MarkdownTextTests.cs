@@ -120,4 +120,25 @@ public sealed class MarkdownTextTests
 
     [Fact]
     public void Nothing_written_is_nothing_drawn() => Assert.Empty(Html(string.Empty));
+
+    [Fact]
+    public void A_reference_to_an_exchange_becomes_a_button_carrying_only_its_number()
+    {
+        var html = Html("Thanks for **the answers** on exchange #351.");
+
+        Assert.Contains(
+            "on exchange <button type=\"button\" class=\"exchange-ref\" data-exchange=\"351\" aria-expanded=\"false\" title=\"Show exchange #351 here\">#351</button>.",
+            html,
+            StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("`exchange #351`")]
+    [InlineData("```\nexchange #351\n```")]
+    [InlineData("[exchange #351](https://example.com)")]
+    [InlineData("on 351")]
+    public void A_reference_in_code_a_link_or_any_other_form_stays_as_written(string text)
+    {
+        Assert.DoesNotContain("exchange-ref", Html(text), StringComparison.Ordinal);
+    }
 }

@@ -128,6 +128,139 @@ public sealed class InboxModel(
     [BindProperty(SupportsGet = true)]
     public string? Scope { get; set; }
 
+    /// <summary>Which view to show: empty for Waiting on you, <c>flight</c> or <c>closed</c>.</summary>
+    [BindProperty(SupportsGet = true)]
+    public string? View { get; set; }
+
+    /// <summary>Which closed window: 0 for the latest, 1 for the one before it, and so on.</summary>
+    [BindProperty(SupportsGet = true)]
+    public int Older { get; set; }
+
+    /// <summary>The agent a follow-up goes to.</summary>
+    [BindProperty, FromForm]
+    public string? Agent { get; set; }
+
+    /// <summary>The conversation a follow-up goes in.</summary>
+    [BindProperty, FromForm]
+    public string? Conversation { get; set; }
+
+    /// <summary>What a follow-up says.</summary>
+    [BindProperty, FromForm]
+    public string? Words { get; set; }
+
+    /// <summary>The view being shown.</summary>
+    public InboxView Showing => View switch
+    {
+        "flight" => InboxView.InFlight,
+        "closed" => InboxView.Closed,
+        _ => InboxView.WaitingOnYou,
+    };
+
+    /// <summary>The three views in each project, or why a project could not be read.</summary>
+    public IReadOnlyList<(string Project, InboxReading? Reading, string? Problem)> Readings { get; private set; } = [];
+
+    /// <summary>How many days the Closed view covers, from this machine's settings.</summary>
+    public int ClosedDays { get; private set; } = Inbox.DefaultDays;
+
+    /// <summary>How many rows a view has across every project the filters keep.</summary>
+    /// <param name="view">The view.</param>
+    /// <returns>The count.</returns>
+    public int CountOf(InboxView view) =>
+        view == InboxView.WaitingOnYou
+            ? Projects.SelectMany(p => p.Delivered.Select(item => (p.Project, item))).Count(row => Keep(row.Project, row.item))
+            : RowsOf(view).Count;
+
+    /// <summary>The rows of In flight or Closed across every project, newest first, as the filters keep them.</summary>
+    /// <param name="view">The view.</param>
+    /// <returns>Each row with its project.</returns>
+    public IReadOnlyList<(string Project, InboxRow Row)> RowsOf(InboxView view) =>
+        [.. Readings
+            .Where(r => r.Reading is not null)
+            .SelectMany(r => r.Reading!.In(view).Select(row => (r.Project, Row: row)))
+            .Where(pair => Keep(pair.Project, pair.Row))
+            .OrderByDescending(pair => pair.Row.MovedUtc)];
+
+    /// <summary>Whether this row's follow-up was just refused, so its words go back in the box.</summary>
+    /// <param name="project">The row's project.</param>
+    /// <param name="exchange">The row's exchange.</param>
+    /// <returns>Whether to fill the box again.</returns>
+    public bool FollowUpKept(string project, long exchange) =>
+        _followUpRefused && exchange == Exchange && string.Equals(project, For, StringComparison.Ordinal);
+
+    private bool _followUpRefused;
+
+    /// <summary>Whether a row of In flight or Closed passes the filters.</summary>
+    /// <param name="project">Its project.</param>
+    /// <param name="row">The row.</param>
+    /// <returns><see langword="true"/> to draw it.</returns>
+    public bool Keep(string project, InboxRow row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+
+        if (!string.IsNullOrEmpty(Scope) && Scope != project)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(Q))
+        {
+            return true;
+        }
+
+        var needle = Q.Trim();
+        var payload = row.Last is { } last ? Payload.Read(last.PayloadJson) : null;
+
+        return row.Agent.Value.Contains(needle, StringComparison.OrdinalIgnoreCase)
+               || row.Conversation.Contains(needle, StringComparison.OrdinalIgnoreCase)
+               || (payload?.Said?.Contains(needle, StringComparison.OrdinalIgnoreCase) ?? false)
+               || (payload?.Points.Any(point => point.Text?.Contains(needle, StringComparison.OrdinalIgnoreCase) ?? false) ?? false);
+    }
+
+    /// <summary>Sends a follow-up: a new Request to a row's agent in the row's conversation (SPEC.md §5.6).</summary>
+    /// <returns>The page, saying what happened.</returns>
+    /// <remarks>
+    /// A person's line to an agent is a new Request, so the row's own exchange is never reopened or added to. Not offered to
+    /// the facilitator, which is never given work, and refused here too should a form ask for it.
+    /// </remarks>
+    public async Task<IActionResult> OnPostFollowUpAsync()
+    {
+        var hold = For is { Length: > 0 } project ? seats.Held(project) : null;
+        var settings = For is { Length: > 0 } named ? directory.Find(named) : null;
+
+        if (hold is null || settings is null)
+        {
+            return RedirectToPage("/Inbox");
+        }
+
+        if (!AgentName.TryCreate(Agent, out var agent) || Facilitation.Is(agent) || string.IsNullOrWhiteSpace(Conversation))
+        {
+            _followUpRefused = true;
+            Outcome = "A follow-up goes to one agent, in the conversation its row is in.";
+        }
+        else if (string.IsNullOrWhiteSpace(Words))
+        {
+            _followUpRefused = true;
+            Outcome = "Nothing was written, so nothing was sent.";
+        }
+        else
+        {
+            var voice = new SeatVoice(directory.AgentsFor(settings), hold.Seat);
+            var sent = await voice
+                .RequestOpeningAsync(agent, Words, Conversation, HttpContext.RequestAborted)
+                .ConfigureAwait(false);
+
+            _followUpRefused = !sent.Sent;
+            Outcome = sent.Says;
+            notices.Add(For ?? string.Empty, Conversation, "Inbox", sent.Says, sent.Sent);
+        }
+
+        Me = hold.Seat;
+
+        await LoadAsync().ConfigureAwait(false);
+
+        return Page();
+    }
+
     /// <summary>Whether a delivered message passes the filters.</summary>
     /// <param name="project">The project it was delivered in.</param>
     /// <param name="item">The message.</param>
@@ -211,7 +344,26 @@ public sealed class InboxModel(
                     .Order(StringComparer.Ordinal))
                 : "?";
 
-            return $"{project.Name.Value}:{edges}";
+            // Where each agent the person waits on stands, so a chip that changes (a turn starting or ending) is a change too
+            // (spec 036). Asked only when the person waits on somebody, which is the only time a chip is drawn.
+            var standing = string.Empty;
+
+            if (read.Value is { } graph && graph.Any(edge => edge.Waiter == me && edge.WaitedOn != me))
+            {
+                var awaited = graph.Where(edge => edge.Waiter == me).Select(edge => edge.WaitedOn).ToHashSet();
+                var registry = await BrokerDirectory.ReadAsync(async () =>
+                    await new BrokerClient(directory.ClientFor(project)).RegistryAsync(token).ConfigureAwait(false))
+                    .ConfigureAwait(false);
+
+                standing = registry.Value is { } rows
+                    ? "|" + string.Join(',', rows
+                        .Where(row => awaited.Contains(row.Name))
+                        .Select(row => $"{row.Name.Value}={InFlightStanding.From(row, [], 0).State}")
+                        .Order(StringComparer.Ordinal))
+                    : "|?";
+            }
+
+            return $"{project.Name.Value}:{edges}{standing}";
         })).ConfigureAwait(false);
 
         return string.Join(';', parts.Order(StringComparer.Ordinal));
@@ -495,6 +647,26 @@ public sealed class InboxModel(
 
         Projects = pending;
         NotDelivered = unseated;
+
+        // The three views (spec 036), read for every project whatever is shown, so each view's count is right on every page.
+        // Read only: no delivery is taken here.
+        ClosedDays = directory.ManifestPath is { Length: > 0 } root
+            ? Parley.Configuration.ParleySettings.ReadClosedDays(root)
+            : Inbox.DefaultDays;
+
+        var now = DateTimeOffset.UtcNow;
+
+        Readings = await Task.WhenAll(directory.Projects.Select(async project =>
+        {
+            var me = seats.Known(project.Name.Value)?.Name ?? PersonSeat.On(project.Name);
+            var read = await BrokerDirectory
+                .ReadAsync(async () => await Inbox
+                    .ReadAsync(new BrokerClient(directory.ClientFor(project)), me, ClosedDays, Older, now, token)
+                    .ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            return (project.Name.Value, read.Value, read.Problem);
+        })).ConfigureAwait(false);
         Asked = await StillOpen.StandingAsync(
             stillOpen.Latest(),
             name => directory.Find(name) is { } known ? new BrokerClient(directory.ClientFor(known)) : null,

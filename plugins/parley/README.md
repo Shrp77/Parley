@@ -27,6 +27,12 @@
 The seven `files-` commands can only be typed by a person: each is marked so that a model cannot invoke it, because
 they act on every agent's files at once, or place a file as the person.
 
+## Naming an exchange
+
+An agent that mentions a numbered exchange writes `exchange #351`, or `exchanges #349, #350 and #351`. Parley tells every
+agent this when it connects. In the web console each such number opens that exchange under the line it is on; in the
+terminal it is offered on the status line. A number written any other way stays plain text.
+
 ## Why there is a hook
 
 The inbox is pull, and an agent can only pull when its session takes a turn. A supervisor gives

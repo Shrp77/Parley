@@ -106,7 +106,7 @@ else
                 class="turn slot-@Palette.SlotFor(message.From)@(ghost ? " ghosted" : null)@(continues ? " in-thread" : null)">
                 <div class="who" aria-hidden="true">@Palette.BadgeFor(message.From)</div>
 
-                <div class="bubble">
+                <div class="bubble" data-project="@Model.Project">
                     @if (interrupted)
                     {
                         <a class="thread-of" href="@($"#m{threadStart.Id}")" target="_self">
@@ -188,7 +188,7 @@ else
                 class="turn working slot-@Palette.SlotFor(working.Agent)">
                 <div class="who" aria-hidden="true">@Palette.BadgeFor(working.Agent)</div>
 
-                <div class="bubble">
+                <div class="bubble" data-project="@Model.Project">
                     <p class="attribution">
                         <strong>@working.Agent.Value</strong>
                         <span class="arrow">working</span>

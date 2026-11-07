@@ -4643,6 +4643,187 @@ internal sealed partial class Shell : Window
         return Task.CompletedTask;
     }
 
+    /// <summary>The Inbox command's key, with Alt.</summary>
+    internal const char InboxKey = 'i';
+
+    /// <summary>The Inbox command's name.</summary>
+    internal const string InboxTitle = "Inbox: waiting on you, in flight and closed";
+
+    /// <summary>The key that opens the exchanges a message names, with Alt.</summary>
+    internal const char ReferenceKey = 'g';
+
+    /// <summary>The name of that command when a message names several, or none.</summary>
+    internal const string ReferenceTitle = "Open the exchanges this message names";
+
+    /// <summary>The Inbox, once opened.</summary>
+    internal InboxWindow? InboxShown { get; private set; }
+
+    /// <summary>Its session, so a test can close it as a person would.</summary>
+    internal SessionToken? InboxSession { get; private set; }
+
+    /// <summary>The exchanges last opened from a message.</summary>
+    internal ExchangeView? ExchangeShown { get; private set; }
+
+    /// <summary>Its session.</summary>
+    internal SessionToken? ExchangeSession { get; private set; }
+
+    /// <summary>The references to exchanges in the message under the transcript's cursor.</summary>
+    internal IReadOnlyList<ExchangeReference> ReferencesUnder =>
+        Transcript.Under is { } message && Transcript.MessageText(message) is { } text ? ExchangeReferences.Find(text) : [];
+
+    /// <summary>What the reference command is called on the status line now: the exchange it opens, when there is one.</summary>
+    internal string ReferenceSays =>
+        ReferencesUnder.Select(found => found.Exchange).Distinct().ToList() is [var one]
+            ? $"Open exchange #{one.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+            : ReferenceTitle;
+
+    /// <summary>Opens the Inbox for the project in view (spec 036).</summary>
+    /// <returns>When the read has been queued.</returns>
+    /// <remarks>
+    /// The console's three views from the same derivation (<see cref="Inbox"/>) and the same window, read from this machine's
+    /// settings. Needs no seat to read; a follow-up from it does, because it speaks as the person.
+    /// </remarks>
+    private Task OpenInbox()
+    {
+        if (App is not { } app || Current is not { } project)
+        {
+            return Task.CompletedTask;
+        }
+
+        Queue(async token =>
+        {
+            var me = Held?.Seat.Name ?? Seats?.Known(project.Name.Value)?.Name ?? PersonSeat.On(project.Name);
+            var days = _directory.ManifestPath is { Length: > 0 } root
+                ? Parley.Configuration.ParleySettings.ReadClosedDays(root)
+                : Inbox.DefaultDays;
+
+            var read = await BrokerDirectory.ReadAsync(async () =>
+                await Inbox.ReadAsync(new BrokerClient(_directory.ClientFor(project)), me, days, 0, DateTimeOffset.UtcNow, token)
+                    .ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            if (read.Value is not { } reading)
+            {
+                Said = $"Could not read the Inbox: {read.Problem}";
+
+                return;
+            }
+
+            var (view, session) = InboxWindow.Open(app, project.Name.Value, reading);
+
+            (InboxShown, InboxSession) = (view, session);
+
+            view.Chosen += (_, row) =>
+            {
+                Prompting.Close(app, session);
+
+                Queue(async again =>
+                {
+                    await OpenAsync(project, row.Conversation, again).ConfigureAwait(false);
+
+                    if (row.Last is { } last && Transcript.Reach(last.Id))
+                    {
+                        Focus(Panes.ToList().IndexOf(Transcript));
+                    }
+                });
+            };
+
+            view.FollowingUp += (_, row) => FollowUp(app, project, row);
+        });
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Asks for a follow-up and sends it: a new Request to the row's agent in the row's conversation.</summary>
+    /// <param name="app">The application.</param>
+    /// <param name="project">The project.</param>
+    /// <param name="row">The row.</param>
+    /// <remarks>A person's line to an agent is a new Request (SPEC.md §5.6), so the row's own exchange is never reopened.</remarks>
+    private void FollowUp(IApplication app, ProjectSettings project, InboxRow row)
+    {
+        if (Voice() is not { } voice || !row.FollowUp)
+        {
+            Said = NoSeatToFollowUp;
+
+            return;
+        }
+
+        var asking = Prompting.Text(
+            InboxWindow.FollowUpTitle,
+            $"A new request to {Safe.Text(row.Agent.Value)} in {Safe.Text(row.Conversation)}.");
+        var asked = Prompting.Open(app, asking);
+
+        asking.Done += (_, words) =>
+        {
+            Prompting.Close(app, asked);
+
+            if (string.IsNullOrWhiteSpace(words))
+            {
+                Said = "Nothing was written, so nothing was sent.";
+
+                return;
+            }
+
+            Queue(async token =>
+            {
+                var sent = await voice.RequestOpeningAsync(row.Agent, words, row.Conversation, token).ConfigureAwait(false);
+
+                Said = sent.Says;
+            });
+        };
+    }
+
+    /// <summary>Said when a follow-up is asked for with no seat to send it from.</summary>
+    private const string NoSeatToFollowUp = "A follow-up goes out as you, and you are not seated in this project.";
+
+    /// <summary>Opens the exchanges the message under the cursor names (spec 036, FR-025).</summary>
+    /// <returns>When the read has been queued.</returns>
+    private Task OpenReferences()
+    {
+        if (App is not { } app || Current is not { } project)
+        {
+            return Task.CompletedTask;
+        }
+
+        var numbers = ReferencesUnder.Select(found => found.Exchange).Distinct().ToList();
+
+        if (numbers.Count == 0)
+        {
+            Said = "This message names no exchange.";
+
+            return Task.CompletedTask;
+        }
+
+        Queue(async token =>
+        {
+            var broker = new BrokerClient(_directory.ClientFor(project));
+            var read = await BrokerDirectory.ReadAsync(async () =>
+            {
+                var details = new List<ExchangeDetail>();
+
+                foreach (var number in numbers)
+                {
+                    var conversation = await broker.LocateExchangeAsync(number, token).ConfigureAwait(false);
+
+                    details.Add(await ExchangeDetail.ReadAsync(broker, number, conversation, token).ConfigureAwait(false));
+                }
+
+                return (IReadOnlyList<ExchangeDetail>)details;
+            }).ConfigureAwait(false);
+
+            if (read.Value is not { } details)
+            {
+                Said = $"Could not read the exchanges: {read.Problem}";
+
+                return;
+            }
+
+            (ExchangeShown, ExchangeSession) = ExchangeView.Open(app, details);
+        });
+
+        return Task.CompletedTask;
+    }
+
     private Task AskEveryoneWhatTheyOwn()
     {
         if (App is not { } app || Current is not { } project)

@@ -939,6 +939,24 @@ agent is waiting on the person for, from the wait-for graph (§10.2 `waiting()`)
 collected. It is the number of questions the person would find, and it stays until each is answered
 or settled.
 
+**What a surface shows the person follows each exchange after it is answered.** Beside what waits on the
+person, a surface may show what is *in flight*: every open exchange on which the person waits on an agent, because
+the person sent a Request or handed the turn back with a reply. It may also show what *closed*: every exchange the
+person sent or received a message on that closed within a window the person chooses (seven days unless they say
+otherwise), with how it ended. Which of the three an exchange is in is read each time from the wait-for graph and the
+exchange's own state, so it is in exactly one, and none of it is stored: no surface keeps a record of what the person
+has seen, and reading any of it collects nothing. An exchange in flight may say where the agent stands, from what the
+registry and the flags report (§10.2 `registry()`, `flags()`); it says that a turn is running, never that the agent is
+working on the person's message. From any of them the person may follow up, which is a new Request to that agent in
+that conversation and never reopens the exchange; the facilitator is not followed up, since it receives nobody's work.
+
+**A message names a numbered exchange in one form**: `exchange #351`, or for several `exchanges #349, #350 and #351`
+(separated by commas, "and" or "or", in any letter case). Every agent is told the form when it connects. A surface may
+draw each such number as something the person can open, showing that exchange where it is mentioned, found by
+`locate_exchange()` (§10.2) in the message's own project. It is a convention for display only: the broker never reads a
+reference out of a message, nothing is addressed by one, and a message without the form is not refused. A number written
+any other way is plain text.
+
 **The agent is told what it could settle.** A Request from the person is delivered with the agent's
 own open questions to the person in that conversation — oldest first, at most 20, each with its
 exchange, when it was asked, and the first 160 characters of the last thing the agent said in it —
@@ -3385,6 +3403,7 @@ other could.
 | `clarifications()` | Report the clarify depth distribution of §5.2, how often a cap in force was reached, and the lowest and highest cap in force (the unbounded value while every exchange is stamped uncapped). The evidence §17 question 4 asks for. |
 | `results()` | Report what Results said (§15): item outcomes per receiver and responder, the blockers named and their kinds, which participants were relied on as sources, and how each participant's conversations ended — by consensus or by the person. Read from tables retention never touches, so it covers the whole life of the deployment. |
 | `waiting()` | Say who is waiting on whom: one edge per open exchange, naming the agent that owes the next move and the agent waiting for it. An operator operation because that is the only vantage it is visible from — inside a pair, a question nobody will answer looks exactly like one not yet answered, and telling them apart needs every open exchange at once. Derived from the open set rather than stored, so an exchange that closes is simply absent from the next read. |
+| `locate_exchange(exchange)` | Say which conversation an exchange is in now, or that the store has none by that number, so a surface can open an exchange a message names (§5.6). Read only. An operator operation because it finds any exchange by number, whoever is on it, which §10.1 withholds from a participant. |
 | `flags()` | Report the open work that needs the person (§6): Requests not collected past their uncollected threshold, exchanges whose owing participant has sent nothing past their stalled threshold, exchanges whose owing agent's last turn ended with tool calls refused for want of permission (§11.6) — at once, not after a threshold — work held by a retired agent, participants a closure poll is waiting on once nothing else is (§5.0), whose flags name a conversation and carry no exchange, and the cycles recorded at admission (§7.2). Derived when read, so work that moves is simply absent from the next read. Nothing in the protocol times out, so this is how stalled work reaches anybody. |
 | `retire(agent)` | Mark an agent `retired`, so it is no longer routed to or listed. See §14. Refused for the person seat, which is never retired (§12.3). |
 | `reinstate(agent)` | Withdraw a retirement. Registration does not, and must not, do this. |

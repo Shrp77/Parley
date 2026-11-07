@@ -257,6 +257,8 @@ public sealed class KeysTakenBeforeTheTableTests
             Dialog<Health>(KeyContext.HealthDialog),
             Dialog<Saying>(KeyContext.SayingDialog),
             Dialog<StillOpenView>(KeyContext.StillOpenDialog),
+            Dialog<InboxWindow>(KeyContext.InboxDialog),
+            Dialog<ExchangeView>(KeyContext.ExchangeDialog),
         ];
     }
 
@@ -336,6 +338,23 @@ public sealed class KeysTakenBeforeTheTableTests
             (_, var t) when t == typeof(IReadOnlyList<Parley.Client.Seating.StillOpenStanding>) => (IReadOnlyList<Parley.Client.Seating.StillOpenStanding>)
             [
                 new(new Parley.Client.Seating.StillOpenAsk("alpha", Orders, "room", [1], 2, "Running"), 0, "Waiting for its reply", "Running"),
+            ],
+
+            (_, var t) when t == typeof(Parley.Client.Seating.InboxReading) => Parley.Client.Seating.Inbox.Build(
+                AgentName.Create("human-user@alpha"),
+                [new WaitingEdge(AgentName.Create("human-user@alpha"), Orders, 1)],
+                [new ConversationExport(
+                    [new Message(1, 1, MessageType.Request, AgentName.Create("human-user@alpha"), Orders, "test", "{\"ask\":\"x\"}", "room", at, null)],
+                    [new ExchangeSnapshot(1, ExchangeState.Open, at, null)])],
+                [],
+                [],
+                7,
+                0,
+                at.AddDays(-7),
+                at),
+            (_, var t) when t == typeof(IReadOnlyList<Parley.Client.Seating.ExchangeDetail>) => (IReadOnlyList<Parley.Client.Seating.ExchangeDetail>)
+            [
+                new(1, "room", [new Message(1, 1, MessageType.Request, Orders, AgentName.Create("billing@alpha"), "test", "{\"ask\":\"x\"}", "room", at, null)], new ExchangeSnapshot(1, ExchangeState.Open, at, null), null),
             ],
 
             // A correction and a check on what is typed are the same type once compiled, so they are told apart by name.

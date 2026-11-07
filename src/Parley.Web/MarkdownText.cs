@@ -4,6 +4,7 @@ using Markdig.Renderers.Html;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
 using Microsoft.AspNetCore.Html;
+using Parley.Client.Rendering;
 
 namespace Parley.Web;
 
@@ -25,6 +26,12 @@ namespace Parley.Web;
 /// <para>
 /// <b>An image is never fetched.</b> Loading one would tell whoever holds that address when this page was read, with no
 /// act by the reader, so it becomes a link to follow by choice.
+/// </para>
+/// <para>
+/// <b>A reference to an exchange becomes a button</b> (spec 036, FR-020): <c>exchange #351</c>, in the one form
+/// <see cref="ExchangeReferences"/> reads, opens that exchange under the line it is on. Only in plain text: code and the
+/// words of a link stay as written. The button carries the number and nothing else the agent wrote, so it can do nothing
+/// but ask this console to show that exchange.
 /// </para>
 /// </remarks>
 public static class MarkdownText
@@ -57,6 +64,7 @@ public static class MarkdownText
             var document = Markdown.Parse(text, Pipeline);
 
             MakeSafe(document);
+            OpenReferences(document);
 
             using var written = new StringWriter();
             var renderer = new HtmlRenderer(written);
@@ -110,6 +118,105 @@ public static class MarkdownText
             {
                 WordsOnly(link);
             }
+        }
+    }
+
+    /// <summary>Turns each reference to an exchange in plain text into a button that opens it.</summary>
+    /// <param name="document">The parsed message, already made safe.</param>
+    /// <remarks>
+    /// Runs of plain text are joined before matching, because the parser may split one sentence into several pieces and a
+    /// reference must not be missed for falling across two. Text inside a link is left alone: its words already go
+    /// somewhere.
+    /// </remarks>
+    private static void OpenReferences(MarkdownDocument document)
+    {
+        // Each block's own top inline holds its text, and is not among its descendants, so it is taken first.
+        var containers = document.Descendants<LeafBlock>()
+            .Where(block => block.Inline is not null)
+            .SelectMany(block => new[] { (ContainerInline)block.Inline! }.Concat(block.Inline!.Descendants<ContainerInline>()))
+            .ToList();
+
+        foreach (var container in containers)
+        {
+            if (container is LinkInline || HasLinkAbove(container))
+            {
+                continue;
+            }
+
+            var run = new List<LiteralInline>();
+
+            foreach (var child in container.ToList())
+            {
+                if (child is LiteralInline literal)
+                {
+                    run.Add(literal);
+                    continue;
+                }
+
+                Open(run);
+                run = [];
+            }
+
+            Open(run);
+        }
+    }
+
+    private static bool HasLinkAbove(Inline inline)
+    {
+        for (var parent = inline.Parent; parent is not null; parent = parent.Parent)
+        {
+            if (parent is LinkInline)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static void Open(List<LiteralInline> run)
+    {
+        if (run.Count == 0)
+        {
+            return;
+        }
+
+        var text = string.Concat(run.Select(literal => literal.Content.ToString()));
+        var found = ExchangeReferences.Find(text);
+
+        if (found.Count == 0)
+        {
+            return;
+        }
+
+        var at = 0;
+        var anchor = run[^1];
+
+        foreach (var reference in found)
+        {
+            if (reference.Start > at)
+            {
+                anchor.InsertBefore(new LiteralInline(text[at..reference.Start]));
+            }
+
+            // Digits only, so nothing the agent wrote reaches the markup but the number.
+            var number = reference.Exchange.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+            anchor.InsertBefore(new HtmlInline(
+                $"<button type=\"button\" class=\"exchange-ref\" data-exchange=\"{number}\" aria-expanded=\"false\" " +
+                $"title=\"Show exchange #{number} here\">#{number}</button>"));
+
+            at = reference.Start + reference.Length;
+        }
+
+        if (at < text.Length)
+        {
+            anchor.InsertBefore(new LiteralInline(text[at..]));
+        }
+
+        foreach (var literal in run)
+        {
+            literal.Remove();
         }
     }
 

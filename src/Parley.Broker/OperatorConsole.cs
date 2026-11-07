@@ -316,6 +316,17 @@ public sealed class OperatorConsole
         return [.. open.Select(e => new WaitingEdge(e.Waiting, e.OwedBy, e.Id))];
     }
 
+    /// <summary>Says which conversation an exchange is in now (§10.2's <c>locate_exchange()</c>).</summary>
+    /// <param name="exchangeId">The exchange.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The conversation, or <see langword="null"/> when there is no such exchange.</returns>
+    /// <remarks>
+    /// So a surface can open an exchange a message names (§5.6, a reference). An operator operation because it finds any
+    /// exchange in the store by number, across pairs, which §10.1 withholds from a participant.
+    /// </remarks>
+    public async Task<string?> LocateExchangeAsync(long exchangeId, CancellationToken cancellationToken = default) =>
+        await _exchanges.GetConversationOfAsync(exchangeId, cancellationToken).ConfigureAwait(false);
+
     /// <summary>Emits every message in a conversation and the state of its exchanges (§10.2's <c>export()</c>).</summary>
     /// <param name="conversationId">The conversation.</param>
     /// <param name="cancellationToken">Cancels the read.</param>

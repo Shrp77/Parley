@@ -154,6 +154,10 @@ public sealed class SurfaceBoundaryTests
             // across the deployment, which is the disclosure §10.1 exists to prevent.
             nameof(OperatorConsole.DescribeWaitingAsync),
 
+            // Which conversation an exchange is in, found by number alone. An operator operation because it reaches any
+            // exchange in the store, whoever is on it: an agent could learn that exchanges it was never on exist and where.
+            nameof(OperatorConsole.LocateExchangeAsync),
+
             // Filing a conversation away, and how many are filed. An operator operation because
             // it is a decision about an operator's own view of a deployment, and because an agent
             // able to archive a conversation it is in would be deciding for every operator at

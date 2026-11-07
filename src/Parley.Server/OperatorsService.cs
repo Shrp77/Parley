@@ -894,6 +894,18 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     }
 
     /// <inheritdoc/>
+    public override async Task<Wire.LocateExchangeReply> LocateExchange(Wire.LocateExchangeRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var conversation = await Console(
+            (console, _, ct) => console.LocateExchangeAsync(request.ExchangeId, ct), context).ConfigureAwait(false);
+
+        return new Wire.LocateExchangeReply { ConversationId = conversation ?? string.Empty };
+    }
+
+    /// <inheritdoc/>
     public override async Task<Wire.WaitingReply> DescribeWaiting(Wire.Empty request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(context);

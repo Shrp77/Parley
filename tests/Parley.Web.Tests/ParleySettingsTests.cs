@@ -24,9 +24,22 @@ public sealed class ParleySettingsTests
 
         Assert.Contains($"parley-web-ui {WebBuild.Version}", page, StringComparison.Ordinal);
 
-        // Nothing here is sent: the choices are kept by script in this browser, and the page has no form that posts.
-        Assert.DoesNotContain("method=\"post\"", page, StringComparison.OrdinalIgnoreCase);
+        // The appearance choices are kept by script in this browser and never sent. The one form that posts is the Inbox's
+        // closed window, which the terminal reads too (spec 036).
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(page, "method=\"post\"", System.Text.RegularExpressions.RegexOptions.IgnoreCase));
+        Assert.Contains("action=\"/Settings?handler=Inbox\"", page, StringComparison.Ordinal);
         Assert.Contains("localStorage.setItem(key, value)", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_closed_window_is_offered_with_its_default_and_its_range()
+    {
+        using var console = new TranscriptConsole();
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(new Uri("/Settings", UriKind.Relative), TestContext.Current.CancellationToken);
+
+        Assert.Matches("""<input id="closed-days" name="Days" type="number"[^>]*min="1" max="365"[^>]*value="7" />""", page);
     }
 
     [Fact]

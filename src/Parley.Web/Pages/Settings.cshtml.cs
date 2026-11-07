@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Parley.Core;
 using Parley.Client;
@@ -21,6 +22,11 @@ public sealed record MachineProject(ProjectSettings Project, ProjectHealth Healt
 /// owns; it would come here only with the same setting on every surface.
 /// </para>
 /// <para>
+/// <b>The Inbox's closed window is the one setting kept for the machine</b> (spec 036): how far back the Closed view looks,
+/// in <c>&lt;root&gt;/settings.json</c>, because the terminal's Inbox reads the same number. It changes what is shown, never
+/// anything a broker holds.
+/// </para>
+/// <para>
 /// <b>What is on this machine is read, never acted on</b>: the root the console follows, each project's address and
 /// store, and the build each broker says it is, so a person can tell from one page whether an install took everywhere.
 /// </para>
@@ -37,11 +43,56 @@ public sealed class ParleySettingsModel(BrokerDirectory directory) : PageModel
     /// <summary>Each project and what its broker said.</summary>
     public IReadOnlyList<MachineProject> Projects { get; private set; } = [];
 
+    /// <summary>How many days the Inbox's Closed view covers, as this machine's settings say.</summary>
+    public int ClosedDays { get; private set; } = Parley.Configuration.ParleySettings.DefaultClosedDays;
+
+    /// <summary>The window the person asked for.</summary>
+    [BindProperty, FromForm]
+    public int? Days { get; set; }
+
+    /// <summary>What saving the window came to, when it was just saved or refused.</summary>
+    public string? InboxSaid { get; private set; }
+
+    /// <summary>Whether that was a refusal.</summary>
+    public bool InboxRefused { get; private set; }
+
+    /// <summary>Sets how far back the Inbox's Closed view looks.</summary>
+    /// <returns>The page, saying what happened.</returns>
+    public async Task<IActionResult> OnPostInboxAsync()
+    {
+        if (directory.ManifestPath is not { Length: > 0 } root)
+        {
+            InboxRefused = true;
+            InboxSaid = "This console was given its projects directly, so it has no deployment folder to keep the window in.";
+        }
+        else if (Days is not { } days)
+        {
+            InboxRefused = true;
+            InboxSaid = $"Enter a whole number of days from {Parley.Configuration.ParleySettings.FewestClosedDays} to {Parley.Configuration.ParleySettings.MostClosedDays}.";
+        }
+        else if (Parley.Configuration.ParleySettings.WriteClosedDays(root, days) is { } refused)
+        {
+            InboxRefused = true;
+            InboxSaid = refused;
+        }
+        else
+        {
+            InboxSaid = $"Saved. The Inbox's Closed view covers {days} {(days == 1 ? "day" : "days")}, here and in the terminal.";
+        }
+
+        await OnGetAsync().ConfigureAwait(false);
+
+        return Page();
+    }
+
     /// <summary>Asks every project's broker which build and protocol it is.</summary>
     /// <returns>A task that completes when every broker answered or could not.</returns>
     public async Task OnGetAsync()
     {
         Root = directory.ManifestPath;
+        ClosedDays = Root is { Length: > 0 } root
+            ? Parley.Configuration.ParleySettings.ReadClosedDays(root)
+            : Parley.Configuration.ParleySettings.DefaultClosedDays;
         ManifestProblem = directory.ManifestProblem;
 
         var asked = directory.Projects

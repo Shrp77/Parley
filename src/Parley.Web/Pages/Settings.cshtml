@@ -37,6 +37,26 @@
     </noscript>
 </section>
 
+<section aria-labelledby="inbox-heading" class="settings-section">
+    <h2 id="inbox-heading">Inbox</h2>
+
+    <p>Kept for this machine, so the terminal's Inbox uses the same window.</p>
+
+    <form method="post" asp-page-handler="Inbox" class="inbox-window">
+        <label for="closed-days">Show exchanges closed in the last</label>
+        <input id="closed-days" name="Days" type="number" inputmode="numeric" required
+               min="@Parley.Configuration.ParleySettings.FewestClosedDays" max="@Parley.Configuration.ParleySettings.MostClosedDays"
+               step="1" value="@Model.ClosedDays" />
+        <span>days, under Closed. Older ones are a click away.</span>
+        <button type="submit">Save</button>
+    </form>
+
+    @if (Model.InboxSaid is { Length: > 0 } said)
+    {
+        <p class="@(Model.InboxRefused ? "unreachable" : "composer-note")" role="status">@said</p>
+    }
+</section>
+
 <section aria-labelledby="about-heading" class="settings-section">
     <h2 id="about-heading">About this machine</h2>
 

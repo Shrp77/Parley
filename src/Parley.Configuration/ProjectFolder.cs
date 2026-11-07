@@ -348,7 +348,7 @@ public static class ProjectFolder
     /// <see cref="FileShare.Delete"/>. Neither half works alone.
     /// </para>
     /// </remarks>
-    private static void Commit(string path, JsonObject document)
+    internal static void Commit(string path, JsonObject document)
     {
         var existed = File.Exists(path);
         var mark = existed && HasByteOrderMark(path);

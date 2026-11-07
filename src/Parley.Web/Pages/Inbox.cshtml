@@ -45,7 +45,7 @@
     @{
         // The same view, as the page's own reload: the filters kept, and marked so it is not counted as somebody here.
         var reloadQuery = Microsoft.AspNetCore.Http.QueryString.Create(
-            new[] { ("q", Model.Q), ("scope", Model.Scope) }
+            new[] { ("q", Model.Q), ("scope", Model.Scope), ("view", Model.View), ("older", Model.Older > 0 ? Model.Older.ToString(System.Globalization.CultureInfo.InvariantCulture) : null) }
                 .Where(pair => !string.IsNullOrEmpty(pair.Item2))
                 .Select(pair => new KeyValuePair<string, string?>(pair.Item1, pair.Item2))
                 .Append(new KeyValuePair<string, string?>(Parley.Web.Seating.PersonSeats.Reloaded, "1")));
@@ -68,7 +68,7 @@
             function busy() {
                 var focused = document.activeElement;
                 if (focused && focused.matches("input, textarea, select")) { return true; }
-                if (document.querySelector("dialog[open], details[open]")) { return true; }
+                if (document.querySelector("dialog[open], details[open], .exchange-panel")) { return true; }
                 return Array.prototype.some.call(document.querySelectorAll("main textarea"), function (box) { return box.value.trim() !== ""; });
             }
 
@@ -198,10 +198,52 @@
                 }
             </select>
         </div>
+        @if (Model.View is { Length: > 0 } keptView)
+        {
+            <input type="hidden" name="view" value="@keptView" />
+        }
         <button type="submit">Filter</button>
-        <a class="button quiet" href="/Inbox">Clear</a>
-        <span class="tally">@shown.Count of @everything.Count</span>
+        <a class="button quiet" href="/Inbox@(Model.View is { Length: > 0 } v ? $"?view={v}" : string.Empty)">Clear</a>
+        @if (Model.Showing == Parley.Client.Seating.InboxView.WaitingOnYou)
+        {
+            <span class="tally">@shown.Count of @everything.Count</span>
+        }
     </form>
+
+    @{
+        // The three views (spec 036), each a page of its own so it works with no script; the filters go with them.
+        string ViewUrl(string? view)
+        {
+            var query = Microsoft.AspNetCore.Http.QueryString.Create(
+                new[] { ("view", view), ("q", Model.Q), ("scope", Model.Scope) }
+                    .Where(pair => !string.IsNullOrEmpty(pair.Item2))
+                    .Select(pair => new KeyValuePair<string, string?>(pair.Item1, pair.Item2)));
+
+            return "/Inbox" + query;
+        }
+    }
+    <nav aria-label="Inbox views">
+        <ul class="inbox-views">
+            <li><a href="@ViewUrl(null)" aria-current="@(Model.Showing == Parley.Client.Seating.InboxView.WaitingOnYou ? "page" : null)">Waiting on you <span class="count">@Model.CountOf(Parley.Client.Seating.InboxView.WaitingOnYou)</span></a></li>
+            <li><a href="@ViewUrl("flight")" aria-current="@(Model.Showing == Parley.Client.Seating.InboxView.InFlight ? "page" : null)">In flight <span class="count">@Model.CountOf(Parley.Client.Seating.InboxView.InFlight)</span></a></li>
+            <li><a href="@ViewUrl("closed")" aria-current="@(Model.Showing == Parley.Client.Seating.InboxView.Closed ? "page" : null)">Closed <span class="count">@(Model.Older == 0 ? Model.CountOf(Parley.Client.Seating.InboxView.Closed).ToString(System.Globalization.CultureInfo.InvariantCulture) : "")</span></a></li>
+        </ul>
+    </nav>
+
+    @foreach (var (project, _, problem) in Model.Readings.Where(r => r.Problem is { Length: > 0 }))
+    {
+        @if (Model.Showing != Parley.Client.Seating.InboxView.WaitingOnYou)
+        {
+            <p class="unreachable" role="alert"><strong>@project</strong>: could not be read, so its exchanges are not listed. @problem</p>
+        }
+    }
+
+    @if (Model.Showing != Parley.Client.Seating.InboxView.WaitingOnYou)
+    {
+        <partial name="_InboxRows" model="Model" />
+    }
+    else
+    {
 
     @* What is waiting on the person is read from the broker, so it survives a restart of this console and is never what the
        console happened to show. Delivery is recorded as the page is drawn. A project whose broker did not answer says so. *@
@@ -248,7 +290,7 @@
                     </summary>
 
                     <div class="dgrid-detail">
-                        <article class="letter@(item.Owes ? " owed" : null)">
+                        <article class="letter@(item.Owes ? " owed" : null)" data-project="@projectName">
                             <p class="attribution">
                                 @* The name is the attested half and this is not: §11.3 constrains only the `parley:` prefix, so an
                                    agent may report any responder it likes. Shown because §11.3 exists so a reader can calibrate on
@@ -375,4 +417,5 @@
             }
         </div>
     </section>
+    }
 </div>

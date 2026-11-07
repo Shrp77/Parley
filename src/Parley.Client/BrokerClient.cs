@@ -219,6 +219,15 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     }
 
     /// <inheritdoc/>
+    public async Task<string?> LocateExchangeAsync(long exchangeId, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.LocateExchangeAsync(
+            new Wire.LocateExchangeRequest { ExchangeId = exchangeId }, cancellationToken: cancellationToken);
+
+        return reply.ConversationId is { Length: > 0 } conversation ? conversation : null;
+    }
+
+    /// <inheritdoc/>
     public async Task<IReadOnlyList<WaitingEdge>> WaitingAsync(CancellationToken cancellationToken = default)
     {
         var reply = await _operators.DescribeWaitingAsync(new Wire.Empty(), cancellationToken: cancellationToken);
