@@ -65,6 +65,9 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
 
     private readonly Seat _seat = seat ?? throw new ArgumentNullException(nameof(seat));
 
+    /// <summary>The name this voice speaks under.</summary>
+    public AgentName Name => _seat.Name;
+
     /// <summary>Sends one participant a Request: the ask, and the conversation it belongs to.</summary>
     /// <param name="to">Who is being asked.</param>
     /// <param name="ask">What is wanted, in the person's own words (§5.1).</param>
@@ -82,11 +85,31 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         AgentName to,
         string? ask,
         string? conversationId,
+        CancellationToken cancellationToken = default) =>
+        (await RequestOpeningAsync(to, ask, conversationId, cancellationToken).ConfigureAwait(false)).Says;
+
+    /// <summary>Sends one participant a Request, and says which exchange it opened.</summary>
+    /// <param name="to">Who is being asked.</param>
+    /// <param name="ask">What is wanted, in the person's own words (§5.1).</param>
+    /// <param name="conversationId">The conversation it belongs to, or <see langword="null"/> for a new one.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>
+    /// The sentence <see cref="RequestAsync"/> returns, the exchange it opened (none when it was not sent), and how the
+    /// receiver was reached, in a few words for a list.
+    /// </returns>
+    /// <remarks>
+    /// For a surface that follows the Request afterwards, as the Inbox follows what it asked about which questions are still
+    /// open: the sentence alone would have it read the exchange back out of words.
+    /// </remarks>
+    public async Task<RequestOpened> RequestOpeningAsync(
+        AgentName to,
+        string? ask,
+        string? conversationId,
         CancellationToken cancellationToken = default)
     {
         if (Unsendable(ask, conversationId) is { } wrong)
         {
-            return wrong;
+            return new RequestOpened(wrong, null, null);
         }
 
         var payload = Framed(ask!);
@@ -94,7 +117,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         if (TooLong(payload) is { } refused)
         {
             await RecordAsync(Wire.MessageType.Request, payload.Length, cancellationToken).ConfigureAwait(false);
-            return refused;
+            return new RequestOpened(refused, null, null);
         }
 
         try
@@ -105,15 +128,32 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
             var outcome = reply.Outcomes.Single();
 
             return outcome.Ok
-                ? $"Sent. Exchange {outcome.ExchangeId} is open in conversation {outcome.ConversationId}, and " +
-                  $"{to.Value} owes a Result. " + Waking(outcome.Wake, to)
-                : Refusal(outcome, to);
+                ? new RequestOpened(
+                    $"Sent. Exchange {outcome.ExchangeId} is open in conversation {outcome.ConversationId}, and " +
+                    $"{to.Value} owes a Result. " + Waking(outcome.Wake, to),
+                    outcome.ExchangeId,
+                    Reached(outcome.Wake))
+                : new RequestOpened(Refusal(outcome, to), null, null);
         }
         catch (RpcException failure)
         {
-            return Failed(failure);
+            return new RequestOpened(Failed(failure), null, null);
         }
     }
+
+    /// <summary>How a Request's receiver was reached, in a few words for a list.</summary>
+    /// <param name="wake">What the broker did.</param>
+    /// <returns>The words.</returns>
+    internal static string Reached(Wire.WakeOutcome wake) => wake switch
+    {
+        Wire.WakeOutcome.Started => "Being started",
+        Wire.WakeOutcome.AlreadyRunning => "Running",
+        Wire.WakeOutcome.AlreadyComing => "Already being started",
+        Wire.WakeOutcome.Unreachable => "Cannot be started now; reads it when it next runs",
+        Wire.WakeOutcome.OpenOutside => "Open outside Parley; reads it when prompted there",
+        Wire.WakeOutcome.WithThePerson => "With the person",
+        _ => "Not reported",
+    };
 
     /// <summary>Sends every participant given the same Request, each as its own exchange.</summary>
     /// <param name="hold">The seat to send under, re-read before every send.</param>

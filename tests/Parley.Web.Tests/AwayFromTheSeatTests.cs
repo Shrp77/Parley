@@ -92,7 +92,7 @@ public sealed class AwayFromTheSeatTests
         // The Projects and Agents pages are drawn before any broker is asked, so the frame leaves the badge empty and the
         // page asks for it afterwards.
         using var console = new WaitingConsole();
-        console.Broker.Messages = 3;
+        console.Broker.Owed = 3;
 
         using var client = Seated(console);
         var page = await client.GetStringAsync(new Uri("/", UriKind.Relative), TestContext.Current.CancellationToken);
@@ -124,7 +124,7 @@ public sealed class AwayFromTheSeatTests
         // On every page rather than only the inbox: somebody who has been away lands wherever they left off, and
         // a count they have to go looking for is one that did not tell them anything.
         using var console = new WaitingConsole();
-        console.Broker.Messages = 3;
+        console.Broker.Owed = 3;
 
         using var client = Seated(console);
         var page = await client.GetStringAsync(new Uri("/Projects/Agents?project=alpha", UriKind.Relative), TestContext.Current.CancellationToken);
@@ -133,6 +133,27 @@ public sealed class AwayFromTheSeatTests
 
         Assert.Contains("3", chip[..300], StringComparison.Ordinal);
         Assert.Contains("seat-waiting", chip[..300], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_frame_counts_what_waits_on_the_person_not_what_is_undelivered()
+    {
+        // The owner's report, 2026-11-06: the count said 4 and the Inbox it leads to listed 10. Four were new mail; ten were
+        // questions waiting on the person, six of them already seen. The count is the questions, and it does not drop
+        // when the Inbox is opened, because opening it answers nothing.
+        using var console = new WaitingConsole();
+        console.Broker.Messages = 4;
+        console.Broker.Owed = 10;
+
+        using var client = Seated(console);
+        var page = await client.GetStringAsync(new Uri("/Projects/Agents?project=alpha", UriKind.Relative), TestContext.Current.CancellationToken);
+        var said = await client.GetStringAsync(new Uri("/?handler=Presence", UriKind.Relative), TestContext.Current.CancellationToken);
+
+        var chip = page[page.IndexOf("<a class=\"seat-who\"", StringComparison.Ordinal)..][..300];
+
+        Assert.Contains("<span class=\"seat-waiting\">10<", chip, StringComparison.Ordinal);
+        Assert.Contains("\"waiting\":10", said, StringComparison.Ordinal);
+        Assert.True(console.Broker.AskedOwed > 0, "the wait-for graph was never asked");
     }
 
     [Fact]

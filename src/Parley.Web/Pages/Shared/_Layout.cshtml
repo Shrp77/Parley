@@ -1369,6 +1369,18 @@
 
         .view-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; padding: 0.7rem 1.1rem; margin: 0; }
         .view-filters .tally { margin-left: auto; align-self: center; font-size: 0.85rem; color: var(--ink-faint); }
+        .still-open { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; padding: 0.7rem 1.1rem; margin: 0; }
+        .still-open > p { flex: 1 1 24rem; margin: 0; }
+        .still-open > details { flex: 1 1 100%; order: 3; }
+        .still-open > details summary { cursor: pointer; }
+        .still-open-asked { padding: 0.7rem 1.1rem; max-height: 14rem; overflow: auto; }
+        .still-open-asked h2 { margin: 0 0 0.4rem; font: var(--md-sys-typescale-title-small); }
+        .still-open-asked table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .still-open-asked th { text-align: left; font-weight: 600; color: var(--ink-faint); }
+        .still-open-asked th, .still-open-asked td { padding: 0.3rem 0.5rem 0.3rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; overflow-wrap: anywhere; }
+        .still-open-asked .asked-state { font-weight: 600; }
+        .inbox-changed { margin: 0; padding: 0.5rem 1.1rem; border-radius: var(--radius); background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+        .inbox-changed[hidden] { display: none; }
 
         .view .field { display: flex; flex-direction: column; gap: 0.2rem; flex: 1 1 11rem; min-width: 0; }
         .view .field.wide { flex-grow: 3; }
@@ -2527,6 +2539,38 @@
             });
 
             sync();
+        })();
+    </script>
+    @* **The keys of every box a person writes a message in** (ComposerBox), here once so no page has its own. Enter sends;
+       Shift+Enter, Ctrl+Enter, or a backslash then Enter make a line break, as in the terminal. Left alone while an input
+       method is composing, where Enter confirms the text and is not the person's send, and when something nearer the box
+       took the key first (the @@name completion list). An empty box sends nothing unless files are attached. *@
+    <script>
+        (function () {
+            function lineBreak(box, from, to) {
+                box.setRangeText("\n", from, to, "end");
+                box.dispatchEvent(new Event("input", { bubbles: true }));
+            }
+
+            document.addEventListener("keydown", function (e) {
+                var box = e.target;
+
+                if (!(box instanceof HTMLTextAreaElement) || !box.hasAttribute("data-composer")) { return; }
+                if (e.key !== "Enter" || e.isComposing || e.altKey || e.metaKey || e.shiftKey || e.defaultPrevented) { return; }
+
+                e.preventDefault();
+
+                var at = box.selectionStart;
+
+                if (e.ctrlKey) { lineBreak(box, at, box.selectionEnd); return; }
+                if (at === box.selectionEnd && at > 0 && box.value.charAt(at - 1) === "\\") { lineBreak(box, at - 1, at); return; }
+
+                var form = box.form;
+
+                if (!form || (box.value.trim() === "" && !form.querySelector(".attachment"))) { return; }
+
+                if (form.requestSubmit) { form.requestSubmit(); } else { form.submit(); }
+            });
         })();
     </script>
     @await RenderSectionAsync("Scripts", required: false)

@@ -256,6 +256,7 @@ public sealed class KeysTakenBeforeTheTableTests
             Dialog<LogView>(KeyContext.LogDialog),
             Dialog<Health>(KeyContext.HealthDialog),
             Dialog<Saying>(KeyContext.SayingDialog),
+            Dialog<StillOpenView>(KeyContext.StillOpenDialog),
         ];
     }
 
@@ -332,6 +333,10 @@ public sealed class KeysTakenBeforeTheTableTests
             (_, var t) when t == typeof(IReadOnlyList<Tickable>) => (IReadOnlyList<Tickable>)[new Tickable("orders", string.Empty, false)],
             (_, var t) when t == typeof(IReadOnlyList<string>) => (IReadOnlyList<string>)["Work that needs you", "  Nothing is flagged."],
             (_, var t) when t == typeof(IReadOnlyList<FormField>) => (IReadOnlyList<FormField>)[new FormField("Short:"), new FormField("Long:", Long: true)],
+            (_, var t) when t == typeof(IReadOnlyList<Parley.Client.Seating.StillOpenStanding>) => (IReadOnlyList<Parley.Client.Seating.StillOpenStanding>)
+            [
+                new(new Parley.Client.Seating.StillOpenAsk("alpha", Orders, "room", [1], 2, "Running"), 0, "Waiting for its reply", "Running"),
+            ],
 
             // A correction and a check on what is typed are the same type once compiled, so they are told apart by name.
             ("correct", var t) when t == typeof(Func<string, string>) => (Func<string, string>)(text => text),

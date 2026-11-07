@@ -54,8 +54,9 @@ else if (Model.Proposal is { } proposal)
 
     <form method="post">
         <p>
-            <label for="text">The proposal as text. Change it if it is wrong; one line per item, in order.</label><br />
-            <textarea id="text" name="Text" rows="@Math.Clamp(proposal.Content.Items.Count + 2, 6, 24)" cols="90" required>@Model.Text</textarea>
+            <partial name="_Composer" model="@(new Parley.Web.ComposerBox(
+                "Text", Model.Text, Id: "text", Rows: Math.Clamp(proposal.Content.Items.Count + 2, 6, 24),
+                Label: "The proposal as text. Change it if it is wrong; one line per item, in order."))" />
         </p>
 
         <p class="composer-note">

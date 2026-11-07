@@ -42,6 +42,115 @@
         <p class="as-of" role="status">@said</p>
     }
 
+    @{
+        // The same view, as the page's own reload: the filters kept, and marked so it is not counted as somebody here.
+        var reloadQuery = Microsoft.AspNetCore.Http.QueryString.Create(
+            new[] { ("q", Model.Q), ("scope", Model.Scope) }
+                .Where(pair => !string.IsNullOrEmpty(pair.Item2))
+                .Select(pair => new KeyValuePair<string, string?>(pair.Item1, pair.Item2))
+                .Append(new KeyValuePair<string, string?>(Parley.Web.Seating.PersonSeats.Reloaded, "1")));
+        var reloadUrl = "/Inbox" + reloadQuery;
+    }
+    @* **Following what changes** (owner's report, 2026-11-06). The page asks every five seconds whether what waits on or for
+       the person moved, and reloads when it did; while somebody is writing here, or has a message opened, a reload would
+       lose that, so the page says something changed and waits. The ask collects nothing. Without script, the link is
+       how to see it. *@
+    <p class="inbox-changed" role="status" id="inbox-changed" hidden
+       data-digest="@Model.Digest" data-ask="/Inbox?handler=Digest" data-url="@reloadUrl">
+        Something changed. <a href="@reloadUrl">Show it</a>
+    </p>
+    <script>
+        (function () {
+            var note = document.getElementById("inbox-changed");
+            var seen = note.getAttribute("data-digest");
+            var asking = false;
+
+            function busy() {
+                var focused = document.activeElement;
+                if (focused && focused.matches("input, textarea, select")) { return true; }
+                if (document.querySelector("dialog[open], details[open]")) { return true; }
+                return Array.prototype.some.call(document.querySelectorAll("main textarea"), function (box) { return box.value.trim() !== ""; });
+            }
+
+            function ask() {
+                if (asking || document.hidden) { return; }
+                asking = true;
+                fetch(note.getAttribute("data-ask"), { headers: { "Accept": "application/json" }, cache: "no-store" })
+                    .then(function (reply) { return reply.ok ? reply.json() : null; })
+                    .then(function (said) {
+                        if (!said || said.digest === seen) { return; }
+                        if (busy()) { note.hidden = false; } else { location.replace(note.getAttribute("data-url")); }
+                    })
+                    .catch(function () { })
+                    .then(function () { asking = false; });
+            }
+
+            setInterval(ask, 5000);
+            document.addEventListener("visibilitychange", ask);
+        })();
+    </script>
+
+    @if (everything.Count > 0)
+    {
+        @* **Asking, never closing** (SPEC.md §5.6). The words go out under the person's name, so they are shown before the
+           press. Each agent closes the questions already answered when it replies; this page closes nothing. *@
+        <form method="post" asp-page-handler="StillOpen" class="view-card still-open" aria-label="Ask which are still open">
+            <p>
+                Some of these may have been answered somewhere else. Ask each agent which of its questions are still open:
+                each one gets a request from you in every conversation it has questions in, and closes the ones already
+                answered when it replies.
+            </p>
+            <details>
+                <summary>What each agent is sent</summary>
+                <blockquote>@Parley.Client.Seating.StillOpen.Opening</blockquote>
+                <p class="composer-note">Then each of its questions in that conversation, by exchange number, with the first
+                    @Parley.Client.Seating.StillOpen.Quoted characters of what it asked.</p>
+            </details>
+            <button type="submit">Ask which are still open</button>
+        </form>
+    }
+
+    @if (Model.Asked.Count > 0)
+    {
+        @* **Where each answer stands, read again on every load** (SPEC.md §5.6): the Request's exchange says whether the agent
+           replied, and each question's says whether it is still open. Only the latest press is listed. *@
+        <section class="view-card still-open-asked" aria-label="Agents asked which questions are still open">
+            <h2>Asked which are still open</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th scope="col">Agent</th>
+                        <th scope="col">Project</th>
+                        <th scope="col">Conversation</th>
+                        <th scope="col">Closed</th>
+                        <th scope="col">State</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in Model.Asked)
+                    {
+                        <tr>
+                            <td><strong title="@row.Ask.Agent.Value">@row.Ask.Agent.Role</strong> <span class="faint">@@@row.Ask.Agent.Machine</span></td>
+                            <td>@row.Ask.Project</td>
+                            <td>
+                                @if (row.Ask.Exchange is { } opened)
+                                {
+                                    <a href="/Conversations/Detail?project=@Uri.EscapeDataString(row.Ask.Project)&amp;id=@Uri.EscapeDataString(row.Ask.Conversation)">@row.Ask.Conversation</a>
+                                }
+                                else
+                                {
+                                    @row.Ask.Conversation
+                                }
+                            </td>
+                            <td>@row.Closed of @row.Ask.Questions.Count</td>
+                            <td><span class="asked-state">@row.State</span> <span class="faint">@row.Detail</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+
     <details class="view-card view-create">
         <summary>Start a conversation</summary>
         @* **Starting one belongs beside the messages that come out of them.** Naming a conversation is what creates it, and
@@ -153,32 +262,7 @@
                                 }
                             </p>
 
-                            @if (payload.Said is { Length: > 0 })
-                            {
-                                <p class="said">@payload.Said</p>
-                            }
-
-                            @if (payload.Points.Count > 0)
-                            {
-                                <ol class="points">
-                                    @foreach (var point in payload.Points)
-                                    {
-                                        <li>
-                                            <span class="label">@point.Id</span>
-                                            <span class="point-text">@point.Text</span>
-                                            @if (point.Outcome is { Length: > 0 } verdict)
-                                            {
-                                                <span class="verdict">@(point.Blocker is { } blocker ? $"{verdict}: {blocker.Replace('_', ' ')}" : verdict)</span>
-                                            }
-                                        </li>
-                                    }
-                                </ol>
-                            }
-
-                            @if (payload.Raw is { Length: > 0 } raw)
-                            {
-                                <pre><code>@raw</code></pre>
-                            }
+                            <partial name="_MessageBody" model="payload" />
 
                             @if (item.OwesResult && owed.Count > 0)
                             {
@@ -192,10 +276,17 @@
                                     @foreach (var id in owed)
                                     {
                                         <input type="hidden" name="Ids" value="@id" />
-                                        <label for="t-@item.Message.ExchangeId-@id">@id — what was done, the answer, or what blocks it</label>
-                                        <textarea id="t-@item.Message.ExchangeId-@id" name="Texts" rows="2"
-                                                  required>@Model.KeptText(item.Message.ExchangeId, id)</textarea>
-                                        <select name="Verdicts" aria-label="Outcome for @id">
+                                        <partial name="_Composer" model="@(new Parley.Web.ComposerBox(
+                                            "Texts",
+                                            Model.KeptText(item.Message.ExchangeId, id),
+                                            Id: $"t-{item.Message.ExchangeId}-{id}",
+                                            Rows: 2,
+                                            Label: $"{id} — what was done, the answer, or what blocks it",
+                                            ShowKeys: false))" />
+                                        @* Labelled on screen, not only for a screen reader: an unlabelled "Done" read as a
+                                           button or a state, not as the outcome the agent is told. *@
+                                        <label for="v-@item.Message.ExchangeId-@id">Outcome for @id</label>
+                                        <select name="Verdicts" id="v-@item.Message.ExchangeId-@id">
                                             @foreach (var (value, says) in SeatVoice.Outcomes)
                                             {
                                                 <option value="@value" selected="@(Model.KeptVerdict(item.Message.ExchangeId, id) == value)">@says</option>
@@ -205,7 +296,7 @@
 
                                     <p class="composer-note">
                                         Blocked is for a concrete blocker: something missing, a conflict, or a
-                                        permission you do not have. Name who can resolve it.
+                                        permission you do not have. Name who can resolve it. @ComposerBox.Keys
                                     </p>
 
                                     <button type="submit">Send result and close</button>
@@ -219,8 +310,12 @@
                                 <form method="post" asp-page-handler="Clarify" class="reply">
                                     <input type="hidden" name="For" value="@projectName" />
                                     <input type="hidden" name="Exchange" value="@item.Message.ExchangeId" />
-                                    <label for="c-@item.Message.ExchangeId">@(item.OwesReply ? "Your reply" : "Or ask them to clarify")</label>
-                                    <textarea id="c-@item.Message.ExchangeId" name="Clarification" rows="2" required>@(Model.Kept(item.Message.ExchangeId) ? Model.Clarification : null)</textarea>
+                                    <partial name="_Composer" model="@(new Parley.Web.ComposerBox(
+                                        "Clarification",
+                                        Model.Kept(item.Message.ExchangeId) ? Model.Clarification : null,
+                                        Id: $"c-{item.Message.ExchangeId}",
+                                        Rows: 2,
+                                        Label: item.OwesReply ? "Your reply" : "Or ask them to clarify"))" />
                                     <button type="submit">@(item.OwesReply ? "Reply" : "Ask")</button>
                                 </form>
                                 @* For a question gone stale or answered elsewhere. Nothing is said on the person's behalf: the

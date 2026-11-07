@@ -1796,9 +1796,10 @@ internal sealed partial class Shell : Window
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>When it has been taken, or there was nothing to take.</returns>
     /// <remarks>
-    /// Quiet, always: the count leaving the status line says it, and a message line sentence on every conversation opened
-    /// is noise that costs the status line its actions. A broker that cannot be reached is left to the other reads to say, for the reason a failed follow keeps
-    /// the transcript and says so once: this is not what the person asked for.
+    /// Quiet, always: a message line sentence on every conversation opened is noise that costs the status line its actions.
+    /// Collecting does not change the count, which is what waits on the person's answer, not what was collected. A broker
+    /// that cannot be reached is left to the other reads to say, for the reason a failed follow keeps the transcript and
+    /// says so once: this is not what the person asked for.
     /// </remarks>
     private async Task CollectOnArrivalAsync(CancellationToken cancellationToken)
     {
@@ -1809,15 +1810,7 @@ internal sealed partial class Shell : Window
 
         try
         {
-            var (taken, polls) = await voice.TakeDeliveryAsync(hold, cancellationToken).ConfigureAwait(false);
-
-            if (taken.Count > 0 || polls > 0)
-            {
-                // Not said on the message line. The count leaving the status line is the feedback, and a sentence there
-                // pushes the actions off a narrow status line until somebody clears it.
-                Mail = (0, true);
-                Relay();
-            }
+            await voice.TakeDeliveryAsync(hold, cancellationToken).ConfigureAwait(false);
         }
         catch (Grpc.Core.RpcException)
         {
@@ -3746,24 +3739,19 @@ internal sealed partial class Shell : Window
     {
         try
         {
-            // **Through `Voice()` rather than built here**, which `ClientSeparationTests` insists on: the agents
-            // client is the one that can speak as a person, and every path to it goes through the seat the book
-            // granted.
-            if (Voice() is { } voice)
+            // **What waits on the person's answer, never the mail not yet collected** (owner, 2026-11-06, the console's
+            // count and the terminal's alike): `WaitingOnThePerson`, the one filter every surface counts with. It stays until each
+            // question is answered or settled. Asked of the operator service, which collects nothing and opens no
+            // attachment, so it works the same while the person is away and does not make them present.
+            if (Seats is not null && Current is { } project)
             {
+                var me = Held?.Seat.Name ?? Seats.Known(project.Name.Value)?.Name ?? PersonSeat.On(project.Name);
                 var read = await BrokerDirectory.ReadAsync(async () =>
-                    await voice.WaitingAsync(cancellationToken).ConfigureAwait(false))
+                    await WaitingOnThePerson.CountAsync(new BrokerClient(_directory.ClientFor(project)), me, cancellationToken)
+                        .ConfigureAwait(false))
                     .ConfigureAwait(false);
 
-                Mail = read.Problem is null ? (read.Value.Messages, true) : (0, false);
-            }
-            else if (Seats is not null && Current is { } project)
-            {
-                // Away: no stream, and the seat is still the broker's, so its mail is counted without one — the count
-                // opens no attachment and so does not make the person present (`SeatBook.WaitingAsync`).
-                var (waiting, certain) = await Seats.WaitingAsync([project], cancellationToken).ConfigureAwait(false);
-
-                Mail = (waiting, certain);
+                Mail = read.Problem is null ? (read.Value, true) : (0, false);
             }
             else
             {
@@ -4588,6 +4576,73 @@ internal sealed partial class Shell : Window
     /// asking them would spend a turn on a question that cannot apply. Retired agents go too: §10.2's
     /// retire stops them being routed to at all, so what they own is no longer a question anybody acts on.
     /// </remarks>
+    /// <summary>The key that asks which of the person's questions are still open.</summary>
+    internal const char StillOpenKey = 'o';
+
+    /// <summary>What the command that asks which questions are still open is called.</summary>
+    internal const string StillOpenTitle = "Ask which questions are still open";
+
+    /// <summary>What this terminal last asked about which questions are still open, per project.</summary>
+    private readonly StillOpenAsks _stillOpen = new();
+
+    /// <summary>The list of agents asked, once it has been opened.</summary>
+    internal StillOpenView? StillOpenShown { get; private set; }
+
+    /// <summary>The list's session, so a test can close it as Escape does on a running loop.</summary>
+    internal SessionToken? StillOpenSession { get; private set; }
+
+    /// <summary>Asks each agent with questions waiting on the person in this project whether they are still open.</summary>
+    /// <returns>When the round has been queued.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The console's round, run here</b> (<see cref="StillOpen.AskAsync"/>, owner 2026-11-06): one Request from the person
+    /// to each agent in each conversation it has questions in, never twice to an agent still to reply, and the agent closes
+    /// what was answered. Then the agents asked are listed with where each stands, read from their conversations; pressing
+    /// it again reads them again.
+    /// </para>
+    /// <para>
+    /// Needs the seat, because the Requests go out as the person.
+    /// </para>
+    /// </remarks>
+    private Task AskWhichAreStillOpen()
+    {
+        if (App is not { } app || Current is not { } project || Voice() is not { } voice)
+        {
+            return Task.CompletedTask;
+        }
+
+        Queue(async token =>
+        {
+            var name = project.Name.Value;
+            var read = await BrokerDirectory.ReadAsync(async () =>
+                await StillOpen.AskAsync(
+                        new BrokerClient(_directory.ClientFor(project)), voice, name, _stillOpen.Latest(), token)
+                    .ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            if (read.Value is not { } round)
+            {
+                Said = $"Could not ask which questions are still open: {read.Problem}";
+
+                return;
+            }
+
+            _stillOpen.Replace([name], round.Asks);
+
+            var standing = await StillOpen.StandingAsync(
+                round.Asks,
+                other => _directory.Find(other) is { } known ? new BrokerClient(_directory.ClientFor(known)) : null,
+                token).ConfigureAwait(false);
+
+            var says = StillOpen.Says(round);
+
+            Said = says;
+            (StillOpenShown, StillOpenSession) = StillOpenView.Open(app, says, standing);
+        });
+
+        return Task.CompletedTask;
+    }
+
     private Task AskEveryoneWhatTheyOwn()
     {
         if (App is not { } app || Current is not { } project)

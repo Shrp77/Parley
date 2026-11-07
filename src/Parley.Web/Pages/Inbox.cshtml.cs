@@ -38,8 +38,16 @@ public sealed record Pending(
 /// <param name="directory">This machine's projects.</param>
 /// <param name="seats">The seats this console is holding.</param>
 /// <param name="notices">What the console tells the person, which the bell lists.</param>
-public sealed class InboxModel(BrokerDirectory directory, SeatBook seats, Parley.Web.Notifications.NotificationLog notices) : PageModel
+/// <param name="stillOpen">What the page last asked about which questions are still open.</param>
+public sealed class InboxModel(
+    BrokerDirectory directory,
+    SeatBook seats,
+    Parley.Web.Notifications.NotificationLog notices,
+    StillOpenAsks stillOpen) : PageModel
 {
+    /// <summary>Each agent last asked which of its questions are still open, and where its answer stands now.</summary>
+    public IReadOnlyList<StillOpenStanding> Asked { get; private set; } = [];
+
     /// <summary>Who is here.</summary>
     public Seat? Me { get; private set; }
 
@@ -152,13 +160,61 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats, Parley
     /// </remarks>
     public async Task<IActionResult> OnGetAsync()
     {
-        await PersonSeats.EnsureAsync(seats, directory, HttpContext.RequestAborted).ConfigureAwait(false);
+        // The page's own reload is no evidence anybody is at the console (SPEC.md §14), as for the frame.
+        await PersonSeats.EnsureAsync(
+            seats, directory, HttpContext.RequestAborted,
+            person: !Request.Query.ContainsKey(PersonSeats.Reloaded)).ConfigureAwait(false);
 
         Me = seats.Seats().FirstOrDefault()?.Seat;
 
         await LoadAsync().ConfigureAwait(false);
 
         return Page();
+    }
+
+    /// <summary>A fingerprint of what this page shows, as the page last drew it.</summary>
+    public string Digest { get; private set; } = string.Empty;
+
+    /// <summary>A fingerprint of what this page would show now, for the page to compare with what it drew.</summary>
+    /// <returns>The fingerprint, as JSON.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>So the page follows what changes without a reload that loses typing</b> (owner's report, 2026-11-06: the Inbox
+    /// showed nothing new until reloaded by hand). The page asks every few seconds and reloads only when this differs, and
+    /// only while nobody is writing in it; otherwise it says something changed.
+    /// </para>
+    /// <para>
+    /// <b>A read with no effects.</b> It collects nothing, so nothing is marked delivered, and it touches no seat, so it
+    /// makes nobody present. One call per project: every exchange the person waits on or is waited on for, which moves
+    /// when a question arrives, is answered, is settled or is asked back, and when one of the person's requests is replied to.
+    /// </para>
+    /// </remarks>
+    public async Task<IActionResult> OnGetDigestAsync() =>
+        new JsonResult(new { digest = await DigestAsync(HttpContext.RequestAborted).ConfigureAwait(false) });
+
+    /// <summary>Reads the fingerprint of what waits on or for the person, in every project.</summary>
+    /// <param name="token">Cancels the reads.</param>
+    /// <returns>The fingerprint; a project that did not answer reads as a question mark, so its coming back is a change.</returns>
+    private async Task<string> DigestAsync(CancellationToken token)
+    {
+        var parts = await Task.WhenAll(directory.Projects.Select(async project =>
+        {
+            var me = seats.Known(project.Name.Value)?.Name ?? PersonSeat.On(project.Name);
+            var read = await BrokerDirectory.ReadAsync(async () =>
+                await new BrokerClient(directory.ClientFor(project)).WaitingAsync(token).ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            var edges = read.Value is { } all
+                ? string.Join(',', all
+                    .Where(edge => edge.Waiter == me || edge.WaitedOn == me)
+                    .Select(edge => $"{edge.ExchangeId}>{edge.WaitedOn.Value}")
+                    .Order(StringComparer.Ordinal))
+                : "?";
+
+            return $"{project.Name.Value}:{edges}";
+        })).ConfigureAwait(false);
+
+        return string.Join(';', parts.Order(StringComparer.Ordinal));
     }
 
     /// <summary>Sends the Result of one exchange.</summary>
@@ -188,9 +244,10 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats, Parley
             .ResultAsync(hold, Exchange, outcomes, HttpContext.RequestAborted)
             .ConfigureAwait(false);
 
-        _refused = !sent.Says.StartsWith("Sent.", StringComparison.Ordinal);
+        // Read off the flag, never the words: a Result that went says "Sent, and…", which a match on "Sent." took as refused.
+        _refused = !sent.Closed;
         Outcome = sent.Says;
-        notices.Add(For ?? string.Empty, null, "Inbox", sent.Says, sent.Says.StartsWith("Sent.", StringComparison.Ordinal));
+        notices.Add(For ?? string.Empty, null, "Inbox", sent.Says, sent.Closed);
 
         Me = seat;
 
@@ -219,9 +276,10 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats, Parley
             .ClarifyAsync(hold, Exchange, Clarification, HttpContext.RequestAborted)
             .ConfigureAwait(false);
 
-        _refused = !sent.Says.StartsWith("Sent.", StringComparison.Ordinal);
+        // Read off the flag, never the words: a Result that went says "Sent, and…", which a match on "Sent." took as refused.
+        _refused = !sent.Closed;
         Outcome = sent.Says;
-        notices.Add(For ?? string.Empty, null, "Inbox", sent.Says, sent.Says.StartsWith("Sent.", StringComparison.Ordinal));
+        notices.Add(For ?? string.Empty, null, "Inbox", sent.Says, sent.Closed);
 
         Me = seat;
 
@@ -266,6 +324,63 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats, Parley
         return Page();
     }
 
+    /// <summary>Asks each agent whether the questions it is waiting on the person for are still open.</summary>
+    /// <returns>The page, saying how many were asked and what was refused.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The agent closes what was answered, never this page</b> (SPEC.md §5.6). Each agent gets one Request from the
+    /// person in each conversation it has questions in, listing them; its reply names the settled ones in
+    /// <c>settles</c>, and the broker closes those. Its answer comes later, so this page changes nothing now.
+    /// </para>
+    /// <para>
+    /// The round is <see cref="StillOpen.AskAsync"/>, which the terminal runs too, in every project whose seat this console
+    /// holds, whatever the filters show.
+    /// </para>
+    /// </remarks>
+    public async Task<IActionResult> OnPostStillOpenAsync()
+    {
+        var token = HttpContext.RequestAborted;
+        var earlier = stillOpen.Latest();
+        var asks = new List<StillOpenAsk>();
+        var problems = new List<string>();
+        var projects = new List<string>();
+        var (asked, about, already) = (0, 0, 0);
+
+        foreach (var hold in seats.Seats())
+        {
+            if (directory.Find(hold.Project) is not { } project)
+            {
+                continue;
+            }
+
+            var voice = new SeatVoice(directory.AgentsFor(project), hold.Seat);
+            var read = await BrokerDirectory.ReadAsync(async () =>
+                await StillOpen.AskAsync(new BrokerClient(directory.ClientFor(project)), voice, hold.Project, earlier, token)
+                    .ConfigureAwait(false)).ConfigureAwait(false);
+
+            if (read.Value is not { } round)
+            {
+                problems.Add($"{hold.Project}: {read.Problem}");
+                continue;
+            }
+
+            projects.Add(hold.Project);
+            asks.AddRange(round.Asks);
+            problems.AddRange(round.Problems);
+            (asked, about, already) = (asked + round.Asked, about + round.About, already + round.Already);
+        }
+
+        stillOpen.Replace(projects, asks);
+        Outcome = StillOpen.Says(new StillOpenRound(asks, asked, about, already, problems));
+        notices.Add(string.Empty, null, "Inbox", Outcome, problems.Count == 0);
+
+        Me = seats.Seats().FirstOrDefault()?.Seat;
+
+        await LoadAsync().ConfigureAwait(false);
+
+        return Page();
+    }
+
     /// <summary>The seat this person holds in the project a form named.</summary>
     /// <returns>The seat, the hold and a voice, or nulls when there is none.</returns>
     private (Seat? Seat, SeatHold? Hold, SeatVoice? Voice) Seated()
@@ -290,6 +405,10 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats, Parley
         var pending = new List<Pending>();
         var token = HttpContext.RequestAborted;
         var unseated = new List<string>();
+
+        // Read before what is drawn, so a change that lands while the page is read is a difference the next ask finds: at
+        // worst one reload too many, never a change missed.
+        Digest = await DigestAsync(token).ConfigureAwait(false);
 
         foreach (var hold in seats.Seats())
         {
@@ -376,6 +495,10 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats, Parley
 
         Projects = pending;
         NotDelivered = unseated;
+        Asked = await StillOpen.StandingAsync(
+            stillOpen.Latest(),
+            name => directory.Find(name) is { } known ? new BrokerClient(directory.ClientFor(known)) : null,
+            token).ConfigureAwait(false);
 
         if (pending.Count == 0)
         {

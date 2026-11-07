@@ -16,7 +16,7 @@ public sealed class SpinOffAndMovePagesTests
 
     private const string Alert = "class=\"unreachable\" role=\"alert\"";
 
-    private const string EmptyBox = """<textarea id="says" name="Says"[^>]*>\s*</textarea>""";
+    private const string EmptyBox = """<textarea data-composer id="says" name="Says"[^>]*>\s*</textarea>""";
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 

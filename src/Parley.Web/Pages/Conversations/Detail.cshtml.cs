@@ -683,7 +683,8 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
                     .ConfigureAwait(false);
 
             Sent = [("Reply", answered.Says)];
-            Tell(project.Name.Value, "Reply", answered.Says);
+            // The flag, not the words: a Result that went says "Sent, and…", which Tell's match on "Sent." reads as refused.
+            notices.Add(project.Name.Value, Id, "Reply", answered.Says, answered.Closed);
 
             // Refused, the words and what they answer stay, so that fixing them does not turn them into a new Request.
             if (answered.Closed)

@@ -23,8 +23,9 @@ else if (Model.Roadmap is { } roadmap)
         <input type="hidden" name="Revision" value="@Model.Revision" />
 
         <p>
-            <label for="text">The roadmap as text. Take a line out to remove it, change a line to reword it, add a line for a new item.</label><br />
-            <textarea id="text" name="Text" rows="@Math.Clamp(roadmap.Items.Count + 2, 6, 24)" cols="90" required>@Model.Text</textarea>
+            <partial name="_Composer" model="@(new Parley.Web.ComposerBox(
+                "Text", Model.Text, Id: "text", Rows: Math.Clamp(roadmap.Items.Count + 2, 6, 24),
+                Label: "The roadmap as text. Take a line out to remove it, change a line to reword it, add a line for a new item."))" />
         </p>
 
         <p class="composer-note">

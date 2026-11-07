@@ -248,13 +248,14 @@ else
     </ul>
     <input type="file" id="attach-files" name="Attachments" multiple hidden />
 
-    <textarea name="Says" rows="3" required
-              placeholder="@(Model.Seat is null
-                  ? "What do you want them to do, or to know?"
-                  : Framing.AskExample)">@Model.Says</textarea>
+    <partial name="_Composer" model="@(new Parley.Web.ComposerBox(
+        "Says",
+        Model.Says,
+        Placeholder: Model.Seat is null ? "What do you want them to do, or to know?" : Framing.AskExample,
+        ShowKeys: false))" />
 
     <div class="composer-send">
-        <span class="composer-note">Enter sends. Shift+Enter makes a new line.</span>
+        <span class="composer-note">@Parley.Web.ComposerBox.Keys</span>
         <button type="submit">Send</button>
     </div>
 </form>
@@ -945,22 +946,7 @@ else
             document.addEventListener("parley:filtered", run);
         })();
 
-        // Enter sends and Shift+Enter makes a line break, as the terminal does. Ctrl+Enter sends too, for anyone used to it.
-        // Left alone while an input method is composing, where Enter confirms the text and is not the person's send.
-        (function () {
-            var form = document.getElementById("composer");
-            var box = form ? form.querySelector("textarea[name=Says]") : null;
-
-            if (!box) { return; }
-
-            box.addEventListener("keydown", function (e) {
-                if (e.key !== "Enter" || e.isComposing || e.shiftKey || e.altKey) { return; }
-
-                e.preventDefault();
-
-                if ((box.value.trim() !== "" || form.querySelector(".attachment")) && form.requestSubmit) { form.requestSubmit(); }
-            });
-        })();
+        // The box's keys are the frame's, for every composer (ComposerBox): nothing here handles Enter.
 
         // Typing @@ in the box offers the project's agents, narrowing as the person types. Choosing one ticks it in the
         // recipients tree and completes the @@name in the text, which stays: it is part of what the person said. The
@@ -1055,7 +1041,7 @@ else
             box.addEventListener("click", update);
             box.addEventListener("blur", close);
 
-            // Captured on the form so it runs before the box's own Enter-sends handler.
+            // Captured on the form so it runs before the frame's Enter-sends handler for composers, which it stops.
             form.addEventListener("keydown", function (e) {
                 if (list.hidden || e.target !== box) { return; }
 

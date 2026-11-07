@@ -47,7 +47,10 @@ public sealed class WaitingConsole : WebApplicationFactory<Program>
     }
 }
 
-/// <summary>The Agents service's <c>Waiting</c>, answered from a script. Anything else is <c>UNIMPLEMENTED</c>.</summary>
+/// <summary>
+/// The Agents service's <c>Waiting</c> and the operator's <c>DescribeWaiting</c>, answered from a script. Anything else
+/// fails.
+/// </summary>
 public sealed class ScriptedWaiting : HttpMessageHandler
 {
     private readonly Lock _lock = new();
@@ -60,6 +63,14 @@ public sealed class ScriptedWaiting : HttpMessageHandler
 
     /// <summary>How many times the count was asked for.</summary>
     public int Asked { get; private set; }
+
+    /// <summary>How many exchanges an agent waits on the person for, which is what the frame's count counts.</summary>
+    /// <remarks>Separate from <see cref="Messages"/> because the two are different facts, and telling them apart is what
+    /// the count was wrong about (owner's report, 2026-11-06: the frame said 4 and the Inbox listed 10).</remarks>
+    public int Owed { get; set; }
+
+    /// <summary>How many times what is owed was asked for.</summary>
+    public int AskedOwed { get; private set; }
 
     /// <inheritdoc/>
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -76,6 +87,18 @@ public sealed class ScriptedWaiting : HttpMessageHandler
             {
                 Asked++;
                 reply = Unreachable ? null : new Wire.Notice { MessagesWaiting = Messages };
+            }
+            else if (request.RequestUri.AbsolutePath == "/parley.v1.Operators/DescribeWaiting")
+            {
+                AskedOwed++;
+                var edges = new Wire.WaitingReply();
+                edges.Edges.AddRange(Enumerable.Range(1, Owed).Select(id => new Wire.WaitingEdge
+                {
+                    Waiter = "orders@box",
+                    WaitedOn = PersonSeat.On(ProjectName.Create(WaitingConsole.Project)).Value,
+                    ExchangeId = id,
+                }));
+                reply = Unreachable ? null : edges;
             }
             else
             {

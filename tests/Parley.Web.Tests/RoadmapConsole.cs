@@ -79,8 +79,17 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <summary>Every edit it was asked for.</summary>
     public List<Wire.EditRoadmapRequest> Edited { get; } = [];
 
+    /// <summary>Who waits on whom, as <c>DescribeWaiting</c> answers; none by default.</summary>
+    public List<Wire.WaitingEdge> Edges { get; } = [];
+
+    /// <summary>Messages an export of their conversation carries; none by default.</summary>
+    public List<Wire.Message> ExportMessages { get; } = [];
+
     /// <summary>Exchanges every export carries, as when retention has removed a conversation's messages and kept them.</summary>
     public List<Wire.ExchangeSnapshot> ExportExchanges { get; } = [];
+
+    /// <summary>Every Result the person sent, in order. Each one taken closes its exchange, as the broker does.</summary>
+    public List<Wire.ResultRequest> Resulted { get; } = [];
 
     /// <summary>When set, the proposals read is not implemented, as a broker older than roadmaps would answer.</summary>
     public bool Old { get; set; }
@@ -310,6 +319,20 @@ public sealed class RoadmapBroker : HttpMessageHandler
                 Requested.Add(open);
             }
 
+            if (Seats && request.RequestUri!.AbsolutePath == "/parley.v1.Agents/Result")
+            {
+                var result = Wire.ResultRequest.Parser.ParseFrom(payload);
+                Resulted.Add(result);
+
+                // Closed as the broker closes it: nobody waits on anybody over it any more.
+                _ = Edges.RemoveAll(edge => edge.ExchangeId == result.ExchangeId);
+
+                foreach (var exchange in ExportExchanges.Where(exchange => exchange.ExchangeId == result.ExchangeId))
+                {
+                    exchange.State = Wire.ExchangeState.Closed;
+                }
+            }
+
             reply = request.RequestUri!.AbsolutePath switch
             {
                 "/parley.v1.Operators/Proposals" => Old ? null : ListProposals(Wire.ProposalsRequest.Parser.ParseFrom(payload)),
@@ -323,7 +346,7 @@ public sealed class RoadmapBroker : HttpMessageHandler
                 "/parley.v1.Operators/DeclineProposal" => Decline(Wire.ProposalRequest.Parser.ParseFrom(payload).Id),
                 "/parley.v1.Operators/EditRoadmap" => Edit(Wire.EditRoadmapRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/DescribeRegistry" => new Wire.RegistryReply { Rows = { Registry } },
-                "/parley.v1.Operators/DescribeWaiting" => new Wire.WaitingReply(),
+                "/parley.v1.Operators/DescribeWaiting" => new Wire.WaitingReply { Edges = { Edges } },
                 "/parley.v1.Operators/ListConversations" => new Wire.ListConversationsReply { Conversations = { Conversations } },
                 "/parley.v1.Operators/Export" => Export(Wire.ExportRequest.Parser.ParseFrom(payload).ConversationId),
                 "/parley.v1.Operators/Implements" => new Wire.ImplementsReply { ProtocolVersion = Parley.Core.ProtocolVersion.Current },
@@ -338,6 +361,7 @@ public sealed class RoadmapBroker : HttpMessageHandler
                     Outcomes = { new Wire.RequestOutcome { Ok = true, ExchangeId = 7, ConversationId = "rm1-1", Wake = RequestWake } },
                 },
                 "/parley.v1.Agents/Waiting" when Seats => new Wire.Notice(),
+                "/parley.v1.Agents/Result" when Seats => new Wire.SayReply { Ok = true, MessageId = 900 },
                 _ => null,
             };
         }
@@ -497,6 +521,7 @@ public sealed class RoadmapBroker : HttpMessageHandler
         var reply = new Wire.ExportReply();
 
         reply.Exchanges.AddRange(ExportExchanges);
+        reply.Messages.AddRange(ExportMessages.Where(m => m.ConversationId == conversation));
 
         foreach (var detail in Details.Values)
         {

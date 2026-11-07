@@ -923,6 +923,22 @@ deciding for that agent what its work came to, and no agent decides anything for
 through a tool that names an exchange, and the agent that asked is the only participant able to say
 its question is answered.
 
+**A person may ask which questions are still open.** A question may have been answered somewhere
+the agent does not see, or stopped mattering. A surface may offer to ask: it sends each agent one
+Request from the person in each conversation where that agent has questions waiting on the person,
+listing them by exchange, and the words are fixed and shown to the person before they send them. It
+is an ordinary Request, so the agent answers it, and a question the agent judges settled it names in
+`settles` as above. The surface closes nothing and reads nothing from the reply; the facilitator's
+questions are not asked about, since it receives nobody's work. An agent whose earlier ask is still
+open is not asked again, unless a question has arrived since that the earlier ask did not list. The
+surface then lists each agent asked and where its answer stands, read from the conversation: waiting
+for its reply, asked something back, replied, or not sent, with how many of its questions are closed.
+
+**A surface's count of what waits on the person counts these questions**: every open exchange an
+agent is waiting on the person for, from the wait-for graph (§10.2 `waiting()`), not the mail not yet
+collected. It is the number of questions the person would find, and it stays until each is answered
+or settled.
+
 **The agent is told what it could settle.** A Request from the person is delivered with the agent's
 own open questions to the person in that conversation — oldest first, at most 20, each with its
 exchange, when it was asked, and the first 160 characters of the last thing the agent said in it —

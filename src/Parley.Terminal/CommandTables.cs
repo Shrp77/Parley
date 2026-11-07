@@ -33,6 +33,7 @@ internal static class CommandTables
         Listed<LogView>(),
         Listed<Health>(),
         Listed<Saying>(),
+        Listed<StillOpenView>(),
     ];
 
     /// <summary>Every type with a table, in the order they are built.</summary>

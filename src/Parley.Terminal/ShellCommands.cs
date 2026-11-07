@@ -259,6 +259,11 @@ internal sealed partial class Shell : IKeyTable<Shell>
             Chord: Key.Space,
             Says: s => s.Room.SelectedUnstarted is not null ? StartFromRoomTitle : IncludeTitle),
 
+        // **Asking which of the person's questions are still open** (owner, 2026-11-06), the console's Inbox button. On the
+        // conversations list and in the room, where the questions are; needs the seat, because it asks as the person.
+        new(KeyContext.Conversations, StillOpenKey, StillOpenTitle, s => s.AskWhichAreStillOpen(), s => s.Held is not null, Owing.Requesting),
+        new(KeyContext.Room, StillOpenKey, StillOpenTitle, s => s.AskWhichAreStillOpen(), s => s.Held is not null, Owing.Requesting),
+
         // **Confirmed roadmaps.** Enter on one opens it; named, since a key the surface takes and does not name is one
         // nobody finds.
         new(KeyContext.Plans, default, PlansRegion.OpenTitle, s => s.OpenSelectedPlan(), s => s.Plans.Selected is not null, Chord: Key.Enter),

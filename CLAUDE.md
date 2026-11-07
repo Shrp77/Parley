@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.55.6, protocol 0.14, schema 7. Nothing has been released, but **live stores hold work
+- Version 0.55.8, protocol 0.14, schema 7. Nothing has been released, but **live stores hold work
   in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
   `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
   upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
@@ -440,6 +440,9 @@ Decided and built. The reasoning is in `SPEC.md`, the feature's `research.md` an
   id is unique only within a project, so the follow loop compares the project too (`Transcript.OpenIn`). The
   terminal's box belongs to one project and conversation (`_lineFor`). Anything new that draws from a read checks the
   same.
+- **One message view and one text box in the web console.** Every message is drawn through `Shared/_MessageBody`
+  (Markdown by `MarkdownText`), and every box a person types in is `Shared/_Composer` (`ComposerBox`) with the
+  terminal's keys, handled once in the layout. `OneMessageViewAndOneComposerTests` fails on a page with its own.
 - **Hold screens to what is drawn, not what is held in memory.** Read the laid-out screen or
   `Driver.Contents`, not a field, and press a key rather than calling its seam.
 - **Anything drawing somebody else's text** (a payload, a broker detail, a path, a log line)

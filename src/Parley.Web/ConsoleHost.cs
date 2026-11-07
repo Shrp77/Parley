@@ -139,6 +139,9 @@ public static class ConsoleHost
         builder.Services.AddSingleton<Notifications.NotificationLog>();
         builder.Services.AddSingleton<EnrolmentRuns>();
 
+        // What the Inbox last asked about which questions are still open. One for the process, for the same reason.
+        builder.Services.AddSingleton<Parley.Client.Seating.StillOpenAsks>();
+
         var app = builder.Build();
 
         // **Nothing another site starts reaches a page.** A page here does things on a GET: it takes the person's seat and

@@ -1,0 +1,13 @@
+@model Parley.Web.ComposerBox
+@* **The box a person types in, the same everywhere** (owner, 2026-11-06). Its keys are the frame's handler for every
+   `data-composer` box, so no page writes its own: see ComposerBox. *@
+@if (Model.Label is { Length: > 0 } label)
+{
+    <label for="@Model.Id">@label</label>
+}
+<textarea data-composer id="@Model.Id" name="@Model.Name" rows="@Model.Rows" required="@Model.Required"
+          maxlength="@Model.MaxLength" placeholder="@Model.Placeholder">@Model.Value</textarea>
+@if (Model.ShowKeys)
+{
+    <span class="composer-note">@ComposerBox.Keys</span>
+}

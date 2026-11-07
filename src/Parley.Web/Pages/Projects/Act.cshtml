@@ -26,8 +26,7 @@ else
                else is how a person's line stops being distinguishable from a model's. The agent's own proposal is accepted from the conversation it was
                argued in, which is the terminal's review dialog and not this form. *@
             <p>
-                <label for="text">What does it own, and what does it not?</label><br />
-                <textarea id="text" name="text" rows="4" cols="70" required></textarea>
+                <partial name="_Composer" model="@(new Parley.Web.ComposerBox("text", Id: "text", Rows: 4, Label: "What does it own, and what does it not?"))" />
             </p>
         }
 
@@ -37,24 +36,25 @@ else
                recorded as the agent's; changed, as your edit. The comparison is made again at the POST against what the
                agent actually said, so nothing in this form decides it. *@
             <p>
-                <label for="text">The agent's words, on one line. Edit if wrong:</label><br />
-                <textarea id="text" name="text" rows="4" cols="70">@proposed</textarea>
+                <partial name="_Composer" model="@(new Parley.Web.ComposerBox(
+                    "text", proposed, Id: "text", Rows: 4, Label: "The agent's words, on one line. Edit if wrong:", Required: false))" />
             </p>
         }
 
         @if (string.Equals(Model.Action, "replyaskedback", StringComparison.OrdinalIgnoreCase))
         {
+            @* A message to the agent, so it is the console's one composer, with the same keys as every other. *@
             <p>
-                <label for="text">Your reply:</label><br />
-                <textarea id="text" name="text" rows="4" cols="70" required></textarea>
+                <partial name="_Composer" model="@(new Parley.Web.ComposerBox("text", Id: "text", Rows: 4, Label: "Your reply:"))" />
             </p>
         }
 
         @if (string.Equals(Model.Action, "forceconclude", StringComparison.OrdinalIgnoreCase))
         {
             <p>
-                <label for="reason">Why are you closing it? Each participant holding open work is told.</label><br />
-                <textarea id="reason" name="reason" rows="3" cols="70" maxlength="1000"></textarea>
+                <partial name="_Composer" model="@(new Parley.Web.ComposerBox(
+                    "reason", Id: "reason", Label: "Why are you closing it? Each participant holding open work is told.",
+                    Required: false, MaxLength: 1000))" />
             </p>
         }
 
