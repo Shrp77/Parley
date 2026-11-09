@@ -108,6 +108,36 @@ public sealed class WithdrawingTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Retiring_another_machines_agent_of_the_same_role_leaves_this_machines_files_alone()
+    {
+        // The same repository checked out on server-b, at the same path: an agent of the same role there. Its files are
+        // on server-b. The entry here names only the role, so withdrawing server-b's agent from here once took this
+        // machine's own entry, identity and catalogue line.
+        var elsewhere = AgentName.Create("orders@server-b");
+
+        await new AgentRepository(_connection).UpsertAsync(
+            new AgentRecord(elsewhere, "mcp", AgentTier.Pull, Workspace, null, null, false, AgentStatus.Active),
+            TestContext.Current.CancellationToken);
+
+        using var driving = Driving.Open();
+        using var shell = await OpenAsync(driving);
+
+        driving.Row(shell.Agents.List, "orders@server-b");
+        await Choose(driving, shell, Withdrawing.Retire, "orders@server-b");
+
+        var registry = await Client().RegistryAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(AgentStatus.Retired, Assert.Single(registry, a => a.Name == elsewhere).Status);
+        Assert.Equal(AgentStatus.Active, Assert.Single(registry, a => a.Name == Orders).Status);
+        Assert.Contains("runs on server-b", shell.Said, StringComparison.Ordinal);
+
+        var launch = JsonNode.Parse(await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!;
+
+        Assert.True(((JsonObject)launch["mcpServers"]!).ContainsKey("parley"), "this machine's entry was taken");
+        Assert.Contains(Catalogued.ToString(), await CatalogueTextAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Retiring_takes_the_name_and_removes_both_files()
     {
         using var driving = Driving.Open();

@@ -38,6 +38,46 @@ public sealed class TheInboxOnTheTerminalTests
     }
 
     [Fact]
+    public async Task A_follow_up_goes_through_the_inboxs_own_project_whatever_is_in_view()
+    {
+        // The follow-up's sender was built from the project in view when the key was pressed. Moved off the project, it
+        // found none and refused; moved to another project, it sent through that project's broker into its conversation
+        // of the same name. It now speaks for the Inbox's own project.
+        await using var seated = await Seated.OpenAsync(Ct, withBeta: true);
+
+        await seated.AskAsync(Seated.Billing, "billing-talk", Ct, go: false);
+
+        seated.Focus<RoomRegion>();
+        await seated.Session.PressThenSettleAsync(new Key(Shell.InboxKey).WithAlt, () => seated.Shell.Settled);
+
+        var inbox = Assert.IsType<InboxWindow>(seated.Shell.InboxShown);
+
+        inbox.Select(inbox.Shown.ToList().FindIndex(line => line.Contains("billing-talk", StringComparison.Ordinal)));
+
+        await seated.Shell.GoAsync(Parley.Client.Views.ViewPlace.Into(Seated.Beta));
+        await seated.Shell.Settled;
+        seated.Lay();
+        await seated.Shell.Settled;
+
+        inbox.NewKeyDownEvent(new Key(InboxWindow.FollowUpKey).WithAlt);
+
+        var typing = (TextDialog)seated.Session.Find(InboxWindow.FollowUpTitle);
+
+        seated.Session.Type("any news?");
+        typing.Finish(taken: true);
+        await seated.Shell.Settled;
+
+        var export = await seated.Operators.ExportAsync("billing-talk", Ct);
+
+        Assert.Contains(export.Messages, m => m.To == Seated.Billing && m.PayloadJson.Contains("any news?", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            (await seated.BetaOperators.ExportAsync("billing-talk", Ct)).Messages,
+            m => m.PayloadJson.Contains("any news?", StringComparison.Ordinal));
+
+        Prompting.Close(seated.Session.App, seated.Shell.InboxSession);
+    }
+
+    [Fact]
     public async Task A_follow_up_is_offered_on_a_row_and_never_on_a_heading()
     {
         await using var seated = await Seated.OpenAsync(Ct);

@@ -29,7 +29,7 @@ internal sealed class InboxWindow : TableDialog<InboxWindow>, IKeyTable<InboxWin
     internal const string Heading = "Inbox";
 
     /// <summary>The follow-up command's key, with Alt.</summary>
-    private const char FollowUpKey = 'u';
+    internal const char FollowUpKey = 'u';
 
     /// <summary>The follow-up command's name.</summary>
     internal const string FollowUpTitle = "Follow up: a new request to this agent";

@@ -4709,6 +4709,12 @@ internal sealed partial class Shell : Window
                 return;
             }
 
+            // **A read can land after the person has moved on**: the Inbox opens only over the project it was read for.
+            if (!ReferenceEquals(Current, project))
+            {
+                return;
+            }
+
             var (view, session) = InboxWindow.Open(app, project.Name.Value, reading);
 
             (InboxShown, InboxSession) = (view, session);
@@ -4741,7 +4747,14 @@ internal sealed partial class Shell : Window
     /// <remarks>A person's line to an agent is a new Request (SPEC.md §5.6), so the row's own exchange is never reopened.</remarks>
     private void FollowUp(IApplication app, ProjectSettings project, InboxRow row)
     {
-        if (Voice() is not { } voice || !row.FollowUp)
+        // **The Inbox's own project, never whatever is in view when the key is pressed.** A conversation's name is unique
+        // only within a project, so a follow-up sent through another project's broker landed in that project's
+        // conversation of the same name, or started one.
+        var voice = Seats?.Held(project.Name.Value) is { } hold
+            ? new SeatVoice(_directory.AgentsFor(project), hold.Seat)
+            : ReferenceEquals(Current, project) ? Voice() : null;
+
+        if (voice is null || !row.FollowUp)
         {
             Said = NoSeatToFollowUp;
 

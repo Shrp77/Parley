@@ -5,8 +5,8 @@ disable-model-invocation: true
 
 # Open files from Parley's file location
 
-Takes one or more file names. Each opens to read in the application this machine has registered for it, in place in
-the file location. A placed file is never changed: a correction is a new file, placed under a new name with
+Takes one or more file names. Each opens to read in the application this machine has registered for it: in place in
+the file location on the broker's machine, or as a checked copy anywhere else. A placed file is never changed: a correction is a new file, placed under a new name with
 `/parley:files-place`. Bytes saved over a placed file make every later fetch of it refused.
 
 Run, with the names and any `--conversation <id>` or `--project <name>` the person gave - and, when this machine names more than one project and they named none, `--project` with the one this repository answers in (the `PARLEY_PROJECT` of its `parley-<project>` entry in `.mcp.json`; ask which if it has several):

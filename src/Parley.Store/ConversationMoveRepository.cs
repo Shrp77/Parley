@@ -507,6 +507,11 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
     /// busy pair talking in another conversation does not fill this one with notes. Results are left out because a Result
     /// answers the exchange it closes. Only messages from the conversation's first onward are read, since an export is read
     /// every few seconds while a page follows it.
+    /// <para>
+    /// <b>An exchange the person moved is left out.</b> A move rewrites its messages' conversation, so read as written they
+    /// looked like the agent writing elsewhere, and the transcript blamed the agent for the person's move. The move notes
+    /// already say what went where.
+    /// </para>
     /// </remarks>
     public async Task<IReadOnlyList<WroteElsewhere>> GetWroteElsewhereAsync(
         string conversationId, CancellationToken cancellationToken = default)
@@ -515,15 +520,15 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
             new CommandDefinition(
                 """
                 WITH seen AS (
-                    SELECT id, conversation_id, type, from_agent AS agent, to_agent AS other, 1 AS wrote
+                    SELECT id, exchange_id, conversation_id, type, from_agent AS agent, to_agent AS other, 1 AS wrote
                       FROM messages
                      WHERE id >= (SELECT MIN(id) FROM messages WHERE conversation_id = @Id)
                     UNION ALL
-                    SELECT id, conversation_id, type, to_agent, from_agent, 0
+                    SELECT id, exchange_id, conversation_id, type, to_agent, from_agent, 0
                       FROM messages
                      WHERE id >= (SELECT MIN(id) FROM messages WHERE conversation_id = @Id)
                 ), ordered AS (
-                    SELECT id, conversation_id, type, agent, other, wrote,
+                    SELECT id, exchange_id, conversation_id, type, agent, other, wrote,
                            LAG(conversation_id) OVER (PARTITION BY agent ORDER BY id) AS before_conversation,
                            LAG(id) OVER (PARTITION BY agent ORDER BY id) AS before_id
                       FROM seen
@@ -537,6 +542,8 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
                    AND type IN ('request', 'clarify')
                    AND agent NOT LIKE @Person AND other NOT LIKE @Person
                    AND agent NOT LIKE @Facilitator AND other NOT LIKE @Facilitator
+                   -- A message the person moved is where the move put it, not where it was written (SPEC.md §5.0).
+                   AND exchange_id NOT IN (SELECT exchange_id FROM conversation_move_exchanges)
                  ORDER BY id;
                 """,
                 new

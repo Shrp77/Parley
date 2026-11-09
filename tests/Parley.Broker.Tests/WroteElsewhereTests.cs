@@ -63,6 +63,23 @@ public sealed class WroteElsewhereTests : IDisposable
         (await _console.ExportAsync(Here, Ct)).WroteElsewhere!;
 
     [Fact]
+    public async Task An_exchange_the_person_moved_away_is_not_the_agent_writing_elsewhere()
+    {
+        // orders asked billing here; the person moved that exchange to another conversation. A move rewrites where its
+        // messages are, and read as written that blamed orders for writing elsewhere (SPEC.md §5.0 reports what an agent
+        // wrote in another conversation; this was written here). The move's own note says what went where.
+        await AskAsync(Person, Orders, "Sort the pricing script", Here);
+        var asked = await AskAsync(Orders, Billing, "Who owns the script?", Here);
+
+        Assert.Empty(await NotedHereAsync());
+
+        var moved = await _console.MoveExchangesAsync(Here, "script-owner", true, [asked], T0.AddMinutes(5), Ct);
+
+        Assert.True(moved.Moved, moved.Refused);
+        Assert.Empty(await NotedHereAsync());
+    }
+
+    [Fact]
     public async Task A_clarify_on_an_older_exchange_straight_after_answering_here_is_noted_here()
     {
         // The case that showed the need: a new conversation with the person, and an exchange left open in an older one.

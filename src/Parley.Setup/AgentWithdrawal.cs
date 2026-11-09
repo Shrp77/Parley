@@ -220,6 +220,22 @@ public static class AgentWithdrawal
             return;
         }
 
+        // **Only this machine's own agent's files.** Its launch entry and catalogue line are files on the machine it runs
+        // on; the same repository checked out here, at the same path, holds this machine's agent of the same role, and an
+        // entry names only the role. Withdrawing another machine's agent from here took this machine's entry, identity and
+        // catalogue line (CLAUDE.md: no surface writes a launch configuration for an agent whose machine is not this one).
+        var here = MachineName.Current;
+
+        if (string.IsNullOrEmpty(here) || !string.Equals(agent.Machine, here, StringComparison.Ordinal))
+        {
+            said.Add(string.IsNullOrEmpty(here)
+                ? "This machine's name could not be read, so its files were left alone."
+                : $"'{agent.Value}' runs on {agent.Machine}, so its launch entry and catalogue line are files there and were "
+                  + $"left alone; withdraw it from a surface on {agent.Machine} to take them.");
+
+            return;
+        }
+
         try
         {
             var outcome = await Enrolment

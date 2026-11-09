@@ -3155,7 +3155,7 @@ name ending in an image extension, only from the conversation it is showing, rea
 which records nothing; it checks that the leading bytes are the signature of the format the name says (PNG, JPEG, GIF or
 WebP) and serves nothing when they are not, so a file named `.png` that holds a page or a script never reaches a
 browser; it names the type from the extension, turns content sniffing off, and serves under a policy that lets nothing in
-the file load, run or frame anything, whether it is shown in a page or opened on its own; and an image larger than 20 MB
+the file load, run or frame anything, whether it is shown in a page or opened on its own; and an image larger than 20 MiB
 is shown only when the person asks for it. That check is the one place Parley looks inside a placed file, and it is a
 surface's, never the broker's. What remains: a flaw in the browser's own image decoder, including one an image crafted to
 expand to an enormous size could reach under that bound.
