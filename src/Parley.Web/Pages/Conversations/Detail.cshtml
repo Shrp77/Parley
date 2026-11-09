@@ -72,7 +72,7 @@
                 </a>
                 @* Its images as a grid and its other files as a list, newest first (SPEC.md §9.5). *@
                 <a class="file-button" target="_top" href="@Url.Page("/Conversations/Media", new { project = Model.Project, id = Model.Id })" title="Images and files in this conversation">
-                    <span class="icon" aria-hidden="true">photo_library</span>
+                    <span class="icon" aria-hidden="true">attach_file</span>
                     Media
                 </a>
                 @* Two ways to keep the conversation outside the console: the readable one carries the annotations of who saw what,
@@ -1382,7 +1382,9 @@ else
                 var kept = box.value.trim() !== "" || reply.value !== "" || form.querySelector(".attachment") !== null;
 
                 toggle.setAttribute("aria-expanded", closed() ? "false" : "true");
-                icon.textContent = closed() ? "expand_less" : "expand_more";
+                // One glyph turned over: the font holds expand_more and not expand_less (IconsAreInTheFontTests).
+                icon.textContent = "expand_more";
+                icon.style.transform = closed() ? "rotate(180deg)" : "";
                 words.textContent = closed() ? (kept ? "Write (draft kept)" : "Write") : "Hide";
             }
 
