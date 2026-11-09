@@ -61,10 +61,15 @@ Check a change against each; a new page or a new path lookup must keep all of th
   walk found local, and the node: its workspace-gone judgement asks of the catalogued folder and the folders above it by
   path, and its start and restart refuse a workspace they could not open cleanly and then start the process in that
   folder by path, so a flip between the two is followed. The enrolment scan and plan (the existence, worktree, `.mcp.json` and
-  instructions-file questions, and plan validation), the catalogue-copy check and the first enrolment's creation of
-  `.mcp.json` (`LocalOpen.Create`, relative to the opened folder) go through the opener; each is held by a test
+  instructions-file questions, and plan validation) and the catalogue-copy check go through the opener; each is held by a test
   (`LinkRaceTests`, `EnrollCommandTests`, `NothingUnderALinkToAShareIsLookedUpTests`, which puts the link above the
-  last part, where `File.Exists` and `Directory.Exists` do follow it). Each part's long name is read from its handle,
+  last part, where `File.Exists` and `Directory.Exists` do follow it). A file `OverwriteHeldAsync` creates (a first
+  `.mcp.json` or instructions file, a new catalogue) is made relative to the folder the walk opened (`LocalOpen.Create`),
+  and a failed write is undone through the file's own handle (`LocalOpen.Discard`), but that does not close the race:
+  with the folder flipping to a link to a share during the create, Windows itself (pid 4) still dialled the share in
+  three runs of four, most likely a file-system filter resolving the new file's name again by path (2026-11-09,
+  recorded, owner's decision pending). The walk refuses a relative link reached after a junction, since Windows
+  resolves it from the path as reached. Each part's long name is read from its handle,
   so a short (8.3) spelling is judged as the folder it is. Off Windows a share is a
   mount and following a link to one offers no sign-in, so the walk is kept and the open is ordinary, except that a file
   about to be written is still refused when it is itself a link.

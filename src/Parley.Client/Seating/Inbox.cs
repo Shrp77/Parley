@@ -293,10 +293,11 @@ public static class Inbox
         }
         while (next is { Length: > 0 });
 
-        // Only what could hold a row: open work, or activity since the window opened. A conversation quiet since before then
-        // cannot hold an exchange that closed inside it.
+        // Every one of the person's conversations. A conversation's last activity is its newest message, and an exchange can
+        // close inside the window with no message of its own in that conversation: a question settled by a Request
+        // elsewhere, or one the person moved after it was settled. Filtered by activity, such an exchange was never listed
+        // as closed (review, lens 1 round 17).
         var wanted = conversations
-            .Where(c => c.HasOpenExchange || c.LastActivityUtc >= from)
             .Select(c => c.Id)
             .Distinct(StringComparer.Ordinal)
             .ToList();

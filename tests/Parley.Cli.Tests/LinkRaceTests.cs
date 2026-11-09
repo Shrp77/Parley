@@ -131,6 +131,20 @@ public sealed class LinkRaceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_created_file_that_is_discarded_is_removed_through_its_own_handle()
+    {
+        // The undo of a failed first write deleted by path after closing; a folder swapped meanwhile redirected it.
+        var folder = Directory.CreateDirectory(Path.Combine(_root, "discard")).FullName;
+        var path = Path.Combine(folder, ".mcp.json");
+        var created = LocalOpen.Create(path);
+
+        await created.WriteAsync("{}"u8.ToArray(), TestContext.Current.CancellationToken);
+        LocalOpen.Discard(created, path);
+
+        Assert.False(File.Exists(path));
+    }
+
+    [Fact]
     public async Task A_launch_configuration_flipped_to_a_link_to_a_share_is_never_followed()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "links to shares are a Windows sign-in");

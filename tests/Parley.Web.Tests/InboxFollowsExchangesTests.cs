@@ -142,6 +142,28 @@ public sealed partial class InboxFollowsExchangesTests
     }
 
     [Fact]
+    public async Task An_exchange_closed_this_week_in_a_conversation_quiet_for_longer_is_still_listed()
+    {
+        // A question asked ten days ago, settled two days ago by the person's Request elsewhere: its conversation's last
+        // message is ten days old, and the Inbox read only conversations with a message in the window (review, lens 1
+        // round 17).
+        using var console = Console();
+
+        console.Broker.Conversations[0].LastActivityUtc =
+            DateTimeOffset.UtcNow.AddDays(-10).ToString("O", CultureInfo.InvariantCulture);
+        console.Broker.Conversations[0].HasOpenExchange = false;
+
+        Said(console, 14_400, 20, Wire.MessageType.Request, Orders, Person, Ask("Which rate for the nightly export?"));
+        Exchange(console, 20, open: false, Wire.ExchangeOutcome.Settled);
+        console.Broker.ExportExchanges[0].OpenedUtc = DateTimeOffset.UtcNow.AddDays(-10).ToString("O", CultureInfo.InvariantCulture);
+        console.Broker.ExportExchanges[0].ClosedUtc = DateTimeOffset.UtcNow.AddDays(-2).ToString("O", CultureInfo.InvariantCulture);
+
+        var closed = await GetAsync(console, "/Inbox?view=closed");
+
+        Assert.Contains("Which rate for the nightly export?", closed, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_follow_up_is_a_new_request_to_the_rows_agent_in_its_conversation()
     {
         using var console = Console();

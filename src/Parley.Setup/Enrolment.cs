@@ -506,20 +506,16 @@ public static class Enrolment
 
             try
             {
+                // Flushed inside the try: a short write sits in the buffer until then, and a full disk found at the
+                // close skipped the clean-up and left an empty file (review, lens 1 round 16).
                 created.Write(bytes);
+                created.Flush();
             }
             catch
             {
-                // Only ever a file this call created a line ago: CreateNew refuses an existing one.
-                created.Dispose();
-
-                try
-                {
-                    File.Delete(path);
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                }
+                // Only ever a file this call created a line ago, removed through its own handle so a folder swapped
+                // since cannot redirect the delete (LocalOpen.Discard).
+                LocalOpen.Discard(created, path);
 
                 throw;
             }

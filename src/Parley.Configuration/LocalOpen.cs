@@ -70,6 +70,8 @@ public static class LocalOpen
 
     private const uint NameNotFound = 0xC0000034;
     private const uint NameCollision = 0xC0000035;
+    private const uint Delete = 0x00010000;
+    private const int DispositionInfo = 4;
     private const uint CreateNew = 2;
     private const uint NonDirectory = 0x40;
     private const uint PathNotFound = 0xC000003A;
@@ -320,7 +322,8 @@ public static class LocalOpen
 
         using (parent)
         {
-            var (made, handle) = Open(parent, name, Synchronize | ReadAttributes | GenericWrite, 0, CreateNew);
+            // DELETE as well, so a create that fails can be undone through this handle (Discard), never by path.
+            var (made, handle) = Open(parent, name, Synchronize | ReadAttributes | GenericWrite | Delete, 0, CreateNew);
 
             if (made != LocalOpenStatus.Opened)
             {
@@ -336,6 +339,44 @@ public static class LocalOpen
                 handle!.Dispose();
                 throw;
             }
+        }
+    }
+
+    /// <summary>Removes a file <see cref="Create"/> made, through its own handle, and closes it.</summary>
+    /// <param name="created">The file <see cref="Create"/> returned.</param>
+    /// <param name="path">Its path, used only off Windows.</param>
+    /// <remarks>
+    /// A failed first write was undone by deleting the path after closing, and a folder swapped for a link meanwhile would
+    /// have the delete follow it, to a share or to another repository's file of that name (review, lens 2 round 18, lens 3
+    /// round 14). Through the handle, only the file this call made can go.
+    /// </remarks>
+    public static void Discard(FileStream created, string path)
+    {
+        ArgumentNullException.ThrowIfNull(created);
+
+        if (!OperatingSystem.IsWindows())
+        {
+            created.Dispose();
+
+            try
+            {
+                System.IO.File.Delete(path);
+            }
+            catch (Exception failed) when (failed is IOException or UnauthorizedAccessException)
+            {
+                // Left for the person: nothing else here may remove it.
+            }
+
+            return;
+        }
+
+        try
+        {
+            _ = SetFileInformationByHandle(created.SafeFileHandle, DispositionInfo, [1], 1);
+        }
+        finally
+        {
+            created.Dispose();
         }
     }
 
@@ -771,6 +812,11 @@ public static class LocalOpen
         uint options,
         IntPtr extendedAttributes,
         uint extendedAttributesLength);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetFileInformationByHandle(SafeFileHandle handle, int informationClass, byte[] information, uint size);
 
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("kernel32.dll", EntryPoint = "GetFinalPathNameByHandleW", CharSet = CharSet.Unicode, SetLastError = true)]
