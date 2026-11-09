@@ -241,7 +241,10 @@ else
     @* A minimap of the conversation. Ticks in the order the broker recorded them rather than
        spaced by clock: the times come from different machines, and proportional spacing would
        pile a burst into one pixel and stretch a quiet hour across the screen. Each carries its
-       own text, so the colour is how you aim and never how you know. *@
+       own text, so the colour is how you aim and never how you know.
+       The note and the rail share one box, the grid's second column: the note is hidden while empty, and as a cell of
+       its own it took the rail's place when a tick filled it, pushing the rail below the whole transcript. *@
+    <div class="minimap">
     <p id="kin" class="kin-note" role="status"></p>
 
     <nav class="timeline" aria-label="Jump to a message">
@@ -270,5 +273,6 @@ else
             </a>
         }
     </nav>
+    </div>
     </div>
 }

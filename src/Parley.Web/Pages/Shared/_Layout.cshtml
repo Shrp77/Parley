@@ -1553,9 +1553,15 @@
         /* The minimap. One tick per message in the order the broker recorded them, tinted by
            who spoke -- so a long conversation shows its shape: who dominated it, where it
            changed hands, and where a person closed something. */
-        .timeline {
+        /* The note and the rail together are the grid's second column. Sticky as one, so the note travels with the
+           rail it describes. Not `.rail`, which is the navigation rail. */
+        .minimap {
             position: sticky;
             top: calc(var(--frame) + 1rem);
+            min-width: 0;
+        }
+
+        .timeline {
             display: flex;
             flex-direction: column;
             align-items: stretch;
@@ -2179,12 +2185,12 @@
 
             /* Horizontal above the conversation, where a vertical rail beside it
                would have nowhere to be. */
+            .minimap { position: static; order: -1; }
+
             .timeline {
-                position: static;
                 flex-direction: row;
                 flex-wrap: wrap;
                 align-items: center;
-                order: -1;
             }
 
             .timeline .tick { width: 0.5rem; height: 1.1rem; }

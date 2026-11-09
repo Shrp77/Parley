@@ -40,7 +40,8 @@ public sealed class FrameTests
     }
 
     [Theory]
-    [InlineData(".timeline {")]
+    // The minimap's box: the rail and the note above it stick together (TimelineStaysBesideTheTranscriptTests).
+    [InlineData("        .minimap {")]
     public void Everything_that_sticks_below_it_is_offset_by_what_it_occupies(string rule)
     {
         // Each was `top: 1rem`, which put it behind the header the moment it stopped
