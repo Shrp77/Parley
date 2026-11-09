@@ -819,7 +819,7 @@ public static class NodeCommand
 
         try
         {
-            full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(workspace));
+            full = Path.TrimEndingDirectorySeparator(OffMachineLinks.FullPath(workspace));
         }
         catch (Exception unreadable) when (unreadable is ArgumentException or NotSupportedException or PathTooLongException)
         {
@@ -928,8 +928,8 @@ public static class NodeCommand
         if (OperatingSystem.IsWindows())
         {
             return string.Equals(
-                Path.GetPathRoot(Path.GetFullPath(folder)),
-                Path.GetPathRoot(Path.GetFullPath(home)),
+                Path.GetPathRoot(OffMachineLinks.FullPath(folder)),
+                Path.GetPathRoot(OffMachineLinks.FullPath(home)),
                 StringComparison.OrdinalIgnoreCase);
         }
 
@@ -1441,6 +1441,19 @@ public static class NodeCommand
                 await output.WriteLineAsync(
                     $"  {agent.Value}: stopped for a refresh, and this machine no longer has a way to start it.")
                     .ConfigureAwait(false);
+
+                return;
+            }
+
+            // As at a start (StartAsync): never restarted in a folder that leads off this machine. The agent's own answer
+            // asks for this restart, and its folder can have been swapped for a link to a share in the meantime (review,
+            // lens 2 round 16).
+            if (catalogue.WorkspaceFor(identity) is { Length: > 0 } elsewhere
+                && LocalOpen.Folder(elsewhere) == LocalOpenStatus.OffThisMachine)
+            {
+                await output.WriteLineAsync(
+                    $"  {agent.Value}: stopped for a refresh, and not restarted — its workspace {Inert.Line(elsewhere)} "
+                    + "leads to another machine.").ConfigureAwait(false);
 
                 return;
             }

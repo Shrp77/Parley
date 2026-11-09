@@ -275,6 +275,13 @@ public static class LocalOpen
         }
     }
 
+    /// <summary>Whether a folder that must be on this machine is there, this account allowed to open it or not.</summary>
+    /// <param name="path">The path.</param>
+    /// <returns><see langword="true"/> when a folder is there, as <c>Directory.Exists</c> answered, found as
+    /// <see cref="Folder"/> finds it.</returns>
+    public static bool FolderThere(string path) =>
+        Folder(path) is LocalOpenStatus.Opened or LocalOpenStatus.Busy or LocalOpenStatus.Unreadable;
+
     /// <summary>Whether a file or a folder that must be on this machine is there, following links to things here.</summary>
     /// <param name="path">The path.</param>
     /// <returns><see cref="LocalOpenStatus.Opened"/> when something is there.</returns>
@@ -432,7 +439,21 @@ public static class LocalOpen
 
             // The name the file system keeps, read from the handle: a short spelling (`ZZR15-~1`) is the long one, so what a
             // path reaches compares as the folder it is, as GetFullPath's expansion used to give (review, lens 2 round 15).
-            at = NameOf(next!) ?? Path.Join(at, parts[i]);
+            //
+            // A name Win32 cannot spell (ending in a dot or a space, reachable only by its short name) is refused, as the
+            // walk refuses one typed: tidying would drop that ending, and a link followed from inside it would then be
+            // resolved in a different folder of the plain name while Windows resolves it in the real one (review, lens 2
+            // round 16).
+            var kept = NameOf(next!);
+
+            if (kept is not null && !OffMachineLinks.ReadsAsWritten(kept, absolute: true))
+            {
+                next!.Dispose();
+
+                return (LocalOpenStatus.OffThisMachine, null, kept);
+            }
+
+            at = kept ?? Path.Join(at, parts[i]);
             current = next;
         }
 

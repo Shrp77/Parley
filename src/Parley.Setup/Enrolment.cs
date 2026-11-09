@@ -716,7 +716,7 @@ public static class Enrolment
     private static string? Refused(string? catalogued, string offered) =>
         catalogued is { Length: > 0 }
         && !WorkspacePath.SameRepository(catalogued, offered)
-        && Directory.Exists(catalogued)
+        && LocalOpen.FolderThere(catalogued)
             ? Catalogues.Copied(catalogued, offered)
             : null;
 
@@ -758,7 +758,7 @@ public static class Enrolment
         // roster row. Both ways in apply it, because neither failure is visible where it is caused: a
         // bad name announces a repository that appears on no roster, and an over-long owns line is
         // refused by a CHECK constraint at registration, far from the person who typed it.
-        if (EnrollmentPlan.Validate([entry], Directory.Exists, _ => "enrolment") is { Count: > 0 } wrong)
+        if (EnrollmentPlan.Validate([entry], LocalOpen.FolderThere, _ => "enrolment") is { Count: > 0 } wrong)
         {
             throw new InvalidDataException(string.Join("; ", wrong));
         }

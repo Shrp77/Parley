@@ -362,7 +362,5 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
 
     private static string Normal(string path) => OffMachineLinks.FullPath(path).Replace('\\', '/').TrimEnd('/');
 
-    // A folder that is there, this account allowed to open it or not, found without following a link off this machine.
-    private static bool Here(string folder) =>
-        LocalOpen.Folder(folder) is LocalOpenStatus.Opened or LocalOpenStatus.Busy or LocalOpenStatus.Unreadable;
+    private static bool Here(string folder) => LocalOpen.FolderThere(folder);
 }

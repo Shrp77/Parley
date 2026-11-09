@@ -144,7 +144,7 @@ public static class EnrollCommand
         string? projectManifest,
         CancellationToken cancellationToken)
     {
-        if (!Directory.Exists(root))
+        if (!LocalOpen.FolderThere(root))
         {
             await error.WriteLineAsync($"{root} is not a directory.").ConfigureAwait(false);
 
@@ -372,9 +372,9 @@ public static class EnrollCommand
     /// </remarks>
     private static string Noted(string workspace, string owns) =>
         IsWorktree(workspace) ? "worktree of another checkout"
-        : File.Exists(Path.Combine(workspace, ".mcp.json"))
+        : LocalOpen.Entry(Path.Combine(workspace, ".mcp.json")) == LocalOpenStatus.Opened
             && !string.IsNullOrEmpty(owns) ? "already an agent"
-        : File.Exists(Path.Combine(workspace, ".mcp.json")) ? "has an .mcp.json"
+        : LocalOpen.Entry(Path.Combine(workspace, ".mcp.json")) == LocalOpenStatus.Opened ? "has an .mcp.json"
         : string.Empty;
 
     /// <summary>
@@ -396,7 +396,9 @@ public static class EnrollCommand
     {
         var marker = Path.Combine(workspace, ".git");
 
-        return File.Exists(marker) && !Directory.Exists(marker);
+        // Each part opened as itself (LocalOpen): a scan reaches here for every child of a folder an agent's repository
+        // may sit in, while that agent can flip its folder to a link to a share (review, lens 3 round 12).
+        return LocalOpen.Folder(marker) == LocalOpenStatus.Missing && LocalOpen.Entry(marker) == LocalOpenStatus.Opened;
     }
 
     /// <summary>Every enrolment a repository already has, or null when the file cannot be read.</summary>
@@ -703,7 +705,7 @@ public static class EnrollCommand
             EnrolmentConsent.Says(entries.Length, project?.Name)).ConfigureAwait(false);
 
         var problems = new List<string>(
-            EnrollmentPlan.Validate(entries, Directory.Exists, row: null));
+            EnrollmentPlan.Validate(entries, LocalOpen.FolderThere, row: null));
 
         // Asked here, among every other reason to refuse the whole run, because enrolment must leave
         // each agent registered, registering is the agent attaching, and attaching needs a broker.
@@ -905,16 +907,19 @@ public static class EnrollCommand
             }
             catch (Exception ex) when (ex is JsonException or InvalidDataException or IOException)
             {
-                // A file held by another program, or one this account may not read, stops here too, with its sentence,
-                // rather than as a trace (review, lens 1 round 13).
-                //
                 // Refused rather than merged into. Everything this cannot merge is somebody's
                 // own file in a shape it does not understand, and the failure of the alternative
                 // is silent: the entries it could not read are simply not in what gets written.
-                // Only the launch configuration refuses: the instructions file is declined with a note, in both modes.
+                // Only the launch configuration refuses for its shape: the instructions file is declined with a note, in
+                // both modes. Either file held by another program, or one this account may not read, stops the run too,
+                // said in its own words, which name the file, rather than as a trace (review, lens 1 round 13, lens 3
+                // round 12).
                 await error.WriteLineAsync(
-                    $"{entry.Agent}: {launchPath} cannot be merged into — {OneSentence(ex.Message)}\n" +
-                    "Fix or move it first; enrolling would replace what is there.").ConfigureAwait(false);
+                    ex is IOException
+                        ? $"{entry.Agent}: stopped — {OneSentence(ex.Message)}\n"
+                          + "Close whatever holds it, or give this account access, and run this again."
+                        : $"{entry.Agent}: {launchPath} cannot be merged into — {OneSentence(ex.Message)}\n"
+                          + "Fix or move it first; enrolling would replace what is there.").ConfigureAwait(false);
 
                 // Say where it stopped. Validation is hoisted ahead of every write so that a set is never
                 // half applied, but this refusal cannot be hoisted: knowing it means reading each
@@ -940,8 +945,7 @@ public static class EnrollCommand
 
             await output.WriteLineAsync($"\n{entry.Agent}  ({entry.Workspace})").ConfigureAwait(false);
 
-            if (!Directory.Exists(Path.Combine(entry.Workspace, ".git"))
-                && !File.Exists(Path.Combine(entry.Workspace, ".git")))
+            if (LocalOpen.Entry(Path.Combine(entry.Workspace, ".git")) != LocalOpenStatus.Opened)
             {
                 // Said rather than refused, on the same terms as the worktree note below: `scan`
                 // only ever offers git repositories, so a directory without one arrived through a
@@ -1174,7 +1178,9 @@ public static class EnrollCommand
         {
             var candidate = Path.Combine(workspace, name);
 
-            if (File.Exists(candidate))
+            // Asked of the file itself (LocalOpen.Itself): a link there is still the file to decline, and it is not
+            // followed to find out.
+            if (LocalOpen.Itself(candidate) != LocalOpenStatus.Missing)
             {
                 return candidate;
             }

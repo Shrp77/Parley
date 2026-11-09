@@ -141,7 +141,9 @@ public static class LocalStorage
         // /var, which is /private/var), so each is compared as written and where it leads, as the folder is.
         foreach (var (root, name) in roots)
         {
-            string[] spellings = OffMachineLinks.LeadsOffThisMachine(root, out var resolved) ? [root] : [root, resolved];
+            // Where each really is, spelled long, as the folder is (LocalOpen.Reach): a root the environment spells short
+            // (`ONEDRI~1`) matches the long name the folder's walk gives (review, lens 2 round 16).
+            string[] spellings = LocalOpen.Reach(root, out var resolved) == LocalOpenStatus.OffThisMachine ? [root] : [root, resolved];
 
             if (spellings.Any(spelling => Within(full, Path.TrimEndingDirectorySeparator(spelling), comparison)))
             {

@@ -103,6 +103,34 @@ public sealed class LinkRaceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_scan_of_a_folder_whose_repository_flips_to_a_link_to_a_share_never_follows_it()
+    {
+        // The enrolment scan (the console's Enrol page in folder mode, `parley enroll scan`) checked each child and then
+        // asked of its .mcp.json and .git by path; a child flipped between the two was followed to the share (review, lens
+        // 3 round 12).
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "links to shares are a Windows sign-in");
+
+        var checkouts = Path.Combine(_root, "co");
+        var repository = Path.Combine(checkouts, "orders");
+        var aside = Path.Combine(_root, "orders-aside");
+
+        Directory.CreateDirectory(Path.Combine(repository, ".git"));
+        await File.WriteAllTextAsync(Path.Combine(repository, ".mcp.json"), "{}", TestContext.Current.CancellationToken);
+
+        SkipUnlessLinksCanBeMade();
+
+        await RaceAsync(
+            () =>
+            {
+                Directory.Move(repository, aside);
+                Directory.CreateSymbolicLink(repository, _share);
+                Directory.Delete(repository);
+                Directory.Move(aside, repository);
+            },
+            () => _ = Parley.Setup.EnrollCommand.Find(checkouts));
+    }
+
+    [Fact]
     public async Task A_launch_configuration_flipped_to_a_link_to_a_share_is_never_followed()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "links to shares are a Windows sign-in");
@@ -177,6 +205,74 @@ public sealed class LinkRaceTests : IDisposable
 
         Assert.Equal("{}", LocalOpen.ReadText(launch, json: true).Text);
     }
+
+    [Fact]
+    public void A_folder_whose_real_name_ends_in_a_dot_never_lets_a_link_inside_it_pass_as_local()
+    {
+        // A name ending in a dot can be typed only by its short name. Its long name, read from its handle, was tidied without
+        // the dot, so a relative link followed from inside it was resolved in the decoy beside it, while Windows resolved
+        // it in `evil.`, to the share (review, lens 2 round 16).
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Win32 path rules");
+
+        SkipUnlessLinksCanBeMade();
+
+        var real = Path.Combine(_root, "orders.real");
+        var dotted = Path.Combine(real, "evil-folder-name.");
+        var orders = Path.Combine(_root, "orders");
+
+        Directory.CreateDirectory(@"\\?\" + dotted);
+        Directory.CreateDirectory(Path.Combine(real, "evil-folder-name", "sub"));
+        Directory.CreateSymbolicLink(@"\\?\" + Path.Combine(dotted, "sub"), _share);
+        Directory.CreateSymbolicLink(@"\\?\" + Path.Combine(dotted, "r"), "sub");
+
+        try
+        {
+            var shortName = new char[1024];
+            var length = GetShortPathName(@"\\?\" + dotted, shortName, (uint)shortName.Length);
+            var spelled = new string(shortName, 0, (int)length).Replace(@"\\?\", string.Empty, StringComparison.Ordinal);
+
+            Assert.SkipUnless(
+                length > 0 && !spelled.EndsWith('.') && spelled.Contains('~', StringComparison.Ordinal), "this volume keeps no 8.3 names");
+
+            // mklink stores the target as typed; .NET's own call made it full first, expanding the short name and
+            // dropping the dot, which is not the layout under test.
+            using (var mklink = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                "cmd.exe", ["/c", "mklink", "/D", orders, Path.Combine(spelled, "r")])
+            {
+                UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true,
+            })!)
+            {
+                mklink.WaitForExit();
+                Assert.Equal(0, mklink.ExitCode);
+            }
+
+            var timer = System.Diagnostics.Stopwatch.StartNew();
+
+            Assert.Equal(LocalOpenStatus.OffThisMachine, LocalOpen.Folder(orders));
+            Assert.NotNull(LocalStorage.Problem(orders));
+            Assert.True(timer.Elapsed < Looking, $"took {timer.Elapsed}: the share was looked up");
+        }
+        finally
+        {
+            foreach (var link in (string[])[orders, @"\\?\" + Path.Combine(dotted, "r"), @"\\?\" + Path.Combine(dotted, "sub")])
+            {
+                try
+                {
+                    Directory.Delete(link);
+                }
+                catch (IOException)
+                {
+                    // Not made.
+                }
+            }
+
+            Directory.Delete(@"\\?\" + dotted);
+        }
+    }
+
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", EntryPoint = "GetShortPathNameW", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetShortPathName(string longPath, [System.Runtime.InteropServices.Out] char[] shortPath, uint length);
 
     private void SkipUnlessLinksCanBeMade()
     {
