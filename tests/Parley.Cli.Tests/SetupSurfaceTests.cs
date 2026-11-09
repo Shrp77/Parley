@@ -55,6 +55,8 @@ public sealed class SetupSurfaceTests
 
         Assert.Equal(
             [
+                // Public because the terminal and the web console both call it: one implementation of withdrawing an agent.
+                "AgentWithdrawal",
                 "AutostartPlan",
                 "ConsolePicker",
                 "EnrollCommand",
