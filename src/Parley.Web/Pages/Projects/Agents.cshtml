@@ -6,12 +6,14 @@
     ViewData["Refresh"] = "30";
     ViewData["Title"] = Model.Project;
     ViewData["AsOf"] = Model.AsOf.ToString("HH:mm:ss");
+    // Stamped in the title row below, as the data-grid views stamp theirs, rather than above the title by the frame.
+    ViewData["AsOfInTitle"] = true;
 }
 
 <div class="view" style="height:auto;min-height:0;">
     <div class="view-title">
         <h1>Conversations</h1>
-        <p class="as-of" role="status"><strong>@Model.Project</strong></p>
+        <p class="as-of" role="status">As of @ViewData["AsOf"].</p>
     </div>
 
     <section aria-label="Conversations in this project" class="conversations">

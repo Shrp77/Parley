@@ -9,17 +9,17 @@
 @if (Model.Outcome is not null)
 {
     <p class="outcome">@Model.Outcome</p>
-    <p><a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a></p>
+    <nav class="page-links" aria-label="This project"><a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a></nav>
 }
 else if (Model.Problem is not null)
 {
     <p class="problem">@Model.Problem</p>
-    <p><a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a></p>
+    <nav class="page-links" aria-label="This project"><a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a></nav>
 }
 else if (Model.Conversation is null)
 {
     <p>There is no conversation called @Model.Id in @Model.Project.</p>
-    <p><a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a></p>
+    <nav class="page-links" aria-label="This project"><a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a></nav>
 }
 else
 {
@@ -55,6 +55,6 @@ else
         <input id="typed" name="typed" autocomplete="off" />
 
         <button type="submit" class="danger act">Destroy it</button>
-        <a href="/Projects/Agents?project=@Model.Project">Keep it</a>
+        <a class="button quiet" href="/Projects/Agents?project=@Model.Project">Keep it</a>
     </form>
 }

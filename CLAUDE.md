@@ -55,9 +55,10 @@ src/Parley.Configuration The project manifest (§4.1) and the node catalogue: wh
                          file somebody else wrote is parsed: StrictJson, which refuses a
                          member named twice and text that is not valid Unicode.
 src/Parley.Setup         What a person does to a machine: enrolling a repository, naming
-                         projects, resolving per-machine paths, the autostart entry. Shared
-                         by `parley` and `parley-terminal`, which run the same commands in
-                         process. A broker client (Transport), never a store.
+                         projects, resolving per-machine paths, the autostart entry,
+                         withdrawing an agent. Shared by `parley`, `parley-terminal` and the
+                         web console, which run the same commands in process. A broker
+                         client (Transport), never a store.
 src/Parley.Client        What a client needs to show a deployment and seat a person: views,
                          transcript and visibility derivations, seating, SeatVoice (drains
                          and records delivery in one act). References Transport and
@@ -112,8 +113,12 @@ The command line keeps `serve`, `up`, `autostart`,
 `use`, `project list`, `enroll`, `registry`, `open`, `waiting`, `files`, `web-ui` and `terminal`
 (the last two start their own tools); every other operator verb exits 64 and names the terminal.
 
-- Destructive acts need a description plus a deliberate act, usually a typed name. `Retire`,
-  `Reinstate` and `Purge` appear in exactly one file, which contains the typed-name prompt;
+- Destructive acts need a description plus a deliberate act, usually a typed name. Retiring,
+  reinstating and purging an agent are one implementation, `AgentWithdrawal` in Parley.Setup (the words, the
+  typed name, what it owes, the broker's act, then this project's launch entry and catalogue line), and the
+  terminal and the web console both call it; neither calls the broker's operation itself
+  (`WithdrawingIsOneImplementationTests`). In the terminal `Retire`, `Reinstate` and `Purge` appear in exactly
+  one file, which contains the typed-name prompt;
   the `destroy` argument in one other; `ForceConclude` and `Prune` each in one
   file carrying its door. `SurfaceTests` enforces it, and a helper whose name merely contains
   one of those words fails it.

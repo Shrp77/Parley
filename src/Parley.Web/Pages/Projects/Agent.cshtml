@@ -7,8 +7,9 @@
     ViewData["AsOf"] = Model.AsOf.ToString("HH:mm:ss");
 }
 
-<nav aria-label="This project">
-    <a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a>
+<nav class="page-links" aria-label="This project">
+    <a href="/?tab=agents&amp;project=@Model.Project">Agents in @Model.Project</a>
+    <a href="/Projects/Agents?project=@Model.Project">Conversations</a>
 </nav>
 
 @if (Model.Problem is { Length: > 0 } problem)
@@ -82,22 +83,33 @@ else
     }
     else
     {
-    <nav aria-label="Actions">
-        <a href="/Projects/Ownership?project=@Model.Project#agent-@agent.Name.Value">What this agent is responsible for</a>
-        <a href="/Projects/Act?project=@Model.Project&amp;action=start&amp;subject=@agent.Name.Value">Start</a>
+    @* Buttons, not words: the safe ones tonal, the two that take the agent away outlined in the error colour. Each still
+       opens a page that describes the act before anything happens. *@
+    <div class="actions" role="group" aria-label="Actions">
+        <a class="button tonal" href="/Projects/Ownership?project=@Model.Project#agent-@agent.Name.Value">What this agent is responsible for</a>
+        <a class="button tonal" href="/Projects/Act?project=@Model.Project&amp;action=start&amp;subject=@agent.Name.Value">Start</a>
         @if (agent.Status == AgentStatus.Retired)
         {
-            <a href="/Projects/Act?project=@Model.Project&amp;action=reinstate&amp;subject=@agent.Name.Value">Reinstate</a>
+            <a class="button tonal" href="/Projects/Act?project=@Model.Project&amp;action=reinstate&amp;subject=@agent.Name.Value"
+               title="Route to it again in @Model.Project.">Reinstate</a>
         }
         else
         {
-            <a href="/Projects/Act?project=@Model.Project&amp;action=retire&amp;subject=@agent.Name.Value">Retire</a>
+            <a class="button danger" href="/Projects/Act?project=@Model.Project&amp;action=retire&amp;subject=@agent.Name.Value"
+               title="Take it off @Model.Project's roster. Its history stays, and Reinstate undoes it. Other projects are not touched.">Retire</a>
         }
-        <a href="/Projects/Act?project=@Model.Project&amp;action=purge&amp;subject=@agent.Name.Value">Purge</a>
-    </nav>
+        <a class="button danger" href="/Projects/Act?project=@Model.Project&amp;action=purge&amp;subject=@agent.Name.Value"
+           title="Delete it from @Model.Project with every conversation it was in. Cannot be undone. Other projects are not touched.">Purge</a>
+    </div>
+    @* Said on the page as well as on hover: a title is never shown on a touch screen or to the keyboard, and "remove"
+       reads as "remove from Parley". Each project is its own store (SPEC.md §4.1), so neither act reaches another one. *@
+    <p class="composer-note scope-note">
+        Retire and Purge act in @Model.Project only. If this repository is also an agent in other projects, it stays there.
+        Retire can be undone; Purge deletes its conversations here and cannot.
+    </p>
     }
 
-    <p>
-        <a href="/Projects/Agents?project=@Model.Project&amp;participant=@agent.Name.Value">Conversations this agent is party to</a>
+    <p class="actions">
+        <a class="button quiet" href="/Projects/Agents?project=@Model.Project&amp;participant=@agent.Name.Value">Conversations this agent is party to</a>
     </p>
 }

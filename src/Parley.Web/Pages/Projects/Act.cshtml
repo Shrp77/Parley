@@ -9,13 +9,35 @@
 @if (Model.Outcome is { Length: > 0 } outcome)
 {
     <p role="status"><strong>@outcome</strong></p>
-    <p><a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a></p>
+    <nav class="page-links" aria-label="This project"><a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a></nav>
 }
 else
 {
     <p class="@(Model.Destroys ? "unreachable" : null)">@Model.Warning</p>
 
+    @if (Model.Owes is { Length: > 0 } owes)
+    {
+        <p><strong>It owes</strong> @owes.</p>
+    }
+
     <form method="post">
+        @if (Model.Withdraws)
+        {
+            @* The terminal's door, here too (Parley.Setup's AgentWithdrawal holds both): what it owes, an acceptance when
+               purging would leave somebody waiting on nothing, then the agent's own name typed back. Anything but the exact
+               name keeps it. *@
+            @if (string.Equals(Model.Action, "purge", StringComparison.OrdinalIgnoreCase) && Model.OwedConsequence is { } consequence)
+            {
+                <p class="unreachable">@consequence</p>
+                <p><label><input type="checkbox" name="AcceptOwed" value="true" required /> @Parley.Setup.AgentWithdrawal.AcceptOwed</label></p>
+            }
+
+            <div class="field withdraw-name">
+                <label for="typed">@Parley.Setup.AgentWithdrawal.TypeTheName <code>@Model.Subject</code></label>
+                <input id="typed" name="Typed" required autocomplete="off" spellcheck="false" autocapitalize="none" />
+            </div>
+        }
+
         @if (string.Equals(Model.Action, "ownership", StringComparison.OrdinalIgnoreCase))
         {
             @* No maxlength: the store holds no bound on this line, and the field must not offer a cap
@@ -58,9 +80,17 @@ else
             </p>
         }
 
-        <button type="submit" class="@(Model.Destroys ? "danger act" : null)">
-            @(Model.Destroys ? "Yes, destroy it" : "Confirm")
-        </button>
-        <a href="/Projects/Agents?project=@Model.Project">Cancel</a>
+        <p class="actions">
+            <button type="submit" class="@(Model.Destroys ? "danger act" : null)">
+                @(Model.Destroys ? "Yes, destroy it" : "Confirm")
+            </button>
+            <a class="button quiet" href="/Projects/Agents?project=@Model.Project">Cancel</a>
+        </p>
     </form>
+    <style>
+        /* One thing per row: the acceptance, the name, then the buttons. The frame lays a form out as a wrapping row. */
+        form > p, form > .withdraw-name { flex: 1 1 100%; }
+        .withdraw-name { display: flex; flex-direction: column; gap: 0.3rem; margin: 0.25rem 0 0; }
+        .withdraw-name input { max-width: 28rem; }
+    </style>
 }

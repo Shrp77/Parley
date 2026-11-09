@@ -312,15 +312,8 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
             return false;
         }
 
-        var manifest = directory.ManifestPath;
-        var resolved = ProjectResolution.NodeConfig(null, Environment.GetEnvironmentVariable, manifest);
-
-        Catalogue = resolved.Value is { Length: > 0 } named
-            ? named
-            : manifest is { Length: > 0 }
-                // In the root itself, as `ProjectResolution.BesideTheManifest` puts it: the manifest path is the root.
-                ? Path.Combine(Path.GetFullPath(manifest), NodeCatalogue.DefaultFileName)
-                : NodeCatalogue.DefaultFileName;
+        // The same resolution retiring and purging withdraw from.
+        Catalogue = WebCatalogue.Path(directory);
 
         Role = string.IsNullOrWhiteSpace(Role) ? Role : EnrollmentPlan.CorrectName(Role);
 

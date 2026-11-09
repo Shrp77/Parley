@@ -246,7 +246,7 @@ public sealed class ALongAgentTitleHidesNothingTests : IAsyncDisposable
         driving.App.LayoutAndDraw(true);
         var flat = driving.Text().Replace("\n", " ", StringComparison.Ordinal);
 
-        Assert.Contains("Retiring withdraws", flat, StringComparison.Ordinal);
+        Assert.Contains("Retiring takes it off", flat, StringComparison.Ordinal);
         Assert.Contains("Purging deletes", flat, StringComparison.Ordinal);
         Assert.Contains("cannot be undone", flat, StringComparison.Ordinal);
     }

@@ -604,6 +604,8 @@
             font-size: 0.85rem;
             margin: 0 0 1.25rem;
         }
+        /* The frame's stamp sits at the right of the page's first line, where the data-grid views put theirs. */
+        main > .as-of { float: right; margin: 0.6rem 0 0 1rem; }
 
         section { margin-bottom: 2rem; }
 
@@ -1344,7 +1346,29 @@
         .act-cards li.idle { color: var(--ink-soft); }
 
         /* The links a project page opens with, laid out as a row rather than a run of words. */
-        nav.page-links { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; margin: 0 0 1.25rem; font-size: 0.9rem; }
+        nav.page-links { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0 0 1.25rem; margin-left: 0; }
+        /* Each one an assist chip: an outlined 32px pill, so a place to go reads as something to press, not a run of words. */
+        main nav.page-links a { display: inline-flex; align-items: center; min-height: 2rem; padding: 0 0.9rem; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); color: var(--md-sys-color-on-surface); font: var(--md-sys-typescale-label-large); text-decoration: none; }
+        main nav.page-links a:hover, main nav.page-links a:focus-visible { color: var(--md-sys-color-on-surface); border-color: var(--md-sys-color-outline-variant); background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
+
+        /* A row of buttons under a form or a section: wraps, never runs into the text above it. */
+        .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 1rem 0 0; }
+        .actions + .scope-note { margin: 0.6rem 0 1rem; max-width: 48rem; }
+
+        /* A label and its value, side by side, wherever a page lists facts (Enrol, Ownership, Settings). */
+        main dl.facts, main dl.about { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.55rem 1.5rem; margin: 0.75rem 0; }
+        main dl.facts dt, main dl.about dt { font: var(--md-sys-typescale-label-large); color: var(--md-sys-color-on-surface-variant); }
+        main dl.facts dd, main dl.about dd { margin: 0; overflow-wrap: anywhere; }
+        main dl.facts dd .path { display: block; font-family: var(--md-ref-typeface-mono); font-size: 0.85rem; overflow-wrap: anywhere; }
+        main dl.facts dd .why { display: block; color: var(--md-sys-color-on-surface-variant); }
+
+        /* A long path in a table cell wraps rather than pushing the table off the side. */
+        td code, td.path { overflow-wrap: anywhere; }
+
+        /* A section drawn as a card: Ownership's agents, Register's steps. */
+        .card-section { background: var(--card); border: 1px solid var(--rule); border-radius: var(--md-sys-shape-corner-large); padding: 1rem 1.25rem; margin: 0 0 1rem; }
+        .card-section > h2 { margin-top: 0; }
+        .card-section > :last-child { margin-bottom: 0; }
 
         .act-cards p { margin: 0.35rem 0 0; font-size: 0.85rem; color: var(--ink-soft); }
 
@@ -1366,9 +1390,12 @@
         .view-create[open] > summary::before { content: "remove"; content: "remove" / ""; }
         .view-create form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; border: 0; background: none; box-shadow: none; padding: 0.1rem 1.1rem 1rem; margin: 0; }
         .view-create .composer-note { flex: 1 1 100%; }
+        /* A 40px button beside a 48px field: centred on it, as the filter row's buttons are. */
+        .view-create form > button { margin-bottom: 0.25rem; }
 
         .view-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; padding: 0.7rem 1.1rem; margin: 0; }
-        .view-filters .tally { margin-left: auto; align-self: center; font-size: 0.85rem; color: var(--ink-faint); }
+        /* Level with the fields and buttons beside it, not with their labels: the same height and bottom margin as a button. */
+        .view-filters .tally { margin: 0 0 0.25rem auto; align-self: flex-end; display: inline-flex; align-items: center; min-height: 2.5rem; font-size: 0.85rem; color: var(--ink-faint); }
         .still-open { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; padding: 0.7rem 1.1rem; margin: 0; }
         .still-open > p { flex: 1 1 24rem; margin: 0; }
         .still-open > details { flex: 1 1 100%; order: 3; }
@@ -2250,8 +2277,9 @@
         {
             inProjectRail =
             [
-                ($"/Projects/Agents?project={q}", "Conversations", "chat_bubble", path is "/Projects/Agents" or "/Projects/Agent" || path.StartsWith("/Conversations", StringComparison.Ordinal)),
-                ($"/?tab=agents&project={q}", "Agents", "group", agentsView),
+                ($"/Projects/Agents?project={q}", "Conversations", "chat_bubble", path == "/Projects/Agents" || path.StartsWith("/Conversations", StringComparison.Ordinal)),
+                // One agent's page, its ownership and registering one are all reached from the agents list, so they light it.
+                ($"/?tab=agents&project={q}", "Agents", "group", agentsView || path is "/Projects/Agent" or "/Projects/Ownership" or "/Projects/Register" or "/Projects/Enrol"),
                 ($"/Roadmaps?project={q}", "Roadmaps", "map", path.StartsWith("/Roadmaps", StringComparison.Ordinal)),
                 ($"/Projects/Files?project={q}", "Files", "description", path is "/Projects/Files" or "/Projects/FileProblems"),
                 ($"/Projects/Health?project={q}", "Health", "monitor_heart", path == "/Projects/Health"),
@@ -2391,7 +2419,7 @@
             </p>
         }
 
-        @if (ViewData["AsOf"] is string asOf && ViewData["Grid"] is not true)
+        @if (ViewData["AsOf"] is string asOf && ViewData["Grid"] is not true && ViewData["AsOfInTitle"] is not true)
         {
             <p class="as-of" role="status">As of @asOf.</p>
         }

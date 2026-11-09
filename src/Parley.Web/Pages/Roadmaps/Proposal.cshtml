@@ -7,7 +7,7 @@
 
 <h1>@(Model.Proposal?.Content.Title ?? "Proposed roadmap")</h1>
 
-<p><a href="/Roadmaps?project=@Model.Project">Back to the roadmaps in @Model.Project</a></p>
+<nav class="page-links" aria-label="This project"><a href="/Roadmaps?project=@Model.Project">Back to the roadmaps in @Model.Project</a></nav>
 
 @if (Model.Problem is { Length: > 0 } problem)
 {
@@ -86,13 +86,18 @@ else if (Model.Proposal is { } proposal)
             @* Said before anything is confirmed; the second submit is the deliberate act. *@
             <p class="unreachable" role="alert">@warning</p>
             <input type="hidden" name="Removing" value="@Model.Removing" />
-            <button type="submit" name="ConfirmRemoval" value="true">Remove them and confirm</button>
         }
-        else
-        {
-            <button type="submit">Confirm</button>
-        }
-        <a href="/Roadmaps/Decline?project=@Model.Project&amp;id=@proposal.Id">Decline it…</a>
-        <a href="/Roadmaps?project=@Model.Project">Leave it for now</a>
+        <p class="actions">
+            @if (Model.Warning is { Length: > 0 })
+            {
+                <button type="submit" name="ConfirmRemoval" value="true">Remove them and confirm</button>
+            }
+            else
+            {
+                <button type="submit">Confirm</button>
+            }
+            <a class="button danger" href="/Roadmaps/Decline?project=@Model.Project&amp;id=@proposal.Id">Decline it…</a>
+            <a class="button quiet" href="/Roadmaps?project=@Model.Project">Leave it for now</a>
+        </p>
     </form>
 }

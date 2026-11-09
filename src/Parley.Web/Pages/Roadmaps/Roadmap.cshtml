@@ -7,7 +7,7 @@
 
 <h1>@(Model.Roadmap is { } named ? $"#{named.Number} {named.Title}" : "Roadmap")</h1>
 
-<p><a href="/Roadmaps?project=@Model.Project">Back to the roadmaps in @Model.Project</a></p>
+<nav class="page-links" aria-label="This project"><a href="/Roadmaps?project=@Model.Project">Back to the roadmaps in @Model.Project</a></nav>
 
 @if (Model.Problem is { Length: > 0 } problem)
 {
@@ -19,7 +19,7 @@ else if (Model.Roadmap is { } roadmap && Model.Standing is { } standing)
        conversation and never set here. *@
     <p role="status">@ItemWording.Next(standing)</p>
 
-    <p><a href="/Roadmaps/Edit?project=@Model.Project&amp;id=@roadmap.Id">Edit this roadmap</a></p>
+    <p class="actions"><a class="button tonal" href="/Roadmaps/Edit?project=@Model.Project&amp;id=@roadmap.Id">Edit this roadmap</a></p>
 
     @if (Model.Agents.Count > 0)
     {
