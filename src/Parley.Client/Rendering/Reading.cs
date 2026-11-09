@@ -143,17 +143,25 @@ public static class Reading
     /// <param name="export">The conversation: its messages and the state of its exchanges.</param>
     /// <param name="zone">The zone to render times in, or <see langword="null"/> for this machine's.</param>
     /// <param name="conversation">The conversation being read, for what moved in or out of it; <see langword="null"/> leaves that out.</param>
+    /// <param name="files">
+    /// The conversation's placed files, each drawn as a line where its placement time falls (SPEC.md §9.5); <see langword="null"/>
+    /// leaves them out.
+    /// </param>
     /// <returns>The transcript, line by line.</returns>
     /// <remarks>
     /// <b>From the record, never from the reply's words.</b> The person must see what an agent decided its words settled,
     /// and the broker cannot check that a model said so — so the list is drawn from the exchanges the reply closed, the
     /// way <see cref="Settled"/> finds them, beneath the reply that closed them.
     /// </remarks>
-    public static IReadOnlyList<TranscriptLine> Lines(ConversationExport export, TimeZoneInfo? zone = null, string? conversation = null)
+    public static IReadOnlyList<TranscriptLine> Lines(
+        ConversationExport export, TimeZoneInfo? zone = null, string? conversation = null, IReadOnlyList<SharedFile>? files = null)
     {
         ArgumentNullException.ThrowIfNull(export);
 
         var lines = new List<TranscriptLine>();
+
+        // By the placement record, never by a message's words (SPEC.md §9.5, §13).
+        var placed = new Queue<SharedFile>(Files.Placements.InOrder(files ?? []));
 
         // A move's note sits where the entries are, or were, by its earliest message's place in the broker's order (SPEC.md §5.0).
         var moves = new Queue<MoveRecord>(
@@ -176,6 +184,11 @@ public static class Reading
                 {
                     lines.Add(new TranscriptLine(Pad(ConversationWording.MoveLine(moves.Dequeue(), conversation!, zone)), LineKind.Annotation, null));
                 }
+
+                foreach (var file in Files.Placements.Before(placed, export.Messages.First(m => m.Id == at).CreatedUtc))
+                {
+                    lines.Add(new TranscriptLine(Pad(Files.Placements.Line(file, zone)), LineKind.Annotation, null));
+                }
             }
 
             lines.Add(line);
@@ -196,6 +209,11 @@ public static class Reading
             {
                 lines.Add(new TranscriptLine(Pad(role), LineKind.Annotation, null, id));
             }
+        }
+
+        foreach (var file in placed)
+        {
+            lines.Add(new TranscriptLine(Pad(Files.Placements.Line(file, zone)), LineKind.Annotation, null));
         }
 
         if (conversation is not null)

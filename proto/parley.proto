@@ -368,6 +368,12 @@ message FetchFileRequest {
   string expect_sha256 = 4;           // empty: no expectation
 }
 
+message ReadSharedFileRequest {
+  string conversation_id = 1;         // required: a read is always of one conversation's file
+  string name = 2;
+  string expect_sha256 = 3;           // empty: no expectation
+}
+
 message FetchFileFrame {
   oneof frame {
     SharedFileView header = 1;        // size, hash and placer of the content about to be streamed
@@ -849,6 +855,9 @@ service Operators {
   rpc RemoveFiles(RemoveFilesRequest) returns (RemoveFilesReply);
   rpc PruneFiles(Empty) returns (PruneFilesReply);
   rpc DescribeFileLocation(FileLocationRequest) returns (FileLocationReply);
+  // Reads one file as the person, so a surface can show an image wherever it runs (section 9.5). Streams as FetchFile does
+  // and records nothing: no fetch, no notice, no delivery. Viewing is not an act on the deployment.
+  rpc ReadSharedFile(ReadSharedFileRequest) returns (stream FetchFileFrame);
 
   // What sweeps of the file location found and could not leave as it was (section 9.5): files moved to quarantine, and
   // entries a sweep could not read, move or delete. Kept until the person dismisses each; dismissing deletes nothing on disk.

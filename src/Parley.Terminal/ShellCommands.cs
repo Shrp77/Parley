@@ -330,6 +330,7 @@ internal sealed partial class Shell : IKeyTable<Shell>
             s => s.Conversations.Selected is not null,
             Says: s => s.Conversations.Selected is { Archived: true } ? UnarchiveTitle : ArchiveTitle),
         new(KeyContext.Conversations, 'l', Files.ConversationTitle, s => s.ShowConversationFiles(), s => s.Conversations.Selected is not null),
+        new(KeyContext.Conversations, 'e', Media.Title, s => s.ShowConversationMedia(), s => s.Conversations.Selected is not null),
         new(KeyContext.Conversations, 'f', Closing.Title, s => s.CloseSelected(), s => s.Conversations.Selected is not null),
         new(KeyContext.Conversations, 'd', Destroying.Title, s => s.DestroySelected(), s => s.Conversations.Selected is not null),
 
@@ -348,6 +349,9 @@ internal sealed partial class Shell : IKeyTable<Shell>
         new(KeyContext.Transcript, 'b', SpinningOff.Title, s => s.SpinOff(), s => s.Held is not null && s.Transcript.Open is not null),
         new(KeyContext.Transcript, 'v', Moving.Title, s => s.MoveEntries(), s => s.Transcript.Open is not null),
         new(KeyContext.Transcript, 'l', Shell.RelatedTitle, s => s.GoToRelated(), s => s.Transcript.Open is not null),
+
+        // Reading only, so it needs no seat: the images and files placed in what is open (SPEC.md §9.5).
+        new(KeyContext.Transcript, 'e', Media.Title, s => s.ShowOpenMedia(), s => s.Transcript.Open is not null),
         new(KeyContext.Transcript, 'k', Participation.RequestTitle, s => s.SendRequest(), s => s.Held is not null, Owing.Requesting),
 
         // **Copying does not need a seat**: reading a conversation and taking a copy of what you read are the same act,

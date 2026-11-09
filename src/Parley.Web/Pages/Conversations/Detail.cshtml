@@ -70,6 +70,11 @@
                 <a class="file-button" target="_top" href="@Url.Page("/Projects/Files", new { project = Model.Project, conversation = Model.Id })" title="Files placed in this conversation" aria-label="Files placed in this conversation">
                     <span class="icon" aria-hidden="true">description</span>
                 </a>
+                @* Its images as a grid and its other files as a list, newest first (SPEC.md §9.5). *@
+                <a class="file-button" target="_top" href="@Url.Page("/Conversations/Media", new { project = Model.Project, id = Model.Id })" title="Images and files in this conversation">
+                    <span class="icon" aria-hidden="true">photo_library</span>
+                    Media
+                </a>
                 @* Two ways to keep the conversation outside the console: the readable one carries the annotations of who saw what,
                    and the other is the broker's own records, for another program to read. *@
                 <details class="export-menu">
@@ -267,6 +272,8 @@ else
 </div>
 </div>
 
+<partial name="_Viewer" />
+
 @section Scripts {
     <style>
         .mention-list { position: absolute; left: 0; right: 0; bottom: 100%; margin: 0; padding: 0.25rem; list-style: none; max-height: 14rem; overflow: auto; background: var(--md-sys-color-surface-container); border: 0; border-radius: var(--md-sys-shape-corner-extra-small); box-shadow: var(--md-sys-elevation-2); z-index: 20; }
@@ -313,11 +320,80 @@ else
                     return b.name === "Targets" && b.checked;
                 }).map(function (b) { return b.value; });
 
-                summary.textContent = all && all.checked
-                    ? "To: everyone in this conversation."
-                    : named.length
-                        ? "To: " + named.join(", ") + "."
-                        : "To: nobody chosen yet.";
+                // Each chosen agent is an input chip whose x takes it off the list in one click, and its tick with it:
+                // the boxes are what the form sends, so the chips only ever change a box and redraw from them.
+                var focused = summary.contains(document.activeElement)
+                    ? document.activeElement.getAttribute("data-remove")
+                    : null;
+
+                summary.textContent = "";
+
+                if (all && all.checked) {
+                    summary.textContent = "To: everyone in this conversation.";
+                    return;
+                }
+
+                if (!named.length) {
+                    summary.textContent = "To: nobody chosen yet.";
+                    return;
+                }
+
+                summary.appendChild(document.createTextNode("To: "));
+
+                named.forEach(function (name) {
+                    var chip = document.createElement("span");
+                    chip.className = "chip to-chip";
+                    chip.appendChild(document.createTextNode(name));
+
+                    var x = document.createElement("button");
+                    x.type = "button";
+                    x.className = "chip-x";
+                    x.setAttribute("data-remove", name);
+                    x.setAttribute("aria-label", "Remove " + name);
+                    x.title = "Remove " + name;
+                    x.innerHTML = '<span class="icon" aria-hidden="true">close</span>';
+                    chip.appendChild(x);
+                    summary.appendChild(chip);
+                });
+
+                if (focused) {
+                    var again = summary.querySelector('[data-remove="' + CSS.escape(focused) + '"]');
+                    if (again) { again.focus(); }
+                }
+            }
+
+            // One listener for every chip, since the chips are redrawn with each change.
+            function untick(name) {
+                var chips = [].slice.call(summary.querySelectorAll("[data-remove]"));
+                var at = chips.findIndex(function (c) { return c.getAttribute("data-remove") === name; });
+                var next = chips[at + 1] || chips[at - 1];
+                var nextName = next ? next.getAttribute("data-remove") : null;
+
+                boxes().forEach(function (b) {
+                    if (b.name === "Targets" && b.value === name && b.checked) {
+                        b.checked = false;
+                        b.dispatchEvent(new Event("change", { bubbles: true }));
+                    }
+                });
+
+                refresh();
+
+                var target = nextName ? summary.querySelector('[data-remove="' + CSS.escape(nextName) + '"]') : null;
+                var box = document.querySelector("#composer textarea[name=Says]");
+                (target || box || document.body).focus();
+            }
+
+            if (summary) {
+                summary.addEventListener("click", function (e) {
+                    var x = e.target.closest ? e.target.closest("[data-remove]") : null;
+                    if (x) { e.preventDefault(); untick(x.getAttribute("data-remove")); }
+                });
+
+                // Backspace and Delete as well as Enter and Space, the keys an input chip takes; none is a plain character.
+                summary.addEventListener("keydown", function (e) {
+                    var x = e.target.closest ? e.target.closest("[data-remove]") : null;
+                    if (x && (e.key === "Backspace" || e.key === "Delete")) { e.preventDefault(); untick(x.getAttribute("data-remove")); }
+                });
             }
 
             function snapshot() {

@@ -32,9 +32,22 @@ else if (Model.Messages.Count == 0)
             }
         </ul>
     }
-    else
+    else if (Model.Files.Count == 0)
     {
         <p>Nothing was recorded under this identifier.</p>
+    }
+
+    @* A conversation a file started has no message yet (SPEC.md §9.5), and the file is still what is in it. *@
+    @if (Model.Files.Count > 0)
+    {
+        <ol class="transcript">
+            @foreach (var file in Model.Files)
+            {
+                <li class="placed" id="@Parley.Web.Pages.Conversations.MediaModel.Anchor(file)" data-agent="@Parley.Client.Files.Placements.Placer(file)" data-to="">
+                    <partial name="_Placed" model="new Parley.Web.Pages.Conversations.PlacedItem(file, Model.Project, Model.Id!)" />
+                </li>
+            }
+        </ol>
     }
 }
 else
@@ -46,6 +59,9 @@ else
             var movesToNote = new Queue<Parley.Core.MoveRecord>(Model.Moves.Where(m => m.FirstMessage is not null).OrderBy(m => m.FirstMessage));
             var wroteToNote = new Queue<Parley.Core.WroteElsewhere>(Model.WroteAcross.OrderBy(w => w.AfterMessage).ThenBy(w => w.Message));
             var lastExchanges = new HashSet<long>();
+
+            // By the placement record, never by a message's words (SPEC.md §9.5, §13).
+            var placedToShow = new Queue<Parley.Core.SharedFile>(Model.Files);
 
             // Straight to the message, so the reader lands on what was said rather than at the end of the other conversation.
             Func<Parley.Core.WroteElsewhere, Microsoft.AspNetCore.Html.IHtmlContent> wroteNote = @<li class="moved-note">
@@ -71,6 +87,12 @@ else
                 <li class="moved-note">
                     @Parley.Client.Rendering.ConversationWording.MoveLine(move, Model.Id!)
                     <a target="_top" href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = Parley.Client.Rendering.ConversationWording.OtherSide(move, Model.Id!) })">Open @Parley.Client.Rendering.ConversationWording.OtherSide(move, Model.Id!)</a>
+                </li>
+            }
+            @foreach (var file in Parley.Client.Files.Placements.Before(placedToShow, message.CreatedUtc))
+            {
+                <li class="placed" id="@Parley.Web.Pages.Conversations.MediaModel.Anchor(file)" data-agent="@Parley.Client.Files.Placements.Placer(file)" data-to="">
+                    <partial name="_Placed" model="new Parley.Web.Pages.Conversations.PlacedItem(file, Model.Project, Model.Id!)" />
                 </li>
             }
             var on = DateOnly.FromDateTime(
@@ -180,6 +202,12 @@ else
         @foreach (var wrote in wroteToNote)
         {
             @wroteNote(wrote)
+        }
+        @foreach (var file in placedToShow)
+        {
+            <li class="placed" id="@Parley.Web.Pages.Conversations.MediaModel.Anchor(file)" data-agent="@Parley.Client.Files.Placements.Placer(file)" data-to="">
+                <partial name="_Placed" model="new Parley.Web.Pages.Conversations.PlacedItem(file, Model.Project, Model.Id!)" />
+            </li>
         }
         @* Until its answer arrives, when the next read draws that in its place. *@
         @foreach (var working in Model.WorkingNow)

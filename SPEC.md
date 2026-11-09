@@ -1,6 +1,6 @@
 ﻿# Parley Protocol Specification
 
-**Version:** 0.14
+**Version:** 0.15
 **Status:** Unstable. Breaking changes expected before 1.0.
 **License:** Apache-2.0
 
@@ -3132,17 +3132,32 @@ not the operator who asked is still there.
 
 **A name ends in `.md`, `.txt`, `.png`, `.jpg`, `.jpeg`, `.gif` or `.webp`.** Code travels as text — `PriceSnapshot.cs.txt` — so nothing placed
 in a location has a handler that runs a program when a person opens it (§13). SVG is not among them, because it can carry
-scripts. Only the name is checked; the bytes are never inspected.
+scripts. Placement checks only the name, and the broker never inspects the bytes.
 
 **Anyone may place an image, and that is a recorded reduction in the control.** A model that opens an image reads any words in
 it, so an image from one agent can carry instructions to another, as a message can, in a form the person reading the
-transcript does not see. Such words are inert data like any payload (§13). An operator surface shows a thumbnail only of what
-the person is attaching, and does not serve a placed image back to a browser. A name is made of `A`–`Z`, `a`–`z`, `0`–`9`, `.`, `_` and `-`
+transcript does not see. Such words are inert data like any payload (§13). A name is made of `A`–`Z`, `a`–`z`, `0`–`9`, `.`, `_` and `-`
 and nothing else, does not begin with a dot, and is not a reserved device name (`CON`, `PRN`, `AUX`,
 `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`, with or without an extension). The folder, a separator and the
 name together are at most 255 characters, the location's own path not counted. Names are compared by a
 key that is the name in upper case, so `Readme.md` and `README.md` are one file, as they are on the
 disks of Windows and macOS.
+
+**An operator surface shows a placed image in its conversation, and that is a second recorded reduction in the control.**
+A person who asks an agent what something looks like should see the answer where they asked, so a surface draws each
+placed image in the conversation's transcript at its placement time, beside the messages, opens it full size, and lists a
+conversation's images and other files in a Media view, newest first. A file's place in the transcript comes from its
+placement record, never from a message's words. A removed file is no longer shown, because no record of it is kept.
+What still holds: a model that opens an image reads any words in it, and showing the image to the person changes nothing
+about that. What is new: another participant's bytes reach the person's browser. What answers it: a surface serves only a
+name ending in an image extension, only from the conversation it is showing, read through `read_shared_file` (§10.2),
+which records nothing; it checks that the leading bytes are the signature of the format the name says (PNG, JPEG, GIF or
+WebP) and serves nothing when they are not, so a file named `.png` that holds a page or a script never reaches a
+browser; it names the type from the extension, turns content sniffing off, and serves under a policy that lets nothing in
+the file load, run or frame anything, whether it is shown in a page or opened on its own; and an image larger than 20 MB
+is shown only when the person asks for it. That check is the one place Parley looks inside a placed file, and it is a
+surface's, never the broker's. What remains: a flaw in the browser's own image decoder, including one an image crafted to
+expand to an enormous size could reach under that bound.
 
 **A placement is renamed rather than refused for its characters.** The broker replaces each character
 outside the set with `_`, one for one — a character outside the Basic Multilingual Plane is one
@@ -3428,7 +3443,8 @@ other could.
 | `list_shared_files(conversation_id?, page)` | Every file in the location, with its conversation, size, content hash, placer and when, totals per conversation and overall, how many placements and bytes each agent has made, and how many files in the folders listed are not listed because nothing placed them, which the next sweep deletes (§9.5). Paged, and the broker bounds the page whatever is asked for. Named apart from §10.1's `file_list`, which does not report placement counts. |
 | `remove_files(files)` | Remove any files, whichever agent placed them (§9.5). A name held by several conversations must name one; names not present are reported without preventing the rest. Named apart from §10.1's `file_remove`, which removes only the caller's own. |
 | `prune_files()` | Remove every file in the location, in every conversation. Conversations, exchanges, messages and agents are untouched. Not available to agents, because it removes files other agents placed; named apart from `prune`, which applies retention to messages and never touches a file. |
-| `describe_file_location(conversation_id?, name?)` | The broker's machine name and the absolute path of the location, of a conversation's folder, or of one file. A surface on that machine opens the file or folder in place; anywhere else it says where it is and launches nothing (§13). |
+| `describe_file_location(conversation_id?, name?)` | The broker's machine name and the absolute path of the location, of a conversation's folder, or of one file. A surface on that machine opens the file or folder in place; anywhere else it says where it is (§13). |
+| `read_shared_file(conversation_id, name, expect_sha256?)` | One conversation's file, streamed as `file_fetch` streams it: its size, hash and placer, then its bytes, or a refusal. Records nothing: no fetch, no notice, no delivery, so viewing is not an act on the deployment. What lets a surface show an image wherever it runs (§9.5), and open a copy of a file whose location is on another machine. Named apart from §10.1's `file_fetch`, which an agent's fetch records. |
 | `list_file_problems(include_dismissed?)` | What sweeps found and could not leave as it was (§9.5): files moved to quarantine and entries it could not read, move or delete, those waiting first, with the machine and the absolute path of the quarantine directory. Each path is text nothing checked, drawn as somebody else's. |
 | `dismiss_file_problem(id)` | Dismiss a problem the person has seen, saying whether a waiting one was dismissed. Deletes nothing on disk. |
 | `roadmaps()` | The project's roadmaps: identifier, title, revision, and how many live items each has and how many have conversations. The list a person reaches roadmaps from. |
@@ -3493,11 +3509,13 @@ on its own.
 `place_persons_file` places as the person, which no agent may (an agent places as itself); `remove_files` and
 `prune_files` remove files other agents placed, which no agent may do (§9.5). `describe_file_location`
 says where a file is so a person can open it: a surface running on the broker's machine opens a file to
-read it, or a folder in the file browser, and a surface anywhere else names the machine and the path and
-launches nothing, because the file is not there to open. A file opened is read, not edited: a placed file
-is never changed (§9.5). `list_file_problems` and `dismiss_file_problem` are the person's because what
+read it, or a folder in the file browser. `read_shared_file` is the person's because an agent's fetch is
+recorded and a person viewing a file must not be: a surface anywhere else reads the file through it and opens
+a copy, which is the same file, because a placed file never changes and its hash says which bytes; an image is
+copied only when its leading bytes are its format, and a folder is never opened anywhere but on the broker's
+machine. A file opened is read, not edited: a placed file is never changed (§9.5). `list_file_problems` and `dismiss_file_problem` are the person's because what
 something else did to the location is nobody's message, and only the person decides what becomes of a
-quarantined file. Both operator surfaces offer all seven, like every other operation in this table, and
+quarantined file. Both operator surfaces offer all eight, like every other operation in this table, and
 show how many problems are waiting wherever the person is; the command line places, lists, removes,
 prunes and opens files, and lists and dismisses problems, as well, because scripts need them.
 
@@ -4116,8 +4134,8 @@ tool would read it as instructions, and that judgement, not the list, is what ho
 payload that does. Its content hash identifies the bytes and attests nothing about who wrote them.
 
 **Opening a file never runs one.** A person may open a placed file from an operator surface, in the
-application the operating system has registered for it (§10.2). Only text and image files can be
-placed (§9.5), and a surface opens nothing else, so no file another participant placed can run a program on
+application the operating system has registered for it, in place or as a copy read through the broker (§10.2). Only
+text and image files can be placed (§9.5), and a surface opens nothing else, so no file another participant placed can run a program on
 the person's machine by being opened.
 
 Additional controls, annotated with what actually holds each one — the same discipline §8 applies to
@@ -4838,7 +4856,7 @@ decided is removed and its number is not reused, so the list has gaps.
 
 ## 18. Protocol version
 
-The protocol version is **0.14** and the storage schema version is **7**.
+The protocol version is **0.15** and the storage schema version is **7**.
 
 The version is `major.minor` and has no patch level, because a protocol change is either visible
 across the boundary or is not a protocol change at all. **While the major is zero, the minor

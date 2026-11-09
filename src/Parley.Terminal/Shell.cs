@@ -2,6 +2,7 @@
 using System.Drawing;
 using System.Text;
 using Parley.Client;
+using Parley.Client.Files;
 using Parley.Client.Rendering;
 using Parley.Client.Seating;
 using Parley.Client.Views;
@@ -3582,12 +3583,11 @@ internal sealed partial class Shell : Window
                 return;
             }
 
-            var read = await BrokerDirectory.ReadAsync(async () =>
-                await new BrokerClient(_directory.ClientFor(project))
-                    .ExportAsync(conversationId, cancellationToken).ConfigureAwait(false))
+            var read = await BrokerDirectory.ReadAsync(
+                () => ReadWithFilesAsync(new BrokerClient(_directory.ClientFor(project)), conversationId, cancellationToken))
                 .ConfigureAwait(false);
 
-            if (read.Value is { } export)
+            if (read.Value is var (export, files) && export is not null)
             {
                 // Recovered: take back the warning, but only if nothing has been said since.
                 if (_followFailed is { } warned && string.Equals(Said, warned, StringComparison.Ordinal))
@@ -3596,7 +3596,7 @@ internal sealed partial class Shell : Window
                 }
 
                 _followFailed = null;
-                _ = Transcript.Follow(conversationId, project.Name.Value, export);
+                _ = Transcript.Follow(conversationId, project.Name.Value, export, files);
 
                 // **The room as well, every time, and whether or not the transcript changed.** Somebody picking
                 // a request up changes nothing in the transcript but everything in the room's marks, and "working 3m"
@@ -4913,6 +4913,34 @@ internal sealed partial class Shell : Window
     private Task ShowConversationFiles() =>
         Conversations.Selected is { } chosen ? ShowFilesIn(chosen.Id) : Task.CompletedTask;
 
+    /// <summary>Lists the selected conversation's images and other files, to open one.</summary>
+    /// <returns>When the list has been read and opened.</returns>
+    private Task ShowConversationMedia() =>
+        Conversations.Selected is { } chosen ? ShowMediaIn(Current ?? Projects.Selected, chosen.Id) : Task.CompletedTask;
+
+    /// <summary>Lists the open conversation's images and other files, to open one.</summary>
+    /// <returns>When the list has been read and opened.</returns>
+    private Task ShowOpenMedia() =>
+        Transcript.Open is { } open ? ShowMediaIn(Current, open) : Task.CompletedTask;
+
+    private Task ShowMediaIn(ProjectSettings? project, string conversation)
+    {
+        if (App is not { } app || project is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        _ = Media.OpenAsync(
+            app, new BrokerClient(_directory.ClientFor(project)), conversation, FileLauncher, Queue, said =>
+            {
+                Said = said;
+
+                return Task.CompletedTask;
+            });
+
+        return Settled;
+    }
+
     private Task ShowFilesIn(string? conversation)
     {
         if (App is not { } app || (Current ?? Projects.Selected) is not { } project)
@@ -5336,14 +5364,13 @@ internal sealed partial class Shell : Window
     {
         ArgumentNullException.ThrowIfNull(project);
 
-        var read = await BrokerDirectory.ReadAsync(async () =>
-            await new BrokerClient(_directory.ClientFor(project))
-                .ExportAsync(conversationId, cancellationToken).ConfigureAwait(false))
+        var read = await BrokerDirectory.ReadAsync(
+            () => ReadWithFilesAsync(new BrokerClient(_directory.ClientFor(project)), conversationId, cancellationToken))
             .ConfigureAwait(false);
 
-        Transcript.Show(conversationId, project.Name.Value, read.Value, read.Problem);
+        Transcript.Show(conversationId, project.Name.Value, read.Value.Export, read.Problem, read.Value.Files);
 
-        await FillRoomAsync(project, conversationId, read.Value, cancellationToken).ConfigureAwait(false);
+        await FillRoomAsync(project, conversationId, read.Value.Export, cancellationToken).ConfigureAwait(false);
 
         // Followed only once it has been read. A conversation that could not be read already says why,
         // and asking a broker that did not answer every few seconds would say it again each time.
@@ -5351,6 +5378,22 @@ internal sealed partial class Shell : Window
         {
             StartFollowing(project, conversationId);
         }
+    }
+
+    /// <summary>Reads a conversation and the files placed in it, which its transcript draws where they were placed.</summary>
+    /// <param name="client">The operator's client.</param>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="cancellationToken">Stops the reads.</param>
+    /// <returns>The conversation and its files.</returns>
+    private static async Task<(ConversationExport Export, IReadOnlyList<SharedFile> Files)> ReadWithFilesAsync(
+        BrokerClient client, string conversationId, CancellationToken cancellationToken)
+    {
+        var export = await client.ExportAsync(conversationId, cancellationToken).ConfigureAwait(false);
+        var files = export.Destroyed is null
+            ? await Placements.EveryAsync(client, conversationId, cancellationToken).ConfigureAwait(false)
+            : [];
+
+        return (export, files);
     }
 
     /// <summary>Fills the room's column from the conversation and the broker's wait-for graph.</summary>
