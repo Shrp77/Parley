@@ -40,8 +40,8 @@ it shows the full image. Closing it leaves the reader at the same place in the t
    thumbnail.
 3. **Given** the person attached an image to their own message, **When** it is sent, **Then** it shows in the
    transcript the same way an agent's does.
-4. **Given** a placed file was later removed, **When** the person reads the transcript, **Then** its place shows a
-   tile saying the file was removed, with its name and who placed it, and no image.
+4. **Given** a placed file was later removed, **When** the person reads the transcript, **Then** it is no longer
+   shown there (the broker keeps no record of a removal; see FR-004).
 5. **Given** the web console runs on a different machine from the broker (through the SSH tunnel), **When** the person
    opens a conversation with an image, **Then** the thumbnail still shows.
 6. **Given** the terminal, **When** a conversation holds a placed file, **Then** the transcript shows a line at its
@@ -73,7 +73,7 @@ newest first, and two files in a list. Opening each behaves as in Story 1 or as 
 4. **Given** the terminal, **When** the person opens Media on a conversation, **Then** a dialog lists images first and
    then other files, newest first, each with name, placer, time and size, and Enter opens the chosen one in the
    machine's own program; the dialog says images cannot be drawn in a terminal.
-5. **Given** removed files, **When** Media is open, **Then** they do not appear (the transcript keeps their tile).
+5. **Given** removed files, **When** Media is open, **Then** they do not appear.
 
 ---
 
@@ -131,7 +131,9 @@ remains and that agent's tick in the To box is cleared. Send, and only the remai
   Message payloads stay inert data (§13). A message that names a file does not move or show it.
 - **FR-003**: A thumbnail MUST open a full-size view on the same page. That view MUST show the file name, placer, time
   and size. It MUST close with Escape or a close control, returning focus to the thumbnail.
-- **FR-004**: A file placed and later removed MUST leave a tile in the transcript saying it was removed, with no image.
+- **FR-004**: A file placed and later removed is no longer shown, in the transcript or in Media. *Amended in planning:*
+  the first draft kept a "removed" tile, but the broker keeps no record of a removal, and keeping one is a schema change
+  that would take migration 008 from feature 027. A removal is already told to those who fetched the file.
 - **FR-005**: A non-image placed file (`.md`, `.txt`) MUST appear in the transcript as a file tile with its name,
   placer, time and size, opening the way the Files view opens it today.
 - **FR-006**: The terminal MUST show every placement as a transcript line (placer, name, kind, size). From there the
@@ -145,7 +147,7 @@ remains and that agent's tick in the To box is cleared. Send, and only the remai
 - **FR-008**: The terminal MUST offer the same Media view as a dialog. It lists images and then other files, newest
   first, with name, placer, time and size, and opens the chosen file in the machine's own program. It MUST say that a
   terminal cannot draw images.
-- **FR-009**: Media MUST show only files present now. A removed file appears in the transcript (FR-004) and not in Media.
+- **FR-009**: Media MUST show only files present now, as the transcript does (FR-004).
 
 **Serving another participant's bytes to a browser** (what the reversal must answer)
 
