@@ -93,7 +93,7 @@ public sealed class DriftTests
     /// <summary>Operations a surface reaches only through one shared implementation in Parley.Client, and which.</summary>
     /// <remarks>
     /// Named, not inferred: reading a placed file to open a copy is <c>LocalLauncher.OpenPlacedAsync</c>, the one way every
-    /// surface opens a file (SPEC.md §10.2), so a surface binds the read by calling that. A new entry is a decision.
+    /// surface opens a file through the broker (SPEC.md §10.2), so a surface binds the read by calling that. A new entry is a decision.
     /// </remarks>
     private static readonly Dictionary<string, string> ReachedThrough = new(StringComparer.Ordinal)
     {

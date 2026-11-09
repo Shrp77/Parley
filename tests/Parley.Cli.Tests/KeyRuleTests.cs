@@ -76,8 +76,9 @@ public sealed class KeyRuleTests
     {
         // **Three other things wear this word and none is a key.** `AutostartPlan` names the
         // *executable* — what to run, not what a server sits under — `Shell` sets the terminal's
-        // window *title*, and `LocalLauncher` names the *folder* copies of placed files go in. Both are allowed by name rather than by pattern, so that a fourth meaning is
-        // a decision somebody makes in this list rather than a check that quietly stops applying.
+        // window *title*, and `LocalLauncher` names the *folder* copies of placed files go in. Each is
+        // allowed by name rather than by pattern, so that another meaning is a decision somebody makes
+        // in this list rather than a check that quietly stops applying.
         var offenders = new List<string>();
 
         foreach (var (path, text) in Sources())

@@ -285,7 +285,7 @@ once nobody needs it.
 You place a file of your own from the terminal or the console, into a conversation, the way an agent
 does; `parley files place` does the same from the command line. There and in the terminal, a file that is itself
 a link, or a path on another machine, is refused before it is read: copy the file here and place the copy. The
-console uploads whatever your browser reads from the file you pick. In the console's message box you can also paste
+console uploads whatever your browser reads from the file you pick. In a conversation's message box in the console you can also paste
 or drop a file. It is placed as yours when you send, before the message goes, and the message ends with a list of what
 was attached, each with its hash, for the agent to fetch. Pasted text longer than 4,000 characters becomes a file too,
 named `pasted-…txt`, rather than words in the box. Placing is the only way a file
