@@ -254,7 +254,7 @@ public sealed class InboxModel(
 
         if (hold is null || settings is null)
         {
-            return RedirectToPage("/Inbox");
+            return await NotSeatedAsync(followUp: true, "sent").ConfigureAwait(false);
         }
 
         if (!AgentName.TryCreate(Agent, out var agent) || Facilitation.Is(agent) || string.IsNullOrWhiteSpace(Conversation))
@@ -402,8 +402,7 @@ public sealed class InboxModel(
 
         if (seat is null || hold is null || voice is null)
         {
-            // Back to this page, which takes the seat again or says why it cannot.
-            return RedirectToPage("/Inbox");
+            return await NotSeatedAsync(followUp: false, "sent").ConfigureAwait(false);
         }
 
         // Zipped rather than trusted to arrive in matching lengths: these are three parallel form
@@ -445,8 +444,7 @@ public sealed class InboxModel(
 
         if (seat is null || hold is null || voice is null)
         {
-            // Back to this page, which takes the seat again or says why it cannot.
-            return RedirectToPage("/Inbox");
+            return await NotSeatedAsync(followUp: false, "sent").ConfigureAwait(false);
         }
 
         var sent = await voice
@@ -474,7 +472,7 @@ public sealed class InboxModel(
 
         if (seat is null || hold is null || directory.Find(For) is not { } project)
         {
-            return RedirectToPage("/Inbox");
+            return await NotSeatedAsync(followUp: false, "closed").ConfigureAwait(false);
         }
 
         var read = await BrokerDirectory.ReadAsync(async () =>
@@ -585,6 +583,31 @@ public sealed class InboxModel(
 
     /// <summary>The seat this person holds in the project a form named.</summary>
     /// <returns>The seat, the hold and a voice, or nulls when there is none.</returns>
+    /// <summary>Says nothing was done because the person has no seat in the form's project, keeping what they typed.</summary>
+    /// <param name="followUp">Whether the post was a follow-up, whose box is kept apart from a reply's.</param>
+    /// <param name="done">What would have been done: <c>sent</c> or <c>closed</c>.</param>
+    /// <returns>The page.</returns>
+    /// <remarks>
+    /// Posts take the seats first, so this is a broker that could not seat the person, or a form naming no project here.
+    /// A redirect lost the words, the view and any word of why, which is the fault round 2 fixed for a refused follow-up.
+    /// </remarks>
+    private async Task<IActionResult> NotSeatedAsync(bool followUp, string done)
+    {
+        var why = For is { Length: > 0 } named && directory.Find(named) is { } project
+            ? (await PersonSeats.EnsureAsync(seats, directory, project, HttpContext.RequestAborted).ConfigureAwait(false)).Problem
+              ?? "the person's seat in that project could not be taken."
+            : "this console has no such project.";
+
+        Outcome = $"Nothing was {done}: {why}";
+        _followUpRefused = followUp;
+        _refused = !followUp;
+        Me = seats.Seats().FirstOrDefault()?.Seat;
+
+        await LoadAsync().ConfigureAwait(false);
+
+        return Page();
+    }
+
     private (Seat? Seat, SeatHold? Hold, SeatVoice? Voice) Seated()
     {
         if (directory.Find(For) is not { } project || seats.Held(project.Name.Value) is not { } hold)

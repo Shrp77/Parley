@@ -128,6 +128,36 @@ public sealed partial class SendingAResultFromTheInboxTests
     }
 
     [Fact]
+    public async Task A_result_with_no_seat_to_be_had_keeps_its_words_and_says_nothing_was_sent()
+    {
+        using var console = Asked();
+        using var client = console.CreateClient();
+
+        var before = await client.GetStringAsync(new Uri("/Inbox", UriKind.Relative), Ct);
+
+        console.Services.GetRequiredService<Parley.Client.Seating.SeatBook>()
+            .Sweep(DateTimeOffset.UtcNow + Parley.Client.Seating.SeatBook.IdleAfter + TimeSpan.FromMinutes(1));
+        console.Broker.FailsOn = "/Attach";
+
+        using var form = new FormUrlEncodedContent(
+        [
+            new("__RequestVerificationToken", Token().Match(before).Groups[1].Value),
+            new("For", RoadmapConsole.Project),
+            new("Exchange", Exchange.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            new("Ids", "request"),
+            new("Texts", "Switched it on; it runs at two."),
+            new("Verdicts", "done"),
+        ]);
+
+        using var response = await client.PostAsync(new Uri("/Inbox?handler=Result", UriKind.Relative), form, Ct);
+        var after = await response.Content.ReadAsStringAsync(Ct);
+
+        Assert.Empty(console.Broker.Resulted);
+        Assert.Contains("Nothing was sent:", after, StringComparison.Ordinal);
+        Assert.Contains("Switched it on; it runs at two.", after, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task The_outcome_of_each_item_is_labelled_on_screen()
     {
         using var console = Asked();

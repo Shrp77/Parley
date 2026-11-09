@@ -3745,7 +3745,7 @@ internal sealed partial class Shell : Window
             // attachment, so it works the same while the person is away and does not make them present.
             if (Seats is not null && Current is { } project)
             {
-                var me = Held?.Seat.Name ?? Seats.Known(project.Name.Value)?.Name ?? PersonSeat.On(project.Name);
+                var me = Seats.Held(project.Name.Value)?.Seat.Name ?? Seats.Known(project.Name.Value)?.Name ?? PersonSeat.On(project.Name);
                 var read = await BrokerDirectory.ReadAsync(async () =>
                     await WaitingOnThePerson.CountAsync(new BrokerClient(_directory.ClientFor(project)), me, cancellationToken)
                         .ConfigureAwait(false))
