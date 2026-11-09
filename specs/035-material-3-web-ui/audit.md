@@ -74,6 +74,9 @@ Every page of `src/Parley.Web` and every kind of control on it, with what each b
 | Proposal | Form card | C1 C2 C9 |
 | Edit (roadmap) | Form card | C1 C2 C9 |
 | Decline | Form card | C1 C2 |
+| Parley's settings (Settings, the whole console) | Sections of cards: theme and density choices, the Inbox's Closed window | C1 C9 C11 C13 |
+| Media (037) | Back and Files buttons; a grid of image cards, then a list of file cards | C2 C4 C17 |
+| Exchange panel (036, a fragment the conversation page draws) | Content card inside the conversation's dialog | C6 C17 |
 | Frame (every page) | Navigation drawer/rail + small top app bar + banners | C6 C14 C16 C19 C20 C21 |
 
 ## D. Decisions taken in the audit
@@ -91,4 +94,4 @@ Every page of `src/Parley.Web` and every kind of control on it, with what each b
 |---|---|
 | Foundations (F1–F6) | done: fb24598d |
 | Controls (C1–C28) | done: f34f0eb6 |
-| Pages | done: all 24 rendered pages captured in light and dark at 1400px, eight busiest at 400 and 900px; nothing overflows at 400px; 108 colour pairs pass WCAG AA in both themes |
+| Pages | done for the 24 pages of the page pass: all captured in light and dark at 1400px, eight busiest at 400 and 900px; nothing overflows at 400px; 108 colour pairs pass WCAG AA in both themes. Three pages came after that pass (Parley's settings, Media, the exchange panel) and are listed above; they are built from the same tokens and components and were captured for the website, not yet in both themes at three widths |

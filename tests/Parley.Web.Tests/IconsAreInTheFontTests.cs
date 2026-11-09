@@ -38,8 +38,8 @@ public sealed class IconsAreInTheFontTests
         // The rail's entries: (href, "Label", "icon", current)
         new("""\(\s*[^,()]+,\s*"[^"]*",\s*"([a-z][a-z0-9_]*)",""", RegexOptions.None, TimeSpan.FromSeconds(2)),
 
-        // A script that sets an icon's text.
-        new(@"icon\.textContent\s*=\s*[^;]*?""([a-z][a-z0-9_]*)""", RegexOptions.None, TimeSpan.FromSeconds(2)),
+        // A script that sets an icon's text, whatever the variable is called (icon, mark, glyph).
+        new(@"(?:icon|mark|glyph)\w*\.textContent\s*=\s*[^;]*?""([a-z][a-z0-9_]*)""", RegexOptions.None, TimeSpan.FromSeconds(2)),
     ];
 
     [Fact]

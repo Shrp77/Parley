@@ -103,7 +103,8 @@ In a folder per project under your Parley configuration directory. `parley proje
 the path. Each project has a `parley.db` and a `project.json`, and, once agents share files, a
 `parley.db.files` folder holding them. If a placed file is ever changed on disk, Parley moves it into a
 `parley.db.files-quarantine` folder beside that, which is yours to empty. While a new build upgrades a store, a copy of it sits beside it
-too, until the upgraded store is served.
+too, until the upgraded store is served. Opening a placed file on a machine other than the broker's keeps a checked copy
+in `parley/copies` under your own application-data folder, one folder per file's hash; delete it whenever you like.
 
 ## How do I remove it?
 

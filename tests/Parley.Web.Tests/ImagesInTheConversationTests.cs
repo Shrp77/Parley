@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.RegularExpressions;
 using Parley.Core;
 using Xunit;
 using Wire = Parley.Transport;
@@ -217,9 +218,20 @@ public sealed class PlacementsInTheTranscriptTests
         // the server draws for a file's own day was hidden in the browser and the file sat under the day before. Checked
         // in a headless browser (2026-11-09: without this line both such headings were hidden; with it, neither); held here
         // by the line itself, since this suite runs no script.
+        // Held as strictly as text allows: comments stripped, and the line must be a statement of the loop that decides
+        // which day headings show, after the statement that hides what follows a hidden turn. What text cannot hold is a
+        // branch that never runs around it; that was checked in the browser.
         var page = File.ReadAllText(Path.Combine(Root(), "src", "Parley.Web", "Pages", "Conversations", "Detail.cshtml"));
+        var code = Regex.Replace(page, @"/\*[\s\S]*?\*/|(?<![:""'])//[^
+]*", string.Empty, RegexOptions.None, TimeSpan.FromSeconds(2));
+        var start = code.IndexOf("function run()", StringComparison.Ordinal);
+        var loop = code.IndexOf("items.forEach(function (li) {", start, StringComparison.Ordinal);
+        var end = code.IndexOf("closeDay();", code.IndexOf("});", code.IndexOf("li.classList.toggle(\"filtered-out\", !lastTurn);", loop, StringComparison.Ordinal), StringComparison.Ordinal), StringComparison.Ordinal);
+        var body = start >= 0 && loop > start && end > loop ? code[loop..end] : string.Empty;
+        var hides = body.IndexOf("li.classList.toggle(\"filtered-out\", !lastTurn);", StringComparison.Ordinal);
+        var keeps = body.IndexOf("if (lastTurn && li.classList.contains(\"placed\")) { dayHasOne = true; }", StringComparison.Ordinal);
 
-        Assert.Contains("if (lastTurn && li.classList.contains(\"placed\")) { dayHasOne = true; }", page, StringComparison.Ordinal);
+        Assert.True(hides >= 0 && keeps > hides, $"the day-keeping statement is not live in run()'s loop (hides at {hides}, keeps at {keeps})");
     }
 
     private static string Root()
