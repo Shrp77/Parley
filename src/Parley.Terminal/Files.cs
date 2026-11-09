@@ -311,13 +311,12 @@ internal static class Files
 
         if (read.Reachable && read.Value!.Location is { } elsewhere && !launcher.IsOnThisMachine(elsewhere))
         {
+            // The one way every surface opens a file, into the launcher's own copies folder.
             var copied = await BrokerDirectory.ReadAsync(
-                () => client.ReadSharedFileAsync(file.ConversationId, file.Name.Value, file.Sha256, Placements.CopyLimitBytes, cancellationToken))
+                () => launcher.OpenPlacedAsync(client, file.ConversationId, file.Name.Value, file.Sha256, elsewhere, cancellationToken))
                 .ConfigureAwait(false);
 
-            await done(!copied.Reachable
-                ? copied.Problem!
-                : Safe.Text(launcher.OpenCopy(copied.Value!, LocalLauncher.Copies).Said)).ConfigureAwait(false);
+            await done(!copied.Reachable ? copied.Problem! : Safe.Text(copied.Value!.Said)).ConfigureAwait(false);
 
             return;
         }

@@ -118,6 +118,9 @@ internal sealed class FileLocationFixture : IAsyncDisposable
         Assert.True(raised, "the fixture's problem was not raised");
     }
 
+    /// <summary>Where a copy opened from another machine goes: this fixture's own, never the person's application data.</summary>
+    public string Copies { get; } = Path.Combine(Path.GetTempPath(), "parley-cli-copies-" + Guid.NewGuid().ToString("N"));
+
     /// <summary>Runs <c>parley files</c> with these arguments.</summary>
     /// <param name="arguments">Everything after <c>files</c>.</param>
     /// <returns>The exit code, and what went to standard output and standard error.</returns>
@@ -133,7 +136,8 @@ internal sealed class FileLocationFixture : IAsyncDisposable
                 Launched.Add((path, folder));
                 return true;
             },
-            Machine);
+            Machine,
+            Copies);
 
         var code = await new FilesCommand(Client, output, error, input, launcher, ProjectName).RunAsync(arguments, Ct);
 
@@ -158,6 +162,11 @@ internal sealed class FileLocationFixture : IAsyncDisposable
 
         await Broker.DisposeAsync();
         _connection.Dispose();
+
+        if (Directory.Exists(Copies))
+        {
+            Directory.Delete(Copies, recursive: true);
+        }
     }
 
     private async Task AttachAsync(string agent)

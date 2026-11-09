@@ -128,7 +128,9 @@
                         @if (row.FollowUp)
                         {
                             @* A person's line to an agent is a new Request (SPEC.md §5.6): this never reopens the exchange. *@
-                            <form method="post" asp-page-handler="FollowUp" class="reply">
+                            @* The view, window and filters go with the post, so a refused follow-up comes back to the row it was
+                               written on, with the words still in its box, and a sent one stays where the person was. *@
+                            <form method="post" asp-page-handler="FollowUp" asp-route-view="@Model.View" asp-route-older="@(Model.Older > 0 ? Model.Older : null)" asp-route-scope="@Model.Scope" asp-route-q="@Model.Q" class="reply">
                                 <input type="hidden" name="For" value="@project" />
                                 <input type="hidden" name="Exchange" value="@row.Exchange" />
                                 <input type="hidden" name="Agent" value="@row.Agent.Value" />

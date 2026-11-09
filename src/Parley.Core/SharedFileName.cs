@@ -19,7 +19,7 @@ public enum SharedFileNameProblem
     /// <summary>No name was given.</summary>
     Empty,
 
-    /// <summary>The name does not end in <c>.md</c> or <c>.txt</c>.</summary>
+    /// <summary>The name does not end in one of <see cref="SharedFileName.AllowedExtensions"/>.</summary>
     ExtensionNotAllowed,
 
     /// <summary>

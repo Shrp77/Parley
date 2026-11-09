@@ -91,6 +91,14 @@ else
             }
             @foreach (var file in Parley.Client.Files.Placements.Before(placedToShow, message.CreatedUtc))
             {
+                @* A file placed on a new day starts that day, as a message does: under the day before, its card's time
+                   would say it was placed then. *@
+                var placedOn = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(file.PlacedUtc, TimeZoneInfo.Local).DateTime);
+                if (day != placedOn)
+                {
+                    day = placedOn;
+                    <li class="day">@TimeZoneInfo.ConvertTime(file.PlacedUtc, TimeZoneInfo.Local).ToString("dddd, d MMMM yyyy")</li>
+                }
                 <li class="placed" id="@Parley.Web.Pages.Conversations.MediaModel.Anchor(file)" data-agent="@Parley.Client.Files.Placements.Placer(file)" data-to="">
                     <partial name="_Placed" model="new Parley.Web.Pages.Conversations.PlacedItem(file, Model.Project, Model.Id!)" />
                 </li>
@@ -205,6 +213,12 @@ else
         }
         @foreach (var file in placedToShow)
         {
+            var placedOn = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(file.PlacedUtc, TimeZoneInfo.Local).DateTime);
+            if (day != placedOn)
+            {
+                day = placedOn;
+                <li class="day">@TimeZoneInfo.ConvertTime(file.PlacedUtc, TimeZoneInfo.Local).ToString("dddd, d MMMM yyyy")</li>
+            }
             <li class="placed" id="@Parley.Web.Pages.Conversations.MediaModel.Anchor(file)" data-agent="@Parley.Client.Files.Placements.Placer(file)" data-to="">
                 <partial name="_Placed" model="new Parley.Web.Pages.Conversations.PlacedItem(file, Model.Project, Model.Id!)" />
             </li>

@@ -84,9 +84,8 @@ public static class StillOpen
 
         var me = voice.Name;
         var owed = await WaitingOnThePerson.ReadAsync(broker, me, cancellationToken).ConfigureAwait(false);
-        var openNow = (await broker.WaitingAsync(cancellationToken).ConfigureAwait(false))
-            .Select(edge => edge.ExchangeId)
-            .ToHashSet();
+        var edges = await broker.WaitingAsync(cancellationToken).ConfigureAwait(false);
+        var openNow = edges.Select(edge => edge.ExchangeId).ToHashSet();
 
         var asks = new List<StillOpenAsk>();
         var problems = new List<string>();
@@ -103,6 +102,23 @@ public static class StillOpen
             if (Pending(earlier, project, group.Key.From, group.Key.Conversation, questions, openNow) is { } waiting)
             {
                 asks.Add(waiting);
+                already++;
+                continue;
+            }
+
+            // **What this surface remembers is not the whole record.** Another surface, or this one before a restart,
+            // may have asked already: the broker holds that ask as the person's open Request to this agent, so it is
+            // read from there before anything is sent.
+            var mine = edges
+                .Where(edge => edge.Waiter == me && edge.WaitedOn == group.Key.From)
+                .Select(edge => edge.ExchangeId)
+                .ToHashSet();
+
+            if (mine.Count > 0
+                && await AskedBeforeAsync(broker, me, project, group.Key.From, group.Key.Conversation, questions, mine, cancellationToken)
+                    .ConfigureAwait(false) is { } recorded)
+            {
+                asks.Add(recorded);
                 already++;
                 continue;
             }
@@ -151,6 +167,58 @@ public static class StillOpen
             && ask.Agent == agent
             && ask.Conversation == conversation
             && questions.All(ask.Questions.Contains));
+
+    /// <summary>An ask the broker holds open, from any surface, that already lists every one of these questions.</summary>
+    /// <param name="broker">The project's broker.</param>
+    /// <param name="me">The person's seat.</param>
+    /// <param name="project">The project.</param>
+    /// <param name="agent">The agent.</param>
+    /// <param name="conversation">The conversation.</param>
+    /// <param name="questions">The questions open now.</param>
+    /// <param name="open">The person's exchanges waiting on this agent.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The ask, or <see langword="null"/> when none covers them.</returns>
+    /// <remarks>
+    /// Recognised by the words it opens with and the exchanges it lists, both this class's own: an ask is the person's
+    /// Request, so nothing else in the record marks it. A Request the person wrote that happens to begin the same way
+    /// and list the same exchanges asks the same thing, so treating it as the ask is right.
+    /// </remarks>
+    private static async Task<StillOpenAsk?> AskedBeforeAsync(
+        BrokerClient broker,
+        AgentName me,
+        string project,
+        AgentName agent,
+        string conversation,
+        IReadOnlyCollection<long> questions,
+        IReadOnlySet<long> open,
+        CancellationToken cancellationToken)
+    {
+        var export = await broker.ExportAsync(conversation, cancellationToken).ConfigureAwait(false);
+
+        foreach (var request in export.Messages
+                     .Where(m => m.Type == MessageType.Request && m.From == me && m.To == agent && open.Contains(m.ExchangeId))
+                     .OrderByDescending(m => m.Id))
+        {
+            var said = PayloadShape.Spoken(request.PayloadJson);
+
+            if (!said.StartsWith(Opening, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var listed = System.Text.RegularExpressions.Regex
+                .Matches(said, @"^- exchange #(\d+):", System.Text.RegularExpressions.RegexOptions.Multiline, TimeSpan.FromSeconds(1))
+                .Select(match => long.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture))
+                .ToList();
+
+            if (questions.All(listed.Contains))
+            {
+                return new StillOpenAsk(project, agent, conversation, listed, request.ExchangeId, agent.Value);
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>What a surface says after asking.</summary>
     /// <param name="round">The round, or several summed.</param>

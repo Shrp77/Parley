@@ -19,9 +19,11 @@ public sealed class WithdrawingIsOneImplementationTests
     [InlineData("src/Parley.Web")]
     public void Neither_surface_calls_the_brokers_operation_itself(string surface)
     {
+        // Any member access, whatever the receiver: `(broker).`, `broker?.`, `new BrokerClient(...).` and a method group
+        // passed as a delegate all count. The first version needed a word right before the dot, and a receiver ending in
+        // a bracket walked past it. A bare `RetireAsync(` is a surface's own helper, which is what calls AgentWithdrawal.
         var direct = Sources(surface)
-            .SelectMany(file => Regex.Matches(File.ReadAllText(file), @"(\w+)\s*\.\s*(RetireAsync|ReinstateAsync|PurgeAsync)\s*\(", RegexOptions.None, TimeSpan.FromSeconds(2))
-                .Where(match => match.Groups[1].Value != "AgentWithdrawal")
+            .SelectMany(file => Regex.Matches(File.ReadAllText(file), @"(?<!AgentWithdrawal\s*)(\?\s*)?\.\s*(RetireAsync|ReinstateAsync|PurgeAsync)\b", RegexOptions.None, TimeSpan.FromSeconds(2))
                 .Select(match => $"{Path.GetFileName(file)}: {match.Value}"))
             .ToList();
 

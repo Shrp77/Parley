@@ -210,7 +210,9 @@ reach three; `review/` holds the rules. Each run must probe something the previo
 did not, or it is one run repeated. The running count belongs in `REVIEW-LEDGER.md`, which is
 untracked because it is the state of one checkout's review rather than a fact about the
 protocol, and which logs clean runs as well as findings — a ledger of findings alone cannot
-distinguish an area that held from one nobody probed.
+distinguish an area that held from one nobody probed. Before the merge, the documentation says what
+the change does, and the Parley website's agent has been asked through Parley to say it too; the
+merge waits for its answer.
 
 **The repository is public and its history goes with it.** No trace of any originating
 private project may appear in any commit. Placeholder agents are `orders`, `billing` and

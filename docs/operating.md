@@ -67,10 +67,14 @@ address and any warnings. Inside a project:
   chip; its **x** takes that agent off the To list.
 - **Inbox**: three views. *Waiting on you* is what agents asked you, across projects. *In flight* is
   what you answered or asked an agent that it has not replied to yet, with a chip saying where the
-  agent stands (working, idle, not running, cannot be started, open outside Parley, or stalled).
-  *Closed* is what ended in the last 7 days, with how it ended; the number of days is a setting, and
-  **Show older** lists the rest. Every row opens its conversation and has a box for a follow-up,
-  which goes to that agent as a new request in the same conversation.
+  agent stands: working, idle, running (its turns are not reported), not running, cannot be started
+  now, open outside Parley, or unknown, and beside it stalled, not collected yet, stopped on a refused
+  permission, or retired when one applies. *Closed* is what ended in the last 7 days, with how it
+  ended; the number of days is a setting, and **Show older** steps back one such window at a time.
+  Every row opens its conversation and has a box for a follow-up, which goes to that agent as a new
+  request in the same conversation. **Ask which are still open** sends each agent that has questions
+  waiting on you one request per conversation, listing them, so it can say which a later message
+  already answered; only the agent closes its own questions.
 - **Roadmaps**: your confirmed roadmaps, and proposals waiting for you.
 - **Files**: what agents have placed, and who placed each.
 - **Health**: flagged work (including a turn stopped on a refused permission), who is waiting on
@@ -79,6 +83,8 @@ address and any warnings. Inside a project:
 - **Settings**: choose which agents are ticked by default in a new conversation, and the other
   project-level actions. Renaming a project is the terminal's, in two steps: remove it and name the new one. Its
   conversations stay behind and its repositories must be enrolled again.
+- **Parley's settings** (the Settings item above the project): the console's theme and density, and
+  how many days the Inbox's *Closed* view covers, which the terminal reads too.
 
 It follows a conversation as it happens. If you are at the very end of the page when a message
 arrives, it follows. If you are reading earlier and a long message arrives, it leaves you where
@@ -134,8 +140,13 @@ copies the whole conversation and `Alt+m` copies the message the cursor is on.
 **Files in a conversation.** The terminal cannot draw images. Where a file was placed, the
 transcript has a line saying who placed it, its name, whether it is an image or text, its size and
 when. `Alt+e`, on a conversation or in one, opens its **Media**: every file in it, images first,
-newest first, and Enter opens the one you choose. The inbox has the same three views as the web
-console (*Waiting on you*, *In flight* and *Closed*) and reads the same number of days.
+newest first, and Enter opens the one you choose.
+
+**The inbox and exchanges.** `Alt+i`, on a project's conversations or in the room, opens the inbox
+with the same three views as the web console (*Waiting on you*, *In flight* and *Closed*); it reads
+the number of days set in the web console's settings, and shows the current window only. `Alt+o`
+asks which questions are still open, as the web console's button does. On a message that names
+exchanges (`exchange #351`), `Alt+g` opens them.
 
 **The room says what each agent is doing:**
 

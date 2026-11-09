@@ -43,6 +43,27 @@ public sealed class FilesConsole : WebApplicationFactory<Program>
     /// <summary>Every path the page asked to open, and whether it was a folder.</summary>
     public List<(string Path, bool Folder)> Launched { get; } = [];
 
+    /// <summary>Where the page's copies go: a folder of this console's own, never the person's application data.</summary>
+    public string Copies { get; } = Path.Combine(Path.GetTempPath(), "parley-files-console-" + Guid.NewGuid().ToString("N"));
+
+    /// <inheritdoc/>
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+
+        try
+        {
+            if (Directory.Exists(Copies))
+            {
+                Directory.Delete(Copies, recursive: true);
+            }
+        }
+        catch (IOException)
+        {
+            // Best effort: a copy a test left open.
+        }
+    }
+
     /// <inheritdoc/>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -66,7 +87,8 @@ public sealed class FilesConsole : WebApplicationFactory<Program>
 
                     return true;
                 },
-                MachineName.Current));
+                MachineName.Current,
+                Copies));
         });
     }
 }

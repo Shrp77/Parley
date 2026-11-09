@@ -24,8 +24,9 @@ public sealed record Launched(bool Opened, string Said);
 /// <b>Somewhere else, <see cref="OpenFile"/> launches nothing and says where the file is.</b> The broker says which
 /// machine holds the location, and a surface on another machine has nothing on its own disk to open in place. A path
 /// that does not exist here is treated the same way, so a machine name that happens to match cannot launch the wrong
-/// thing. Such a surface may instead open a copy read through the broker (<see cref="OpenCopy"/>), which is the same file
-/// because a placed file never changes; a folder is opened only in place.
+/// thing. Every surface opens a file through <see cref="OpenPlacedAsync"/>, which on another machine opens a copy read
+/// through the broker (<see cref="OpenCopy"/>): the same file, because a placed file never changes. A folder is opened
+/// only in place.
 /// </para>
 /// <para>
 /// <b>Only what can be placed, and only a regular file.</b> Nothing else can be placed, so this is the second
@@ -43,8 +44,11 @@ public sealed record Launched(bool Opened, string Said);
 /// </remarks>
 /// <param name="open">Launches a path: <see langword="true"/> for a folder. Returns whether something was launched.</param>
 /// <param name="machine">This machine's name, as the broker spells machines.</param>
-public sealed class LocalLauncher(Func<string, bool, bool> open, string machine)
+/// <param name="copies">Where copies go, for a test; <see langword="null"/> is <see cref="Copies"/>, this user's own.</param>
+public sealed class LocalLauncher(Func<string, bool, bool> open, string machine, string? copies = null)
 {
+    private readonly string _copies = copies ?? Copies;
+
     private readonly Func<string, bool, bool> _open = open ?? throw new ArgumentNullException(nameof(open));
 
     private readonly string _machine = machine ?? throw new ArgumentNullException(nameof(machine));
@@ -132,13 +136,21 @@ public sealed class LocalLauncher(Func<string, bool, bool> open, string machine)
     public Launched OpenCopy(SharedFileRead read, string copies)
     {
         ArgumentNullException.ThrowIfNull(read);
-        ArgumentException.ThrowIfNullOrEmpty(copies);
+        ArgumentNullException.ThrowIfNull(copies);
 
         if (read.File is not { } file || read.Bytes is not { } bytes)
         {
             return new Launched(false, read.TooLarge
                 ? $"{read.File?.Name.Value} is too large to copy here, so nothing was opened."
-                : read.Refusal?.Detail ?? "That file is not in the location any more.");
+                : read.Refusal is { Detail: { Length: > 0 } detail }
+                    ? detail
+                    : read.Refusal?.Rejection switch
+                    {
+                        // The bytes read were not the placed file's: say so, rather than that the file is gone.
+                        FileRejection.Changed or FileRejection.Tampered =>
+                            $"{read.File?.Name.Value ?? "That file"} changed since it was placed, so nothing was copied or opened.",
+                        _ => "That file is not in the location any more.",
+                    });
         }
 
         var name = file.Name.Value;
@@ -153,9 +165,26 @@ public sealed class LocalLauncher(Func<string, bool, bool> open, string machine)
             return new Launched(false, $"{name} is not a readable image, so nothing was opened.");
         }
 
+        if (copies.Length == 0)
+        {
+            return new Launched(false, "This account has no folder of its own to keep a copy in, so nothing was opened.");
+        }
+
         var folder = Path.Combine(copies, file.Sha256.Value);
         var path = Path.Combine(folder, name);
 
+        try
+        {
+            return WriteAndOpen(copies, folder, path, name, file.Sha256.Value, bytes);
+        }
+        catch (Exception failed) when (failed is IOException or UnauthorizedAccessException)
+        {
+            return new Launched(false, $"No copy of {name} could be written in {folder}, so nothing was opened: {failed.Message}");
+        }
+    }
+
+    private Launched WriteAndOpen(string copies, string folder, string path, string name, string sha256, ReadOnlyMemory<byte> bytes)
+    {
         // **Nothing is written through a folder somebody else could have made.** Each folder on the way is made private
         // and refused when it is a link, or (off Windows) when anyone but this user can write in it: another account on
         // the machine that made the folder first could otherwise point it at the person's own repository, and the copy
@@ -167,7 +196,7 @@ public sealed class LocalLauncher(Func<string, bool, bool> open, string machine)
 
         // **A copy already there is opened only when it is still the placed file.** Anything else under its name is
         // replaced, so what is opened is always the bytes the read checked.
-        if (!IsTheCopy(path, file.Sha256.Value))
+        if (!IsTheCopy(path, sha256))
         {
             var writing = Path.Combine(folder, $".{Guid.NewGuid():N}.copying");
             File.WriteAllBytes(writing, bytes.ToArray());
@@ -179,16 +208,58 @@ public sealed class LocalLauncher(Func<string, bool, bool> open, string machine)
             : new Launched(false, $"No program is registered for {Path.GetExtension(path)} files here. The copy is at {path}.");
     }
 
+    /// <summary>
+    /// Opens a placed file: in place on the broker's machine, or a checked copy read through the broker anywhere else.
+    /// </summary>
+    /// <param name="broker">The operator's client.</param>
+    /// <param name="conversation">The file's conversation; a copy cannot be read without it.</param>
+    /// <param name="name">The file's name.</param>
+    /// <param name="expected">The hash the person saw, when known: a file placed again since reads as changed.</param>
+    /// <param name="location">Where the broker said the file is.</param>
+    /// <param name="cancellationToken">Stops the read.</param>
+    /// <returns>Whether it was opened, and what to say.</returns>
+    /// <remarks>
+    /// The one way every surface opens a file (SPEC.md §10.2), so the web console and the command line at the end of a
+    /// tunnel open what the terminal does, rather than saying where a file is on a machine the person is not at.
+    /// </remarks>
+    public async Task<Launched> OpenPlacedAsync(
+        IParleyBrokerClient broker,
+        string? conversation,
+        string name,
+        ContentHash? expected,
+        FileLocation location,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(broker);
+        ArgumentNullException.ThrowIfNull(location);
+
+        if (IsHere(location))
+        {
+            return OpenFile(location);
+        }
+
+        if (string.IsNullOrEmpty(conversation))
+        {
+            return new Launched(false, $"{name} is on {location.Machine}. Name its conversation to open a copy of it here.");
+        }
+
+        var read = await broker.ReadSharedFileAsync(conversation, name, expected, Placements.CopyLimitBytes, cancellationToken)
+            .ConfigureAwait(false);
+
+        return OpenCopy(read, _copies);
+    }
+
     /// <summary>Where a surface on this machine keeps the copies it opens: this user's own application data.</summary>
     /// <remarks>
     /// Not the temp folder, which on Linux is <c>/tmp</c>, shared by every account on the machine.
+    /// Looked up without creating anything, so a home folder that cannot be written costs the copies and nothing else: a
+    /// lookup that threw here would stop the whole type loading, and with it every surface that opens a file. An empty
+    /// answer leaves no copies folder at all, never the shared temp folder.
     /// </remarks>
-    public static string Copies { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.Create) is { Length: > 0 } own
-            ? own
-            : Path.GetTempPath(),
-        "parley",
-        "copies");
+    public static string Copies { get; } =
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.DoNotVerify) is { Length: > 0 } own
+            ? Path.Combine(own, "parley", "copies")
+            : string.Empty;
 
     /// <summary>Makes a folder this user's alone, or says why it cannot be written through.</summary>
     /// <param name="folder">The folder.</param>

@@ -36,7 +36,24 @@ public sealed class FilesOpenCommandTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task A_file_on_another_machine_is_described_and_nothing_is_launched()
+    public async Task A_file_on_another_machine_opens_a_checked_copy_read_through_the_broker()
+    {
+        // At the end of a tunnel the broker's disk is not this one, so the file is read and a copy opened, as the
+        // terminal and the web console do (SPEC.md §10.2).
+        await _files.PlaceAsync(Billing, "notes.md", "net of tax", "pricing");
+        _files.Machine = "elsewhere";
+
+        var (_, output, _) = await _files.RunAsync("open", "notes.md", "--conversation", "pricing");
+
+        var (path, folder) = Assert.Single(_files.Launched);
+        Assert.False(folder);
+        Assert.StartsWith(_files.Copies, path, StringComparison.Ordinal);
+        Assert.Equal("net of tax", await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken));
+        Assert.Contains("Opened a copy of notes.md", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_file_on_another_machine_with_no_conversation_named_asks_for_one_and_launches_nothing()
     {
         await _files.PlaceAsync(Billing, "notes.md", "net of tax", "pricing");
         _files.Machine = "elsewhere";
@@ -44,7 +61,7 @@ public sealed class FilesOpenCommandTests : IAsyncDisposable
         var (_, output, _) = await _files.RunAsync("open", "notes.md");
 
         Assert.Empty(_files.Launched);
-        Assert.Contains("is on machine " + TestMachine.Name + ", at", output, StringComparison.Ordinal);
+        Assert.Contains("Name its conversation", output, StringComparison.Ordinal);
     }
 
     [Fact]

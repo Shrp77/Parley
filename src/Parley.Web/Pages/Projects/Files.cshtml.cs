@@ -308,11 +308,21 @@ public sealed class FilesModel(BrokerDirectory directory) : PageModel
         var located = await BrokerDirectory.ReadAsync(async () =>
             await broker.DescribeFileLocationAsync(inConversation, file, token).ConfigureAwait(false)).ConfigureAwait(false);
 
-        Outcome = !located.Reachable
-            ? located.Problem
-            : located.Value!.Location is { } location
-                ? Launcher.OpenFile(location).Said
-                : located.Value.Refusal?.Detail ?? "That file is not in the location.";
+        if (located.Reachable && located.Value!.Location is { } location)
+        {
+            // In place on the broker's machine, a checked copy anywhere else: the terminal's way, through one helper.
+            var opened = await BrokerDirectory.ReadAsync(async () =>
+                await Launcher.OpenPlacedAsync(broker, inConversation, file ?? string.Empty, null, location, token).ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            Outcome = opened.Reachable ? opened.Value!.Said : opened.Problem;
+        }
+        else
+        {
+            Outcome = !located.Reachable
+                ? located.Problem
+                : located.Value!.Refusal?.Detail ?? "That file is not in the location.";
+        }
 
         await LoadAsync(project).ConfigureAwait(false);
 

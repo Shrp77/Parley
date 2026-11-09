@@ -166,7 +166,8 @@ public sealed partial class InboxFollowsExchangesTests
             new("Words", "Did the yearly plan go through?"),
         ]);
 
-        using var response = await client.PostAsync(new Uri("/Inbox?handler=FollowUp&view=closed", UriKind.Relative), form, Ct);
+        // Where the form itself posts, so a view the form leaves out cannot be supplied by the test.
+        using var response = await client.PostAsync(FollowUpAction(page), form, Ct);
 
         var sent = Assert.Single(console.Broker.Requested);
 
@@ -177,6 +178,56 @@ public sealed partial class InboxFollowsExchangesTests
         // Nothing was said on the closed exchange itself.
         Assert.Empty(console.Broker.Resulted);
     }
+
+    [Fact]
+    public async Task A_refused_follow_up_comes_back_to_its_row_with_the_words_still_in_the_box()
+    {
+        // The box is only on In flight and Closed. A post that lost the view came back to Waiting on you, where the row
+        // and its box are not drawn, and the words were gone.
+        using var console = Console();
+
+        Said(console, 1, 21, Wire.MessageType.Request, Billing, Person, Ask("Monthly or yearly?"));
+        Said(console, 2, 21, Wire.MessageType.Result, Person, Billing, """{"outcomes":[{"id":"request","outcome":"answered","text":"Yearly."}]}""");
+        Exchange(console, 21, open: false, Wire.ExchangeOutcome.Complete);
+        console.Broker.RefusesRequestsTo.Add(Billing);
+
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(new Uri("/Inbox?view=closed", UriKind.Relative), Ct);
+
+        using var form = new FormUrlEncodedContent(
+        [
+            new("__RequestVerificationToken", Token().Match(page).Groups[1].Value),
+            new("For", RoadmapConsole.Project),
+            new("Exchange", "21"),
+            new("Agent", Billing),
+            new("Conversation", "talk"),
+            new("Words", "Words worth keeping"),
+        ]);
+
+        using var response = await client.PostAsync(FollowUpAction(page), form, Ct);
+        var after = await response.Content.ReadAsStringAsync(Ct);
+
+        Assert.Contains("Words worth keeping", after, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_old_window_far_beyond_any_record_is_an_empty_page_not_a_failure()
+    {
+        using var console = Console();
+        using var client = console.CreateClient();
+
+        using var response = await client.GetAsync(new Uri("/Inbox?view=closed&older=2000000000", UriKind.Relative), Ct);
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+    }
+
+    /// <summary>The address a page's follow-up form posts to, decoded.</summary>
+    /// <param name="page">The page.</param>
+    /// <returns>The form's action.</returns>
+    private static Uri FollowUpAction(string page) => new(
+        System.Net.WebUtility.HtmlDecode(Regex.Match(page, @"action=""(/Inbox\?[^""]*handler=FollowUp[^""]*)""", RegexOptions.None, TimeSpan.FromSeconds(2)).Groups[1].Value),
+        UriKind.Relative);
 
     [Fact]
     public async Task No_follow_up_is_offered_to_the_facilitator_and_one_asked_for_is_refused()

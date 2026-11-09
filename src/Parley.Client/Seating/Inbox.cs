@@ -271,7 +271,9 @@ public static class Inbox
         ArgumentNullException.ThrowIfNull(broker);
 
         days = days is >= 1 and <= 365 ? days : DefaultDays;
-        older = Math.Max(0, older);
+        // At most a century back: a window count from a hand-typed address must not move the clock past its range, and
+        // nothing in a store is older than that.
+        older = Math.Clamp(older, 0, 36_500 / days);
 
         var until = nowUtc.AddDays(-days * (double)older);
         var from = until.AddDays(-days);

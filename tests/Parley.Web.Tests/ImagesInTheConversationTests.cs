@@ -184,6 +184,31 @@ public sealed class PlacementsInTheTranscriptTests
         Assert.Contains("handler=Image", page, StringComparison.Ordinal);
         Assert.Contains("id=\"viewer\"", page, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task A_file_placed_on_a_later_day_sits_under_that_days_heading()
+    {
+        using var console = new TranscriptConsole();
+
+        // The scripted message is on 16 September; the file a day later. Under 16 September's heading its card's time
+        // alone would say it was placed that day.
+        console.Broker.Request(1, "orders@test", "billing@test", "What does it look like?");
+        console.Broker.Files.Add(new Wire.SharedFileView
+        {
+            ConversationId = "shared", Folder = "shared", Name = "later.png", SizeBytes = 10, Sha256 = new string('c', 64),
+            PlacedBy = "billing@test", PlacedUtc = "2026-09-17T15:00:00Z",
+        });
+
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+        var placedOn = TimeZoneInfo.ConvertTime(DateTimeOffset.Parse("2026-09-17T15:00:00Z", System.Globalization.CultureInfo.InvariantCulture), TimeZoneInfo.Local);
+        var heading = page.IndexOf(">" + placedOn.ToString("dddd, d MMMM yyyy", System.Globalization.CultureInfo.CurrentCulture) + "<", StringComparison.Ordinal);
+        var file = page.IndexOf("id=\"f-LATER.PNG\"", StringComparison.Ordinal);
+        var message = page.IndexOf("id=\"m1\"", StringComparison.Ordinal);
+
+        Assert.True(message >= 0 && heading > message && file > heading, $"message {message}, heading {heading}, file {file}");
+    }
 }
 
 /// <summary>That the composer's To line is where chips are drawn, and that a chip only ever changes a box.</summary>

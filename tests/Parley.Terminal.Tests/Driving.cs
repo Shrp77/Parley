@@ -249,7 +249,8 @@ internal static class Driving
 
                         return true;
                     },
-                    Parley.Core.MachineName.Current);
+                    Parley.Core.MachineName.Current,
+                    Path.Combine(Path.GetTempPath(), "parley-terminal-copies-" + Guid.NewGuid().ToString("N")));
 
                 // Off, so a transcript opened by any test does not queue a read every few seconds for
                 // the rest of it. `Settled` is what makes a driven journey deterministic, and a surface
