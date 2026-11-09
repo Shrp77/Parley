@@ -156,9 +156,18 @@ public sealed class LocalLauncher(Func<string, bool, bool> open, string machine)
         var folder = Path.Combine(copies, file.Sha256.Value);
         var path = Path.Combine(folder, name);
 
-        Directory.CreateDirectory(folder);
+        // **Nothing is written through a folder somebody else could have made.** Each folder on the way is made private
+        // and refused when it is a link, or (off Windows) when anyone but this user can write in it: another account on
+        // the machine that made the folder first could otherwise point it at the person's own repository, and the copy
+        // would land there under its placed name -- CLAUDE.md is one.
+        if ((Unsafe(copies) ?? Unsafe(folder)) is { } refused)
+        {
+            return new Launched(false, refused);
+        }
 
-        if (!File.Exists(path))
+        // **A copy already there is opened only when it is still the placed file.** Anything else under its name is
+        // replaced, so what is opened is always the bytes the read checked.
+        if (!IsTheCopy(path, file.Sha256.Value))
         {
             var writing = Path.Combine(folder, $".{Guid.NewGuid():N}.copying");
             File.WriteAllBytes(writing, bytes.ToArray());
@@ -170,8 +179,74 @@ public sealed class LocalLauncher(Func<string, bool, bool> open, string machine)
             : new Launched(false, $"No program is registered for {Path.GetExtension(path)} files here. The copy is at {path}.");
     }
 
-    /// <summary>Where a surface on this machine keeps the copies it opens.</summary>
-    public static string Copies { get; } = Path.Combine(Path.GetTempPath(), "parley-copies");
+    /// <summary>Where a surface on this machine keeps the copies it opens: this user's own application data.</summary>
+    /// <remarks>
+    /// Not the temp folder, which on Linux is <c>/tmp</c>, shared by every account on the machine.
+    /// </remarks>
+    public static string Copies { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.Create) is { Length: > 0 } own
+            ? own
+            : Path.GetTempPath(),
+        "parley",
+        "copies");
+
+    /// <summary>Makes a folder this user's alone, or says why it cannot be written through.</summary>
+    /// <param name="folder">The folder.</param>
+    /// <returns>Null when it is safe to write in, or what to say.</returns>
+    private static string? Unsafe(string folder)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Directory.CreateDirectory(folder);
+        }
+        else
+        {
+            Directory.CreateDirectory(folder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        var info = new DirectoryInfo(folder);
+
+        if (info.LinkTarget is not null || info.Attributes.HasFlag(FileAttributes.ReparsePoint))
+        {
+            return $"{folder} is a link, so no copy was written through it and nothing was opened.";
+        }
+
+        if (!OperatingSystem.IsWindows()
+            && (File.GetUnixFileMode(folder) & (UnixFileMode.GroupWrite | UnixFileMode.OtherWrite)) != 0)
+        {
+            return $"{folder} can be written by other accounts on this machine, so no copy was written in it and nothing was opened.";
+        }
+
+        return null;
+    }
+
+    /// <summary>Whether a file is already the copy of the placed file with this hash, and not a link.</summary>
+    /// <param name="path">Where the copy goes.</param>
+    /// <param name="sha256">The placed file's hash, lowercase hex.</param>
+    /// <returns>True when it may be opened as it is.</returns>
+    private static bool IsTheCopy(string path, string sha256)
+    {
+        var info = new FileInfo(path);
+
+        if (!info.Exists || info.LinkTarget is not null || info.Attributes.HasFlag(FileAttributes.ReparsePoint))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var stream = info.OpenRead();
+
+            return string.Equals(
+                Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(stream)),
+                sha256,
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+    }
 
     private bool IsHere(FileLocation location) =>
         string.Equals(location.Machine, _machine, StringComparison.OrdinalIgnoreCase);

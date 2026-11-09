@@ -42,6 +42,20 @@ public sealed class StillOpenAsks
 
     private IReadOnlyList<StillOpenAsk> _latest = [];
 
+    private int _asking;
+
+    /// <summary>Claims the one round this surface may run at a time.</summary>
+    /// <returns>True when no round was running; the caller then owes <see cref="EndRound"/>.</returns>
+    /// <remarks>
+    /// <b>A round reads what was asked, sends, and only then records it</b>, so two rounds at once both found nothing asked
+    /// and both sent: a double click asked every agent twice. The terminal's rounds already run one at a time on its work
+    /// queue; the web console's arrive as concurrent requests, so a press made while one runs sends nothing.
+    /// </remarks>
+    public bool TryBeginRound() => Interlocked.CompareExchange(ref _asking, 1, 0) == 0;
+
+    /// <summary>Releases the round <see cref="TryBeginRound"/> claimed.</summary>
+    public void EndRound() => Interlocked.Exchange(ref _asking, 0);
+
     /// <summary>Replaces what was last asked in the projects given.</summary>
     /// <param name="projects">The projects the press asked in.</param>
     /// <param name="asks">Every Request of the press, sent, kept from before, or refused.</param>

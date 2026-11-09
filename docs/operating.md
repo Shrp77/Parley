@@ -315,7 +315,7 @@ The terminal and the console both list the files, with who placed how much. You 
 open a file to read it, open its folder, remove files, or remove every file. Removing every file asks you to
 type the project's name. Only `.md`, `.txt` and image files are ever opened. On the broker's own
 machine the terminal opens the placed file itself. When the broker is on another machine, it reads
-the file through the broker, checks it against its hash, and opens a copy in a temporary folder;
+the file through the broker, checks it against its hash, and opens a copy kept in your own application-data folder (never the shared temp folder), replacing anything there that is not that file;
 since a placed file never changes, the copy is the same file. An image is opened only when its
 first bytes say it is the image its name claims. Reading a file this way is not recorded as a
 fetch. A file goes when its placer removes it, when you remove it, when

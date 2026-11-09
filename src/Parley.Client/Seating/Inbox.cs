@@ -421,6 +421,14 @@ public static class Inbox
             return new ExchangeEnding(closed, Ending.Settled, null, other);
         }
 
+        // **Closed without an answer is the exchange's outcome, not a Result's.** Closing a request or a conversation
+        // writes Results from the broker whose point says "closed", and read as an ordinary Result that fell through to
+        // Done, attributed to whoever the broker's Result named. The outcome says it, so it is read first.
+        if (exchange.Outcome == ExchangeOutcome.Closed)
+        {
+            return new ExchangeEnding(closed, Ending.Closed, null, null);
+        }
+
         if (on.LastOrDefault(m => m.Type == MessageType.Result) is not { } result)
         {
             return new ExchangeEnding(closed, Ending.Closed, null, null);
@@ -437,9 +445,10 @@ public static class Inbox
         {
             "answered" => Ending.Answered,
             "acknowledged" => Ending.Received,
+            "closed" => Ending.Closed,
             _ => Ending.Done,
         };
 
-        return new ExchangeEnding(closed, how, null, result.From);
+        return new ExchangeEnding(closed, how, null, how == Ending.Closed ? null : result.From);
     }
 }

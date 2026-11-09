@@ -491,6 +491,31 @@ public sealed class InboxModel(
     /// </remarks>
     public async Task<IActionResult> OnPostStillOpenAsync()
     {
+        if (!stillOpen.TryBeginRound())
+        {
+            Outcome = AlreadyAsking;
+            Me = seats.Seats().FirstOrDefault()?.Seat;
+
+            await LoadAsync().ConfigureAwait(false);
+
+            return Page();
+        }
+
+        try
+        {
+            return await AskWhichAreStillOpenAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            stillOpen.EndRound();
+        }
+    }
+
+    /// <summary>What a press says while another round is still asking.</summary>
+    internal const string AlreadyAsking = "Already asking which are still open; this press sent nothing.";
+
+    private async Task<IActionResult> AskWhichAreStillOpenAsync()
+    {
         var token = HttpContext.RequestAborted;
         var earlier = stillOpen.Latest();
         var asks = new List<StillOpenAsk>();

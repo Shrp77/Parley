@@ -135,6 +135,29 @@ public sealed class InboxViewsTests
     }
 
     [Fact]
+    public void A_request_the_broker_closed_reads_closed_not_done_whatever_its_results_say()
+    {
+        // As a real store holds it: closing a request (or its conversation) writes a Result each way, whose point says
+        // "closed". Read as an ordinary Result, that fell through to Done, credited to whoever the last one named.
+        const string closedByPerson = """{"outcomes":[{"id":"request","outcome":"closed","text":"closed by the person"}],"closed_by":"person"}""";
+
+        var reading = Read(
+            [],
+            [
+                Said(1, 42, MessageType.Request, Billing, Me),
+                Said(2, 42, MessageType.Result, Billing, Me, closedByPerson),
+                Said(3, 42, MessageType.Result, Me, Billing, closedByPerson),
+            ],
+            [Closed(42, 1, ExchangeOutcome.Closed)]);
+
+        var ended = reading.Rows.Single(row => row.Exchange == 42).Ended!;
+
+        Assert.Equal(Ending.Closed, ended.How);
+        Assert.Equal("Closed without an answer", ended.Words);
+        Assert.Null(ended.By);
+    }
+
+    [Fact]
     public void Closed_covers_its_window_and_the_one_before_is_older()
     {
         IReadOnlyList<Message> messages = [Said(1, 50, MessageType.Request, Orders, Me), Said(2, 51, MessageType.Request, Orders, Me)];

@@ -157,9 +157,9 @@ public sealed class LocalLauncherTests : IDisposable
         byte[] png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3];
         var read = Read("mockup.png", png);
 
-        var launched = _launcher.OpenCopy(read, _root);
+        var launched = _launcher.OpenCopy(read, Copies);
 
-        var path = Path.Combine(_root, read.File!.Sha256.Value, "mockup.png");
+        var path = Path.Combine(Copies, read.File!.Sha256.Value, "mockup.png");
         Assert.True(launched.Opened);
         Assert.Equal((path, false), Assert.Single(_launched));
         Assert.Equal(png, File.ReadAllBytes(path));
@@ -170,7 +170,7 @@ public sealed class LocalLauncherTests : IDisposable
     {
         var read = Read("mockup.png", "<html><script>alert(1)</script></html>"u8.ToArray());
 
-        var launched = _launcher.OpenCopy(read, _root);
+        var launched = _launcher.OpenCopy(read, Copies);
 
         Assert.False(launched.Opened);
         Assert.Equal("mockup.png is not a readable image, so nothing was opened.", launched.Said);
@@ -183,12 +183,88 @@ public sealed class LocalLauncherTests : IDisposable
     {
         var read = Read("big.png", [0x89]) with { Bytes = null, TooLarge = true };
 
-        var launched = _launcher.OpenCopy(read, _root);
+        var launched = _launcher.OpenCopy(read, Copies);
 
         Assert.False(launched.Opened);
         Assert.Contains("too large", launched.Said, StringComparison.Ordinal);
         Assert.Empty(_launched);
     }
+
+    [Fact]
+    public void Something_else_already_under_a_copys_name_is_replaced_before_it_is_opened()
+    {
+        // Another program put other bytes where the copy goes. Opening it would show them under the placed file's hash.
+        var read = Read("report.md", "the placed words"u8.ToArray());
+        var path = Path.Combine(Copies, read.File!.Sha256.Value, "report.md");
+
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, "planted words");
+
+        var launched = _launcher.OpenCopy(read, Copies);
+
+        Assert.True(launched.Opened);
+        Assert.Equal("the placed words", File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void A_copy_folder_that_is_a_link_is_never_written_through()
+    {
+        // Another account made the hash's folder a link to the person's repository: the copy would land there.
+        var read = Read("CLAUDE.md", "an agent's words"u8.ToArray());
+        var elsewhere = Path.Combine(_root, "repository");
+
+        Directory.CreateDirectory(elsewhere);
+        Directory.CreateDirectory(Copies);
+
+        try
+        {
+            Directory.CreateSymbolicLink(Path.Combine(Copies, read.File!.Sha256.Value), elsewhere);
+        }
+        catch (Exception refused) when (refused is UnauthorizedAccessException or IOException)
+        {
+            Assert.Skip("This machine does not let the test make a link.");
+        }
+
+        var launched = _launcher.OpenCopy(read, Copies);
+
+        Assert.False(launched.Opened);
+        Assert.Contains("is a link", launched.Said, StringComparison.Ordinal);
+        Assert.Empty(Directory.EnumerateFileSystemEntries(elsewhere));
+        Assert.Empty(_launched);
+    }
+
+    [Fact]
+    public void A_copies_folder_other_accounts_can_write_in_is_refused()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            var read = Read("report.md", "words"u8.ToArray());
+
+            Directory.CreateDirectory(Copies);
+            File.SetUnixFileMode(Copies, (UnixFileMode)0b111_111_111);
+
+            var launched = _launcher.OpenCopy(read, Copies);
+
+            Assert.False(launched.Opened);
+            Assert.Contains("other accounts", launched.Said, StringComparison.Ordinal);
+            Assert.Empty(_launched);
+        }
+        else
+        {
+            Assert.Skip("Windows keeps the folder in the user's own profile; the mode bits are a Unix check.");
+        }
+    }
+
+    [Fact]
+    public void The_copies_folder_is_the_users_own_not_the_shared_temp_folder()
+    {
+        Assert.False(
+            LocalLauncher.Copies.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase),
+            $"copies go to {LocalLauncher.Copies}, inside the temp folder every account can write in");
+    }
+
+    /// <summary>Where the copies go: a folder the launcher makes itself, as it makes the real one.</summary>
+    private string Copies => Path.Combine(_root, "copies");
 
     private static SharedFileRead Read(string name, byte[] bytes) => new(
         new SharedFile("pricing", "pricing", SharedFileName.Create(name), bytes.Length, ContentHash.Of(bytes), null, DateTimeOffset.UnixEpoch),
