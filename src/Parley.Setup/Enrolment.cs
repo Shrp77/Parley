@@ -895,11 +895,31 @@ public static class Enrolment
         return new Outcome([.. plan.Notes, .. said], written);
     }
 
+    /// <summary>Whether a launch entry's <c>PARLEY_AGENT</c> names the agent being withdrawn.</summary>
+    /// <param name="named">What the entry holds: the role, as every enrolment writes it.</param>
+    /// <param name="agent">The role, or the whole name (<c>orders@alpha</c>) a surface holds from the registry.</param>
+    /// <returns>True when they are the same agent.</returns>
+    /// <remarks>
+    /// <b>Enrolment writes the role; the registry names the whole agent.</b> Compared as written, the whole name never
+    /// matched the role, and every withdrawal left the entry and the catalogue line in place while telling the person it
+    /// took them, so the next session in that repository attached again under the name just freed.
+    /// </remarks>
+    internal static bool IsNamed(string named, string agent)
+    {
+        ArgumentNullException.ThrowIfNull(named);
+        ArgumentNullException.ThrowIfNull(agent);
+
+        var at = agent.IndexOf('@', StringComparison.Ordinal);
+
+        return string.Equals(named, agent, StringComparison.Ordinal)
+            || (at > 0 && string.Equals(named, agent[..at], StringComparison.Ordinal));
+    }
+
     /// <summary>
     /// Unmakes it: the launch configuration's parley entry and the catalogue line, and nothing else.
     /// </summary>
     /// <param name="workspace">The repository directory.</param>
-    /// <param name="agent">The role being withdrawn.</param>
+    /// <param name="agent">The agent being withdrawn: its role, or its whole name, whose role is what an entry holds.</param>
     /// <param name="project">The project being withdrawn from, or null when none is named.</param>
     /// <param name="catalogueFile">The project's catalogue, or null when the project has none.</param>
     /// <param name="cancellationToken">Stops the reads and writes.</param>
@@ -1065,7 +1085,7 @@ public static class Enrolment
                             notes.Add(
                                 $"{launchPath}: left alone, {Quoting.Quoted(stranger.Key)} is not an entry this wrote");
                         }
-                        else if (named is not null && !string.Equals(named, agent, StringComparison.Ordinal))
+                        else if (named is not null && !IsNamed(named, agent))
                         {
                             // Somebody else's. The workspace comes from the registry, which is what the
                             // agent said about itself and may be some time old, so a repository

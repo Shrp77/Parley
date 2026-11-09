@@ -373,6 +373,9 @@ public sealed class WithdrawingTests : IAsyncDisposable
         // repository declares, and the withdrawal finds it by reading that repository — so a fixture
         // that wrote a role-keyed entry would describe a state no enrolment can produce, and the
         // withdrawal would rightly leave it alone.
+        //
+        // The entry holds the role, as every enrolment writes it, while the registry names the whole agent: the shape a
+        // withdrawal meets, which once matched nothing and left the entry in place.
         var identity = AgentIdentity.Mint();
 
         await File.WriteAllTextAsync(
@@ -386,7 +389,7 @@ public sealed class WithdrawingTests : IAsyncDisposable
             $$"""
             {
               "mcpServers": {
-                "parley": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "orders@test" } },
+                "parley": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "orders" } },
                 "other": { "command": "something" }
               },
               "{{LaunchConfiguration.IdentityMember}}": "{{identity}}"
