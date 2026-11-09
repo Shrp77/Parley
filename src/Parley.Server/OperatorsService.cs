@@ -1092,6 +1092,23 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// As the person, which is why this is here and not on <c>Agents</c>: an agent's fetch is recorded, and the person
+    /// viewing an image records nothing (SPEC.md §9.5).
+    /// </remarks>
+    public override Task ReadSharedFile(
+        Wire.ReadSharedFileRequest request,
+        IServerStreamWriter<Wire.FetchFileFrame> responseStream,
+        ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(responseStream);
+        ArgumentNullException.ThrowIfNull(context);
+
+        return new FileWork(_runtime).ReadAsync(request, responseStream, context.CancellationToken);
+    }
+
+    /// <inheritdoc/>
     public override async Task<Wire.FileProblemsReply> ListFileProblems(
         Wire.ListFileProblemsRequest request, ServerCallContext context)
     {

@@ -389,6 +389,24 @@ public interface IParleyBrokerClient
         string? name = null,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Read one conversation's file as the person, recording nothing.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="name">The file.</param>
+    /// <param name="expected">The hash the caller expects, or <see langword="null"/>.</param>
+    /// <param name="limitBytes">The most this caller will take; a larger file is answered too large with no bytes.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The file and its bytes, or why not.</returns>
+    /// <remarks>
+    /// What lets a surface show an image wherever it runs, the broker's machine or the end of a tunnel (§9.5). Unlike an
+    /// agent's fetch it records nothing: viewing is not an act on the deployment.
+    /// </remarks>
+    Task<SharedFileRead> ReadSharedFileAsync(
+        string conversationId,
+        string name,
+        ContentHash? expected,
+        long limitBytes,
+        CancellationToken cancellationToken = default);
+
     /// <summary>List what sweeps of the file location found and could not leave as it was.</summary>
     /// <param name="includeDismissed">Whether to include the problems the person dismissed.</param>
     /// <param name="cancellationToken">Cancels the call.</param>

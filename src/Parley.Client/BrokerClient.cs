@@ -636,6 +636,84 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Buffered whole, because the only reader is a surface showing an image to the person and the limit bounds it. The
+    /// call is ended at a header that says more than the limit, so a large file costs one frame. The bytes are hashed as
+    /// they arrive and must be what the header named, or they are refused as tampered, as an agent's fetch would be.
+    /// </remarks>
+    public async Task<SharedFileRead> ReadSharedFileAsync(
+        string conversationId,
+        string name,
+        ContentHash? expected,
+        long limitBytes,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(conversationId);
+        ArgumentNullException.ThrowIfNull(name);
+
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var call = _operators.ReadSharedFile(
+            new Wire.ReadSharedFileRequest
+            {
+                ConversationId = conversationId,
+                Name = name,
+                ExpectSha256 = expected?.Value ?? string.Empty,
+            },
+            cancellationToken: stop.Token);
+
+        SharedFile? file = null;
+        using var bytes = new MemoryStream();
+        using var hash = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
+
+        while (await call.ResponseStream.MoveNext(stop.Token).ConfigureAwait(false))
+        {
+            var frame = call.ResponseStream.Current;
+
+            switch (frame.FrameCase)
+            {
+                case Wire.FetchFileFrame.FrameOneofCase.Refusal:
+                    return new SharedFileRead(file, null, false, RefusalOf(frame.Refusal));
+
+                case Wire.FetchFileFrame.FrameOneofCase.Header:
+                    file = SharedFileOf(frame.Header);
+
+                    if (file.SizeBytes > limitBytes)
+                    {
+                        await stop.CancelAsync().ConfigureAwait(false);
+
+                        return new SharedFileRead(file, null, true, null);
+                    }
+
+                    break;
+
+                case Wire.FetchFileFrame.FrameOneofCase.Chunk:
+                    if (file is null || bytes.Length + frame.Chunk.Length > file.SizeBytes)
+                    {
+                        // More than the header said: whatever this is, it is not the file that was named.
+                        return new SharedFileRead(file, null, false, FileRefusal.Of(new FileRef(conversationId, name), FileRejection.Changed));
+                    }
+
+                    hash.AppendData(frame.Chunk.Span);
+                    bytes.Write(frame.Chunk.Span);
+
+                    break;
+            }
+        }
+
+        if (file is null)
+        {
+            return new SharedFileRead(null, null, false, FileRefusal.Of(new FileRef(conversationId, name), FileRejection.NoSuchFile));
+        }
+
+        if (ContentHash.FromDigest(hash.GetHashAndReset()) != file.Sha256)
+        {
+            return new SharedFileRead(file, null, false, FileRefusal.Of(new FileRef(conversationId, name), FileRejection.Changed));
+        }
+
+        return new SharedFileRead(file, bytes.ToArray(), false, null);
+    }
+
+    /// <inheritdoc/>
     public async Task<FileProblemsReport> ListFileProblemsAsync(bool includeDismissed = false, CancellationToken cancellationToken = default)
     {
         var reply = await _operators.ListFileProblemsAsync(
