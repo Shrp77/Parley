@@ -161,6 +161,23 @@ public sealed class LinkRaceTests : IDisposable
         Assert.True(timer.Elapsed < Looking, $"took {timer.Elapsed}: a short name was expanded through the link to the share");
     }
 
+    [Fact]
+    public async Task A_file_another_program_holds_is_said_to_be_there_never_read_as_absent()
+    {
+        // Read as no text, a held .mcp.json made a plan say *create* for a file that exists (review, lens 1 round 12).
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows enforces a sharing mode on every open");
+        var launch = Path.Combine(_root, ".mcp.json");
+
+        await File.WriteAllTextAsync(launch, "{}", TestContext.Current.CancellationToken);
+
+        using (new FileStream(launch, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            Assert.Throws<IOException>(() => LocalOpen.ReadText(launch, json: true));
+        }
+
+        Assert.Equal("{}", LocalOpen.ReadText(launch, json: true).Text);
+    }
+
     private void SkipUnlessLinksCanBeMade()
     {
         var probe = Path.Combine(_root, "probe");

@@ -756,6 +756,20 @@ public static class NodeCommand
                 return;
             }
 
+            // **Never started in a folder that leads off this machine.** The agent can make its own folder a link to a share
+            // after it was enrolled, and starting a process there makes Windows offer the person's sign-in to that host
+            // (review, lens 2 round 15). Asked by opening each part as itself (LocalOpen), so a link is not followed to
+            // judge it either. Said and not retired: the folder is not gone, it is somewhere this node will not go.
+            if (catalogue.WorkspaceFor(identity) is { Length: > 0 } elsewhere
+                && LocalOpen.Folder(elsewhere) == LocalOpenStatus.OffThisMachine)
+            {
+                await output.WriteLineAsync(
+                    $"  {agent.Value}: not started — its workspace {Inert.Line(elsewhere)} leads to another machine.")
+                    .ConfigureAwait(false);
+
+                return;
+            }
+
             try
             {
                 var invocation = InvocationCommand.Parse(command);

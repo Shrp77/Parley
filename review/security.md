@@ -56,8 +56,11 @@ Check a change against each; a new page or a new path lookup must keep all of th
   lens 2 round 13 won the old check-then-lookup gap within seconds). Withdrawal, the ownership write, `HoldAsync` and
   `Linked`, `LaunchConfiguration.TryRead`, `RepositoryProjects.Read`, the enrolment scan and plan, `LocalStorage.Problem`
   (so the web Enrol page and the terminal's workspace check), and the browsers' repository checks use it. Still a check
-  and then a lookup: the folder browsers' listing of a folder's children, the person's placement (`PlaceableFile`), and
-  `LocalStorage`'s question of a drive's kind and label, asked of a letter the walk found local. Off Windows a share is a
+  and then a lookup: the folder browsers' listing of a folder's children (and the enrolment scan's listing of a root),
+  the person's placement (`PlaceableFile`), `LocalStorage`'s question of a drive's kind and label, asked of a letter the
+  walk found local, and the node's start of an agent: it refuses a workspace that leads off this machine, then starts the
+  process in that folder by path, so a flip between the two is followed. Each part's long name is read from its handle,
+  so a short (8.3) spelling is judged as the folder it is. Off Windows a share is a
   mount and following a link to one offers no sign-in, so the walk is kept and the open is ordinary, except that a file
   about to be written is still refused when it is itself a link.
 - Enrolment treats any reparse point as a link, whatever its target reads as, and never writes through one.

@@ -159,6 +159,37 @@ public sealed class ANodeReportsAWorkspaceGoneTests : IDisposable
     }
 
     [Fact]
+    public async Task A_workspace_the_agent_made_a_link_to_a_share_is_never_started_in()
+    {
+        // The agent swapped its folder for a link to a share after it was enrolled: a start by identity read no workspace
+        // file, Directory.Exists said yes, and the process started there had Windows offer the person's sign-in to the host
+        // (review, lens 2 round 15). A TEST-NET host never answers, so a start that went there takes the SMB wait.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "links to shares are a Windows sign-in");
+        var workspace = Path.Combine(_root, "checkout");
+        var (catalogue, identity) = await CatalogueAsync(workspace);
+
+        Directory.Delete(workspace, recursive: true);
+
+        try
+        {
+            Directory.CreateSymbolicLink(workspace, $@"\\192.0.2.{Random.Shared.Next(2, 254)}\share");
+        }
+        catch (Exception refused) when (refused is IOException or UnauthorizedAccessException)
+        {
+            Assert.Skip("This machine does not let a test create a directory link.");
+        }
+
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        var said = await StartAsync(catalogue, identity, reporter: null);
+
+        Assert.True(timer.Elapsed < TimeSpan.FromSeconds(5), $"took {timer.Elapsed}: the share was looked up");
+        Assert.Contains("leads to another machine", said, StringComparison.Ordinal);
+        Assert.False(File.Exists(Evidence), "an agent was started in a folder on another machine");
+
+        RemoveLink(workspace);
+    }
+
+    [Fact]
     public async Task A_workspace_missing_beyond_a_link_to_a_folder_in_use_concludes_nothing()
     {
         // The folder above is a link to a folder that is there and holds other things: every other check passes, so only

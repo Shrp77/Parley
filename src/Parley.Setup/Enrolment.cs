@@ -554,9 +554,11 @@ public static class Enrolment
     /// <returns>True when they are the same folder.</returns>
     private static bool SameFolder(string one, string other)
     {
-        // As text alone (OffMachineLinks.FullPath): a `~` made GetFullPath ask the file system, which can dial a share
-        // named in a catalogue line (review, lens 2 round 10).
-        static string Full(string path) => Path.TrimEndingDirectorySeparator(OffMachineLinks.FullPath(path));
+        // Where each really is, walked by the opener (LocalOpen.Reach), so a short spelling, a junction or a subst letter
+        // compares as the folder it names (review, lens 2 rounds 10 and 15), and a `~` or a link to a share is never
+        // looked up to find out: one that leads off this machine compares as its text alone.
+        static string Full(string path) => Path.TrimEndingDirectorySeparator(
+            LocalOpen.Reach(path, out var reached) == LocalOpenStatus.OffThisMachine ? OffMachineLinks.FullPath(path) : reached);
 
         try
         {

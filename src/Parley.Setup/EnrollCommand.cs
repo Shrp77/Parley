@@ -903,8 +903,11 @@ public static class EnrollCommand
                     }
                 }
             }
-            catch (Exception ex) when (ex is JsonException or InvalidDataException)
+            catch (Exception ex) when (ex is JsonException or InvalidDataException or IOException)
             {
+                // A file held by another program, or one this account may not read, stops here too, with its sentence,
+                // rather than as a trace (review, lens 1 round 13).
+                //
                 // Refused rather than merged into. Everything this cannot merge is somebody's
                 // own file in a shape it does not understand, and the failure of the alternative
                 // is silent: the entries it could not read are simply not in what gets written.

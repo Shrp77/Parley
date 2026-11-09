@@ -311,7 +311,7 @@ internal static class Adding
         Action<string>? remember,
         Func<string?, Task>? enrolling)
     {
-        var workspace = Path.GetFullPath(values[0].Trim());
+        var workspace = OffMachineLinks.FullPath(values[0].Trim());
         var role = values[1].Trim();
 
         var asking = Prompting.Choose(

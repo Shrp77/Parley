@@ -15,7 +15,7 @@ namespace Parley.Configuration;
 /// client, a placeholder can vanish from under a fetch, and a path there reaches somebody else's servers.
 /// </para>
 /// <para>
-/// Decided from what can be read without opening the folder: its links (<see cref="OffMachineLinks"/>), the kind of
+/// Decided from what can be read without following a link off this machine: its links (<see cref="OffMachineLinks"/>), the kind of
 /// drive it is on, and where the sync clients installed on this machine keep their folders. A sync client not named
 /// here is not caught; the list is the ones in common use.
 /// </para>
@@ -82,7 +82,8 @@ public static class LocalStorage
         return null;
     }
 
-    // A link that leads off this machine, and one whose target is missing, hidden or a stream, are refused alike.
+    // A link that leads off this machine, and one whose target is hidden or a stream, are refused alike. On Windows a link
+    // to a local folder not there yet is judged by where it leads, as a folder not yet made is.
     private const string Unfollowed = "another machine, a device, or a link Parley cannot follow";
 
     private static string Through(string full, string reached) =>

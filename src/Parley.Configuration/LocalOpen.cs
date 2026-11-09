@@ -50,7 +50,7 @@ public enum LocalOpenStatus
 /// </para>
 /// <para>
 /// Elsewhere a share is a mount, already connected, so following a link to it offers no sign-in: the walk is kept and the
-/// open is an ordinary one.
+/// open is an ordinary one, except that a file about to be written is still refused when it is itself a link.
 /// </para>
 /// </remarks>
 public static class LocalOpen
@@ -430,7 +430,9 @@ public static class LocalOpen
                 return (LocalOpenStatus.Missing, null, Path.Join([at, .. parts[i..]]));
             }
 
-            at = Path.Join(at, parts[i]);
+            // The name the file system keeps, read from the handle: a short spelling (`ZZR15-~1`) is the long one, so what a
+            // path reaches compares as the folder it is, as GetFullPath's expansion used to give (review, lens 2 round 15).
+            at = NameOf(next!) ?? Path.Join(at, parts[i]);
             current = next;
         }
 
@@ -538,6 +540,23 @@ public static class LocalOpen
         var target = System.Text.Encoding.Unicode.GetString(buffer, start + offset, length);
 
         return new Link(target, relative, tag == MountPoint ? OffMachineLinks.MountedVolume(target) : null);
+    }
+
+    // An open local file's full name with every part spelled long, from GetFinalPathNameByHandleW: read from the handle and
+    // the mount manager, never a lookup by path. Null when it cannot be read or is not a drive-letter path.
+    private static string? NameOf(SafeFileHandle handle)
+    {
+        var buffer = new char[32768];
+        var length = GetFinalPathNameByHandle(handle, buffer, (uint)buffer.Length, 0);
+
+        if (length == 0 || length >= buffer.Length)
+        {
+            return null;
+        }
+
+        var name = new string(buffer, 0, (int)length);
+
+        return name is ['\\', '\\', '?', '\\', var letter, ':', '\\', ..] && char.IsAsciiLetter(letter) ? name[4..] : null;
     }
 
     private static bool AttributesOf(SafeFileHandle handle, out uint attributes)
@@ -661,6 +680,10 @@ public static class LocalOpen
         uint options,
         IntPtr extendedAttributes,
         uint extendedAttributesLength);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("kernel32.dll", EntryPoint = "GetFinalPathNameByHandleW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetFinalPathNameByHandle(SafeFileHandle handle, [Out] char[] path, uint length, uint flags);
 
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("kernel32.dll", SetLastError = true)]

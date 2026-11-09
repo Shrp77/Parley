@@ -95,5 +95,8 @@ public sealed class NoTerminalLookupFollowsALinkOffThisMachineTests : IDisposabl
         Assert.SkipUnless(icacls.ExitCode == 0, "icacls could not hide the link's target");
 
         Assert.NotNull(Enrolment.Linked(link));
+
+        // Where it leads cannot be read either, so it is not taken for a folder here (LocalStorage walks this way).
+        Assert.Equal(Parley.Configuration.LocalOpenStatus.OffThisMachine, Parley.Configuration.LocalOpen.Reach(link, out _));
     }
 }
