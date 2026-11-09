@@ -95,6 +95,9 @@ public sealed class ScriptedExport : HttpMessageHandler
     /// <summary>Whether a listing comes in two pages, the second holding another conversation.</summary>
     public bool TwoPages { get; set; }
 
+    /// <summary>The files every listing of the conversation's files returns.</summary>
+    public List<Wire.SharedFileView> Files { get; } = [];
+
     /// <summary>The move records every export carries.</summary>
     public List<Wire.MoveRecord> Moves { get; } = [];
 
@@ -208,6 +211,7 @@ public sealed class ScriptedExport : HttpMessageHandler
                 "/parley.v1.Operators/Export" => Export(),
                 "/parley.v1.Operators/DescribeRegistry" => Rows(),
                 "/parley.v1.Operators/DescribeWaiting" => Waiting(),
+                "/parley.v1.Operators/ListSharedFiles" => new Wire.FilesReply { Files = { Files }, TotalFiles = Files.Count },
                 "/parley.v1.Operators/ListConversations" => Conversations(Wire.ListConversationsRequest.Parser.ParseFrom(sent.AsSpan(5))),
                 "/parley.v1.Operators/PreviewMove" => Preview(Wire.PreviewMoveRequest.Parser.ParseFrom(sent.AsSpan(5))),
                 "/parley.v1.Operators/MoveExchanges" => Moved(Wire.MoveExchangesRequest.Parser.ParseFrom(sent.AsSpan(5))),

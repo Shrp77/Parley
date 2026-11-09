@@ -409,7 +409,8 @@ internal sealed class TranscriptRegion : FrameView
             ];
         }
 
-        if (export is null || export.Messages.Count == 0)
+        // A conversation a file started has no message yet, and the file is still what is in it (SPEC.md §9.5).
+        if (export is null || (export.Messages.Count == 0 && files is not { Count: > 0 }))
         {
             // An emptied conversation says where everything went (SPEC.md §5.0).
             return export?.Moves is { Count: > 0 } moves

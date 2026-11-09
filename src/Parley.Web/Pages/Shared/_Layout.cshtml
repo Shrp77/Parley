@@ -1991,6 +1991,31 @@
         .chip { min-height: 2rem; gap: 0.5rem; padding: 0 0.25rem 0 0.75rem; font: var(--md-sys-typescale-label-large); color: var(--md-sys-color-on-surface-variant); background: transparent; border: 1px solid var(--md-sys-color-outline); border-radius: var(--md-sys-shape-corner-small); }
         .chip-x { min-height: 0; width: 1.5rem; height: 1.5rem; padding: 0; border-radius: 50%; color: var(--md-sys-color-on-surface-variant); background: transparent; }
         .chip-x:hover, .chip-x:focus-visible { color: var(--md-sys-color-on-surface); background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
+
+        /* Who a message goes to, one input chip each, on the composer's To line. */
+        .composer-to .to-chip { margin: 0.1rem 0.25rem 0.1rem 0; min-height: 1.75rem; }
+
+        /* A placed file, in the transcript where it was placed and in Media (SPEC.md 9.5). The browser scales the
+           original; nothing here makes a smaller copy. */
+        .transcript li.placed { list-style: none; margin: 0.5rem 0 0.5rem 2.75rem; }
+        .placed-card { margin: 0; display: inline-flex; flex-direction: column; gap: 0.35rem; max-width: min(100%, 22rem); }
+        .placed-card .thumb { display: block; border-radius: var(--md-sys-shape-corner-medium); overflow: hidden; border: 1px solid var(--md-sys-color-outline-variant); background: var(--md-sys-color-surface-container); }
+        .placed-card .thumb img { display: block; max-width: 100%; max-height: 14rem; object-fit: contain; }
+        .placed-card .thumb:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
+        .placed-card figcaption { font: var(--md-sys-typescale-body-small); color: var(--md-sys-color-on-surface-variant); overflow-wrap: anywhere; }
+        .thumb-tile, .file-tile { display: inline-flex; align-items: center; gap: 0.5rem; margin: 0; padding: 0.6rem 0.8rem; border-radius: var(--md-sys-shape-corner-medium); border: 1px solid var(--md-sys-color-outline-variant); background: var(--md-sys-color-surface-container-low); color: var(--md-sys-color-on-surface); font: var(--md-sys-typescale-body-medium); overflow-wrap: anywhere; }
+        .file-tile { text-decoration: none; }
+        .media-grid { list-style: none; margin: 0 0 1.5rem; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: 1rem; }
+        .media-grid .placed-card { max-width: 100%; }
+        .media-grid .thumb img { width: 100%; height: 10rem; object-fit: cover; }
+        .media-list { list-style: none; margin: 0 0 1.5rem; padding: 0; display: grid; gap: 0.75rem; }
+
+        /* The full view of an image, over the page. */
+        .viewer { max-width: min(96vw, 80rem); max-height: 94vh; padding: 0; border: 0; border-radius: var(--md-sys-shape-corner-extra-large); background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface); }
+        .viewer::backdrop { background: var(--md-ext-scrim); }
+        .viewer-bar { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.5rem 0.5rem 1rem; }
+        .viewer-caption { flex: 1 1 auto; margin: 0; font: var(--md-sys-typescale-body-medium); overflow-wrap: anywhere; }
+        .viewer img { display: block; max-width: min(96vw, 80rem); max-height: calc(94vh - 3.5rem); margin: 0 auto; object-fit: contain; }
         ol.points .verdict, .tag, .msgs, .moved-note, .moved-notes li, li.day {
             display: inline-flex;
             align-items: center;

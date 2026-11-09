@@ -21,10 +21,11 @@ public sealed record Launched(bool Opened, string Said);
 /// where the result is shown, and three launchers would be three chances to open something one of them refuses.
 /// </para>
 /// <para>
-/// <b>Somewhere else, it launches nothing and says where the file is.</b> The broker says which machine holds the
-/// location; a surface on another machine has nothing on its own disk to open, and a copy would not be the shared
-/// file. A path that does not exist here is treated the same way, so a machine
-/// name that happens to match cannot launch the wrong thing.
+/// <b>Somewhere else, <see cref="OpenFile"/> launches nothing and says where the file is.</b> The broker says which
+/// machine holds the location, and a surface on another machine has nothing on its own disk to open in place. A path
+/// that does not exist here is treated the same way, so a machine name that happens to match cannot launch the wrong
+/// thing. Such a surface may instead open a copy read through the broker (<see cref="OpenCopy"/>), which is the same file
+/// because a placed file never changes; a folder is opened only in place.
 /// </para>
 /// <para>
 /// <b>Only what can be placed, and only a regular file.</b> Nothing else can be placed, so this is the second

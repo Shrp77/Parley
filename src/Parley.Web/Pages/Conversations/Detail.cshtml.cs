@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Parley.Core;
+using Parley.Client.Files;
 using Parley.Client.Rendering;
 using Parley.Client.Seating;
 using Parley.Client;
@@ -38,6 +39,9 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
 
     /// <summary>The messages, in the order the broker recorded them.</summary>
     public IReadOnlyList<Message> Messages { get; private set; } = [];
+
+    /// <summary>The files placed in it, oldest first, which the transcript draws where they were placed (SPEC.md §9.5).</summary>
+    public IReadOnlyList<SharedFile> Files { get; private set; } = [];
 
     /// <summary>What is left of it, when an operator destroyed it.</summary>
     /// <remarks>
@@ -979,6 +983,14 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
             }
 
             Roll = known;
+
+            // Contained like the registry: files that could not be read cost their place in the transcript, never the
+            // conversation.
+            var placed = await BrokerDirectory.ReadAsync(
+                () => Placements.EveryAsync(new BrokerClient(directory.ClientFor(project)), id, HttpContext.RequestAborted))
+                .ConfigureAwait(false);
+
+            Files = read.Value.Destroyed is null ? placed.Value ?? [] : [];
             NotInIt = Parley.Client.Rendering.RoomRoster.NotInIt(roll.Value, Participants, PersonSeat.On(project.Name));
 
             // **What each participant is doing, from the same derivation as the terminal's room**:

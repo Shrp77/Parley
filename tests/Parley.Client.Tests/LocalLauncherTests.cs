@@ -151,6 +151,51 @@ public sealed class LocalLauncherTests : IDisposable
         Assert.False(string.IsNullOrEmpty(MachineName.Current));
     }
 
+    [Fact]
+    public void A_copy_of_a_file_on_another_machine_is_written_under_its_hash_and_opened()
+    {
+        byte[] png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3];
+        var read = Read("mockup.png", png);
+
+        var launched = _launcher.OpenCopy(read, _root);
+
+        var path = Path.Combine(_root, read.File!.Sha256.Value, "mockup.png");
+        Assert.True(launched.Opened);
+        Assert.Equal((path, false), Assert.Single(_launched));
+        Assert.Equal(png, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void A_copy_named_as_an_image_whose_bytes_are_not_one_is_neither_written_nor_opened()
+    {
+        var read = Read("mockup.png", "<html><script>alert(1)</script></html>"u8.ToArray());
+
+        var launched = _launcher.OpenCopy(read, _root);
+
+        Assert.False(launched.Opened);
+        Assert.Equal("mockup.png is not a readable image, so nothing was opened.", launched.Said);
+        Assert.Empty(_launched);
+        Assert.Empty(Directory.EnumerateFileSystemEntries(_root));
+    }
+
+    [Fact]
+    public void A_read_with_no_bytes_opens_nothing_and_says_why()
+    {
+        var read = Read("big.png", [0x89]) with { Bytes = null, TooLarge = true };
+
+        var launched = _launcher.OpenCopy(read, _root);
+
+        Assert.False(launched.Opened);
+        Assert.Contains("too large", launched.Said, StringComparison.Ordinal);
+        Assert.Empty(_launched);
+    }
+
+    private static SharedFileRead Read(string name, byte[] bytes) => new(
+        new SharedFile("pricing", "pricing", SharedFileName.Create(name), bytes.Length, ContentHash.Of(bytes), null, DateTimeOffset.UnixEpoch),
+        bytes,
+        false,
+        null);
+
     private string Write(string name)
     {
         var path = Path.Combine(_root, name);

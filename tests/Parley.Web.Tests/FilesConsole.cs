@@ -98,6 +98,12 @@ public sealed class ScriptedOperators : HttpMessageHandler
             Refusal = new Wire.FileRefusal { Rejection = Wire.FileRejection.NoSuchFile, Detail = "Not in the location." }
         };
 
+    /// <summary>The bytes a read of each file returns, by name; a name not here is refused as no such file.</summary>
+    public Dictionary<string, byte[]> Contents { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Every read of a file asked for.</summary>
+    public List<Wire.ReadSharedFileRequest> Read { get; } = [];
+
     /// <summary>Every list asked for.</summary>
     public List<Wire.ListFilesRequest> Listed { get; } = [];
 
@@ -149,6 +155,14 @@ public sealed class ScriptedOperators : HttpMessageHandler
 
         var body = request.Content is null ? [] : await request.Content.ReadAsByteArrayAsync(cancellationToken);
         var message = body.Length >= 5 ? body[5..] : [];
+
+        if (request.RequestUri!.AbsolutePath == "/parley.v1.Operators/ReadSharedFile")
+        {
+            lock (_lock)
+            {
+                return RespondMany(request, ReadFile(Wire.ReadSharedFileRequest.Parser.ParseFrom(message)));
+            }
+        }
 
         IMessage? reply;
 
@@ -250,6 +264,57 @@ public sealed class ScriptedOperators : HttpMessageHandler
 
         // 12 is UNIMPLEMENTED.
         response.TrailingHeaders.Add("grpc-status", (reply is null ? 12 : 0).ToString(CultureInfo.InvariantCulture));
+
+        return response;
+    }
+
+    // As the broker streams it: a header and the bytes, or a refusal in place of the header.
+    private List<IMessage> ReadFile(Wire.ReadSharedFileRequest asked)
+    {
+        Read.Add(asked);
+
+        var file = Files.FirstOrDefault(f => f.Name == asked.Name && f.ConversationId == asked.ConversationId);
+
+        if (file is null || !Contents.TryGetValue(asked.Name, out var bytes))
+        {
+            return [new Wire.FetchFileFrame { Refusal = new Wire.FileRefusal { Rejection = Wire.FileRejection.NoSuchFile } }];
+        }
+
+        if (asked.ExpectSha256.Length > 0 && asked.ExpectSha256 != file.Sha256)
+        {
+            return [new Wire.FetchFileFrame { Refusal = new Wire.FileRefusal { Rejection = Wire.FileRejection.Changed } }];
+        }
+
+        return
+        [
+            new Wire.FetchFileFrame { Header = file },
+            new Wire.FetchFileFrame { Chunk = ByteString.CopyFrom(bytes) },
+        ];
+    }
+
+    private static HttpResponseMessage RespondMany(HttpRequestMessage request, IReadOnlyList<IMessage> replies)
+    {
+        using var framed = new MemoryStream();
+
+        foreach (var reply in replies)
+        {
+            var bytes = reply.ToByteArray();
+            var prefix = new byte[5];
+
+            BinaryPrimitives.WriteUInt32BigEndian(prefix.AsSpan(1, 4), (uint)bytes.Length);
+            framed.Write(prefix);
+            framed.Write(bytes);
+        }
+
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Version = HttpVersion.Version20,
+            RequestMessage = request,
+            Content = new ByteArrayContent(framed.ToArray())
+        };
+
+        response.Content.Headers.ContentType = new MediaTypeHeaderValue("application/grpc");
+        response.TrailingHeaders.Add("grpc-status", "0");
 
         return response;
     }
