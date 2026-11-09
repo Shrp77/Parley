@@ -111,7 +111,7 @@
                             <a class="name" href="/Conversations/Detail?project=@Model.Project&amp;id=@conversation.Id">@conversation.Id@if (conversation.Parent is { } parent) {<span class="spinoff-of">@Parley.Client.Rendering.ConversationWording.SpinoffSuffix(parent)</span>}</a>
                             <span class="num">@conversation.Messages</span>
                             <span class="when">
-                                @conversation.LastActivityUtc.ToString("d MMM yyyy, HH:mm")
+                                @TimeZoneInfo.ConvertTime(conversation.LastActivityUtc, TimeZoneInfo.Local).ToString("d MMM yyyy, HH:mm")
                                 @if (conversation.HasOpenExchange)
                                 {
                                     @* A question somebody still owes an answer to. Said in words; the tint is only how you find it. *@
