@@ -604,9 +604,10 @@ public sealed class InboxModel(
 
             var (messages, polls, problem) = (counts.Value.Messages, counts.Value.ClosurePolls, counts.Problem);
 
-            // **Showing a message is delivering it**, as in the terminal. Everything waiting is taken,
-            // because the broker's inbox has no narrower drain, and it is taken here because this is where it is drawn.
-            if (problem is null && (messages > 0 || polls > 0))
+            // **Showing a message is delivering it**, and only Waiting on you shows what waits (SPEC.md §5.6, owner
+            // 2026-11-09): In flight and Closed collect nothing. Everything waiting is taken, because the broker's inbox
+            // has no narrower drain, and it is taken here because this is where it is drawn.
+            if (problem is null && Showing == InboxView.WaitingOnYou && (messages > 0 || polls > 0))
             {
                 var taken = await BrokerDirectory
                     .ReadAsync(async () => await voice.TakeDeliveryAsync(hold, token).ConfigureAwait(false))

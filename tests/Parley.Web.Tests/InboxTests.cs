@@ -39,6 +39,16 @@ public sealed class InboxTests
     }
 
     [Fact]
+    public void Only_waiting_on_you_takes_delivery()
+    {
+        // Showing a message is delivering it, and only Waiting on you shows what waits: In flight and Closed collect nothing
+        // (SPEC.md §5.6, owner 2026-11-09). Read from the page model, because no console here holds a live seat with mail
+        // waiting.
+        Assert.Contains("Showing == InboxView.WaitingOnYou && (messages > 0 || polls > 0)", Model, StringComparison.Ordinal);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(Model, @"TakeDeliveryAsync\(", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromSeconds(2)));
+    }
+
+    [Fact]
     public void A_refused_send_puts_what_the_person_wrote_back_in_the_box()
     {
         // By reading the page rather than driving it: no console here holds a live seat with work owed. The boxes used to

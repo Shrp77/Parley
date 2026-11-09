@@ -1,6 +1,6 @@
 # Quickstart: checking 036 by hand
 
-Run against a test deployment, never the live console: reading `/Inbox` delivers mail.
+Run against a test deployment, never the live console: reading `/Inbox` (Waiting on you) delivers mail.
 
 1. Have an agent ask the person a question. It is listed under **Waiting on you**.
 2. Reply to it. It moves to **In flight** with a chip (*Working* while the agent's turn runs, then *Idle*).

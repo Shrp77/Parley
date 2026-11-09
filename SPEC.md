@@ -945,7 +945,8 @@ the person sent a Request or handed the turn back with a reply. It may also show
 person sent or received a message on that closed within a window the person chooses (seven days unless they say
 otherwise), with how it ended. Which of the three an exchange is in is read each time from the wait-for graph and the
 exchange's own state, so it is in exactly one, and none of it is stored: no surface keeps a record of what the person
-has seen, and reading any of it collects nothing. An exchange in flight may say where the agent stands, from what the
+has seen. Showing what waits on the person may take delivery of it, as showing a message always does; showing what is
+in flight or closed collects nothing. An exchange in flight may say where the agent stands, from what the
 registry and the flags report (§10.2 `registry()`, `flags()`); it says that a turn is running, never that the agent is
 working on the person's message. From any of them the person may follow up, which is a new Request to that agent in
 that conversation and never reopens the exchange; the facilitator is not followed up, since it receives nobody's work.

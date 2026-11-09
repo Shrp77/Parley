@@ -215,7 +215,9 @@ reference opens a panel under that line with exchange 351's messages; "351" writ
 - **FR-013**: Views MUST follow changes without a manual reload, as the Inbox does today, and MUST NOT reload over a box
   the person is typing in.
 - **FR-014**: There MUST be no way to hide or dismiss a closed row (owner decision, 2026-11-06; to be revisited).
-- **FR-015**: Reading any view MUST NOT deliver, close, settle or otherwise change anything. Only sending changes state.
+- **FR-015**: Reading In flight or Closed MUST NOT deliver, close, settle or otherwise change anything. Showing Waiting
+  on you may take delivery of what it shows, as showing a message does (owner, 2026-11-09); it MUST NOT close or settle
+  anything. Only sending changes an exchange.
 - **FR-016**: The terminal MUST offer the same three views, chips, conversation links and follow-up, and read the same
   window.
 - **FR-017**: SPEC.md §5.6 MUST say what a surface's list of what waits on the person, what is in flight and what closed
