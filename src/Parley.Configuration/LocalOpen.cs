@@ -69,6 +69,9 @@ public static class LocalOpen
     private const int AttributeTagInfo = 9;
 
     private const uint NameNotFound = 0xC0000034;
+    private const uint NameCollision = 0xC0000035;
+    private const uint CreateNew = 2;
+    private const uint NonDirectory = 0x40;
     private const uint PathNotFound = 0xC000003A;
     private const uint SharingViolation = 0xC0000043;
     private const uint IsADirectory = 0xC00000BA;
@@ -272,6 +275,67 @@ public static class LocalOpen
             using var reader = new StreamReader(stream!, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
 
             return (status, reader.ReadToEnd());
+        }
+    }
+
+    /// <summary>Creates a file that must not exist yet, in a folder that must be on this machine.</summary>
+    /// <param name="path">The file.</param>
+    /// <returns>The new file, open for writing and held exclusively; the caller disposes it.</returns>
+    /// <exception cref="IOException">Something is already there, the folder is missing, or it could not be made.</exception>
+    /// <exception cref="InvalidDataException">The folder leads off this machine.</exception>
+    /// <remarks>
+    /// The folder is walked and opened as <see cref="Folder"/> walks it, and the file is created relative to that open
+    /// folder, so a folder an agent swaps for a link to a share between the walk and the create is not followed: a first
+    /// enrolment created <c>.mcp.json</c> by path after the walk found none (review, lens 3 round 13). Nothing already
+    /// there is replaced, a link included.
+    /// </remarks>
+    public static FileStream Create(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+
+        var full = OffMachineLinks.FullPath(OffMachineLinks.Typed(path));
+        var folder = Path.GetDirectoryName(full) ?? throw new IOException($"{path} names no folder.");
+        var name = Path.GetFileName(full);
+
+        if (!OperatingSystem.IsWindows())
+        {
+            return OffMachineLinks.LeadsOffThisMachine(folder, out _)
+                ? throw new InvalidDataException($"{folder} leads to another machine, and Parley does not look up a path there")
+                : new FileStream(full, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        }
+
+        var (status, parent, _) = Resolve(folder, 0, directory: true, followLast: true, FolderAccess, ShareAll);
+
+        if (status == LocalOpenStatus.OffThisMachine)
+        {
+            throw new InvalidDataException($"{folder} leads to another machine, and Parley does not look up a path there");
+        }
+
+        if (status != LocalOpenStatus.Opened)
+        {
+            parent?.Dispose();
+
+            throw new IOException($"{folder} is not a folder that could be opened.");
+        }
+
+        using (parent)
+        {
+            var (made, handle) = Open(parent, name, Synchronize | ReadAttributes | GenericWrite, 0, CreateNew);
+
+            if (made != LocalOpenStatus.Opened)
+            {
+                throw new IOException(made == LocalOpenStatus.Busy ? $"{full} already exists." : $"{full} could not be made.");
+            }
+
+            try
+            {
+                return new FileStream(handle!, FileAccess.Write, 4096, isAsync: false);
+            }
+            catch
+            {
+                handle!.Dispose();
+                throw;
+            }
         }
     }
 
@@ -596,7 +660,8 @@ public static class LocalOpen
 
     // One part, opened as itself and never through it: FILE_OPEN_REPARSE_POINT on a name with no separator, relative to
     // the folder already open.
-    private static (LocalOpenStatus, SafeFileHandle?) Open(SafeFileHandle? root, string name, uint access, uint share)
+    private static (LocalOpenStatus, SafeFileHandle?) Open(
+        SafeFileHandle? root, string name, uint access, uint share, uint disposition = OpenExisting)
     {
         var text = Marshal.StringToHGlobalUni(name);
         var unicode = Marshal.AllocHGlobal(Marshal.SizeOf<UnicodeString>());
@@ -631,8 +696,8 @@ public static class LocalOpen
             };
 
             var status = (uint)NtCreateFile(
-                out var handle, access, ref attributes, out _, IntPtr.Zero, 0, share, OpenExisting,
-                SynchronousIo | OpenReparsePoint, IntPtr.Zero, 0);
+                out var handle, access, ref attributes, out _, IntPtr.Zero, 0, share, disposition,
+                SynchronousIo | OpenReparsePoint | (disposition == CreateNew ? NonDirectory : 0), IntPtr.Zero, 0);
 
             if (status == 0)
             {
@@ -644,6 +709,7 @@ public static class LocalOpen
             return (status switch
             {
                 NameNotFound or PathNotFound or IsADirectory or NotADirectory => LocalOpenStatus.Missing,
+                NameCollision => LocalOpenStatus.Busy,
                 SharingViolation => LocalOpenStatus.Busy,
                 _ => LocalOpenStatus.Unreadable,
             }, null);

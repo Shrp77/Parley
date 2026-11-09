@@ -498,11 +498,11 @@ public static class Enrolment
 
         if (stream is null)
         {
-            // CreateNew refuses an existing path, so a link cannot be followed here: a link whose
-            // target exists is itself an existing path, and one whose target does not is still a
-            // directory entry this refuses to write over.
-            var created = new FileStream(
-                path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, useAsync: false);
+            // Created only where nothing is, so a link cannot be followed here: a link whose target exists is
+            // itself an existing path, and one whose target does not is still a directory entry this refuses to
+            // write over. Made relative to the folder opened part by part (LocalOpen.Create), so a folder swapped
+            // for a link to a share since the hold found no file is not followed either (lens 3 round 13).
+            var created = LocalOpen.Create(path);
 
             try
             {
