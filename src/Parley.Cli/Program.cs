@@ -104,8 +104,8 @@ const string Help = """
       parley files remove <name>... [--conversation <id>]  remove files whoever placed them;
                         [--yes]                        describes them and asks first
       parley files prune [--yes-remove-every-file]     REMOVE every file; asks for the project's name
-      parley files open <name>... [--conversation <id>]  open files to read on this
-                                                       machine, or say which machine holds them
+      parley files open <name>... [--conversation <id>]  open files to read: in place on the
+                                                       broker's machine, a checked copy elsewhere
       parley files folder [--conversation <id>]        open a conversation's folder, or the whole
                                                        location, or say which machine holds it
       parley files problems [--all]                    what sweeps of the location found: files

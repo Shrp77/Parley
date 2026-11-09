@@ -26,8 +26,9 @@ namespace Parley.Web.Pages.Projects;
 /// </para>
 /// <para>
 /// <b>Opening launches on the machine running this console, and only there.</b> The broker says which machine holds
-/// the location; a console viewed from another machine's browser opens files where the console runs, or says where
-/// they are when that is not the broker's machine. Every action is a POST, so a link or an
+/// the location; on that machine the file opens in place, and anywhere else the console reads it through the broker and
+/// opens a checked copy (<see cref="LocalLauncher.OpenPlacedAsync"/>). A console viewed from another machine's browser
+/// opens files where the console runs. Every action is a POST, so a link or an
 /// image elsewhere cannot open, remove or prune anything, and Razor Pages refuses a POST without this page's
 /// antiforgery token.
 /// </para>

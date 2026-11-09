@@ -240,7 +240,28 @@ public sealed class LocalLauncher(Func<string, bool, bool> open, string machine,
 
         if (string.IsNullOrEmpty(conversation))
         {
-            return new Launched(false, $"{name} is on {location.Machine}. Name its conversation to open a copy of it here.");
+            // A copy is read by conversation and name. One file of this name in the whole location is the one meant, as
+            // the broker's own lookup said by finding it; its hash comes with it.
+            var matching = new List<SharedFile>();
+            string? next = null;
+
+            do
+            {
+                var listing = await broker.ListSharedFilesAsync(null, FileLimits.MaximumPageSize, next, cancellationToken)
+                    .ConfigureAwait(false);
+
+                matching.AddRange(listing.Page.Files.Where(f => string.Equals(f.Name.Value, name, StringComparison.OrdinalIgnoreCase)));
+                next = listing.Page.NextPageToken;
+            }
+            while (next is not null);
+
+            if (matching.Count != 1)
+            {
+                return new Launched(false, $"{name} is on {location.Machine}. Name its conversation to open a copy of it here.");
+            }
+
+            conversation = matching[0].ConversationId;
+            expected ??= matching[0].Sha256;
         }
 
         var read = await broker.ReadSharedFileAsync(conversation, name, expected, Placements.CopyLimitBytes, cancellationToken)

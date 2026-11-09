@@ -19,11 +19,13 @@ public sealed class WithdrawingIsOneImplementationTests
     [InlineData("src/Parley.Web")]
     public void Neither_surface_calls_the_brokers_operation_itself(string surface)
     {
+        // The generated gRPC client's blocking calls count as well as the async ones: they take a request, which tells them
+        // from a surface's own `Reinstate()` that opens its dialog.
         // Any member access, whatever the receiver: `(broker).`, `broker?.`, `new BrokerClient(...).` and a method group
         // passed as a delegate all count. The first version needed a word right before the dot, and a receiver ending in
         // a bracket walked past it. A bare `RetireAsync(` is a surface's own helper, which is what calls AgentWithdrawal.
         var direct = Sources(surface)
-            .SelectMany(file => Regex.Matches(File.ReadAllText(file), @"(?<!AgentWithdrawal\s*)(\?\s*)?\.\s*(RetireAsync|ReinstateAsync|PurgeAsync)\b", RegexOptions.None, TimeSpan.FromSeconds(2))
+            .SelectMany(file => Regex.Matches(File.ReadAllText(file), @"(?<!AgentWithdrawal\s*)(\?\s*)?\.\s*(?:(?:Retire|Reinstate|Purge)Async\b|(?:Retire|Reinstate|Purge)\s*\(\s*[^)\s])", RegexOptions.None, TimeSpan.FromSeconds(2))
                 .Select(match => $"{Path.GetFileName(file)}: {match.Value}"))
             .ToList();
 

@@ -208,7 +208,8 @@ public static class StillOpen
 
             var listed = System.Text.RegularExpressions.Regex
                 .Matches(said, @"^- exchange #(\d+):", System.Text.RegularExpressions.RegexOptions.Multiline, TimeSpan.FromSeconds(1))
-                .Select(match => long.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture))
+                .Select(match => long.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var number) ? number : -1)
+                .Where(number => number > 0)
                 .ToList();
 
             if (questions.All(listed.Contains))

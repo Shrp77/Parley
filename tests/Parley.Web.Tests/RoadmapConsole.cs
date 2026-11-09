@@ -223,6 +223,9 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <summary>Every operation asked of this broker, by its path.</summary>
     public System.Collections.Concurrent.ConcurrentQueue<string> Paths { get; } = new();
 
+    /// <summary>How many messages the person's seat is told are waiting. This script serves no delivery stream.</summary>
+    public int MessagesWaiting { get; set; }
+
     /// <summary>Every spin-off asked for.</summary>
     public List<Wire.SpinOffRequest> SpunOff { get; } = [];
 
@@ -363,7 +366,7 @@ public sealed class RoadmapBroker : HttpMessageHandler
                 {
                     Outcomes = { new Wire.RequestOutcome { Ok = true, ExchangeId = 7, ConversationId = "rm1-1", Wake = RequestWake } },
                 },
-                "/parley.v1.Agents/Waiting" when Seats => new Wire.Notice(),
+                "/parley.v1.Agents/Waiting" when Seats => new Wire.Notice { MessagesWaiting = MessagesWaiting },
                 "/parley.v1.Agents/Result" when Seats => new Wire.SayReply { Ok = true, MessageId = 900 },
                 "/parley.v1.Operators/DescribeFlags" => new Wire.FlagsReply { Flags = { Flags } },
                 "/parley.v1.Operators/LocateExchange" => new Wire.LocateExchangeReply

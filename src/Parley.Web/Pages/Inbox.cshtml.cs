@@ -27,7 +27,7 @@ public sealed record Pending(
 /// <b>Showing a message is delivering it.</b> The page counts what is waiting for each seat this console
 /// holds and then drains it while rendering, as the terminal does, because the broker's inbox has no
 /// narrower drain and this is where the messages are drawn. SPEC.md §6 records collection by the drain, so
-/// opening this page marks the person's waiting mail delivered. A seat that is not held is only counted,
+/// opening Waiting on you marks the person's waiting mail delivered; In flight and Closed take nothing (§5.6). A seat that is not held is only counted,
 /// without draining, so reading the page then makes nobody present.
 /// </para>
 /// <para>

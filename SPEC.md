@@ -945,8 +945,8 @@ the person sent a Request or handed the turn back with a reply. It may also show
 person sent or received a message on that closed within a window the person chooses (seven days unless they say
 otherwise), with how it ended. Which of the three an exchange is in is read each time from the wait-for graph and the
 exchange's own state, so it is in exactly one, and none of it is stored: no surface keeps a record of what the person
-has seen. Showing what waits on the person may take delivery of it, as showing a message always does; showing what is
-in flight or closed collects nothing. An exchange in flight may say where the agent stands, from what the
+has seen. Showing what waits on the person may take delivery of everything waiting for them, as showing a message always
+does, since an inbox has no narrower drain; showing what is in flight or closed collects nothing. An exchange in flight may say where the agent stands, from what the
 registry and the flags report (§10.2 `registry()`, `flags()`); it says that a turn is running, never that the agent is
 working on the person's message. From any of them the person may follow up, which is a new Request to that agent in
 that conversation and never reopens the exchange; the facilitator is not followed up, since it receives nobody's work.
@@ -3444,7 +3444,7 @@ other could.
 | `list_shared_files(conversation_id?, page)` | Every file in the location, with its conversation, size, content hash, placer and when, totals per conversation and overall, how many placements and bytes each agent has made, and how many files in the folders listed are not listed because nothing placed them, which the next sweep deletes (§9.5). Paged, and the broker bounds the page whatever is asked for. Named apart from §10.1's `file_list`, which does not report placement counts. |
 | `remove_files(files)` | Remove any files, whichever agent placed them (§9.5). A name held by several conversations must name one; names not present are reported without preventing the rest. Named apart from §10.1's `file_remove`, which removes only the caller's own. |
 | `prune_files()` | Remove every file in the location, in every conversation. Conversations, exchanges, messages and agents are untouched. Not available to agents, because it removes files other agents placed; named apart from `prune`, which applies retention to messages and never touches a file. |
-| `describe_file_location(conversation_id?, name?)` | The broker's machine name and the absolute path of the location, of a conversation's folder, or of one file. A surface on that machine opens the file or folder in place; anywhere else it says where it is (§13). |
+| `describe_file_location(conversation_id?, name?)` | The broker's machine name and the absolute path of the location, of a conversation's folder, or of one file. A surface on that machine opens the file or folder in place; anywhere else it opens a file as a copy read through `read_shared_file`, and says where a folder is (§13). |
 | `read_shared_file(conversation_id, name, expect_sha256?)` | One conversation's file, streamed as `file_fetch` streams it: its size, hash and placer, then its bytes, or a refusal. Records nothing: no fetch, no notice, no delivery, so viewing is not an act on the deployment. What lets a surface show an image wherever it runs (§9.5), and open a copy of a file whose location is on another machine. Named apart from §10.1's `file_fetch`, which an agent's fetch records. |
 | `list_file_problems(include_dismissed?)` | What sweeps found and could not leave as it was (§9.5): files moved to quarantine and entries it could not read, move or delete, those waiting first, with the machine and the absolute path of the quarantine directory. Each path is text nothing checked, drawn as somebody else's. |
 | `dismiss_file_problem(id)` | Dismiss a problem the person has seen, saying whether a waiting one was dismissed. Deletes nothing on disk. |

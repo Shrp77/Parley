@@ -216,7 +216,7 @@ reference opens a panel under that line with exchange 351's messages; "351" writ
   the person is typing in.
 - **FR-014**: There MUST be no way to hide or dismiss a closed row (owner decision, 2026-11-06; to be revisited).
 - **FR-015**: Reading In flight or Closed MUST NOT deliver, close, settle or otherwise change anything. Showing Waiting
-  on you may take delivery of what it shows, as showing a message does (owner, 2026-11-09); it MUST NOT close or settle
+  on you may take delivery of everything waiting for the person (an inbox has no narrower drain), as showing a message does (owner, 2026-11-09); it MUST NOT close or settle
   anything. Only sending changes an exchange.
 - **FR-016**: The terminal MUST offer the same three views, chips, conversation links and follow-up, and read the same
   window.
@@ -265,7 +265,8 @@ reference opens a panel under that line with exchange 351's messages; "351" writ
   reloading.
 - **SC-004**: For the same deployment at the same moment, the web console and the terminal show the same rows in the same
   views with the same chips.
-- **SC-005**: Opening any view, any number of times, changes nothing the broker holds.
+- **SC-005**: Opening In flight or Closed, any number of times, changes nothing the broker holds; opening Waiting on you
+  changes only what is delivered (FR-015).
 - **SC-006**: Changing the window on one surface changes it on the other with no further step.
 - **SC-007**: A referenced exchange opens in one click from where it is mentioned, and a number not written as a
   reference never becomes a link.

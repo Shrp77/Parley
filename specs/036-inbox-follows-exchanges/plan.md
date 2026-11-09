@@ -22,7 +22,7 @@ terminal show the same rows and words.
 **Target Platform**: Windows, Linux, macOS (local, loopback broker)
 **Project Type**: protocol reference implementation with two operator surfaces
 **Performance Goals**: a view change shows within 10 s (SC-003), from the 5 s digest poll
-**Constraints**: reading never changes state (FR-015); no new stored state about the Inbox (FR-008); one message view and
+**Constraints**: reading In flight or Closed never changes state, and Waiting on you only takes delivery (FR-015); no new stored state about the Inbox (FR-008); one message view and
 one text box on the web; every terminal key declared in a command table
 **Scale/Scope**: tens of agents and hundreds of exchanges per project
 

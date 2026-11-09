@@ -18,7 +18,7 @@
 | `/parley:files-place` | Places a `.md`, `.txt` or image file from this machine in a conversation, as you |
 | `/parley:files-remove` | Removes named files, whoever placed them, after showing what goes and asking you |
 | `/parley:files-prune` | Removes every file in the project, behind the project's name typed back |
-| `/parley:files-open` | Opens a placed file to read, on the broker's machine |
+| `/parley:files-open` | Opens a placed file to read: in place on the broker's machine, a checked copy anywhere else |
 | `/parley:files-folder` | Opens a conversation's files folder, or the whole file location |
 | `/parley:files-problems` | Lists what Parley's checks of the file location found, and dismisses one when you ask |
 | `parley-operator` skill | The `parley` command-line tool - the operations that are deliberately not tools |

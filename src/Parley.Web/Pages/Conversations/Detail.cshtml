@@ -850,6 +850,10 @@ else
 
                     // A note between messages goes with the turn before it, a move's note included.
                     li.classList.toggle("filtered-out", !lastTurn);
+
+                    // A placed file shown is something on its day, so a day that holds only a file keeps its heading: the
+                    // server starts a day for a file placed on one, and hiding it put the file under the day before.
+                    if (lastTurn && li.classList.contains("placed")) { dayHasOne = true; }
                 });
 
                 closeDay();

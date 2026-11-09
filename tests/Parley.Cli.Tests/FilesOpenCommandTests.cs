@@ -53,15 +53,18 @@ public sealed class FilesOpenCommandTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task A_file_on_another_machine_with_no_conversation_named_asks_for_one_and_launches_nothing()
+    public async Task A_file_on_another_machine_with_no_conversation_named_is_found_by_its_name()
     {
+        // One file of the name in the whole location is the one meant, as the broker's lookup already said.
         await _files.PlaceAsync(Billing, "notes.md", "net of tax", "pricing");
         _files.Machine = "elsewhere";
 
-        var (_, output, _) = await _files.RunAsync("open", "notes.md");
+        var (code, output, _) = await _files.RunAsync("open", "notes.md");
 
-        Assert.Empty(_files.Launched);
-        Assert.Contains("Name its conversation", output, StringComparison.Ordinal);
+        Assert.Equal(0, code);
+        var (path, _) = Assert.Single(_files.Launched);
+        Assert.Equal("net of tax", await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken));
+        Assert.Contains("Opened a copy of notes.md", output, StringComparison.Ordinal);
     }
 
     [Fact]

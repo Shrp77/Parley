@@ -209,6 +209,57 @@ public sealed class PlacementsInTheTranscriptTests
 
         Assert.True(message >= 0 && heading > message && file > heading, $"message {message}, heading {heading}, file {file}");
     }
+
+    [Fact]
+    public void The_page_script_keeps_a_day_that_holds_only_a_file()
+    {
+        // The filter script hides a day heading with nothing kept under it, and a placed file did not count, so the heading
+        // the server draws for a file's own day was hidden in the browser and the file sat under the day before. Checked
+        // in a headless browser (2026-11-09: without this line both such headings were hidden; with it, neither); held here
+        // by the line itself, since this suite runs no script.
+        var page = File.ReadAllText(Path.Combine(Root(), "src", "Parley.Web", "Pages", "Conversations", "Detail.cshtml"));
+
+        Assert.Contains("if (lastTurn && li.classList.contains(\"placed\")) { dayHasOne = true; }", page, StringComparison.Ordinal);
+    }
+
+    private static string Root()
+    {
+        var directory = AppContext.BaseDirectory;
+
+        while (directory is { Length: > 0 } && !File.Exists(Path.Combine(directory, "Parley.slnx")))
+        {
+            directory = Path.GetDirectoryName(directory);
+        }
+
+        return directory!;
+    }
+
+    [Fact]
+    public async Task A_file_placed_between_messages_on_a_day_of_its_own_starts_that_day()
+    {
+        using var console = new TranscriptConsole();
+
+        // 16 September, then the file on the 17th, then a message on the 18th: the file is drawn before the 18th's
+        // message, inside the loop over messages, and needs the 17th's heading there.
+        console.Broker.Request(1, "orders@test", "billing@test", "What does it look like?");
+        console.Broker.Request(2, "billing@test", "orders@test", "Like this.");
+        console.Broker.Messages[^1].CreatedUtc = "2026-09-18T15:00:00Z";
+        console.Broker.Files.Add(new Wire.SharedFileView
+        {
+            ConversationId = "shared", Folder = "shared", Name = "between.png", SizeBytes = 10, Sha256 = new string('d', 64),
+            PlacedBy = "billing@test", PlacedUtc = "2026-09-17T15:00:00Z",
+        });
+
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+        var placedOn = TimeZoneInfo.ConvertTime(DateTimeOffset.Parse("2026-09-17T15:00:00Z", System.Globalization.CultureInfo.InvariantCulture), TimeZoneInfo.Local);
+        var heading = page.IndexOf(">" + placedOn.ToString("dddd, d MMMM yyyy", System.Globalization.CultureInfo.CurrentCulture) + "<", StringComparison.Ordinal);
+        var file = page.IndexOf("id=\"f-BETWEEN.PNG\"", StringComparison.Ordinal);
+        var later = page.IndexOf("id=\"m2\"", StringComparison.Ordinal);
+
+        Assert.True(heading >= 0 && file > heading && later > file, $"heading {heading}, file {file}, later message {later}");
+    }
 }
 
 /// <summary>That the composer's To line is where chips are drawn, and that a chip only ever changes a box.</summary>

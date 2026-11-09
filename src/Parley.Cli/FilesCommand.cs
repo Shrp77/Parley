@@ -396,6 +396,11 @@ public sealed class FilesCommand(
                 .ConfigureAwait(false);
 
             await _output.WriteLineAsync(Inert.Line(launched.Said)).ConfigureAwait(false);
+
+            if (!launched.Opened)
+            {
+                code = NothingDone;
+            }
         }
 
         return code;

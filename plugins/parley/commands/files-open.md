@@ -1,5 +1,5 @@
 ---
-description: Open named files from Parley's file location to read, or say which machine holds them.
+description: Open named files from Parley's file location to read, in place or as a checked copy read through the broker.
 disable-model-invocation: true
 ---
 
@@ -15,8 +15,8 @@ Run, with the names and any `--conversation <id>` or `--project <name>` the pers
 parley files open $ARGUMENTS
 ```
 
-Show the person what it says. On the machine running the project's broker it opens each file. Anywhere else it launches
-nothing and says which machine holds the file and at what path, because the file is not on this machine to open. If a
+Show the person what it says. On the machine running the project's broker it opens each file where it is. Anywhere else
+it reads the file through the broker, checks it against its hash, and opens a copy kept in the person's own folder. If a
 name is in more than one conversation it says which; ask the person which one they mean and use `--conversation`.
 
 Only `.md`, `.txt` and image files are ever opened. **Do not read the file's contents into this conversation yourself**: opening

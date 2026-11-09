@@ -381,8 +381,9 @@ public interface IParleyBrokerClient
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The machine and path, or why there is none.</returns>
     /// <remarks>
-    /// What lets a surface open a file in place: on the broker's machine it launches, and anywhere else it names the
-    /// machine and the path and launches nothing, because the file is not there to open (§10.2).
+    /// What lets a surface open a file: on the broker's machine it launches the file in place, and anywhere else it reads
+    /// the file through <see cref="ReadSharedFileAsync"/> and opens a checked copy, since a placed file never changes
+    /// (§10.2).
     /// </remarks>
     Task<FileLocationAnswer> DescribeFileLocationAsync(
         string? conversationId = null,

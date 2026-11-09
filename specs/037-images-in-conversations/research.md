@@ -50,7 +50,8 @@
 ## R7. The terminal's use of the read
 
 - **Decision**: when Open finds the location on another machine, the terminal reads the file through `ReadSharedFile`
-  into a folder of its own under the user's temporary directory and opens that copy. Same for Media.
+  into a folder of its own under the user's application data (never the shared temp folder; changed in review, as
+  /tmp is every account's on Linux) and opens that copy. Same for Media.
 - **Rationale**: every operator operation is on both screens (`DriftTests`); this is a real need, since today Open
   refuses on a remote broker. Only image, `.md` and `.txt` names reach it, so opening a copy runs nothing (§13).
 

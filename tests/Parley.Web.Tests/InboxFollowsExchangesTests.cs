@@ -222,6 +222,25 @@ public sealed partial class InboxFollowsExchangesTests
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData("/Inbox?view=flight")]
+    [InlineData("/Inbox?view=closed")]
+    public async Task In_flight_and_closed_read_what_waits_and_take_none_of_it(string address)
+    {
+        // Showing a message is delivering it, and only Waiting on you shows what waits (SPEC.md §5.6, owner 2026-11-09).
+        // The count is read, so the seat is held and the view had mail it could have taken.
+        using var console = Console();
+
+        console.Broker.MessagesWaiting = 2;
+
+        using var client = console.CreateClient();
+
+        await client.GetStringAsync(new Uri(address, UriKind.Relative), Ct);
+
+        Assert.Contains("/parley.v1.Agents/Waiting", console.Broker.Paths);
+        Assert.DoesNotContain("/parley.v1.Agents/DrainInbox", console.Broker.Paths);
+    }
+
     /// <summary>The address a page's follow-up form posts to, decoded.</summary>
     /// <param name="page">The page.</param>
     /// <returns>The form's action.</returns>
