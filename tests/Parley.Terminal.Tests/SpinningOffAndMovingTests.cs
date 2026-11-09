@@ -994,11 +994,15 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
 
         System.Data.Common.DbConnection raw = _connection;
 
+        // The row names no file on disk, and opening the conversation asks the broker for its files, whose sweep would
+        // record a file missing from disk as gone and take it out of the move's preview. Its times are not in the
+        // store's format, so the sweep cannot read the row and leaves it; the preview reads only its name.
+        // A_file_list_the_broker_cannot_answer_still_opens_the_conversation holds what the terminal does meanwhile.
         using (var place = raw.CreateCommand())
         {
             place.CommandText =
                 """
-                INSERT INTO conversation_folders (conversation_id, folder, created_utc) VALUES ('room', 'room', '2026-01-01T00:00:00.000Z');
+                INSERT INTO conversation_folders (conversation_id, folder, created_utc) VALUES ('room', 'room', '2026-01-01T00:00:00.0000000+00:00');
                 INSERT INTO shared_files (conversation_id, name_key, name, size_bytes, sha256, placed_by, placed_utc, changed_utc, modified_ticks)
                 VALUES ('room', 'NOTES.MD', 'notes.md', 10, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'orders@test', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 0);
                 """;
@@ -1028,6 +1032,37 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
         Assert.Equal(13, reviewing.Items.Count);
         Assert.Equal(2, reviewing.Pages);
         Assert.Equal(TickDialog.PageSize, reviewing.Rows.Source!.Count);
+    }
+
+    [Fact]
+    public async Task A_file_list_the_broker_cannot_answer_still_opens_the_conversation()
+    {
+        // A file row whose time the store cannot read makes the broker refuse to list the conversation's files. That is
+        // what a broken file location looks like from here, and it must cost the transcript its placement lines only,
+        // never the conversation itself.
+        var (shell, _, _) = await SeatedAsync();
+        using var held = shell;
+
+        System.Data.Common.DbConnection raw = _connection;
+
+        using (var place = raw.CreateCommand())
+        {
+            place.CommandText =
+                """
+                INSERT INTO conversation_folders (conversation_id, folder, created_utc) VALUES ('room', 'room', '2026-01-01T00:00:00.0000000+00:00');
+                INSERT INTO shared_files (conversation_id, name_key, name, size_bytes, sha256, placed_by, placed_utc, changed_utc, modified_ticks)
+                VALUES ('room', 'NOTES.MD', 'notes.md', 10, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'orders@test', 'not a time', 'not a time', 0);
+                """;
+            place.ExecuteNonQuery();
+        }
+
+        await AskPersonAsync(shell, "still readable");
+
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+
+        Assert.Contains(shell.Transcript.Drawn, line => line.Contains("still readable", StringComparison.Ordinal));
+        Assert.DoesNotContain(shell.Transcript.Drawn, line => line.Contains("placed notes.md", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1241,9 +1276,9 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
         using (var place = raw.CreateCommand())
         {
             var files = string.Concat(Enumerable.Range(0, 8).Select(i =>
-                $"INSERT INTO shared_files (conversation_id, name_key, name, size_bytes, sha256, placed_by, placed_utc, changed_utc, modified_ticks) VALUES ('room', '{new string('N', 60)}{i}.MD', '{new string('n', 60)}{i}.md', 10, '{new string('a', 64)}', 'orders@test', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 0);"));
+                $"INSERT INTO shared_files (conversation_id, name_key, name, size_bytes, sha256, placed_by, placed_utc, changed_utc, modified_ticks) VALUES ('room', '{new string('N', 60)}{i}.MD', '{new string('n', 60)}{i}.md', 10, '{new string('a', 64)}', 'orders@test', '2026-01-01T00:00:00.0000000+00:00', '2026-01-01T00:00:00.0000000+00:00', 0);"));
 
-            place.CommandText = "INSERT INTO conversation_folders (conversation_id, folder, created_utc) VALUES ('room', 'room', '2026-01-01T00:00:00.000Z');" + files;
+            place.CommandText = "INSERT INTO conversation_folders (conversation_id, folder, created_utc) VALUES ('room', 'room', '2026-01-01T00:00:00.0000000+00:00');" + files;
             place.ExecuteNonQuery();
         }
 

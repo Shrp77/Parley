@@ -5385,15 +5385,29 @@ internal sealed partial class Shell : Window
     /// <param name="conversationId">The conversation.</param>
     /// <param name="cancellationToken">Stops the reads.</param>
     /// <returns>The conversation and its files.</returns>
+    /// <remarks>
+    /// <b>The files are read apart from the conversation.</b> A file list the broker cannot answer, because the file
+    /// location or a row in it is broken, leaves the transcript without its placement lines rather than leaving the
+    /// person without the conversation. Media (<c>Alt+e</c>) reads the list again and says what went wrong there.
+    /// </remarks>
     private static async Task<(ConversationExport Export, IReadOnlyList<SharedFile> Files)> ReadWithFilesAsync(
         BrokerClient client, string conversationId, CancellationToken cancellationToken)
     {
         var export = await client.ExportAsync(conversationId, cancellationToken).ConfigureAwait(false);
-        var files = export.Destroyed is null
-            ? await Placements.EveryAsync(client, conversationId, cancellationToken).ConfigureAwait(false)
-            : [];
 
-        return (export, files);
+        if (export.Destroyed is not null)
+        {
+            return (export, []);
+        }
+
+        try
+        {
+            return (export, await Placements.EveryAsync(client, conversationId, cancellationToken).ConfigureAwait(false));
+        }
+        catch (Grpc.Core.RpcException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return (export, []);
+        }
     }
 
     /// <summary>Fills the room's column from the conversation and the broker's wait-for graph.</summary>
