@@ -158,6 +158,24 @@ public sealed class WithdrawingTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Purging_an_agent_the_registry_knows_by_another_identity_leaves_the_repository_alone()
+    {
+        // As retiring: purging reads the identity from the registry before the act, and the row goes with the act.
+        using var driving = Driving.Open();
+        using var shell = await OpenAsync(driving);
+
+        await new AgentRepository(_connection).RecordIdentityAsync(Orders, AgentIdentity.Mint(), TestContext.Current.CancellationToken);
+
+        await Choose(driving, shell, Withdrawing.Purge, "orders@test");
+
+        var launch = JsonNode.Parse(await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!;
+
+        Assert.True(((JsonObject)launch["mcpServers"]!).ContainsKey("parley"), "another agent's purge took this repository's entry");
+        Assert.Contains(Catalogued.ToString(), await CatalogueTextAsync(), StringComparison.Ordinal);
+        Assert.Contains("another agent's repository", shell.Said, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Retiring_takes_the_name_and_removes_both_files()
     {
         using var driving = Driving.Open();

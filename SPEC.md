@@ -568,7 +568,7 @@ operation moves an exchange or names where one goes.
   from where its exchanges are now, so the rules above apply to the result, and one left holding
   requests in two conversations names which, as any such agent does.
 - **Neither conversation hides it.** The broker records each move (§9.2): which exchanges, from where, to
-  where, when and by whom, with no message text. Both conversations show it where the entries were, and
+  where, when and by whom, and where it falls among the messages, with no message text. Both conversations show it where the entries were, and
   `export` carries it. An export taken before a move no longer matches, and the record is what explains why.
 - **Membership follows** (below). A poll running in either conversation is voided, as new activity
   voids one, because who would be asked has changed.
@@ -2833,7 +2833,8 @@ CREATE TABLE conversation_moves (
   first_message INTEGER,
   messages      INTEGER NOT NULL CHECK (messages >= 0),
   -- The newest message id when the move was made: a message was written before the move exactly when its id is at most
-  -- this, which is how an export tells where a moved message was written. Null when there were no messages.
+  -- this, which is how an export tells where a moved message was written. Null when there were no messages. A move
+  -- recorded before schema 8 has the newest message at or before its time instead, which a tie can misplace.
   last_message  INTEGER,
   CHECK (source <> destination)
 ) STRICT;

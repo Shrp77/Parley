@@ -1,5 +1,6 @@
 using Dapper;
 using Microsoft.Data.Sqlite;
+using Parley.Core;
 using Xunit;
 
 namespace Parley.Store.Tests;
@@ -17,7 +18,7 @@ public sealed class MigrationEightTests : IDisposable
     public void Dispose() => _connection.Dispose();
 
     [Fact]
-    public void A_move_recorded_before_it_is_placed_after_the_newest_message_of_its_time_and_the_index_is_made()
+    public void A_move_recorded_before_it_with_no_messages_yet_records_none_and_the_index_is_made()
     {
         _connection.Execute(
             """
@@ -26,12 +27,12 @@ public sealed class MigrationEightTests : IDisposable
             VALUES ('pricing', 'elsewhere', 'human-user@acme', '2026-11-05T09:05:00.0000000+00:00', NULL, 0);
             """);
 
-        var messages = _connection.ExecuteScalar<long>("SELECT COUNT(*) FROM conversation_moves;");
+        var moves = _connection.ExecuteScalar<long>("SELECT COUNT(*) FROM conversation_moves;");
 
         SchemaMigrator.Migrate(_connection);
 
         Assert.Equal(8, _connection.ExecuteScalar<long>("PRAGMA user_version;"));
-        Assert.Equal(messages, _connection.ExecuteScalar<long>("SELECT COUNT(*) FROM conversation_moves;"));
+        Assert.Equal(moves, _connection.ExecuteScalar<long>("SELECT COUNT(*) FROM conversation_moves;"));
 
         // No messages yet: none came before the move, so it records none.
         Assert.Null(_connection.ExecuteScalar<long?>("SELECT last_message FROM conversation_moves;"));
@@ -39,6 +40,41 @@ public sealed class MigrationEightTests : IDisposable
             1,
             _connection.ExecuteScalar<long>(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'ix_conversation_move_exchanges_exchange';"));
+    }
+
+    [Fact]
+    public void A_move_recorded_before_it_is_placed_after_the_newest_message_at_or_before_its_time()
+    {
+        // Three messages: a minute before the move, at the move's instant written another way, and a minute after. The
+        // move is placed after the second: times are compared as instants, not as text, and the instant itself counts.
+        Work.Register(_connection, AgentName.Create("orders@test"), AgentName.Create("billing@test"));
+
+        _connection.Execute(
+            """
+            INSERT INTO conversations (id, state, opened_utc) VALUES ('pricing', 'OPEN', '2026-11-05T09:00:00Z');
+            INSERT INTO exchanges
+                (pair_key, requester, receiver, owed_by, state, conversation_id, opened_utc,
+                 uncollected_flag_ms, stalled_flag_ms, request_hash)
+            VALUES ('billing@test' || char(31) || 'orders@test', 'orders@test', 'billing@test',
+                    'billing@test', 'OPEN', 'pricing', '2026-11-05T09:00:00Z', 900000, 14400000, 'hash-1');
+            INSERT INTO messages (exchange_id, type, from_agent, to_agent, responder_model, payload_json, content_hash,
+                                  conversation_id, created_utc)
+            SELECT x.id, 'clarify', 'orders@test', 'billing@test', 'test', json_object('text', w.at),
+                   '0000000000000000000000000000000000000000000000000000000000000001', 'pricing', w.at
+              FROM exchanges x,
+                   (SELECT '2026-11-05T09:04:00.0000000+00:00' AS at UNION ALL
+                    SELECT '2026-11-05T09:05:00Z' UNION ALL
+                    SELECT '2026-11-05T09:06:00.0000000+00:00') w
+             ORDER BY w.at;
+            INSERT INTO conversation_moves (source, destination, moved_by, moved_utc, first_message, messages)
+            VALUES ('pricing', 'elsewhere', 'human-user@acme', '2026-11-05T09:05:00.0000000+00:00', NULL, 0);
+            """);
+
+        var atTheMove = _connection.ExecuteScalar<long>("SELECT id FROM messages WHERE created_utc = '2026-11-05T09:05:00Z';");
+
+        SchemaMigrator.Migrate(_connection);
+
+        Assert.Equal(atTheMove, _connection.ExecuteScalar<long?>("SELECT last_message FROM conversation_moves;"));
     }
 
     private static SqliteConnection SchemaSeven()

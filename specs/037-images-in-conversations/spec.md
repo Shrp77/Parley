@@ -133,7 +133,7 @@ remains and that agent's tick in the To box is cleared. Send, and only the remai
   and size. It MUST close with Escape or a close control, returning focus to the thumbnail.
 - **FR-004**: A file placed and later removed is no longer shown, in the transcript or in Media. *Amended in planning:*
   the first draft kept a "removed" tile, but the broker keeps no record of a removal, and keeping one is a schema change
-  that would take migration 008 from feature 027. A removal is already told to those who fetched the file.
+  that would have taken migration 008 from feature 027 (008 now records where a move falls, and 027 moves to 009). A removal is already told to those who fetched the file.
 - **FR-005**: A non-image placed file (`.md`, `.txt`) MUST appear in the transcript as a file tile with its name,
   placer, time and size, opening the way the Files view opens it today.
 - **FR-006**: The terminal MUST show every placement as a transcript line (placer, name, kind, size). From there the

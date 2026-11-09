@@ -178,6 +178,27 @@ public sealed class EnrolmentTests : IDisposable
     }
 
     [Fact]
+    public async Task Withdrawing_for_another_identity_leaves_the_catalogue_line_of_a_repository_with_no_entry()
+    {
+        // The repository's file keeps its identity but no longer has an entry for this project, so nothing says it still
+        // answers somewhere. The registry knows the agent by another identity: the line is still not this agent's to take.
+        await Enrolment.AddAsync(
+            Entry("orders", Workspace), "acme", CatalogueFile, InstructionsFile, TestContext.Current.CancellationToken);
+
+        var launch = JsonNode.Parse(await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!;
+        var own = launch[LaunchConfiguration.IdentityMember]!.GetValue<string>();
+
+        Assert.True(launch["mcpServers"]!.AsObject().Remove("parley-acme"));
+        await File.WriteAllTextAsync(LaunchFile, launch.ToJsonString(), TestContext.Current.CancellationToken);
+
+        var refused = await Enrolment.WithdrawAsync(
+            Workspace, "orders@test", "acme", CatalogueFile, AgentIdentity.Mint(), TestContext.Current.CancellationToken);
+
+        Assert.Contains(refused.Notes, note => note.Contains("the repository is another agent's", StringComparison.Ordinal));
+        Assert.Contains(own, await File.ReadAllTextAsync(CatalogueFile, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_catalogue_line_naming_another_repository_is_never_taken_by_a_withdrawal()
     {
         // This repository's file carries an identity whose catalogue line is another checkout's: an agent copied it into
