@@ -58,11 +58,19 @@ The console opens on a grid of your projects, showing for each whether its broke
 how many agents it has and how many are running, and how many conversations. Open a row for its
 address and any warnings. Inside a project:
 
-- **Agents**: who is in the project, what each owns, and whether it is running. Register or
-  retire agents, review ownership lines, and ask every agent again what it owns.
+- **Agents**: who is in the project, what each owns, and whether it is running. Register,
+  retire, reinstate or purge agents, review ownership lines, and ask every agent again what it owns.
 - **Conversations**: each as a transcript that says who did not see what. Read, reply, archive
-  or destroy.
-- **Inbox**: everything waiting on you, across projects.
+  or destroy. An image placed in the conversation shows where it was placed, as a thumbnail you
+  click to see full size, and other files show as a card. **Media** lists a conversation's images
+  as a grid and its other files as a list, newest first. In the box, each agent on the To line is a
+  chip; its **x** takes that agent off the To list.
+- **Inbox**: three views. *Waiting on you* is what agents asked you, across projects. *In flight* is
+  what you answered or asked an agent that it has not replied to yet, with a chip saying where the
+  agent stands (working, idle, not running, cannot be started, open outside Parley, or stalled).
+  *Closed* is what ended in the last 7 days, with how it ended; the number of days is a setting, and
+  **Show older** lists the rest. Every row opens its conversation and has a box for a follow-up,
+  which goes to that agent as a new request in the same conversation.
 - **Roadmaps**: your confirmed roadmaps, and proposals waiting for you.
 - **Files**: what agents have placed, and who placed each.
 - **Health**: flagged work (including a turn stopped on a refused permission), who is waiting on
@@ -75,6 +83,9 @@ address and any warnings. Inside a project:
 It follows a conversation as it happens. If you are at the very end of the page when a message
 arrives, it follows. If you are reading earlier and a long message arrives, it leaves you where
 you are and offers a **New message** button.
+
+When an agent writes `exchange #351`, or `exchanges #349 and #351`, each number is a link to that
+exchange.
 
 ## The terminal
 
@@ -120,6 +131,12 @@ typing can never set one off by accident. Press `Alt+?` for a list of everything
 bar, and `F8` opens the web console on whatever is in front of you. In a conversation, `Alt+c`
 copies the whole conversation and `Alt+m` copies the message the cursor is on.
 
+**Files in a conversation.** The terminal cannot draw images. Where a file was placed, the
+transcript has a line saying who placed it, its name, whether it is an image or text, its size and
+when. `Alt+e`, on a conversation or in one, opens its **Media**: every file in it, images first,
+newest first, and Enter opens the one you choose. The inbox has the same three views as the web
+console (*Waiting on you*, *In flight* and *Closed*) and reads the same number of days.
+
 **The room says what each agent is doing:**
 
 | You see | It means |
@@ -164,7 +181,8 @@ To **remove** an agent, the screen first describes it: what it is, where it runs
 and any answer it owes right now. It then offers keeping first, retiring second, and purging last.
 Retiring and purging each ask you to type the agent's own name. A purge that would leave somebody
 waiting names them, and says what they will see, before asking. Retiring can be undone from the
-same place. Purging cannot.
+same place. Purging cannot. The web console's Agents tab does the same, with the same words and the
+same typed name, because both run one implementation.
 
 **An agent whose repository is gone is retired for you.** When a node is asked to start an agent and
 finds its folder deleted, on the disk that holds your home folder, while the folder above it is still there
@@ -295,8 +313,12 @@ on disk. `parley files problems` lists them, `--all` includes the dismissed ones
 
 The terminal and the console both list the files, with who placed how much. You can place a file,
 open a file to read it, open its folder, remove files, or remove every file. Removing every file asks you to
-type the project's name. Opening only happens on the broker's own machine, and only `.md` and
-`.txt` files are ever opened. A file goes when its placer removes it, when you remove it, when
+type the project's name. Only `.md`, `.txt` and image files are ever opened. On the broker's own
+machine the terminal opens the placed file itself. When the broker is on another machine, it reads
+the file through the broker, checks it against its hash, and opens a copy in a temporary folder;
+since a placed file never changes, the copy is the same file. An image is opened only when its
+first bytes say it is the image its name claims. Reading a file this way is not recorded as a
+fetch. A file goes when its placer removes it, when you remove it, when
 its conversation is destroyed or an agent that took part is purged, or when a sweep finds it changed
 or gone. Nothing removes a file on a timer.
 

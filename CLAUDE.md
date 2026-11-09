@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.57.0, protocol 0.15, schema 7. Nothing has been released, but **live stores hold work
+- Version 0.57.1, protocol 0.15, schema 7. Nothing has been released, but **live stores hold work
   in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
   `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
   upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
@@ -251,7 +251,9 @@ once the parent's own floor catches up (`dotnet nuget why`).
 
 A pull request merges after three clean runs of each of three lenses (correctness and concurrency, security and data
 integrity, API surface and maintainability) on the same shipped code, with the smoke run (the `smoke` workflow) green on the commit that merges; a commit
-that changes only tests, CI, docs or plugin prose keeps the counts. The rules live in
+that changes only tests, CI, docs or plugin prose keeps the counts. After that, and still before the merge, the
+documentation (`README.md`, `docs/`, the plugin's README) is brought up to date and the Parley website's agent is
+asked, through Parley, to update the site; the merge waits for its result. The rules live in
 [`review/`](review/README.md), one file for how the gate runs and one per lens, each with what counts as medium, how to
 probe, and what the owner has settled. Read the gate's file and the lens's file before a pass; a lens file, not this
 one, is where a new review rule goes.

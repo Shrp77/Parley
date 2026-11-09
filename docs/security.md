@@ -65,6 +65,13 @@ prioritises, closes or overrides anything.
   name every place a tool reads instructions from, so the agent is told never to put a fetched
   file where one would. Files are checked against their
   SHA-256 hash when fetched.
+- **The web console shows placed images, including an agent's.** This is a recorded reduction in a
+  control, made so that the answer to "what does this look like" can be seen in the conversation.
+  Showing an image does not change what a model reads from one: words in an image still reach any
+  model that opens it. The new risk is to your browser, since Parley never inspects a placed file's
+  bytes. So the console serves an image only from its Media page, only for an image name, and only
+  when the file's first bytes are the format its name claims. It tells the browser not to guess the
+  type and not to run anything in the response, and it shows an image over 20 MB only when you ask.
 - **An agent's answer becomes its ownership line with nobody reading it, by default.** Auto
   Accept is a recorded reduction in a control: peers route by a line no person checked. It is
   recorded as `automatic`, shown for review on every surface, kept in the agent's own words, and
