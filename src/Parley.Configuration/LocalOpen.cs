@@ -332,7 +332,7 @@ public static class LocalOpen
     // up by a path whose parts could have changed since they were read, so no flip, however timed, makes Windows follow a
     // link to a share.
     private static (LocalOpenStatus Status, SafeFileHandle? Handle, string Reached) Resolve(
-        string path, int links, bool directory, bool followLast, uint access, uint share)
+        string path, int links, bool directory, bool followLast, uint access, uint share, bool afterJunction = false)
     {
         if (LocalPath.IsOffThisMachine(path) || links > 40)
         {
@@ -376,7 +376,7 @@ public static class LocalOpen
         }
         else if (OffMachineLinks.SubstituteOf(full) is { } folder)
         {
-            return Resolve(Path.Join(folder, full[2..]), links + 1, directory, followLast, access, share);
+            return Resolve(Path.Join(folder, full[2..]), links + 1, directory, followLast, access, share, afterJunction);
         }
         else if (OffMachineLinks.IsUndefinedLetter(full))
         {
@@ -423,8 +423,8 @@ public static class LocalOpen
 
                 next!.Dispose();
 
-                return Follow(link, at, parts[(i + 1)..]) is { } target
-                    ? Resolve(target, links + 1, directory, followLast, access, share)
+                return Follow(link, at, parts[(i + 1)..], afterJunction) is { } target
+                    ? Resolve(target, links + 1, directory, followLast, access, share, afterJunction || link is { Junction: true })
                     : (LocalOpenStatus.OffThisMachine, null, Path.Join([at, .. parts[i..]]));
             }
 
@@ -470,7 +470,10 @@ public static class LocalOpen
     // Where a link leads, read as OffMachineLinks reads it, joined to the parts after it: null when it leads off this
     // machine or cannot be read. A mount point of a local disk is walked on from that disk's drive letter; one with no
     // letter is refused, since its folder has no name a fresh walk could start from.
-    private static string? Follow(Link? link, string at, string[] rest)
+    // A relative link reached after a junction is refused: Windows resolves it from the path as it was reached, through
+    // the junction, where this walk has the junction's target, and an agent's own `J\R` with `R` -> `..\..\T` was
+    // followed here to a decoy while Windows followed it to a share (review, lens 2 round 17).
+    private static string? Follow(Link? link, string at, string[] rest, bool afterJunction)
     {
         if (link is not { } found)
         {
@@ -491,7 +494,8 @@ public static class LocalOpen
         }
         else if (found.Relative)
         {
-            if (!OffMachineLinks.ReadsAsWritten(found.Target, absolute: false)
+            if (afterJunction
+                || !OffMachineLinks.ReadsAsWritten(found.Target, absolute: false)
                 || (Path.IsPathRooted(found.Target) && !Path.IsPathFullyQualified(found.Target)))
             {
                 return null;
@@ -521,7 +525,7 @@ public static class LocalOpen
 
     // A symbolic link's or mount point's target, read from a handle opened on the link itself. Volume is set for a mount
     // point naming a volume.
-    private readonly record struct Link(string Target, bool Relative, string? Volume);
+    private readonly record struct Link(string Target, bool Relative, string? Volume, bool Junction);
 
     private static Link? ReadLink(SafeFileHandle handle)
     {
@@ -560,7 +564,7 @@ public static class LocalOpen
 
         var target = System.Text.Encoding.Unicode.GetString(buffer, start + offset, length);
 
-        return new Link(target, relative, tag == MountPoint ? OffMachineLinks.MountedVolume(target) : null);
+        return new Link(target, relative, tag == MountPoint ? OffMachineLinks.MountedVolume(target) : null, tag == MountPoint);
     }
 
     // An open local file's full name with every part spelled long, from GetFinalPathNameByHandleW: read from the handle and

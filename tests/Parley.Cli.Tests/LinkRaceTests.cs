@@ -270,6 +270,54 @@ public sealed class LinkRaceTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task A_relative_link_reached_through_a_junction_is_never_judged_from_the_junctions_target()
+    {
+        // Windows resolves `..` in a relative link reached through a junction from the path as reached; the walk had the
+        // junction's target, so `outer\o2\J2\R` with `R` -> `..\..\T` read as the decoy `T` beside `d1` while Windows went
+        // to `outer\T`, a link to a share (review, lens 2 round 17).
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "junctions are Windows'");
+
+        SkipUnlessLinksCanBeMade();
+
+        var o2 = Directory.CreateDirectory(Path.Combine(_root, "outer", "o2")).FullName;
+        var d2 = Directory.CreateDirectory(Path.Combine(_root, "d1", "d2")).FullName;
+        var junction = Path.Combine(o2, "J2");
+        var orders = Path.Combine(_root, "orders");
+
+        Directory.CreateDirectory(Path.Combine(_root, "T"));
+        Directory.CreateSymbolicLink(Path.Combine(_root, "outer", "T"), _share);
+        Directory.CreateSymbolicLink(Path.Combine(d2, "R"), @"..\..\T");
+
+        using (var mklink = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+            "cmd.exe", ["/c", "mklink", "/J", junction, d2])
+        {
+            UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true,
+        })!)
+        {
+            await mklink.WaitForExitAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(0, mklink.ExitCode);
+        }
+
+        Directory.CreateSymbolicLink(orders, Path.Combine(junction, "R"));
+
+        try
+        {
+            var timer = System.Diagnostics.Stopwatch.StartNew();
+
+            Assert.Equal(LocalOpenStatus.OffThisMachine, LocalOpen.Folder(orders));
+            Assert.NotNull(LocalStorage.Problem(orders));
+            Assert.True(timer.Elapsed < Looking, $"took {timer.Elapsed}: the share was looked up");
+        }
+        finally
+        {
+            foreach (var link in (string[])[orders, junction, Path.Combine(d2, "R"), Path.Combine(_root, "outer", "T")])
+            {
+                Directory.Delete(link);
+            }
+        }
+    }
+
     [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
     [System.Runtime.InteropServices.DllImport("kernel32.dll", EntryPoint = "GetShortPathNameW", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
     private static extern uint GetShortPathName(string longPath, [System.Runtime.InteropServices.Out] char[] shortPath, uint length);

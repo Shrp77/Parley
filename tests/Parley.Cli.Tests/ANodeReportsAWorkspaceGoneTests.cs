@@ -190,6 +190,63 @@ public sealed class ANodeReportsAWorkspaceGoneTests : IDisposable
     }
 
     [Fact]
+    public async Task A_workspace_that_cannot_be_checked_is_never_started_in()
+    {
+        // The agent denied itself SYNCHRONIZE on its own link to a share: every open the check makes is refused, so it read
+        // Unreadable, which the node took as go-ahead, while Directory.Exists and the start by path went through to the
+        // share (review, lens 2 round 17).
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "the permissions are Windows'");
+        var workspace = Path.Combine(_root, "checkout");
+        var (catalogue, identity) = await CatalogueAsync(workspace);
+
+        Directory.Delete(workspace, recursive: true);
+
+        try
+        {
+            Directory.CreateSymbolicLink(workspace, $@"\\192.0.2.{Random.Shared.Next(2, 254)}\share");
+        }
+        catch (Exception refused) when (refused is IOException or UnauthorizedAccessException)
+        {
+            Assert.Skip("This machine does not let a test create a directory link.");
+        }
+
+        using (var icacls = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+            "icacls", [workspace, "/L", "/deny", $"{Environment.UserDomainName}\\{Environment.UserName}:(S)"])
+        {
+            UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true,
+        })!)
+        {
+            await icacls.WaitForExitAsync(TestContext.Current.CancellationToken);
+            Assert.SkipUnless(icacls.ExitCode == 0, "icacls could not deny the link");
+        }
+
+        try
+        {
+            Assert.NotEqual(LocalOpenStatus.Opened, LocalOpen.Folder(workspace));
+
+            var timer = System.Diagnostics.Stopwatch.StartNew();
+            var said = await StartAsync(catalogue, identity, reporter: null);
+
+            Assert.True(timer.Elapsed < TimeSpan.FromSeconds(5), $"took {timer.Elapsed}: the share was looked up");
+            Assert.Contains("could not be checked", said, StringComparison.Ordinal);
+            Assert.False(File.Exists(Evidence), "an agent was started in a folder that could not be checked");
+        }
+        finally
+        {
+            using (var icacls = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                "icacls", [workspace, "/L", "/remove:d", $"{Environment.UserDomainName}\\{Environment.UserName}"])
+            {
+                UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true,
+            })!)
+            {
+                await icacls.WaitForExitAsync(TestContext.Current.CancellationToken);
+            }
+
+            RemoveLink(workspace);
+        }
+    }
+
+    [Fact]
     public async Task A_workspace_missing_beyond_a_link_to_a_folder_in_use_concludes_nothing()
     {
         // The folder above is a link to a folder that is there and holds other things: every other check passes, so only

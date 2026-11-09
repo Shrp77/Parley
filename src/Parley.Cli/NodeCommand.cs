@@ -761,10 +761,10 @@ public static class NodeCommand
             // (review, lens 2 round 15). Asked by opening each part as itself (LocalOpen), so a link is not followed to
             // judge it either. Said and not retired: the folder is not gone, it is somewhere this node will not go.
             if (catalogue.WorkspaceFor(identity) is { Length: > 0 } elsewhere
-                && LocalOpen.Folder(elsewhere) == LocalOpenStatus.OffThisMachine)
+                && LocalOpen.Folder(elsewhere) != LocalOpenStatus.Opened)
             {
                 await output.WriteLineAsync(
-                    $"  {agent.Value}: not started — its workspace {Inert.Line(elsewhere)} leads to another machine.")
+                    $"  {agent.Value}: not started — its workspace {Inert.Line(elsewhere)} leads to another machine or could not be checked.")
                     .ConfigureAwait(false);
 
                 return;
@@ -1449,11 +1449,11 @@ public static class NodeCommand
             // asks for this restart, and its folder can have been swapped for a link to a share in the meantime (review,
             // lens 2 round 16).
             if (catalogue.WorkspaceFor(identity) is { Length: > 0 } elsewhere
-                && LocalOpen.Folder(elsewhere) == LocalOpenStatus.OffThisMachine)
+                && LocalOpen.Folder(elsewhere) != LocalOpenStatus.Opened)
             {
                 await output.WriteLineAsync(
                     $"  {agent.Value}: stopped for a refresh, and not restarted — its workspace {Inert.Line(elsewhere)} "
-                    + "leads to another machine.").ConfigureAwait(false);
+                    + "leads to another machine or could not be checked.").ConfigureAwait(false);
 
                 return;
             }
