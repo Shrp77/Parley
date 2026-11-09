@@ -138,6 +138,26 @@ public sealed class WithdrawingTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Retiring_an_agent_the_registry_knows_by_another_identity_leaves_the_repository_alone()
+    {
+        // The registry row names this repository's role, machine and path, but it was registered with another
+        // identity: an agent attached under this name from somewhere it does not own. The identity is read from the
+        // registry before the act, so this repository's entry and catalogue line stay.
+        using var driving = Driving.Open();
+        using var shell = await OpenAsync(driving);
+
+        await new AgentRepository(_connection).RecordIdentityAsync(Orders, AgentIdentity.Mint(), TestContext.Current.CancellationToken);
+
+        await Choose(driving, shell, Withdrawing.Retire, "orders@test");
+
+        var launch = JsonNode.Parse(await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!;
+
+        Assert.True(((JsonObject)launch["mcpServers"]!).ContainsKey("parley"), "another agent's withdrawal took this repository's entry");
+        Assert.Contains(Catalogued.ToString(), await CatalogueTextAsync(), StringComparison.Ordinal);
+        Assert.Contains("another agent's repository", shell.Said, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Retiring_takes_the_name_and_removes_both_files()
     {
         using var driving = Driving.Open();

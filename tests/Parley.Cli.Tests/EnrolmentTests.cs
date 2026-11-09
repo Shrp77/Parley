@@ -178,6 +178,29 @@ public sealed class EnrolmentTests : IDisposable
     }
 
     [Fact]
+    public async Task A_catalogue_line_naming_another_repository_is_never_taken_by_a_withdrawal()
+    {
+        // This repository's file carries an identity whose catalogue line is another checkout's: an agent copied it into
+        // its own file. Withdrawing this repository must not take that line.
+        await Enrolment.AddAsync(
+            Entry("orders", Workspace), "acme", CatalogueFile, InstructionsFile, TestContext.Current.CancellationToken);
+
+        var launch = JsonNode.Parse(await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!;
+        var identity = launch[LaunchConfiguration.IdentityMember]!.GetValue<string>();
+        var catalogue = JsonNode.Parse(await File.ReadAllTextAsync(CatalogueFile, TestContext.Current.CancellationToken))!;
+        var elsewhere = Path.Combine(Path.GetTempPath(), "parley-another-checkout");
+
+        catalogue["agents"]![identity]!["workspace"] = elsewhere;
+        await File.WriteAllTextAsync(CatalogueFile, catalogue.ToJsonString(), TestContext.Current.CancellationToken);
+
+        var outcome = await Enrolment.WithdrawAsync(
+            Workspace, "orders", "acme", CatalogueFile, TestContext.Current.CancellationToken);
+
+        Assert.Contains(outcome.Notes, note => note.Contains("another repository's", StringComparison.Ordinal));
+        Assert.Contains(identity, await File.ReadAllTextAsync(CatalogueFile, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Withdrawing_never_rewrites_the_standing_instructions()
     {
         // The peers frame belongs to the project and the roster block inside it is written by

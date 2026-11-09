@@ -260,8 +260,7 @@ public static class AgentWithdrawal
             said.Add(string.IsNullOrEmpty(here)
                 ? "This machine's name could not be read, so its files were left alone."
                 : $"'{agent.Value}' runs on {agent.Machine}, so its launch entry and catalogue line are files there and were "
-                  + $"left alone. They stay until removed on {agent.Machine}: its entry in that repository's .mcp.json, by "
-                  + "hand, or by enrolling the repository again there and withdrawing it.");
+                  + $"left alone. On {agent.Machine}, remove its entry from that repository's .mcp.json by hand.");
 
             return;
         }

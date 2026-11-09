@@ -554,6 +554,27 @@ public static class Enrolment
     private static string Where(string? project) =>
         project is null ? "this repository" : $"{Quoting.Quoted(project)}";
 
+    /// <summary>Whether two paths name the same folder, as this machine compares them.</summary>
+    /// <param name="one">A path.</param>
+    /// <param name="other">Another.</param>
+    /// <returns>True when they are the same folder.</returns>
+    private static bool SameFolder(string one, string other)
+    {
+        static string Full(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+
+        try
+        {
+            return string.Equals(
+                Full(one),
+                Full(other),
+                OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        }
+        catch (Exception unreadable) when (unreadable is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
     /// <summary>Takes an agent out of a catalogue.</summary>
     /// <param name="catalogue">The catalogue's <c>agents</c> object.</param>
     /// <param name="agent">Which agent to remove.</param>
@@ -986,6 +1007,7 @@ public static class Enrolment
         // to start the repository, which nobody asked for. Both are filled in from the file below.
         var withdrawn = default(AgentIdentity);
         var stillAnAgent = false;
+        var another = false;
 
         // Catalogue before launch, the same order AddAsync takes them in. Two runs acquiring in
         // opposite orders is how each comes to hold the half the other is waiting for.
@@ -1045,7 +1067,7 @@ public static class Enrolment
                 {
                     withdrawn = EnrollmentPlan.IdentityIn(text);
 
-                    var another = expected.Known && withdrawn.Known && withdrawn != expected;
+                    another = expected.Known && withdrawn.Known && withdrawn != expected;
 
                     if (root["mcpServers"] is JsonObject servers)
                     {
@@ -1197,7 +1219,11 @@ public static class Enrolment
                     // start this checkout, and every project it answers in is started through that one
                     // entry — so removing it because one project let it go would take the others' ability
                     // to start it.
-                    if (stillAnAgent)
+                    if (another)
+                    {
+                        notes.Add($"{catalogueFile}: left alone, the repository is another agent's");
+                    }
+                    else if (stillAnAgent)
                     {
                         notes.Add(
                             $"{catalogueFile}: entry kept, the repository still answers in another project");
@@ -1210,6 +1236,15 @@ public static class Enrolment
                         notes.Add(
                             $"{catalogueFile}: left alone, {launchPath} says which agent this is and it "
                             + "does not — re-enrol it, or remove the entry by hand");
+                    }
+                    else if (agents[withdrawn.ToString()] is JsonObject line
+                             && line["workspace"] is JsonValue listed
+                             && listed.TryGetValue<string>(out var where)
+                             && !SameFolder(where, workspace))
+                    {
+                        // The line this identity keys is another repository's: an agent that copied another
+                        // checkout's identity into its own file would otherwise have that checkout's line taken.
+                        notes.Add($"{catalogueFile}: left alone, its line for this identity is another repository's");
                     }
                     else if (Unlist(agents, withdrawn))
                     {
