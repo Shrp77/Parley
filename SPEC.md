@@ -2832,6 +2832,9 @@ CREATE TABLE conversation_moves (
   moved_utc     TEXT    NOT NULL CHECK (unixepoch(moved_utc) IS NOT NULL),
   first_message INTEGER,
   messages      INTEGER NOT NULL CHECK (messages >= 0),
+  -- The newest message id when the move was made: a message was written before the move exactly when its id is at most
+  -- this, which is how an export tells where a moved message was written. Null when there were no messages.
+  last_message  INTEGER,
   CHECK (source <> destination)
 ) STRICT;
 
@@ -2844,6 +2847,8 @@ CREATE TABLE conversation_move_exchanges (
   exchange_id INTEGER NOT NULL,
   PRIMARY KEY (move_id, exchange_id)
 ) STRICT;
+
+CREATE INDEX ix_conversation_move_exchanges_exchange ON conversation_move_exchanges(exchange_id);
 
 -- What one agent is told about one open exchange that moved. Not a message: it opens nothing, is owed
 -- nothing and wakes nobody, as a roadmap notice does not. Both names are bounded by §9.2's rule for a name.
@@ -4857,7 +4862,7 @@ decided is removed and its number is not reused, so the list has gaps.
 
 ## 18. Protocol version
 
-The protocol version is **0.15** and the storage schema version is **7**.
+The protocol version is **0.15** and the storage schema version is **8**.
 
 The version is `major.minor` and has no patch level, because a protocol change is either visible
 across the boundary or is not a protocol change at all. **While the major is zero, the minor

@@ -360,8 +360,8 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
         var move = await _connection.ExecuteScalarAsync<long>(
             new CommandDefinition(
                 """
-                INSERT INTO conversation_moves (source, destination, moved_by, moved_utc, first_message, messages)
-                VALUES (@Source, @Destination, @MovedBy, @When, @First, @Messages)
+                INSERT INTO conversation_moves (source, destination, moved_by, moved_utc, first_message, messages, last_message)
+                VALUES (@Source, @Destination, @MovedBy, @When, @First, @Messages, (SELECT MAX(id) FROM messages))
                 RETURNING id;
                 """,
                 new
@@ -511,7 +511,7 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
     /// <b>Read where each message was written, not where it is now.</b> A move rewrites its messages' conversation, so
     /// read as they stand a moved message looked like the agent writing elsewhere, and the transcript blamed the agent for
     /// the person's move. Each message is placed by the source of the first move of its exchange made after it was
-    /// written, or where it is when none was; so a move invents no note, and a message written after a move, on the
+    /// written (by message id, which a move records: migration 008), or where it is when none was; so a move invents no note, and a message written after a move, on the
     /// exchange where it now is, is still noted when it was written elsewhere.
     /// </para>
     /// </remarks>
@@ -523,14 +523,15 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
                 """
                 WITH written AS (
                     -- Where each message was written: a move rewrites conversation_id, so a message on an exchange
-                    -- moved after it was written is placed by that move's source, the first such move's.
+                    -- moved after it was written is placed by that move's source, the first such move's. "After" is by
+                    -- message id, which follows the broker's order exactly; a timestamp can tie with a move.
                     SELECT msg.id, msg.exchange_id, msg.type, msg.from_agent, msg.to_agent,
                            COALESCE(
                                (SELECT m.source
                                   FROM conversation_move_exchanges e
                                   JOIN conversation_moves m ON m.id = e.move_id
                                  WHERE e.exchange_id = msg.exchange_id
-                                   AND unixepoch(m.moved_utc, 'subsec') >= unixepoch(msg.created_utc, 'subsec')
+                                   AND COALESCE(m.last_message, 0) >= msg.id
                                  ORDER BY m.id
                                  LIMIT 1),
                                msg.conversation_id) AS conversation_id

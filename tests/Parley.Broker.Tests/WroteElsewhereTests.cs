@@ -123,6 +123,26 @@ public sealed class WroteElsewhereTests : IDisposable
     }
 
     [Fact]
+    public async Task A_write_in_the_same_instant_as_the_move_is_placed_after_it()
+    {
+        // The broker handles a move and the next write back to back, often within one millisecond. Placed by time, that
+        // write read as written before the move, in the conversation its exchange had left. Placed by message id it is
+        // exact.
+        var older = await AskAsync(Billing, Orders, "Which ledger?", Older);
+        var at = T0.AddMinutes(5);
+        var moved = await _console.MoveExchangesAsync(Older, "moved-on", true, [older], at, Ct);
+
+        Assert.True(moved.Moved, moved.Refused);
+
+        var asked = await AskAsync(Person, Orders, "Sort the pricing script", Here);
+        _ = await _broker.ResultAsync(
+            asked, Orders, "model-a", $$"""{"outcomes":[{"id":"{{PayloadShape.WholeRequest}}","outcome":"done","text":"done"}]}""", at, Ct);
+        _ = await _broker.ClarifyAsync(older, Orders, "model-a", """{"text":"Back to the ledger: monthly?"}""", at, Ct);
+
+        Assert.Equal("moved-on", Assert.Single(await NotedHereAsync()).Conversation);
+    }
+
+    [Fact]
     public async Task A_clarify_on_an_older_exchange_straight_after_answering_here_is_noted_here()
     {
         // The case that showed the need: a new conversation with the person, and an exchange left open in an older one.
