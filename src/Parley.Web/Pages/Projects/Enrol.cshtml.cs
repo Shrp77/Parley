@@ -278,11 +278,15 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
     {
         var workspace = Workspace?.Trim();
 
-        if (!OffMachineLinks.LeadsOffThisMachine(Folder)
-            && !OffMachineLinks.LeadsOffThisMachine(workspace)
+        // Each walked by opening every part as itself (LocalOpen): a GET from a link in an agent's message lands here
+        // while that agent can flip its folder to a link to a share, and a check followed by a lookup lost that race.
+        static bool Off(string? path) =>
+            path is { Length: > 0 } && LocalOpen.Reach(path, out _) == LocalOpenStatus.OffThisMachine;
+
+        if (!Off(Folder)
+            && !Off(workspace)
             && !(workspace is { Length: > 0 }
-                && (OffMachineLinks.LeadsOffThisMachine(Path.Combine(workspace, ".git"))
-                    || OffMachineLinks.LeadsOffThisMachine(Path.Combine(workspace, ".mcp.json")))))
+                && (Off(Path.Combine(workspace, ".git")) || Off(Path.Combine(workspace, ".mcp.json")))))
         {
             // Then the owner's rule, said before the plan says it: only this machine's own disks.
             if ((LocalStorage.Problem(Folder) ?? LocalStorage.Problem(workspace)) is not { } notLocal)

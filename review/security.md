@@ -54,9 +54,12 @@ Check a change against each; a new page or a new path lookup must keep all of th
   folder already open, a link is followed only from its own handle, and the disk is opened by its device name, so an
   agent flipping its folder or file to a link mid-lookup gets nothing followed (owner, 2026-11-09: fixed in 035 after
   lens 2 round 13 won the old check-then-lookup gap within seconds). Withdrawal, the ownership write, `HoldAsync` and
-  `Linked`, `LaunchConfiguration.TryRead`, `RepositoryProjects.Read`, the enrolment scan and plan, and the browsers'
-  repository checks use it. Still a check and then a lookup: the folder browsers' listing of a folder's children, and
-  the person's placement (`PlaceableFile`).
+  `Linked`, `LaunchConfiguration.TryRead`, `RepositoryProjects.Read`, the enrolment scan and plan, `LocalStorage.Problem`
+  (so the web Enrol page and the terminal's workspace check), and the browsers' repository checks use it. Still a check
+  and then a lookup: the folder browsers' listing of a folder's children, the person's placement (`PlaceableFile`), and
+  `LocalStorage`'s question of a drive's kind and label, asked of a letter the walk found local. Off Windows a share is a
+  mount and following a link to one offers no sign-in, so the walk is kept and the open is ordinary, except that a file
+  about to be written is still refused when it is itself a link.
 - Enrolment treats any reparse point as a link, whatever its target reads as, and never writes through one.
 - **Only local storage** (the owner's rule): a repository, a deployment's root and an agent's workspace are refused on a
   synced cloud folder (OneDrive, Google Drive, Dropbox, iCloud Drive, Box), a network drive or a virtual file system

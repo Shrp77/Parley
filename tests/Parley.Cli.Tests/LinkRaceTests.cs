@@ -29,10 +29,21 @@ public sealed class LinkRaceTests : IDisposable
 
     public void Dispose()
     {
-        // Links first, by exact name, so nothing is deleted through one.
-        foreach (var link in Directory.EnumerateFileSystemEntries(_root, "*", SearchOption.AllDirectories)
-                     .Where(entry => new FileInfo(entry).LinkTarget is not null)
-                     .ToList())
+        // Links first, by exact name, so nothing is deleted through one, and found without entering any: a walk into a link
+        // to the share would wait on it.
+        var entries = new List<string>();
+
+        foreach (var entry in Directory.EnumerateFileSystemEntries(_root))
+        {
+            entries.Add(entry);
+
+            if (new FileInfo(entry).LinkTarget is null && Directory.Exists(entry))
+            {
+                entries.AddRange(Directory.EnumerateFileSystemEntries(entry));
+            }
+        }
+
+        foreach (var link in entries.Where(entry => new FileInfo(entry).LinkTarget is not null).ToList())
         {
             try
             {
@@ -121,6 +132,33 @@ public sealed class LinkRaceTests : IDisposable
 
                 stream?.Dispose();
             });
+    }
+
+    [Fact]
+    public void A_link_whose_target_holds_a_tilde_behind_a_link_to_a_share_is_never_looked_up()
+    {
+        // Path.GetFullPath expands short names whenever a path holds `~`, through GetLongPathNameW, which walks the real
+        // path and follows every link on it before a part has been read: no race needed (review, lens 2 round 14).
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "links to shares are a Windows sign-in");
+
+        SkipUnlessLinksCanBeMade();
+
+        var shareLink = Path.Combine(_root, "sharelink");
+        var repository = Path.Combine(_root, "repo");
+        var launch = Path.Combine(_root, "file-repo", ".mcp.json");
+
+        Directory.CreateSymbolicLink(shareLink, _share);
+        Directory.CreateSymbolicLink(repository, Path.Combine(shareLink, "x~y"));
+        Directory.CreateDirectory(Path.GetDirectoryName(launch)!);
+        File.CreateSymbolicLink(launch, Path.Combine(shareLink, "x~y.json"));
+
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+
+        Assert.Equal(LocalOpenStatus.OffThisMachine, LocalOpen.Folder(repository));
+        Assert.Equal(LocalOpenStatus.OffThisMachine, LocalOpen.File(launch, FileAccess.Read, FileShare.Read, followLink: true).Status);
+        Assert.True(OffMachineLinks.LeadsOffThisMachine(repository));
+        Assert.NotNull(LocalStorage.Problem(repository));
+        Assert.True(timer.Elapsed < Looking, $"took {timer.Elapsed}: a short name was expanded through the link to the share");
     }
 
     private void SkipUnlessLinksCanBeMade()

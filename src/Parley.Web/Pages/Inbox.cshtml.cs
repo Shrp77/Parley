@@ -581,8 +581,6 @@ public sealed class InboxModel(
         return Page();
     }
 
-    /// <summary>The seat this person holds in the project a form named.</summary>
-    /// <returns>The seat, the hold and a voice, or nulls when there is none.</returns>
     /// <summary>Says nothing was done because the person has no seat in the form's project, keeping what they typed.</summary>
     /// <param name="followUp">Whether the post was a follow-up, whose box is kept apart from a reply's.</param>
     /// <param name="done">What would have been done: <c>sent</c> or <c>closed</c>.</param>
@@ -593,12 +591,18 @@ public sealed class InboxModel(
     /// </remarks>
     private async Task<IActionResult> NotSeatedAsync(bool followUp, string done)
     {
+        // Asked once more for the reason: the broker's own sentence when it gives one, and when the seat comes back on this
+        // second try the words are still in the box, so a second press goes.
         var why = For is { Length: > 0 } named && directory.Find(named) is { } project
-            ? (await PersonSeats.EnsureAsync(seats, directory, project, HttpContext.RequestAborted).ConfigureAwait(false)).Problem
-              ?? "the person's seat in that project could not be taken."
-            : "this console has no such project.";
+            ? (await PersonSeats.EnsureAsync(seats, directory, project, HttpContext.RequestAborted).ConfigureAwait(false)) switch
+            {
+                { Seated: true } => "Your seat in that project was only just taken back; press it again.",
+                { Problem: { } problem } => problem,
+                _ => "Your seat in that project could not be taken.",
+            }
+            : "This console has no such project.";
 
-        Outcome = $"Nothing was {done}: {why}";
+        Outcome = $"Nothing was {done}. {why}";
         _followUpRefused = followUp;
         _refused = !followUp;
         Me = seats.Seats().FirstOrDefault()?.Seat;
@@ -608,6 +612,8 @@ public sealed class InboxModel(
         return Page();
     }
 
+    /// <summary>The seat this person holds in the project a form named.</summary>
+    /// <returns>The seat, the hold and a voice, or nulls when there is none.</returns>
     private (Seat? Seat, SeatHold? Hold, SeatVoice? Voice) Seated()
     {
         if (directory.Find(For) is not { } project || seats.Held(project.Name.Value) is not { } hold)

@@ -144,6 +144,53 @@ public static class OffMachineLinks
         return true;
     }
 
+    /// <summary>A path made full as text alone, never by asking the file system.</summary>
+    /// <param name="path">The path.</param>
+    /// <returns>The full path, with Win32's tidying: <c>.</c> and <c>..</c> folded, a part's trailing dots and spaces
+    /// dropped.</returns>
+    /// <exception cref="ArgumentException">It is not a path that can be made full.</exception>
+    /// <remarks>
+    /// Never <see cref="Path.GetFullPath(string)"/> on Windows: given a <c>~</c> anywhere, it calls GetLongPathNameW to
+    /// expand short names, which walks the real path through the kernel and follows every link on it, before anything
+    /// here has read a part. An agent's folder made a link to <c>...\sharelink\x~y</c> had Windows dial the share that way
+    /// (review, lens 2 round 14). GetFullPathNameW is the same tidying with no lookup.
+    /// </remarks>
+    public static string FullPath(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+
+        if (!OperatingSystem.IsWindows())
+        {
+            return Path.GetFullPath(path);
+        }
+
+        if (path.Length == 0 || path.Contains('\0', StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Not a path that can be made full.", nameof(path));
+        }
+
+        var buffer = new char[32768];
+        var length = GetFullPathName(path, (uint)buffer.Length, buffer, IntPtr.Zero);
+
+        return length == 0 || length >= buffer.Length
+            ? throw new ArgumentException("Not a path that can be made full.", nameof(path))
+            : new string(buffer, 0, (int)length);
+    }
+
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
+    [System.Runtime.InteropServices.DllImport(
+        "kernel32.dll",
+        EntryPoint = "GetFullPathNameW",
+        CharSet = System.Runtime.InteropServices.CharSet.Unicode,
+        SetLastError = true)]
+    private static extern uint GetFullPathName(
+        string fileName, uint length, [System.Runtime.InteropServices.Out] char[] buffer, IntPtr filePart);
+
+    /// <summary>Whether a full path's drive letter is not defined at all: it holds nothing, so nothing there is read.</summary>
+    /// <param name="full">A full path on the letter.</param>
+    /// <returns><see langword="true"/> for an undefined letter, an unplugged drive's among them.</returns>
+    internal static bool IsUndefinedLetter(string full) => Letter(full).Kind == LetterKind.Undefined;
+
     /// <summary>The folder a <c>subst</c> drive letter stands for, or null for any other letter.</summary>
     /// <param name="full">A full path on the letter.</param>
     /// <returns>The folder, read from the name Windows keeps for the letter.</returns>
@@ -386,7 +433,7 @@ public static class OffMachineLinks
 
         try
         {
-            full = Path.GetFullPath(path);
+            full = FullPath(path);
         }
         catch (Exception unusable) when (unusable is ArgumentException or NotSupportedException or PathTooLongException)
         {
@@ -543,7 +590,7 @@ public static class OffMachineLinks
 
             try
             {
-                reachedTarget = Path.GetFullPath(
+                reachedTarget = FullPath(
                     Path.IsPathRooted(target) ? target : Path.Combine(Path.GetDirectoryName(current) ?? root, target));
             }
             catch (Exception unusable) when (unusable is ArgumentException or NotSupportedException or PathTooLongException)

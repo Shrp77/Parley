@@ -247,7 +247,7 @@ public sealed partial class InboxFollowsExchangesTests
         var after = await response.Content.ReadAsStringAsync(Ct);
 
         Assert.Empty(console.Broker.Requested);
-        Assert.Contains("Nothing was sent:", after, StringComparison.Ordinal);
+        Assert.Contains("Nothing was sent.", after, StringComparison.Ordinal);
         Assert.Contains("Did the yearly plan go through?", after, StringComparison.Ordinal);
     }
 

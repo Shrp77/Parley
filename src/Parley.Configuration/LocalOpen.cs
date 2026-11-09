@@ -16,7 +16,8 @@ public enum LocalOpenStatus
     /// <summary>The path, or a link along it, leads off this machine, so it was never looked up.</summary>
     OffThisMachine,
 
-    /// <summary>A part of the path was a link when it was opened, after the walk had found none: it was not followed.</summary>
+    /// <summary>The file itself is a link and was asked for as one that may not be, as a file about to be written: it was
+    /// not followed.</summary>
     Changed,
 
     /// <summary>Another process holds the file in a way the open does not allow.</summary>
@@ -28,7 +29,7 @@ public enum LocalOpenStatus
 
 /// <summary>
 /// Opens a path somebody else chose (an agent's reported workspace and its launch configuration) without ever following a
-/// link that was not there when <see cref="OffMachineLinks"/> walked it.
+/// link off this machine, however the path changes while it is opened.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -56,7 +57,6 @@ public static class LocalOpen
 {
     private const uint Synchronize = 0x00100000;
     private const uint ReadAttributes = 0x80;
-    private const uint Traverse = 0x20;
     private const uint GenericRead = 0x80000000;
     private const uint GenericWrite = 0x40000000;
     private const uint ShareAll = 0x7;
@@ -74,7 +74,10 @@ public static class LocalOpen
     private const uint IsADirectory = 0xC00000BA;
     private const uint NotADirectory = 0xC0000103;
 
-    private const uint FolderAccess = Synchronize | ReadAttributes | Traverse;
+    // No FILE_TRAVERSE: a relative open needs none on its parent, and asking for it failed on a folder whose permissions
+    // deny traverse, which Windows itself walks past (review, lens 1 round 12), and counted against another program's
+    // share of a file.
+    private const uint FolderAccess = Synchronize | ReadAttributes;
 
     private static readonly char[] Separators = [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar];
 
@@ -94,19 +97,126 @@ public static class LocalOpen
 
         if (!OperatingSystem.IsWindows())
         {
-            return OffMachineLinks.LeadsOffThisMachine(path, out var reached)
-                ? (LocalOpenStatus.OffThisMachine, null)
-                : Ordinary(reached, access, share);
+            if (OffMachineLinks.LeadsOffThisMachine(path, out var reached))
+            {
+                return (LocalOpenStatus.OffThisMachine, null);
+            }
+
+            // The walk resolved every link, the file's own included, so whether the file itself is one is asked of it.
+            // Elsewhere a share is a mount and asking offers no sign-in, so this one lookup by path is safe here.
+            if (!followLink)
+            {
+                try
+                {
+                    if (new FileInfo(OffMachineLinks.Typed(path)).LinkTarget is not null)
+                    {
+                        return (LocalOpenStatus.Changed, null);
+                    }
+                }
+                catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+                {
+                    return (LocalOpenStatus.Unreadable, null);
+                }
+            }
+
+            return Ordinary(reached, access, share);
         }
 
         var wanted = Synchronize | ReadAttributes
             | ((access & FileAccess.Read) != 0 ? GenericRead : 0)
             | ((access & FileAccess.Write) != 0 ? GenericWrite : 0);
 
-        var (status, handle) = Resolve(
+        var (status, handle, _) = Resolve(
             OffMachineLinks.Typed(path), 0, directory: false, followLink, wanted, (uint)share & ShareAll);
 
-        return status == LocalOpenStatus.Opened ? (status, new FileStream(handle!, access, 4096, isAsync: false)) : (status, null);
+        if (status != LocalOpenStatus.Opened)
+        {
+            return (status, null);
+        }
+
+        try
+        {
+            return (status, new FileStream(handle!, access, 4096, isAsync: false));
+        }
+        catch
+        {
+            handle!.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>Whether a file that must be on this machine is itself a link, asked of its attributes alone.</summary>
+    /// <param name="path">The path, as written.</param>
+    /// <returns><see cref="LocalOpenStatus.Changed"/> when it is a link; <see cref="LocalOpenStatus.Unreadable"/> when not
+    /// even its attributes can be read, which a link's own permissions can cause.</returns>
+    /// <remarks>Attributes only, so a file this account may not read is still asked: denied reading is not a link.</remarks>
+    public static LocalOpenStatus Itself(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+
+        if (!OperatingSystem.IsWindows())
+        {
+            if (OffMachineLinks.LeadsOffThisMachine(path, out _))
+            {
+                return LocalOpenStatus.OffThisMachine;
+            }
+
+            try
+            {
+                var info = new FileInfo(OffMachineLinks.Typed(path));
+
+                return info.LinkTarget is not null ? LocalOpenStatus.Changed
+                    : info.Exists ? LocalOpenStatus.Opened : LocalOpenStatus.Missing;
+            }
+            catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+            {
+                return LocalOpenStatus.Unreadable;
+            }
+        }
+
+        var (status, handle, _) = Resolve(
+            OffMachineLinks.Typed(path), 0, directory: false, followLast: false, Synchronize | ReadAttributes, ShareAll);
+
+        handle?.Dispose();
+
+        return status;
+    }
+
+    /// <summary>Where a path that must be on this machine leads, every link followed as <see cref="File"/> follows them.</summary>
+    /// <param name="path">The path, as written.</param>
+    /// <param name="reached">Where it leads; the parts past what is there are kept as written.</param>
+    /// <returns><see cref="LocalOpenStatus.OffThisMachine"/> when it, or a link along it, leads off this machine or cannot
+    /// be read; otherwise whether something is there.</returns>
+    /// <remarks>
+    /// For <see cref="LocalStorage"/>, which judges where a folder really is: the walk is the open, so a folder flipped to a
+    /// link while it is judged is never followed, as <see cref="OffMachineLinks.LeadsOffThisMachine(string?)"/> alone
+    /// could be (review, lens 3 round 10).
+    /// </remarks>
+    public static LocalOpenStatus Reach(string path, out string reached)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+
+        if (!OperatingSystem.IsWindows())
+        {
+            if (OffMachineLinks.LeadsOffThisMachine(path, out reached))
+            {
+                return LocalOpenStatus.OffThisMachine;
+            }
+
+            return Directory.Exists(reached) || System.IO.File.Exists(reached) ? LocalOpenStatus.Opened : LocalOpenStatus.Missing;
+        }
+
+        var (status, handle, at) = Resolve(OffMachineLinks.Typed(path), 0, directory: true, followLast: true, FolderAccess, ShareAll);
+
+        handle?.Dispose();
+        reached = at;
+
+        return status switch
+        {
+            LocalOpenStatus.Unreadable or LocalOpenStatus.Changed => LocalOpenStatus.OffThisMachine,
+            LocalOpenStatus.Busy => LocalOpenStatus.Opened,
+            _ => status,
+        };
     }
 
     /// <summary>Whether a folder that must be on this machine is there, following no link to anywhere else.</summary>
@@ -123,7 +233,7 @@ public static class LocalOpen
                 : Directory.Exists(reached) ? LocalOpenStatus.Opened : LocalOpenStatus.Missing;
         }
 
-        var (status, handle) = Resolve(OffMachineLinks.Typed(path), 0, directory: true, followLast: true, FolderAccess, ShareAll);
+        var (status, handle, _) = Resolve(OffMachineLinks.Typed(path), 0, directory: true, followLast: true, FolderAccess, ShareAll);
 
         handle?.Dispose();
 
@@ -134,14 +244,21 @@ public static class LocalOpen
     /// here.</summary>
     /// <param name="path">The path.</param>
     /// <param name="json">Whether it is JSON, read within <see cref="StrictJson.MostBytes"/>; otherwise prose, read whole.</param>
-    /// <returns>What came of it, and the text when it was read.</returns>
+    /// <returns>What came of it, and the text when it was read; no text when nothing is there or it leads elsewhere.</returns>
     /// <exception cref="System.Text.Json.JsonException">JSON longer than the bound.</exception>
+    /// <exception cref="IOException">Something is there and could not be read: held by another program, or denied. Thrown
+    /// rather than answered as no text, which would read as no file (a plan saying <i>create</i> for one that exists).</exception>
     public static (LocalOpenStatus Status, string? Text) ReadText(string path, bool json)
     {
         var (status, stream) = File(path, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, followLink: true);
 
         using (stream)
         {
+            if (status is LocalOpenStatus.Busy or LocalOpenStatus.Unreadable)
+            {
+                throw new IOException($"{path} is there and could not be read.");
+            }
+
             if (status != LocalOpenStatus.Opened)
             {
                 return (status, null);
@@ -163,7 +280,12 @@ public static class LocalOpen
     /// <returns><see cref="LocalOpenStatus.Opened"/> when something is there.</returns>
     public static LocalOpenStatus Entry(string path)
     {
-        var folder = Folder(path);
+        // Something there that this account cannot open, or another holds, is still there: a `.git` folder nobody may list
+        // is a repository all the same, as Directory.Exists said.
+        static LocalOpenStatus There(LocalOpenStatus status) =>
+            status is LocalOpenStatus.Busy or LocalOpenStatus.Unreadable ? LocalOpenStatus.Opened : status;
+
+        var folder = There(Folder(path));
 
         if (folder != LocalOpenStatus.Missing)
         {
@@ -174,7 +296,7 @@ public static class LocalOpen
 
         stream?.Dispose();
 
-        return status is LocalOpenStatus.Busy or LocalOpenStatus.Unreadable ? LocalOpenStatus.Opened : status;
+        return There(status);
     }
 
     private static (LocalOpenStatus, FileStream?) Ordinary(string reached, FileAccess access, FileShare share)
@@ -193,7 +315,8 @@ public static class LocalOpen
         }
         catch (UnauthorizedAccessException)
         {
-            return (LocalOpenStatus.Unreadable, null);
+            // A folder where a file was asked for is refused this way on Unix; it is no file, as on Windows.
+            return (Directory.Exists(reached) ? LocalOpenStatus.Missing : LocalOpenStatus.Unreadable, null);
         }
     }
 
@@ -201,35 +324,36 @@ public static class LocalOpen
     // already open, and a link is followed only by reading its target from the link's own handle. Nothing is ever looked
     // up by a path whose parts could have changed since they were read, so no flip, however timed, makes Windows follow a
     // link to a share.
-    private static (LocalOpenStatus, SafeFileHandle?) Resolve(
+    private static (LocalOpenStatus Status, SafeFileHandle? Handle, string Reached) Resolve(
         string path, int links, bool directory, bool followLast, uint access, uint share)
     {
         if (LocalPath.IsOffThisMachine(path) || links > 40)
         {
-            return (LocalOpenStatus.OffThisMachine, null);
+            return (LocalOpenStatus.OffThisMachine, null, path);
         }
 
         string full;
 
         try
         {
-            full = Path.GetFullPath(path);
+            full = OffMachineLinks.FullPath(path);
         }
         catch (Exception unusable) when (unusable is ArgumentException or NotSupportedException or PathTooLongException)
         {
-            return (LocalOpenStatus.Unreadable, null);
+            return (LocalOpenStatus.Unreadable, null, path);
         }
 
         if (full is not [var letter, ':', '\\', ..] || !char.IsAsciiLetter(letter)
             || full.IndexOf(':', 2) >= 0 || !OffMachineLinks.ReadsAsWritten(full, absolute: true))
         {
-            return (LocalOpenStatus.OffThisMachine, null);
+            return (LocalOpenStatus.OffThisMachine, null, full);
         }
 
         var parts = full[3..].Split(Separators, StringSplitOptions.RemoveEmptyEntries);
 
         // The letter is read now and the disk opened by that device name, so what the letter stands for cannot change
-        // between the two. A subst letter is walked as the folder it stands for.
+        // between the two. A subst letter is walked as the folder it stands for, and a letter that is not defined holds
+        // nothing, as OffMachineLinks reads one.
         SafeFileHandle? current;
 
         if (OffMachineLinks.LocalVolumeOf(full[..2]) is { } device)
@@ -240,16 +364,20 @@ public static class LocalOpen
 
             if (opened != LocalOpenStatus.Opened)
             {
-                return (opened, null);
+                return (opened, null, full);
             }
         }
         else if (OffMachineLinks.SubstituteOf(full) is { } folder)
         {
             return Resolve(Path.Join(folder, full[2..]), links + 1, directory, followLast, access, share);
         }
+        else if (OffMachineLinks.IsUndefinedLetter(full))
+        {
+            return (LocalOpenStatus.Missing, null, full);
+        }
         else
         {
-            return (LocalOpenStatus.OffThisMachine, null);
+            return (LocalOpenStatus.OffThisMachine, null, full);
         }
 
         var at = full[..3];
@@ -263,14 +391,14 @@ public static class LocalOpen
 
             if (opened != LocalOpenStatus.Opened)
             {
-                return (opened, null);
+                return (opened, null, Path.Join([at, .. parts[i..]]));
             }
 
             if (!AttributesOf(next!, out var attributes))
             {
                 next!.Dispose();
 
-                return (LocalOpenStatus.Unreadable, null);
+                return (LocalOpenStatus.Unreadable, null, Path.Join([at, .. parts[i..]]));
             }
 
             if ((attributes & ReparseAttribute) != 0)
@@ -281,7 +409,7 @@ public static class LocalOpen
                 {
                     next!.Dispose();
 
-                    return (LocalOpenStatus.Changed, null);
+                    return (LocalOpenStatus.Changed, null, Path.Join(at, parts[i]));
                 }
 
                 var link = ReadLink(next!);
@@ -290,7 +418,7 @@ public static class LocalOpen
 
                 return Follow(link, at, parts[(i + 1)..]) is { } target
                     ? Resolve(target, links + 1, directory, followLast, access, share)
-                    : (LocalOpenStatus.OffThisMachine, null);
+                    : (LocalOpenStatus.OffThisMachine, null, Path.Join([at, .. parts[i..]]));
             }
 
             var isFolder = (attributes & DirectoryAttribute) != 0;
@@ -299,7 +427,7 @@ public static class LocalOpen
             {
                 next!.Dispose();
 
-                return (LocalOpenStatus.Missing, null);
+                return (LocalOpenStatus.Missing, null, Path.Join([at, .. parts[i..]]));
             }
 
             at = Path.Join(at, parts[i]);
@@ -310,10 +438,10 @@ public static class LocalOpen
         {
             current!.Dispose();
 
-            return (LocalOpenStatus.Missing, null);
+            return (LocalOpenStatus.Missing, null, at);
         }
 
-        return (LocalOpenStatus.Opened, current);
+        return (LocalOpenStatus.Opened, current, at);
     }
 
     // Where a link leads, read as OffMachineLinks reads it, joined to the parts after it: null when it leads off this
@@ -360,7 +488,7 @@ public static class LocalOpen
 
         try
         {
-            return Path.GetFullPath(Path.Combine([target, .. rest]));
+            return OffMachineLinks.FullPath(Path.Combine([target, .. rest]));
         }
         catch (Exception unusable) when (unusable is ArgumentException or NotSupportedException or PathTooLongException)
         {

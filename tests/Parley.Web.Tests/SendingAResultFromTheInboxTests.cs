@@ -153,7 +153,7 @@ public sealed partial class SendingAResultFromTheInboxTests
         var after = await response.Content.ReadAsStringAsync(Ct);
 
         Assert.Empty(console.Broker.Resulted);
-        Assert.Contains("Nothing was sent:", after, StringComparison.Ordinal);
+        Assert.Contains("Nothing was sent.", after, StringComparison.Ordinal);
         Assert.Contains("Switched it on; it runs at two.", after, StringComparison.Ordinal);
     }
 

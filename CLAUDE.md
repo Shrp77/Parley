@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.58.3, protocol 0.15, schema 8. Nothing has been released, but **live stores hold work
+- Version 0.58.4, protocol 0.15, schema 8. Nothing has been released, but **live stores hold work
   in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
   `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
   upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
@@ -54,7 +54,9 @@ src/Parley.Server        The broker process (§4): the only thing that opens the
 src/Parley.Configuration The project manifest (§4.1) and the node catalogue: where they live
                          and what they hold. Read by both Parley.Cli and Parley.Mcp. Written
                          only through Parley.Setup's ProjectCommand. Also where a path may
-                         be looked up: OffMachineLinks (no link off this machine) and
+                         be looked up: OffMachineLinks (no link off this machine),
+                         LocalOpen (on Windows, a path an agent chose opened part by
+                         part, so a link swapped in mid-lookup is never followed) and
                          LocalStorage (only this machine's own disks), and where a JSON
                          file somebody else wrote is parsed: StrictJson, which refuses a
                          member named twice and text that is not valid Unicode.

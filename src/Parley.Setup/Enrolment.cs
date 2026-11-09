@@ -202,7 +202,14 @@ public static class Enrolment
 
         // Prose, so read whole as ReadHeldProseAsync reads a held one; opened part by part (LocalOpen), so nothing is
         // looked up through a link that appeared after a check (lens 2 round 13).
-        return Task.FromResult(declined is null ? null : LocalOpen.ReadText(path, json: false).Text);
+        try
+        {
+            return Task.FromResult(declined is null ? null : LocalOpen.ReadText(path, json: false).Text);
+        }
+        catch (IOException)
+        {
+            return Task.FromResult<string?>(null);
+        }
     }
 
     /// <summary>Puts an agent in a catalogue, so a node may start it.</summary>
@@ -252,22 +259,14 @@ public static class Enrolment
     /// </para>
     /// </remarks>
     internal static string? Linked(string path) =>
-        LocalOpen.File(path, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete) switch
+        LocalOpen.Itself(path) switch
         {
-            (LocalOpenStatus.Changed, _) => UnreadableTarget,
-            (LocalOpenStatus.OffThisMachine, _) => "another machine",
-            (LocalOpenStatus.Unreadable, _) => UnreadableTarget,
-            (_, var stream) => Closed(stream),
+            LocalOpenStatus.Changed or LocalOpenStatus.Unreadable => UnreadableTarget,
+            LocalOpenStatus.OffThisMachine => "another machine",
+            _ => null,
         };
 
-    private static string? Closed(FileStream? stream)
-    {
-        stream?.Dispose();
-
-        return null;
-    }
-
-    private const string UnreadableTarget = "a target this does not follow";
+    private const string UnreadableTarget = "something Parley does not follow";
 
     /// <summary>Takes the launch configuration for the length of a read-modify-write.</summary>
     /// <param name="path">The launch configuration.</param>
@@ -555,7 +554,9 @@ public static class Enrolment
     /// <returns>True when they are the same folder.</returns>
     private static bool SameFolder(string one, string other)
     {
-        static string Full(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        // As text alone (OffMachineLinks.FullPath): a `~` made GetFullPath ask the file system, which can dial a share
+        // named in a catalogue line (review, lens 2 round 10).
+        static string Full(string path) => Path.TrimEndingDirectorySeparator(OffMachineLinks.FullPath(path));
 
         try
         {
@@ -999,7 +1000,7 @@ public static class Enrolment
         // **Never looked up off this machine.** The workspace is what the agent's adapter reported on attach, and an agent
         // can turn that folder into a link to a share after: looking for its .mcp.json would offer the person's sign-in to
         // that host. Checked before anything else touches the disk, and the file is then opened the same way
-        // (HoldLocalAsync), so a link that appears between the two is never followed either (lens 2 round 13).
+        // (HoldAsync), so a link that appears between the two is never followed either (lens 2 round 13).
         if (LocalOpen.Folder(workspace) == LocalOpenStatus.OffThisMachine)
         {
             notes.Add($"{workspace}: left alone, it is not a folder on this machine");

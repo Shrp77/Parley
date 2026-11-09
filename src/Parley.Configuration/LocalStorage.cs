@@ -44,7 +44,7 @@ public static class LocalStorage
 
         try
         {
-            full = Path.GetFullPath(OffMachineLinks.Typed(path));
+            full = OffMachineLinks.FullPath(OffMachineLinks.Typed(path));
         }
         catch (Exception unusable) when (unusable is ArgumentException or NotSupportedException or PathTooLongException)
         {
@@ -59,8 +59,9 @@ public static class LocalStorage
 
         // What a folder is on is decided where it really is: a subst drive letter and a link each lead somewhere the
         // text does not say (review, lens 1 run 69). The walk decides what each drive letter is from its name before
-        // reading anything on it, so only a path it ends on is asked its drive's kind.
-        if (OffMachineLinks.LeadsOffThisMachine(full, out var reached))
+        // reading anything on it, so only a path it ends on is asked its drive's kind. Walked by opening each part as
+        // itself (LocalOpen), so a folder an agent flips to a link while it is judged is never followed (lens 3 round 10).
+        if (LocalOpen.Reach(full, out var reached) == LocalOpenStatus.OffThisMachine)
         {
             return Said(path, OffMachineLinks.IsNetworkLetter(full) ? "a network drive" : Unfollowed);
         }

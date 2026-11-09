@@ -87,7 +87,8 @@ internal static class Adding
 
         var git = Path.Combine(workspace, ".git");
 
-        // Before any lookup, as on the web console's Enrol page: the lookup itself is what reaches another machine.
+        // Before anything else, as on the web console's Enrol page: the lookup itself is what reaches another machine, so
+        // every lookup here opens each part as itself (LocalOpen) and none follows a link to a share, however timed.
         if (LocalOpen.Folder(workspace) == LocalOpenStatus.OffThisMachine
             || LocalOpen.Entry(git) == LocalOpenStatus.OffThisMachine)
         {
@@ -100,12 +101,12 @@ internal static class Adding
             return notLocal;
         }
 
-        if (!Directory.Exists(workspace))
+        if (LocalOpen.Folder(workspace) is not (LocalOpenStatus.Opened or LocalOpenStatus.Busy or LocalOpenStatus.Unreadable))
         {
             return $"There is no directory at {workspace}.";
         }
 
-        return Directory.Exists(git) || File.Exists(git)
+        return LocalOpen.Entry(git) == LocalOpenStatus.Opened
             ? null
             : $"{workspace} is not a repository: it holds no .git.";
     }
