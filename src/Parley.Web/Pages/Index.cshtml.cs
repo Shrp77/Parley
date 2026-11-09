@@ -333,8 +333,7 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
                     name = Path.GetFileName(full),
                     full,
                     // A child, or its .git, that is a link off this machine is listed and never looked into.
-                    repo = !OffMachineLinks.LeadsOffThisMachine(Path.Combine(full, ".git"))
-                        && (Directory.Exists(Path.Combine(full, ".git")) || System.IO.File.Exists(Path.Combine(full, ".git"))),
+                    repo = LocalOpen.Entry(Path.Combine(full, ".git")) == LocalOpenStatus.Opened,
                 })
                 .OrderBy(folder => folder.name, StringComparer.OrdinalIgnoreCase)
                 .Take(Cap)

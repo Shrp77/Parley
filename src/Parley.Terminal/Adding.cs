@@ -88,7 +88,8 @@ internal static class Adding
         var git = Path.Combine(workspace, ".git");
 
         // Before any lookup, as on the web console's Enrol page: the lookup itself is what reaches another machine.
-        if (OffMachineLinks.LeadsOffThisMachine(workspace) || OffMachineLinks.LeadsOffThisMachine(git))
+        if (LocalOpen.Folder(workspace) == LocalOpenStatus.OffThisMachine
+            || LocalOpen.Entry(git) == LocalOpenStatus.OffThisMachine)
         {
             return LocalPath.OffThisMachine;
         }

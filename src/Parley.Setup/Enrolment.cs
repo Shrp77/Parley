@@ -191,27 +191,18 @@ public static class Enrolment
     /// the read is safe where the write is not — and without it the plan would report a *create* for
     /// a file that plainly exists, which reads as a fault in the tool rather than as a link refused.
     /// </remarks>
-    internal static async Task<string?> DeclinedTextAsync(
+    internal static Task<string?> DeclinedTextAsync(
         string? declined,
         string path,
         CancellationToken cancellationToken)
     {
         // Walked before it is read (lens 2 run 126): a repository can ship its instructions file as a link, and the plan's
         // read of a declined one followed a link to a share, signing in to that host as the person.
-        if (declined is null || OffMachineLinks.LeadsOffThisMachine(path) || !File.Exists(path))
-        {
-            return null;
-        }
+        cancellationToken.ThrowIfCancellationRequested();
 
-        try
-        {
-            // Prose, so read whole as ReadHeldProseAsync reads a held one.
-            return await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return null;
-        }
+        // Prose, so read whole as ReadHeldProseAsync reads a held one; opened part by part (LocalOpen), so nothing is
+        // looked up through a link that appeared after a check (lens 2 round 13).
+        return Task.FromResult(declined is null ? null : LocalOpen.ReadText(path, json: false).Text);
     }
 
     /// <summary>Puts an agent in a catalogue, so a node may start it.</summary>
@@ -254,40 +245,29 @@ public static class Enrolment
     /// it gives nothing rather than failing; taking that as "no link" let a write go through it (review, lens 2 run 72).
     /// So a reparse point is a link whatever its target reads as, and so is a path whose attributes cannot be read.
     /// </para>
+    /// <para>
+    /// <b>Asked by opening, never by a lookup and then another.</b> A path's attributes and then its target, each by
+    /// path, is a gap an agent flipping its own folder to a link to a share won within seconds (review, lens 2 round 13).
+    /// <see cref="LocalOpen"/> opens each part as itself, so the answer is the file's and nothing is followed.
+    /// </para>
     /// </remarks>
-    internal static string? Linked(string path)
+    internal static string? Linked(string path) =>
+        LocalOpen.File(path, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete) switch
+        {
+            (LocalOpenStatus.Changed, _) => UnreadableTarget,
+            (LocalOpenStatus.OffThisMachine, _) => "another machine",
+            (LocalOpenStatus.Unreadable, _) => UnreadableTarget,
+            (_, var stream) => Closed(stream),
+        };
+
+    private static string? Closed(FileStream? stream)
     {
-        FileAttributes attributes;
+        stream?.Dispose();
 
-        try
-        {
-            attributes = File.GetAttributes(path);
-        }
-        catch (Exception missing) when (missing is FileNotFoundException or DirectoryNotFoundException)
-        {
-            return null;
-        }
-        catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
-        {
-            return UnreadableTarget;
-        }
-
-        if ((attributes & FileAttributes.ReparsePoint) == 0)
-        {
-            return null;
-        }
-
-        try
-        {
-            return new FileInfo(path).LinkTarget ?? UnreadableTarget;
-        }
-        catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
-        {
-            return UnreadableTarget;
-        }
+        return null;
     }
 
-    private const string UnreadableTarget = "a target that cannot be read";
+    private const string UnreadableTarget = "a target this does not follow";
 
     /// <summary>Takes the launch configuration for the length of a read-modify-write.</summary>
     /// <param name="path">The launch configuration.</param>
@@ -315,11 +295,6 @@ public static class Enrolment
     /// </remarks>
     internal static async Task<FileStream?> HoldAsync(string path, CancellationToken cancellationToken)
     {
-        if (!File.Exists(path))
-        {
-            return null;
-        }
-
         // **A launch configuration that is a link is refused, and this is the one place it can be.**
         // `.mcp.json` is a tracked file, so a repository can ship one as a symlink — and this tooling
         // is pointed at directories of clones somebody else wrote (`parley enroll scan /src`) and then
@@ -328,23 +303,43 @@ public static class Enrolment
         //
         // Refused rather than replaced. Replacing it would silently destroy a link somebody may have
         // meant, and this cannot tell the two apart; the person can.
-        if (Linked(path) is { } target)
-        {
-            throw new InvalidDataException(LinkRefusal(path, target));
-        }
-
+        //
+        // Opened as itself, part by part (LocalOpen), never checked and then opened by path: an agent flipping its folder
+        // or this file to a link to a share won that gap within seconds, and Windows offered the person's sign-in to the
+        // host (review, lens 2 round 13).
         for (var attempt = 0; ; attempt++)
         {
-            try
+            var (status, stream) = LocalOpen.File(path, FileAccess.ReadWrite, FileShare.None);
+
+            switch (status)
             {
-                return new FileStream(
-                    path, FileMode.Open, FileAccess.ReadWrite, FileShare.None, 4096, useAsync: true);
-            }
-            catch (IOException) when (attempt < 40 && File.Exists(path))
-            {
-                await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+                case LocalOpenStatus.Opened:
+                    return stream;
+                case LocalOpenStatus.Missing:
+                    return null;
+                case LocalOpenStatus.Changed:
+                    throw new InvalidDataException(LinkRefusal(path, UnreadableTarget));
+                case LocalOpenStatus.OffThisMachine:
+                    throw new InvalidDataException($"{path} leads to another machine, and Parley does not look up a path there");
+                case LocalOpenStatus.Busy when attempt < 40:
+                    await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+                    break;
+                default:
+                    throw new IOException($"{path} is held by another program, or could not be opened.");
             }
         }
+    }
+
+    /// <summary>Whether a file at a path an agent reported is there, or something stands there that is not followed.</summary>
+    /// <param name="path">The file.</param>
+    /// <returns><see langword="false"/> only when nothing is there.</returns>
+    internal static bool LocallyThere(string path)
+    {
+        var (status, stream) = LocalOpen.File(path, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+
+        stream?.Dispose();
+
+        return status != LocalOpenStatus.Missing;
     }
 
     /// <summary>Reads a held JSON file from the start; <see cref="ReadHeldProseAsync"/> reads an instructions file.</summary>
@@ -437,7 +432,7 @@ public static class Enrolment
     /// <see cref="HoldAsync"/>'s and the same words as <see cref="HoldInstructionsAsync"/>'s, so the two cannot differ.
     /// </remarks>
     internal static string? InstructionsDeclined(string path) =>
-        File.Exists(path) && Linked(path) is { } target ? Declining(path, LinkRefusal(path, target)) : null;
+        Linked(path) is { } target ? Declining(path, LinkRefusal(path, target)) : null;
 
     private static string LinkRefusal(string path, string target) =>
         $"{path} is a link to {Quoting.Flat(target)}, so writing it would write somewhere "
@@ -701,8 +696,8 @@ public static class Enrolment
 
         try
         {
-            // Walked before it is read, as every launch configuration is (lens 2 run 126).
-            return !OffMachineLinks.LeadsOffThisMachine(path) && File.Exists(path) ? StrictJson.ReadFile(path) : null;
+            // Opened part by part before it is read, as every launch configuration is (lens 2 run 126, round 13).
+            return LocalOpen.ReadText(path, json: true).Text;
         }
         catch (Exception failure)
             when (failure is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
@@ -1003,8 +998,9 @@ public static class Enrolment
 
         // **Never looked up off this machine.** The workspace is what the agent's adapter reported on attach, and an agent
         // can turn that folder into a link to a share after: looking for its .mcp.json would offer the person's sign-in to
-        // that host. Checked before anything touches the disk, as the ownership write does.
-        if (OffMachineLinks.LeadsOffThisMachine(workspace) || OffMachineLinks.LeadsOffThisMachine(launchPath))
+        // that host. Checked before anything else touches the disk, and the file is then opened the same way
+        // (HoldLocalAsync), so a link that appears between the two is never followed either (lens 2 round 13).
+        if (LocalOpen.Folder(workspace) == LocalOpenStatus.OffThisMachine)
         {
             notes.Add($"{workspace}: left alone, it is not a folder on this machine");
 
@@ -1027,7 +1023,7 @@ public static class Enrolment
 
         try
         {
-            if (!File.Exists(launchPath))
+            if (!LocallyThere(launchPath))
             {
                 notes.Add($"{launchPath}: already absent");
             }
@@ -1045,7 +1041,8 @@ public static class Enrolment
 
                 try
                 {
-                    held = await HoldAsync(launchPath, cancellationToken).ConfigureAwait(false);
+                    held = await HoldAsync(launchPath, cancellationToken).ConfigureAwait(false)
+                        ?? throw new InvalidDataException("it went while it was being read");
                 }
                 catch (InvalidDataException linked)
                 {
@@ -1056,10 +1053,7 @@ public static class Enrolment
 
                 using var holding = held;
 
-                var text = held is null
-                    ? await Bounded(StrictJson.ReadFileAsync(launchPath, cancellationToken), launchPath)
-                        .ConfigureAwait(false)
-                    : await ReadHeldAsync(held, cancellationToken).ConfigureAwait(false);
+                var text = await ReadHeldAsync(held, cancellationToken).ConfigureAwait(false);
 
                 JsonNode? parsed;
 

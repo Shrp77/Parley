@@ -104,7 +104,7 @@ public static class OffMachineLinks
     // separators; the system following the link does none of that in an absolute target, and keeps the dots and spaces in
     // a relative one. So a link to `decoy.` was checked as the plain folder `decoy` beside it while Windows followed the
     // real `decoy.` into OneDrive or to a share (review, lens 2 run 78).
-    private static bool ReadsAsWritten(string target, bool absolute)
+    internal static bool ReadsAsWritten(string target, bool absolute)
     {
         var parts = target.Split(Separators);
 
@@ -144,7 +144,18 @@ public static class OffMachineLinks
         return true;
     }
 
-    private static bool IsLocalVolume(string device)
+    /// <summary>The folder a <c>subst</c> drive letter stands for, or null for any other letter.</summary>
+    /// <param name="full">A full path on the letter.</param>
+    /// <returns>The folder, read from the name Windows keeps for the letter.</returns>
+    internal static string? SubstituteOf(string full) => Letter(full) is (LetterKind.Substitute, var folder) ? folder : null;
+
+    /// <summary>The local disk volume a drive letter names (<c>\Device\HarddiskVolume3</c>), or null for any other letter.</summary>
+    /// <param name="letter">The letter and its colon, <c>C:</c>.</param>
+    /// <returns>The device name, read from the name Windows keeps for the letter and never by asking the drive.</returns>
+    internal static string? LocalVolumeOf(string letter) =>
+        DosDevice(letter) is { } device && IsLocalVolume(device) ? device : null;
+
+    internal static bool IsLocalVolume(string device)
     {
         const string Volume = @"\Device\HarddiskVolume";
 
@@ -154,7 +165,7 @@ public static class OffMachineLinks
     }
 
     // A mount point's target as its reparse data stores it, `\??\Volume{GUID}\`, or spelled with `\\?\` or bare.
-    private static string? MountedVolume(string target)
+    internal static string? MountedVolume(string target)
     {
         var name = target.StartsWith(@"\\?\", StringComparison.Ordinal) || target.StartsWith(@"\??\", StringComparison.Ordinal)
             ? target[4..]
@@ -171,7 +182,7 @@ public static class OffMachineLinks
 
     // The drive letter a volume is mounted at (`D:\`), or null when it has none: GetVolumePathNamesForVolumeName lists
     // every place a volume is mounted, read from the mount manager, which opens nothing on the volume.
-    private static string? LetteredPath(string volume)
+    internal static string? LetteredPath(string volume)
     {
         var names = new char[4096];
 
@@ -208,7 +219,7 @@ public static class OffMachineLinks
     // empty string, which matches no kind and is refused, when the name could not be read. A definition longer than the
     // buffer failed as "not defined" and the letter was then read (review, lens 2 run 76), so it is asked again with room
     // for the longest a definition can be, and any other failure is not taken for "not defined".
-    private static string? DosDevice(string device)
+    internal static string? DosDevice(string device)
     {
         const int NotFound = 2;
         const int TooSmall = 122;

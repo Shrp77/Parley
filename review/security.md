@@ -50,6 +50,13 @@ Check a change against each; a new page or a new path lookup must keep all of th
   terminal's agents list, enrolment's look at the other catalogued repositories; `RepositoryProjects.Read`, which every
   `parley` command typed in a repository runs; enrolment's read of a declined instructions file; the bulk enrolment's
   copy check and its described plan). The adapter's own read of its `.mcp.json` runs in the agent's own process.
+  On Windows those lookups are one act with the walk (`LocalOpen`): each part is opened as itself relative to the
+  folder already open, a link is followed only from its own handle, and the disk is opened by its device name, so an
+  agent flipping its folder or file to a link mid-lookup gets nothing followed (owner, 2026-11-09: fixed in 035 after
+  lens 2 round 13 won the old check-then-lookup gap within seconds). Withdrawal, the ownership write, `HoldAsync` and
+  `Linked`, `LaunchConfiguration.TryRead`, `RepositoryProjects.Read`, the enrolment scan and plan, and the browsers'
+  repository checks use it. Still a check and then a lookup: the folder browsers' listing of a folder's children, and
+  the person's placement (`PlaceableFile`).
 - Enrolment treats any reparse point as a link, whatever its target reads as, and never writes through one.
 - **Only local storage** (the owner's rule): a repository, a deployment's root and an agent's workspace are refused on a
   synced cloud folder (OneDrive, Google Drive, Dropbox, iCloud Drive, Box), a network drive or a virtual file system

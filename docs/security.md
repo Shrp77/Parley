@@ -102,7 +102,8 @@ console page. It cannot choose what you send, to whom, or skip a confirmation: w
 comes only from the form you see, and every page that acts shows which project it acts in. Nor can it
 make the console look up a folder on another machine: a path naming a network share or a device,
 or reaching one through a folder link, is refused before anything touches the disk, because on Windows the lookup alone would offer your
-sign-in to that machine.
+sign-in to that machine. An agent's folder is opened one part at a time, with no link followed by Windows itself, so an
+agent that swaps its folder for a link while Parley is looking gets nothing followed either.
 
 **Silent damage to your files.** Project files are written atomically, preserve what they do not
 understand, and refuse to write when anything was left out of a read. Nothing is kept on a synced cloud

@@ -65,17 +65,18 @@ public static class RepositoryProjects
 
         // Walked before it is read (lens 2 run 126): every command typed in a repository reads its launch configuration,
         // and one an agent replaced by a link to a share made Windows sign in to that host as the person.
-        if (Parley.Configuration.OffMachineLinks.LeadsOffThisMachine(launch) || !File.Exists(launch))
-        {
-            return [];
-        }
-
         JsonNode? root;
 
         try
         {
+            // Opened part by part (LocalOpen), so a link that appears after a check is never followed (lens 2 round 13).
+            if (Parley.Configuration.LocalOpen.ReadText(launch, json: true).Text is not { } text)
+            {
+                return [];
+            }
+
             root = Parley.Configuration.StrictJson.Parse(
-                Parley.Configuration.StrictJson.ReadFile(launch),
+                text,
                 new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
         }
         catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException or JsonException)

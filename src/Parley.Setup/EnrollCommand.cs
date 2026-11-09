@@ -206,7 +206,7 @@ public static class EnrollCommand
 
         // Never looked into when it, or a link along it, leads off this machine: the lookup alone would offer the
         // person's sign-in there (OffMachineLinks).
-        return !OffMachineLinks.LeadsOffThisMachine(root) && Directory.Exists(root) ? Discover(root) : [];
+        return LocalOpen.Folder(root) == LocalOpenStatus.Opened ? Discover(root) : [];
     }
 
     /// <summary>Configures, catalogues and starts repositories a surface has already chosen.</summary>
@@ -277,10 +277,8 @@ public static class EnrollCommand
             // checkouts is a build output, a scratch clone or somebody's notes, and enrolling it
             // would put a name on the roster that no agent will ever answer to. A child, or its .git or
             // .mcp.json, that is a link off this machine is passed over unread (OffMachineLinks).
-            if (OffMachineLinks.LeadsOffThisMachine(Path.Combine(directory, ".git"))
-                || OffMachineLinks.LeadsOffThisMachine(Path.Combine(directory, ".mcp.json"))
-                || (!Directory.Exists(Path.Combine(directory, ".git"))
-                    && !File.Exists(Path.Combine(directory, ".git"))))
+            if (LocalOpen.Entry(Path.Combine(directory, ".git")) != LocalOpenStatus.Opened
+                || LocalOpen.Entry(Path.Combine(directory, ".mcp.json")) == LocalOpenStatus.OffThisMachine)
             {
                 continue;
             }
@@ -426,8 +424,8 @@ public static class EnrollCommand
                 return null;
             }
 
-            return File.Exists(path)
-                ? LaunchEntries.Read(StrictJson.Parse(StrictJson.ReadFile(path))?["mcpServers"] as JsonObject)
+            return LocalOpen.ReadText(path, json: true).Text is { } text
+                ? LaunchEntries.Read(StrictJson.Parse(text)?["mcpServers"] as JsonObject)
                 : [];
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException
@@ -878,7 +876,9 @@ public static class EnrollCommand
                     // `plan` writes nothing, so both files are read plainly here. Holding them would
                     // be a lock taken to describe a file and released before anything acted on it. Walked
                     // first, as every read of a repository's files is (lens 2 run 126).
-                    if (OffMachineLinks.LeadsOffThisMachine(launchPath))
+                    var (launchRead, launchText) = LocalOpen.ReadText(launchPath, json: true);
+
+                    if (launchRead is LocalOpenStatus.OffThisMachine or LocalOpenStatus.Changed)
                     {
                         throw new InvalidDataException(
                             $"{launchPath} leads to another machine, and Parley does not look up a path there");
@@ -890,16 +890,12 @@ public static class EnrollCommand
                     var declined = Enrolment.InstructionsDeclined(instructionsPath);
 
                     plan = Decide(
-                        File.Exists(launchPath)
-                            ? await StrictJson.ReadFileAsync(launchPath, cancellationToken).ConfigureAwait(false)
-                            : null,
+                        launchText,
                         declined is not null
                             ? await Enrolment.DeclinedTextAsync(declined, instructionsPath, cancellationToken)
                                 .ConfigureAwait(false)
                             // Prose of any length, so not bounded as the JSON beside it is (lens 3 run 147).
-                            : !OffMachineLinks.LeadsOffThisMachine(instructionsPath) && File.Exists(instructionsPath)
-                                ? await File.ReadAllTextAsync(instructionsPath, cancellationToken).ConfigureAwait(false)
-                                : null);
+                            : LocalOpen.ReadText(instructionsPath, json: false).Text);
 
                     if (declined is not null && plan.Instructions is not null)
                     {
