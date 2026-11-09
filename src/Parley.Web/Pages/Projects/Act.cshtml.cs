@@ -547,7 +547,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     /// </para>
     /// <para>
     /// <b>The workspace comes from the registry</b>, which is what the agent said about itself.
-    /// <see cref="Enrolment.WithdrawAsync"/> reads the name back out of the entry before removing it, so a stale
+    /// <see cref="Enrolment.WithdrawAsync(string, string, string?, string?, AgentIdentity, CancellationToken)"/> reads the name back out of the entry before removing it, so a stale
     /// workspace leaves a different agent's entry alone and says so.
     /// </para>
     /// </remarks>

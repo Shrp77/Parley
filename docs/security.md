@@ -71,7 +71,7 @@ prioritises, closes or overrides anything.
   model that opens it. The new risk is to your browser, since the broker never inspects a placed file's
   bytes. So the console serves an image only from its Media page, only for an image name, and only
   when the file's first bytes are the format its name claims. It tells the browser not to guess the
-  type and not to run anything in the response, and it shows an image over 20 MB only when you ask.
+  type and not to run anything in the response, and it shows an image over 20 MiB only when you ask.
 - **An agent's answer becomes its ownership line with nobody reading it, by default.** Auto
   Accept is a recorded reduction in a control: peers route by a line no person checked. It is
   recorded as `automatic`, shown for review on every surface, kept in the agent's own words, and

@@ -39,8 +39,9 @@ public static class AgentWithdrawal
 
     /// <summary>What retiring and purging do to files, said before either is chosen.</summary>
     public const string TheFiles =
-        "Either then takes its entry for this project out of its repository's .mcp.json, and its line out of this "
-        + "machine's catalogue, so it no longer starts for this project. Reinstating does not put them back.";
+        "For an agent on this machine, either then takes its entry for this project out of its repository's .mcp.json, "
+        + "and its line out of this machine's catalogue, so it no longer starts for this project; an agent on another "
+        + "machine keeps those files there. Reinstating does not put them back.";
 
     /// <summary>What is said when a seat is reached by some route that should not have offered it.</summary>
     public const string NotAnAgent = "That is a seat, not an agent. A person leaves a seat; they are not retired.";
@@ -128,13 +129,14 @@ public static class AgentWithdrawal
     {
         ArgumentNullException.ThrowIfNull(broker);
 
+        var identity = await IdentityOfAsync(broker, agent, cancellationToken).ConfigureAwait(false);
         var changed = await broker.RetireAsync(agent, cancellationToken).ConfigureAwait(false);
 
         var said = new List<string> { changed ? $"Retired '{agent.Value}'." : $"'{agent.Value}' was not registered." };
 
         if (changed)
         {
-            await WithdrawAsync(agent, workspace, project, catalogueFile, said, cancellationToken).ConfigureAwait(false);
+            await WithdrawAsync(agent, workspace, project, catalogueFile, identity, said, cancellationToken).ConfigureAwait(false);
         }
 
         return Sentences(said);
@@ -158,6 +160,8 @@ public static class AgentWithdrawal
     {
         ArgumentNullException.ThrowIfNull(broker);
 
+        // Read before the purge, which takes the registry row and the identity with it.
+        var identity = await IdentityOfAsync(broker, agent, cancellationToken).ConfigureAwait(false);
         var outcome = await broker.PurgeAsync(agent, cancellationToken).ConfigureAwait(false);
         var gone = outcome.Verdict == PurgeVerdict.Gone;
 
@@ -169,7 +173,7 @@ public static class AgentWithdrawal
 
         if (gone)
         {
-            await WithdrawAsync(agent, workspace, project, catalogueFile, said, cancellationToken).ConfigureAwait(false);
+            await WithdrawAsync(agent, workspace, project, catalogueFile, identity, said, cancellationToken).ConfigureAwait(false);
         }
 
         return Sentences(said);
@@ -204,12 +208,37 @@ public static class AgentWithdrawal
                 .Select(part => part[^1] is '.' or '!' or '?' or ':' ? part : part + "."));
     }
 
+    /// <summary>The identity the registry holds for the agent, or none when it holds none or cannot be read.</summary>
+    /// <param name="broker">The project's broker.</param>
+    /// <param name="agent">The agent.</param>
+    /// <param name="cancellationToken">Stops the read.</param>
+    /// <returns>The identity, or the unknown one.</returns>
+    /// <remarks>
+    /// Unknown leaves the identity check out rather than refusing: an agent registered before identities were recorded
+    /// has none, and the machine check still stands.
+    /// </remarks>
+    private static async Task<AgentIdentity> IdentityOfAsync(
+        IParleyBrokerClient broker, AgentName agent, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var registry = await broker.RegistryAsync(cancellationToken).ConfigureAwait(false);
+
+            return registry.FirstOrDefault(row => row.Name == agent)?.Identity ?? default;
+        }
+        catch (Exception unread) when (unread is not OperationCanceledException)
+        {
+            return default;
+        }
+    }
+
     /// <summary>Takes this project's launch entry and the catalogue line away, and lists what went.</summary>
     private static async Task WithdrawAsync(
         AgentName agent,
         string? workspace,
         string? project,
         string? catalogueFile,
+        AgentIdentity identity,
         List<string> said,
         CancellationToken cancellationToken)
     {
@@ -231,7 +260,8 @@ public static class AgentWithdrawal
             said.Add(string.IsNullOrEmpty(here)
                 ? "This machine's name could not be read, so its files were left alone."
                 : $"'{agent.Value}' runs on {agent.Machine}, so its launch entry and catalogue line are files there and were "
-                  + $"left alone; withdraw it from a surface on {agent.Machine} to take them.");
+                  + $"left alone. They stay until removed on {agent.Machine}: its entry in that repository's .mcp.json, by "
+                  + "hand, or by enrolling the repository again there and withdrawing it.");
 
             return;
         }
@@ -239,7 +269,7 @@ public static class AgentWithdrawal
         try
         {
             var outcome = await Enrolment
-                .WithdrawAsync(workspace, agent.Value, project, catalogueFile, cancellationToken)
+                .WithdrawAsync(workspace, agent.Value, project, catalogueFile, identity, cancellationToken)
                 .ConfigureAwait(false);
 
             said.AddRange(outcome.Notes);

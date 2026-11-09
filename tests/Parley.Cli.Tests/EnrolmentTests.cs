@@ -151,6 +151,33 @@ public sealed class EnrolmentTests : IDisposable
     }
 
     [Fact]
+    public async Task Withdrawing_for_another_identity_leaves_the_repository_and_its_catalogue_line_alone()
+    {
+        // A registry row naming this repository's role and path, but registered with another identity: an agent attached
+        // under a name it does not own, or one that wrote another's identity into its own file. The entry names only the
+        // role, so without the identity this repository's entry and catalogue line went for it.
+        await Enrolment.AddAsync(
+            Entry("orders", Workspace), "acme", CatalogueFile, InstructionsFile, TestContext.Current.CancellationToken);
+
+        var launch = JsonNode.Parse(await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!;
+        var own = AgentIdentity.Read(launch[LaunchConfiguration.IdentityMember]!.GetValue<string>());
+
+        var refused = await Enrolment.WithdrawAsync(
+            Workspace, "orders@test", "acme", CatalogueFile, AgentIdentity.Mint(), TestContext.Current.CancellationToken);
+
+        Assert.Contains(refused.Notes, note => note.Contains("another agent's repository", StringComparison.Ordinal));
+        Assert.Contains("parley-acme", await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+        Assert.Contains(own.ToString(), await File.ReadAllTextAsync(CatalogueFile, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+
+        // The agent the registry knows by this repository's own identity is withdrawn as before.
+        await Enrolment.WithdrawAsync(
+            Workspace, "orders@test", "acme", CatalogueFile, own, TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain("parley-acme", await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+        Assert.DoesNotContain(own.ToString(), await File.ReadAllTextAsync(CatalogueFile, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Withdrawing_never_rewrites_the_standing_instructions()
     {
         // The peers frame belongs to the project and the roster block inside it is written by

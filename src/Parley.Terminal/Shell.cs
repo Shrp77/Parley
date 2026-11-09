@@ -4710,7 +4710,7 @@ internal sealed partial class Shell : Window
             }
 
             // **A read can land after the person has moved on**: the Inbox opens only over the project it was read for.
-            if (!ReferenceEquals(Current, project))
+            if (Current?.Name != project.Name)
             {
                 return;
             }
@@ -4752,7 +4752,7 @@ internal sealed partial class Shell : Window
         // conversation of the same name, or started one.
         var voice = Seats?.Held(project.Name.Value) is { } hold
             ? new SeatVoice(_directory.AgentsFor(project), hold.Seat)
-            : ReferenceEquals(Current, project) ? Voice() : null;
+            : Current?.Name == project.Name ? Voice() : null;
 
         if (voice is null || !row.FollowUp)
         {

@@ -508,9 +508,11 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
     /// answers the exchange it closes. Only messages from the conversation's first onward are read, since an export is read
     /// every few seconds while a page follows it.
     /// <para>
-    /// <b>An exchange the person moved is left out.</b> A move rewrites its messages' conversation, so read as written they
-    /// looked like the agent writing elsewhere, and the transcript blamed the agent for the person's move. The move notes
-    /// already say what went where.
+    /// <b>Read where each message was written, not where it is now.</b> A move rewrites its messages' conversation, so
+    /// read as they stand a moved message looked like the agent writing elsewhere, and the transcript blamed the agent for
+    /// the person's move. Each message is placed by the source of the first move of its exchange made after it was
+    /// written, or where it is when none was; so a move invents no note, and a message written after a move, on the
+    /// exchange where it now is, is still noted when it was written elsewhere.
     /// </para>
     /// </remarks>
     public async Task<IReadOnlyList<WroteElsewhere>> GetWroteElsewhereAsync(
@@ -519,14 +521,27 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
         var rows = await _connection.QueryAsync<WroteElsewhereRow>(
             new CommandDefinition(
                 """
-                WITH seen AS (
+                WITH written AS (
+                    -- Where each message was written: a move rewrites conversation_id, so a message on an exchange
+                    -- moved after it was written is placed by that move's source, the first such move's.
+                    SELECT msg.id, msg.exchange_id, msg.type, msg.from_agent, msg.to_agent,
+                           COALESCE(
+                               (SELECT m.source
+                                  FROM conversation_move_exchanges e
+                                  JOIN conversation_moves m ON m.id = e.move_id
+                                 WHERE e.exchange_id = msg.exchange_id
+                                   AND unixepoch(m.moved_utc, 'subsec') >= unixepoch(msg.created_utc, 'subsec')
+                                 ORDER BY m.id
+                                 LIMIT 1),
+                               msg.conversation_id) AS conversation_id
+                      FROM messages msg
+                     WHERE msg.id >= (SELECT MIN(id) FROM messages WHERE conversation_id = @Id)
+                ), seen AS (
                     SELECT id, exchange_id, conversation_id, type, from_agent AS agent, to_agent AS other, 1 AS wrote
-                      FROM messages
-                     WHERE id >= (SELECT MIN(id) FROM messages WHERE conversation_id = @Id)
+                      FROM written
                     UNION ALL
                     SELECT id, exchange_id, conversation_id, type, to_agent, from_agent, 0
-                      FROM messages
-                     WHERE id >= (SELECT MIN(id) FROM messages WHERE conversation_id = @Id)
+                      FROM written
                 ), ordered AS (
                     SELECT id, exchange_id, conversation_id, type, agent, other, wrote,
                            LAG(conversation_id) OVER (PARTITION BY agent ORDER BY id) AS before_conversation,
@@ -542,8 +557,6 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
                    AND type IN ('request', 'clarify')
                    AND agent NOT LIKE @Person AND other NOT LIKE @Person
                    AND agent NOT LIKE @Facilitator AND other NOT LIKE @Facilitator
-                   -- A message the person moved is where the move put it, not where it was written (SPEC.md §5.0).
-                   AND exchange_id NOT IN (SELECT exchange_id FROM conversation_move_exchanges)
                  ORDER BY id;
                 """,
                 new

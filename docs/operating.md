@@ -191,9 +191,12 @@ process.
 To **remove** an agent, the screen first describes it: what it is, where it runs, what it owns,
 and any answer it owes right now. It then offers keeping first, retiring second, and purging last.
 Retiring and purging each ask you to type the agent's own name. A purge that would leave somebody
-waiting names them, and says what they will see, before asking. Retiring can be undone from the
-same place. Purging cannot. The web console's Agents tab does the same, with the same words and the
-same typed name, because both run one implementation.
+waiting names them, and says what they will see, before asking. Retiring or purging an agent that
+runs on this machine also takes its entry for the project out of its repository's `.mcp.json` and its
+line out of this machine's catalogue, so it no longer starts; an agent on another machine keeps those
+files there. Retiring can be undone from the same place, but reinstating writes no file back: add the
+agent again for it to start. Purging cannot be undone. The web console's Agents tab does the same,
+with the same words and the same typed name, because both run one implementation.
 
 **An agent whose repository is gone is retired for you.** When a node is asked to start an agent and
 finds its folder deleted, on the disk that holds your home folder, while the folder above it is still there

@@ -17,7 +17,7 @@ namespace Parley.Setup;
 /// a second writer. So the writing lives here and both callers use it.
 /// </para>
 /// <para>
-/// <b><see cref="WithdrawAsync"/> is written beside <see cref="AddAsync"/> so the two cannot drift.</b>
+/// <b><see cref="WithdrawAsync(string, string, string?, string?, AgentIdentity, CancellationToken)"/> is written beside <see cref="AddAsync"/> so the two cannot drift.</b>
 /// A withdrawal that leaves a launch configuration behind produces a repository that still
 /// announces itself as an agent of a project it was removed from, which is worse than either
 /// state on its own. Keeping the inverse next to the original is the cheapest way to notice when
@@ -943,11 +943,34 @@ public static class Enrolment
     /// talking about, and the person finds out when a peer stops being answered.
     /// </para>
     /// </remarks>
+    public static Task<Outcome> WithdrawAsync(
+        string workspace,
+        string agent,
+        string? project,
+        string? catalogueFile,
+        CancellationToken cancellationToken) =>
+        WithdrawAsync(workspace, agent, project, catalogueFile, default, cancellationToken);
+
+    /// <summary>Unmakes it, only when the repository is the agent the registry knows by this identity.</summary>
+    /// <param name="workspace">The repository directory.</param>
+    /// <param name="agent">The agent being withdrawn: its role, or its whole name.</param>
+    /// <param name="project">The project being withdrawn from, or null when none is named.</param>
+    /// <param name="catalogueFile">The project's catalogue, or null when the project has none.</param>
+    /// <param name="expected">The identity the registry holds for the agent, or none when it holds none.</param>
+    /// <param name="cancellationToken">Stops the reads and writes.</param>
+    /// <returns>What was removed, and what was already gone.</returns>
+    /// <remarks>
+    /// <b>The identity decides whose files these are.</b> An entry names only a role, so a registry row whose workspace
+    /// is this repository but whose identity is another's (an agent attached under a name it does not own, or one that
+    /// wrote another's identity into its own file) would otherwise have this repository's entry and catalogue line taken
+    /// for it. Both are left alone when the two identities are known and differ.
+    /// </remarks>
     public static async Task<Outcome> WithdrawAsync(
         string workspace,
         string agent,
         string? project,
         string? catalogueFile,
+        AgentIdentity expected,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspace);
@@ -1022,6 +1045,8 @@ public static class Enrolment
                 {
                     withdrawn = EnrollmentPlan.IdentityIn(text);
 
+                    var another = expected.Known && withdrawn.Known && withdrawn != expected;
+
                     if (root["mcpServers"] is JsonObject servers)
                     {
                         IReadOnlyList<LaunchEntry> entries;
@@ -1084,6 +1109,12 @@ public static class Enrolment
                             // first, so an entry naming nobody is not necessarily ours.
                             notes.Add(
                                 $"{launchPath}: left alone, {Quoting.Quoted(stranger.Key)} is not an entry this wrote");
+                        }
+                        else if (another)
+                        {
+                            notes.Add(
+                                $"{launchPath}: left alone, it is another agent's repository: its identity is not the one "
+                                + $"{Quoting.Quoted(agent)} registered with");
                         }
                         else if (named is not null && !IsNamed(named, agent))
                         {

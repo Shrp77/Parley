@@ -51,10 +51,14 @@ public sealed class IconsAreInTheFontTests
                 .Select(match => (Page: Path.GetFileName(page), Name: match.Groups[1].Value)))
             .ToList();
 
-        // Non-vacuity: the scan finds icons in each form they are written in.
-        Assert.Contains(used, one => one.Name == "attach_file");
-        Assert.Contains(used, one => one.Name == "grid_view");
-        Assert.Contains(used, one => one.Name == "expand_more");
+        // Non-vacuity, per form: each pattern must find at least one icon, so a pattern that stops matching (a raw
+        // control character where an escape was meant did exactly that) fails here rather than passing on the others.
+        var texts = pages.Select(File.ReadAllText).ToList();
+
+        for (var form = 0; form < Named.Length; form++)
+        {
+            Assert.True(texts.Any(Named[form].IsMatch), $"pattern {form} found no icon on any page: {Named[form]}");
+        }
 
         var missing = used.Where(one => !InTheFont.Contains(one.Name)).Select(one => $"{one.Page}: {one.Name}").Distinct().ToList();
 

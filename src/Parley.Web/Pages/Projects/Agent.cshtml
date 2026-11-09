@@ -96,7 +96,7 @@ else
         else
         {
             <a class="button danger" href="/Projects/Act?project=@Model.Project&amp;action=retire&amp;subject=@agent.Name.Value"
-               title="Take it off @Model.Project's roster. Its history stays, and Reinstate undoes it. Other projects are not touched.">Retire</a>
+               title="Take it off @Model.Project's roster. Its history stays and Reinstate brings it back, but its launch entry is removed and is not written again. Other projects are not touched.">Retire</a>
         }
         <a class="button danger" href="/Projects/Act?project=@Model.Project&amp;action=purge&amp;subject=@agent.Name.Value"
            title="Delete it from @Model.Project with every conversation it was in. Cannot be undone. Other projects are not touched.">Purge</a>

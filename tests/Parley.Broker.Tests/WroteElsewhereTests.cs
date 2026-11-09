@@ -80,6 +80,49 @@ public sealed class WroteElsewhereTests : IDisposable
     }
 
     [Fact]
+    public async Task Moving_one_exchange_away_neither_invents_a_note_where_it_went_nor_loses_the_one_where_it_was_written()
+    {
+        // orders asked billing here (E), then went straight to an older exchange elsewhere. The person moves only E. Read
+        // where messages stand, the note followed E to where it went, saying orders went elsewhere straight after a
+        // conversation it never wrote in.
+        var older = await AskAsync(Billing, Orders, "Which ledger?", Older);
+        await AskAsync(Person, Orders, "Sort the pricing script", Here);
+        var e = await AskAsync(Orders, Billing, "Who owns the script?", Here);
+        await ClarifyAsync(older, Orders, "Back to the ledger: monthly?");
+
+        var clarify = LastMessage();
+
+        Assert.Equal(clarify, Assert.Single(await NotedHereAsync()).Message);
+
+        var moved = await _console.MoveExchangesAsync(Here, "moved-x", true, [e], T0.AddMinutes(5), Ct);
+
+        Assert.True(moved.Moved, moved.Refused);
+        Assert.Empty((await _console.ExportAsync("moved-x", Ct)).WroteElsewhere!);
+        Assert.Equal(clarify, Assert.Single(await NotedHereAsync()).Message);
+    }
+
+    [Fact]
+    public async Task A_clarify_written_after_its_exchange_was_moved_is_still_noted_where_the_agent_was()
+    {
+        // The person moved an older exchange to a new conversation; later orders answers here and goes straight to that
+        // exchange. That clarify was written in the new conversation: an agent writing elsewhere, which SPEC.md §5.0 notes.
+        var older = await AskAsync(Billing, Orders, "Which ledger?", Older);
+        var moved = await _console.MoveExchangesAsync(Older, "moved-on", true, [older], T0.AddMinutes(5), Ct);
+
+        Assert.True(moved.Moved, moved.Refused);
+
+        var asked = await AskAsync(Person, Orders, "Sort the pricing script", Here);
+        _ = await _broker.ResultAsync(
+            asked, Orders, "model-a", $$"""{"outcomes":[{"id":"{{PayloadShape.WholeRequest}}","outcome":"done","text":"done"}]}""", T0.AddMinutes(10), Ct);
+        _ = await _broker.ClarifyAsync(older, Orders, "model-a", """{"text":"Back to the ledger: monthly?"}""", T0.AddMinutes(11), Ct);
+
+        var noted = Assert.Single(await NotedHereAsync());
+
+        Assert.Equal(LastMessage(), noted.Message);
+        Assert.Equal("moved-on", noted.Conversation);
+    }
+
+    [Fact]
     public async Task A_clarify_on_an_older_exchange_straight_after_answering_here_is_noted_here()
     {
         // The case that showed the need: a new conversation with the person, and an exchange left open in an older one.
