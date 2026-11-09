@@ -180,6 +180,40 @@ public sealed partial class InboxFollowsExchangesTests
     }
 
     [Fact]
+    public async Task A_follow_up_sent_after_the_seats_went_idle_is_still_sent()
+    {
+        // The book lets every seat go after twenty idle minutes, and the frame takes them back only when it draws, after
+        // the handler. A follow-up written over that long found no seat and was dropped without a word.
+        using var console = Console();
+
+        Said(console, 1, 20, Wire.MessageType.Request, Billing, Person, Ask("Monthly or yearly?"));
+        Said(console, 2, 20, Wire.MessageType.Result, Person, Billing, """{"outcomes":[{"id":"request","outcome":"answered","text":"Yearly."}]}""");
+        Exchange(console, 20, open: false, Wire.ExchangeOutcome.Complete);
+
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(new Uri("/Inbox?view=closed", UriKind.Relative), Ct);
+        var book = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<Parley.Client.Seating.SeatBook>(console.Services);
+
+        Assert.True(book.Sweep(DateTimeOffset.UtcNow + Parley.Client.Seating.SeatBook.IdleAfter + TimeSpan.FromMinutes(1)) > 0);
+        Assert.Empty(book.Seats());
+
+        using var form = new FormUrlEncodedContent(
+        [
+            new("__RequestVerificationToken", Token().Match(page).Groups[1].Value),
+            new("For", RoadmapConsole.Project),
+            new("Exchange", "20"),
+            new("Agent", Billing),
+            new("Conversation", "talk"),
+            new("Words", "Did the yearly plan go through?"),
+        ]);
+
+        using var response = await client.PostAsync(FollowUpAction(page), form, Ct);
+
+        Assert.Contains("Did the yearly plan go through?", Assert.Single(console.Broker.Requested).PayloadJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_refused_follow_up_comes_back_to_its_row_with_the_words_still_in_the_box()
     {
         // The box is only on In flight and Closed. A post that lost the view came back to Waiting on you, where the row

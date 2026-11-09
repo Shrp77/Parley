@@ -83,9 +83,34 @@ public sealed class LocalLauncher(Func<string, bool, bool> open, string machine,
             return new Launched(false, $"{name} is a link rather than a file, so nothing was launched. It is at {path}.");
         }
 
+        // As for a copy: a file named as an image whose bytes are something else is never handed to whatever opens images.
+        if (ImageSignature.IsImageName(name) && !LeadsAsItsFormat(path, name))
+        {
+            return new Launched(false, $"{name} is not a readable image, so nothing was launched. It is at {path}.");
+        }
+
         return _open(path, false)
             ? new Launched(true, $"Opened {path}.")
             : new Launched(false, $"No editor is registered for {Path.GetExtension(path)} files here. The file is at {path}.");
+    }
+
+    /// <summary>Whether a file's leading bytes are the image format its name claims.</summary>
+    /// <param name="path">The file.</param>
+    /// <param name="name">Its name, which says the format.</param>
+    /// <returns>Whether they are; a file that cannot be read is not.</returns>
+    private static bool LeadsAsItsFormat(string path, string name)
+    {
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            var leading = new byte[ImageSignature.BytesNeeded];
+
+            return ImageSignature.Matches(name, leading.AsSpan(0, stream.ReadAtLeast(leading, leading.Length, throwOnEndOfStream: false)));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     /// <summary>Opens a folder in the file browser.</summary>
@@ -199,8 +224,25 @@ public sealed class LocalLauncher(Func<string, bool, bool> open, string machine,
         if (!IsTheCopy(path, sha256))
         {
             var writing = Path.Combine(folder, $".{Guid.NewGuid():N}.copying");
-            File.WriteAllBytes(writing, bytes.ToArray());
-            File.Move(writing, path, overwrite: true);
+
+            try
+            {
+                File.WriteAllBytes(writing, bytes.ToArray());
+                File.Move(writing, path, overwrite: true);
+            }
+            catch (Exception failed) when (failed is IOException or UnauthorizedAccessException)
+            {
+                // Two opens of one file at once (a double click) race to put the copy in place, and the loser cannot
+                // replace a file the other is checking. The copy the other put there is the same bytes, so it is opened.
+                if (!IsTheCopy(path, sha256))
+                {
+                    throw;
+                }
+            }
+            finally
+            {
+                File.Delete(writing);
+            }
         }
 
         return _open(path, false)
@@ -327,14 +369,15 @@ public sealed class LocalLauncher(Func<string, bool, bool> open, string machine,
 
         try
         {
-            using var stream = info.OpenRead();
+            // Shared for delete, so a check never stops another open putting the same copy in place.
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
 
             return string.Equals(
                 Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(stream)),
                 sha256,
                 StringComparison.OrdinalIgnoreCase);
         }
-        catch (IOException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return false;
         }

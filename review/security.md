@@ -56,7 +56,8 @@ Check a change against each; a new page or a new path lookup must keep all of th
   (`LocalStorage`).
 
 **Files between agents**
-- Only `.md` and `.txt` cross. A fetch is written only as `.md` or `.txt`, never under `.git`, `.claude`, `.github` or
+- Only `.md`, `.txt` and image files (PNG, JPEG, GIF, WebP) cross. A fetch is written only under one of those
+  extensions, never under `.git`, `.claude`, `.github` or
   another agent client's settings or rules folder, and never as `CLAUDE.md`, `AGENTS.md` or their kind. The lists are
   partial on purpose; the agent is told never to put a fetched file where a tool would read it as instructions.
 - A placed file is checked against its hash; a tampered one is quarantined and its fetchers and placer are told.

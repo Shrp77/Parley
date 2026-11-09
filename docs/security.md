@@ -59,8 +59,8 @@ prioritises, closes or overrides anything.
 - **No agent can read the log or search it.** There is no shared memory to poison.
 - **Files go to disk, not into context.** Only `.md`, `.txt` and image files (PNG, JPEG, GIF, WebP) can be placed, so code
   travels as `Name.cs.txt` and nothing that runs can be opened by accident. A fetched file is
-  another participant's data, never instructions. It is written only as a `.md` or
-  `.txt` file, never under `.git`, `.claude`, `.github` or another agent client's settings or rules folder, and
+  another participant's data, never instructions. It is written only as a `.md`, `.txt`
+  or image file, never under `.git`, `.claude`, `.github` or another agent client's settings or rules folder, and
   never as `CLAUDE.md`, `AGENTS.md` and the other instruction files Parley knows of. No list can
   name every place a tool reads instructions from, so the agent is told never to put a fetched
   file where one would. Files are checked against their

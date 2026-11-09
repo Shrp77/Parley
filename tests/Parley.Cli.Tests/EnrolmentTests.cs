@@ -199,6 +199,21 @@ public sealed class EnrolmentTests : IDisposable
     }
 
     [Fact]
+    public async Task A_workspace_that_leads_off_this_machine_is_never_looked_up()
+    {
+        // The workspace is what the agent reported, and the agent can make it a link to a share after it attached. Looking
+        // for its .mcp.json there offers the person's sign-in to that host (review, lens 2 round 12).
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "A share path is a Windows path.");
+
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var outcome = await Enrolment.WithdrawAsync(
+            @"\\192.0.2.77\zz\orders", "orders", "acme", CatalogueFile, TestContext.Current.CancellationToken);
+
+        Assert.Contains(outcome.Notes, note => note.Contains("not a folder on this machine", StringComparison.Ordinal));
+        Assert.True(started.Elapsed < TimeSpan.FromSeconds(5), $"took {started.Elapsed}: it went looking");
+    }
+
+    [Fact]
     public async Task A_catalogue_line_naming_another_repository_is_never_taken_by_a_withdrawal()
     {
         // This repository's file carries an identity whose catalogue line is another checkout's: an agent copied it into

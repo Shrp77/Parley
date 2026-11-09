@@ -4692,7 +4692,8 @@ internal sealed partial class Shell : Window
 
         Queue(async token =>
         {
-            var me = Held?.Seat.Name ?? Seats?.Known(project.Name.Value)?.Name ?? PersonSeat.On(project.Name);
+            // The Inbox's own project's seat, read when this runs: the project in view may have changed since the key.
+            var me = Seats?.Held(project.Name.Value)?.Seat.Name ?? Seats?.Known(project.Name.Value)?.Name ?? PersonSeat.On(project.Name);
             var days = _directory.ManifestPath is { Length: > 0 } root
                 ? Parley.Configuration.ParleySettings.ReadClosedDays(root)
                 : Inbox.DefaultDays;
@@ -4750,8 +4751,8 @@ internal sealed partial class Shell : Window
         // **The Inbox's own project, never whatever is in view when the key is pressed.** A conversation's name is unique
         // only within a project, so a follow-up sent through another project's broker landed in that project's
         // conversation of the same name, or started one.
-        var voice = Seats?.Held(project.Name.Value) is { } hold
-            ? new SeatVoice(_directory.AgentsFor(project), hold.Seat)
+        var voice = Seats?.Held(project.Name.Value) is { } inboxHeld
+            ? new SeatVoice(_directory.AgentsFor(project), inboxHeld.Seat)
             : Current?.Name == project.Name ? Voice() : null;
 
         if (voice is null || !row.FollowUp)

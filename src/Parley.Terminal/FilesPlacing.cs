@@ -19,8 +19,8 @@ namespace Parley.Terminal;
 /// </para>
 /// <para>
 /// <b>The file is read on this machine and streamed to the broker</b>, wherever the broker runs. The path is checked
-/// as it is typed; what the broker refuses — a name holding other content, an extension other than <c>.md</c> or
-/// <c>.txt</c> — comes back in the broker's own words, made safe to draw.
+/// as it is typed; what the broker refuses — a name holding other content, an extension that cannot be placed —
+/// comes back in the broker's own words, made safe to draw.
 /// </para>
 /// </remarks>
 internal static class FilesPlacing

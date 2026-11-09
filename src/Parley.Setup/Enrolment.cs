@@ -1001,6 +1001,16 @@ public static class Enrolment
         var written = new List<string>();
         var launchPath = LaunchPath(workspace);
 
+        // **Never looked up off this machine.** The workspace is what the agent's adapter reported on attach, and an agent
+        // can turn that folder into a link to a share after: looking for its .mcp.json would offer the person's sign-in to
+        // that host. Checked before anything touches the disk, as the ownership write does.
+        if (OffMachineLinks.LeadsOffThisMachine(workspace) || OffMachineLinks.LeadsOffThisMachine(launchPath))
+        {
+            notes.Add($"{workspace}: left alone, it is not a folder on this machine");
+
+            return new Outcome(notes, written);
+        }
+
         // **Which agent this repository is, and whether it is still one when this is done.** The catalogue
         // is keyed by identity and one entry serves every project the checkout answers in, so withdrawing
         // from one of two projects must leave it there: taking it would stop the other project being able

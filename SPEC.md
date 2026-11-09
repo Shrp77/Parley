@@ -569,7 +569,8 @@ operation moves an exchange or names where one goes.
   requests in two conversations names which, as any such agent does.
 - **Neither conversation hides it.** The broker records each move (§9.2): which exchanges, from where, to
   where, when and by whom, and where it falls among the messages, with no message text. Both conversations show it where the entries were, and
-  `export` carries it. An export taken before a move no longer matches, and the record is what explains why.
+  `export` carries which exchanges, where and when; where it falls is the broker's own, used to tell where a moved
+  message was written. An export taken before a move no longer matches, and the record is what explains why.
 - **Membership follows** (below). A poll running in either conversation is voided, as new activity
   voids one, because who would be asked has changed.
 - **Files stay.** A placed file keeps its conversation (§9.5), so a file named in a moved exchange is
@@ -3519,7 +3520,7 @@ says where a file is so a person can open it: a surface running on the broker's 
 read it, or a folder in the file browser. `read_shared_file` is the person's because an agent's fetch is
 recorded and a person viewing a file must not be: a surface anywhere else reads the file through it and opens
 a copy, which is the same file, because a placed file never changes and its hash says which bytes; an image is
-copied only when its leading bytes are its format, and a folder is never opened anywhere but on the broker's
+opened, in place or as a copy, only when its leading bytes are its format, and a folder is never opened anywhere but on the broker's
 machine. A file opened is read, not edited: a placed file is never changed (§9.5). `list_file_problems` and `dismiss_file_problem` are the person's because what
 something else did to the location is nobody's message, and only the person decides what becomes of a
 quarantined file. Both operator surfaces offer all eight, like every other operation in this table, and

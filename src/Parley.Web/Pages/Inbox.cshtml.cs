@@ -45,6 +45,31 @@ public sealed class InboxModel(
     Parley.Web.Notifications.NotificationLog notices,
     StillOpenAsks stillOpen) : PageModel
 {
+    /// <summary>Takes the person's seats back before any post acts on them.</summary>
+    /// <param name="context">The handler about to run.</param>
+    /// <param name="next">Runs it.</param>
+    /// <returns>When the handler has run.</returns>
+    /// <remarks>
+    /// The book lets every seat go after twenty minutes with no render, and the frame takes them back only when it draws,
+    /// after the handler. A follow-up written over a long lunch then found no seat and was dropped without a word, and
+    /// asking which are still open asked nobody. A post is a person at the console, so it takes the seats first, as the
+    /// conversation page does before it sends.
+    /// </remarks>
+    public override async Task OnPageHandlerExecutionAsync(
+        Microsoft.AspNetCore.Mvc.Filters.PageHandlerExecutingContext context,
+        Microsoft.AspNetCore.Mvc.Filters.PageHandlerExecutionDelegate next)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(next);
+
+        if (HttpMethods.IsPost(Request.Method))
+        {
+            await PersonSeats.EnsureAsync(seats, directory, HttpContext.RequestAborted).ConfigureAwait(false);
+        }
+
+        await next().ConfigureAwait(false);
+    }
+
     /// <summary>Each agent last asked which of its questions are still open, and where its answer stands now.</summary>
     public IReadOnlyList<StillOpenStanding> Asked { get; private set; } = [];
 

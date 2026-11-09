@@ -98,6 +98,36 @@ public sealed partial class SendingAResultFromTheInboxTests
     }
 
     [Fact]
+    public async Task A_result_sent_after_the_seats_went_idle_goes_on_the_first_press()
+    {
+        // The owner, 2026-11-09: a response sent from the Inbox brought the same request back, and only a second send
+        // went. The book had let the seat go after twenty idle minutes; the post found no seat and reloaded the page,
+        // whose render took the seat back for the second press.
+        using var console = Asked();
+        using var client = console.CreateClient();
+
+        var before = await client.GetStringAsync(new Uri("/Inbox", UriKind.Relative), Ct);
+        var book = console.Services.GetRequiredService<Parley.Client.Seating.SeatBook>();
+
+        Assert.True(book.Sweep(DateTimeOffset.UtcNow + Parley.Client.Seating.SeatBook.IdleAfter + TimeSpan.FromMinutes(1)) > 0);
+
+        using var form = new FormUrlEncodedContent(
+        [
+            new("__RequestVerificationToken", Token().Match(before).Groups[1].Value),
+            new("For", RoadmapConsole.Project),
+            new("Exchange", Exchange.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            new("Ids", "request"),
+            new("Texts", "Switched it on; it runs at two."),
+            new("Verdicts", "done"),
+        ]);
+
+        using var response = await client.PostAsync(new Uri("/Inbox?handler=Result", UriKind.Relative), form, Ct);
+
+        Assert.Single(console.Broker.Resulted, sent => sent.ExchangeId == Exchange);
+        Assert.Contains("Sent, and the exchange is closed.", await response.Content.ReadAsStringAsync(Ct), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task The_outcome_of_each_item_is_labelled_on_screen()
     {
         using var console = Asked();

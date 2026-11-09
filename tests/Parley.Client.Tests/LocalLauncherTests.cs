@@ -69,6 +69,24 @@ public sealed class LocalLauncherTests : IDisposable
     }
 
     [Theory]
+    [InlineData("shot.png")]
+    [InlineData("photo.jpeg")]
+    [InlineData("empty.gif")]
+    public void A_file_named_as_an_image_that_is_something_else_is_not_launched(string name)
+    {
+        // As for a copy (SPEC.md 9.5): the name alone never hands a file to whatever opens images.
+        var path = Path.Combine(_root, name);
+
+        File.WriteAllText(path, name == "empty.gif" ? string.Empty : "net of tax");
+
+        var launched = _launcher.OpenFile(new FileLocation(Here, path));
+
+        Assert.False(launched.Opened);
+        Assert.Contains("not a readable image", launched.Said, StringComparison.Ordinal);
+        Assert.Empty(_launched);
+    }
+
+    [Theory]
     [InlineData("run.bat")]
     [InlineData("tool.exe")]
     [InlineData("script.ps1")]
@@ -163,6 +181,35 @@ public sealed class LocalLauncherTests : IDisposable
         Assert.True(launched.Opened);
         Assert.Equal((path, false), Assert.Single(_launched));
         Assert.Equal(png, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public async Task Opens_of_one_copy_at_once_all_open_it_and_leave_nothing_behind()
+    {
+        // A double click on the web is two opens of one file at once. The one that lost the race to put the copy in
+        // place was refused ("Access to the path is denied") and left its half-written file in the folder.
+        var opened = new System.Collections.Concurrent.ConcurrentBag<string>();
+        var launcher = new LocalLauncher((path, _) => { opened.Add(path); return true; }, Here);
+
+        for (var round = 0; round < 40; round++)
+        {
+            byte[] notes = [.. "net of tax, round "u8, (byte)('0' + (round % 10)), (byte)round];
+            var read = Read($"notes-{round}.md", notes);
+            using var start = new ManualResetEventSlim();
+            var opens = Enumerable.Range(0, 4)
+                .Select(_ => Task.Run(() => { start.Wait(Ct); return launcher.OpenCopy(read, Copies); }, Ct))
+                .ToArray();
+
+            start.Set();
+
+            foreach (var launched in await Task.WhenAll(opens))
+            {
+                Assert.True(launched.Opened, launched.Said);
+            }
+        }
+
+        Assert.Equal(160, opened.Count);
+        Assert.Empty(Directory.EnumerateFiles(Copies, "*.copying", SearchOption.AllDirectories));
     }
 
     [Fact]
@@ -266,6 +313,8 @@ public sealed class LocalLauncherTests : IDisposable
     /// <summary>Where the copies go: a folder the launcher makes itself, as it makes the real one.</summary>
     private string Copies => Path.Combine(_root, "copies");
 
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
     private static SharedFileRead Read(string name, byte[] bytes) => new(
         new SharedFile("pricing", "pricing", SharedFileName.Create(name), bytes.Length, ContentHash.Of(bytes), null, DateTimeOffset.UnixEpoch),
         bytes,
@@ -275,7 +324,24 @@ public sealed class LocalLauncherTests : IDisposable
     private string Write(string name)
     {
         var path = Path.Combine(_root, name);
-        File.WriteAllText(path, "net of tax");
+
+        // An image is written as one, since only an image whose leading bytes are its format is opened.
+        byte[]? leading = Path.GetExtension(name).ToUpperInvariant() switch
+        {
+            ".PNG" => [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0],
+            ".JPEG" or ".JPG" => [0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0, 0, 0, 0, 0],
+            _ => null,
+        };
+
+        if (leading is null)
+        {
+            File.WriteAllText(path, "net of tax");
+        }
+        else
+        {
+            File.WriteAllBytes(path, leading);
+        }
+
         return path;
     }
 }
