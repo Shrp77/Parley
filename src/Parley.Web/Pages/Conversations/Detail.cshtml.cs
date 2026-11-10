@@ -762,6 +762,22 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
             .Select(result => result.Item1)
             .ToList();
 
+        // **A retry goes to those it did not reach.** Every original target stayed ticked, so "send again" repeated the
+        // words, and the files kept for the refused, to agents that already had them (review, lens 1 round 22).
+        if (reached.Count < sent.Count)
+        {
+            With = [.. sent.Select(result => result.Item1).Except(reached, StringComparer.Ordinal)];
+            Everyone = false;
+        }
+
+        // **Nobody took the words, so the files were never placed**: in a conversation not started yet they follow the
+        // first words, and a browser cannot fill a file field again. Said, so a retry is not the words alone (review,
+        // lens 1 round 22).
+        if (followWithFiles && reached.Count == 0 && Attachments.Count > 0)
+        {
+            SendProblem = "Nobody took your words, so the files you attached were not placed. Attach them again when you send.";
+        }
+
         if (followWithFiles && reached.Count > 0)
         {
             await SendFilesAfterTheFirstWordsAsync(broker, voice, reached, reached.Count == sent.Count, token).ConfigureAwait(false);

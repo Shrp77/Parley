@@ -219,6 +219,27 @@ public sealed partial class AttachingToTheComposerTests
         var after = await response.Content.ReadAsStringAsync(Ct);
 
         Assert.Contains($"name=\"Attached\" value=\"shot.png|{Parley.Core.ContentHash.Of(Png).Value}\"", after, StringComparison.Ordinal);
+
+        // The retry goes to billing alone: orders has the words and the files already (review, lens 1 round 22).
+        Assert.Contains($"name=\"Targets\" value=\"{Billing}\" checked=\"checked\"", after, StringComparison.Ordinal);
+        Assert.DoesNotContain($"name=\"Targets\" value=\"{Orders}\" checked=\"checked\"", after, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_new_conversation_nobody_took_says_its_files_must_be_attached_again()
+    {
+        // Every recipient refused: the files follow the first words in a new conversation, so they were never placed, and
+        // a browser cannot fill a file field again. The page said nothing and the retry went without them (review, lens 1
+        // round 22).
+        using var console = Seated();
+
+        console.Broker.RefusesRequestsTo.Add(Orders);
+        console.Broker.Placing = (header, _) =>
+            new Wire.PlaceFileReply { Rejection = Wire.FileRejection.ConversationNotAssignable, Name = header.Name, ConversationId = header.ConversationId };
+
+        var page = await SendAsync(console, "Start here.", ("shot.png", Png));
+
+        Assert.Contains("Attach them again", page, StringComparison.Ordinal);
     }
 
     [Fact]
