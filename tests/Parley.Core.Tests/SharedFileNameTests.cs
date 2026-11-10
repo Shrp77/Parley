@@ -238,6 +238,21 @@ public sealed class SharedFileNameTests
     }
 
     [Fact]
+    public void The_extensions_in_words_are_exactly_the_extensions_accepted()
+    {
+        // Without this tie, an extension added to AllowedExtensions and not to the words (or the reverse) had every
+        // refusal and every prompt name the wrong set, sending a person or an agent to rename a file that would have
+        // been accepted (review, lens 3 round 32).
+        var named = System.Text.RegularExpressions.Regex.Matches(SharedFileName.AllowedExtensionsInWords, @"\.[A-Za-z0-9]+")
+            .Select(match => match.Value)
+            .ToList();
+
+        Assert.Equal(
+            SharedFileName.AllowedExtensions.Order(StringComparer.Ordinal),
+            named.Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
     public void Every_problem_is_described_in_words()
     {
         foreach (var problem in Enum.GetValues<SharedFileNameProblem>())

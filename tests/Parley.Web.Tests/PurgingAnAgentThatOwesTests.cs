@@ -52,4 +52,44 @@ public sealed partial class PurgingAnAgentThatOwesTests
         Assert.Contains(Waiter, body, StringComparison.Ordinal);
         Assert.DoesNotContain(console.Broker.Paths, called => called.EndsWith("/Purge", StringComparison.Ordinal));
     }
+
+    private static async Task<string> DescribedAsync(RoadmapConsole console, string action)
+    {
+        console.Broker.Registry.Add(new Wire.RegistryRow
+        {
+            Name = Agent, Adapter = "mcp", Tier = Wire.AgentTier.Full, Status = Wire.AgentStatus.Active,
+        });
+
+        using var client = console.CreateClient();
+        var path = $"/Projects/Act?project={RoadmapConsole.Project}&action={action}&subject={Agent}";
+
+        return WebUtility.HtmlDecode(await client.GetStringAsync(new Uri(path, UriKind.Relative), Ct));
+    }
+
+    [Fact]
+    public async Task Purging_an_agent_that_owes_nothing_asks_for_no_acceptance()
+    {
+        // Without the consequence needing something owed, purging an agent that owed nothing said it "owes a Result in 0
+        // open exchange(s)" and required a box ticked to accept leaving nobody waiting (review, lens 3 round 32).
+        using var console = new RoadmapConsole();
+
+        var page = await DescribedAsync(console, "purge");
+
+        Assert.Contains("<strong>It owes</strong> nothing right now", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("owes a Result in 0", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("name=\"AcceptOwed\"", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Retiring_says_what_the_agent_owes()
+    {
+        // Without retire beside purge in the check, the Retire page never read what the agent owed and said nothing of
+        // the agents waiting on it, which is what tells retiring from purging (review, lens 3 round 32).
+        using var console = new RoadmapConsole();
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Waiter, WaitedOn = Agent, ExchangeId = 7 });
+
+        var page = await DescribedAsync(console, "retire");
+
+        Assert.Contains($"<strong>It owes</strong> 1 open exchange(s): {Waiter} is waiting", page, StringComparison.Ordinal);
+    }
 }

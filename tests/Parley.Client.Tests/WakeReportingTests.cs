@@ -46,6 +46,23 @@ public sealed class WakeReportingTests
         Assert.Equal(unaided, SeatVoice.GoesOnUnaided("Sent. Exchange 1 is open. " + SeatVoice.Waking(outcome, Orders)));
     }
 
+    [Theory]
+    [InlineData(Wire.WakeOutcome.Started)]
+    [InlineData(Wire.WakeOutcome.AlreadyComing)]
+    [InlineData(Wire.WakeOutcome.Unreachable)]
+    [InlineData(Wire.WakeOutcome.OpenOutside)]
+    [InlineData(Wire.WakeOutcome.WithThePerson)]
+    public void Only_an_agent_already_running_is_listed_as_running(Wire.WakeOutcome outcome)
+    {
+        // Without a word of its own for each outcome in Reached, the Inbox's list of agents asked said "Running" of an
+        // agent that could not be started, or was only being started, and the person waited on nothing (review, lens 3
+        // round 32).
+        var said = SeatVoice.Reached(outcome);
+
+        Assert.DoesNotContain("Running", said, StringComparison.OrdinalIgnoreCase);
+        Assert.NotEqual(SeatVoice.Reached(Wire.WakeOutcome.Unspecified), said);
+    }
+
     [Fact]
     public void A_refused_send_does_not_go_on_unaided()
     {

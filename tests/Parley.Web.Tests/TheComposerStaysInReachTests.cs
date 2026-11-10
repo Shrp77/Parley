@@ -90,6 +90,17 @@ public sealed partial class TheComposerStaysInReachTests
     }
 
     [Fact]
+    public async Task A_plain_load_draws_no_icon_for_what_was_sent()
+    {
+        // Without SentAsAsked needing something sent, every load of a conversation drew the "what happened" icon over an
+        // empty list, since nothing sent is everything gone as asked (review, lens 3 round 32).
+        var page = await PageAsync();
+
+        Assert.DoesNotContain("class=\"sent-info\"", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("<ul class=\"sent\"", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task An_earlier_choice_to_hide_may_close_a_page_with_nothing_to_say()
     {
         Assert.Contains("data-keep-open=\"false\"", ComposerForm().Match(await PageAsync()).Value, StringComparison.Ordinal);

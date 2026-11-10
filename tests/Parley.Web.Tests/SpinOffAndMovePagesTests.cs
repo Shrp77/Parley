@@ -891,6 +891,21 @@ public sealed class SpinOffAndMovePagesTests
     }
 
     [Fact]
+    public void The_text_export_carries_where_an_agents_next_message_went()
+    {
+        // Without the WroteElsewhere lines in Transcript.Write, the Export TXT file left out "next message went to ..."
+        // that the page and the JSON file both say (SPEC.md §10.2) (review, lens 3 round 32).
+        var export = new Parley.Core.ConversationExport(
+            [],
+            [],
+            WroteElsewhere: [new Parley.Core.WroteElsewhere(3, 1, Parley.Core.AgentName.Create(Orders), Parley.Core.AgentName.Create("billing@test"), "sync-around")]);
+
+        var file = System.Text.Encoding.UTF8.GetString(Parley.Web.Pages.Conversations.DetailModel.TextExport("shared", Project, export));
+
+        Assert.Contains("next message went to billing@test in sync-around", file, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_split_settled_pair_is_said_on_the_page()
     {
         using var console = Console();

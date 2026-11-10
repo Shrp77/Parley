@@ -242,6 +242,25 @@ public sealed class WroteElsewhereTests : IDisposable
     }
 
     [Fact]
+    public async Task Answering_the_facilitators_question_elsewhere_is_not_noted()
+    {
+        // Without the facilitator clause, orders answering Parley's ownership question with a Clarify straight after
+        // answering here put "orders's next message went to parley-facilitator in ..." on this conversation, which
+        // SPEC.md §5.0 says is never reported (review, lens 3 round 32).
+        var parley = await new AgentRepository(_connection).EnsureFacilitatorAsync(ProjectName.Create("test"), cancellationToken: Ct);
+        var here = await AskAsync(Person, Orders, "that command failed", Here);
+        var question = await new Facilitator(_connection, BrokerOptions.Default).AskAsync(parley, Orders, T0, Ct);
+
+        Assert.True(question.Asked, question.Problem);
+
+        await AnswerAsync(here, Orders);
+        await ClarifyAsync(question.Exchange!.Value, Orders, "Which repository?");
+
+        Assert.Equal(MessageType.Clarify, (await _console.ExportAsync(question.Conversation!, Ct)).Messages[^1].Type);
+        Assert.Empty(await NotedHereAsync());
+    }
+
+    [Fact]
     public async Task The_person_going_elsewhere_is_not_noted()
     {
         var here = await AskAsync(Person, Orders, "that command failed", Here);

@@ -44,7 +44,11 @@ public sealed partial class AttachingToTheComposerTests
         return console;
     }
 
-    private static async Task<string> SendAsync(RoadmapConsole console, string says, params (string Name, byte[] Bytes)[] files)
+    private static Task<string> SendAsync(RoadmapConsole console, string says, params (string Name, byte[] Bytes)[] files) =>
+        PostAsync(console, says, [("Targets", Orders)], files);
+
+    private static async Task<string> PostAsync(
+        RoadmapConsole console, string says, (string Name, string Value)[] fields, params (string Name, byte[] Bytes)[] files)
     {
         using var client = console.CreateClient();
 
@@ -53,8 +57,12 @@ public sealed partial class AttachingToTheComposerTests
         {
             { new StringContent(Token().Match(page).Groups[1].Value), "__RequestVerificationToken" },
             { new StringContent(says, Encoding.UTF8), "Says" },
-            { new StringContent(Orders), "Targets" },
         };
+
+        foreach (var (name, value) in fields)
+        {
+            form.Add(new StringContent(value), name);
+        }
 
         foreach (var (name, bytes) in files)
         {
@@ -147,6 +155,35 @@ public sealed partial class AttachingToTheComposerTests
 
         Assert.Contains($"name=\"Attached\" value=\"shot.png|{Parley.Core.ContentHash.Of(Png).Value}\"", page, StringComparison.Ordinal);
         Assert.Contains("data-keep-open=\"true\"", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_send_that_went_leaves_no_file_behind_for_the_next_message()
+    {
+        // Without clearing Attached after an ordinary send into a conversation that exists, the page came back with the
+        // file still a chip and a hidden input, so the person's next message named it again (review, lens 3 round 32).
+        using var console = Seated();
+
+        var page = await SendAsync(console, "Look.", ("shot.png", Png));
+
+        Assert.Single(console.Broker.Requested);
+        Assert.DoesNotContain("name=\"Attached\"", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("title=\"shot.png\"", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_reply_that_closed_leaves_no_file_behind_for_the_next_message()
+    {
+        // Without clearing Attached when a reply to a question closed it, the page came back with the file still a chip
+        // and a hidden input, so the person's next message named it again (review, lens 3 round 32).
+        using var console = Seated();
+
+        var page = await PostAsync(console, "Here it is.", [("ReplyTo", "12"), ("Outcome", "done")], ("shot.png", Png));
+
+        Assert.Equal(12, Assert.Single(console.Broker.Resulted).ExchangeId);
+        Assert.Single(console.Broker.Placed);
+        Assert.DoesNotContain("name=\"Attached\"", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("title=\"shot.png\"", page, StringComparison.Ordinal);
     }
 
     [Fact]

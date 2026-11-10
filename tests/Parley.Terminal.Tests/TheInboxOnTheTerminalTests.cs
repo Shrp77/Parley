@@ -254,8 +254,9 @@ public sealed class TheInboxOnTheTerminalTests
     [Fact]
     public async Task A_follow_up_with_no_words_sends_nothing_and_says_so()
     {
-        // Without the guard an empty follow-up went to the broker and came back in SeatVoice's words, "Nothing was asked
-        // for", which reads as though the person asked for nothing rather than wrote nothing (review, lens 3 round 31).
+        // Without the guard an empty follow-up reached SeatVoice, which refused it itself before anything went to the broker,
+        // in its own words, "Nothing was asked for", which reads as though the person asked for nothing rather than wrote
+        // nothing (review, lens 3 round 31).
         await using var seated = await Seated.OpenAsync(Ct);
 
         await seated.AskAsync(Seated.Billing, "billing-talk", Ct, go: false);

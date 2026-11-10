@@ -157,6 +157,25 @@ public sealed class AwayFromTheSeatTests
     }
 
     [Fact]
+    public async Task A_count_missing_a_project_that_could_not_be_asked_is_not_shown_as_certain()
+    {
+        // Without every project having to answer, the badge said 3 as the whole count while a second project's broker was
+        // down and whatever waited there was left out (review, lens 3 round 32).
+        using var console = new WaitingConsole { SecondProjectDown = true };
+        console.Broker.Owed = 3;
+
+        using var client = Seated(console);
+        var page = await client.GetStringAsync(new Uri("/Projects/Agents?project=alpha", UriKind.Relative), TestContext.Current.CancellationToken);
+        var said = await client.GetStringAsync(new Uri("/?handler=Presence", UriKind.Relative), TestContext.Current.CancellationToken);
+
+        var chip = page[page.IndexOf("<a class=\"seat-who\"", StringComparison.Ordinal)..][..300];
+
+        Assert.True(console.Broker.AskedOwed > 0, "the wait-for graph was never asked");
+        Assert.DoesNotContain("seat-waiting", chip, StringComparison.Ordinal);
+        Assert.Contains("\"certain\":false", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_count_shown_while_not_connected_marks_nobody_present()
     {
         // The line this must not cross. A count is a reason to come back; it is never a claim that somebody is here.
