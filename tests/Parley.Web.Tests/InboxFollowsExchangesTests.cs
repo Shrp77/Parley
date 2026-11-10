@@ -166,6 +166,25 @@ public sealed partial class InboxFollowsExchangesTests
     }
 
     [Fact]
+    public async Task A_request_still_in_flight_in_a_conversation_quiet_for_longer_is_still_listed()
+    {
+        // The person asked ten days ago and the agent has not answered: no message and no close in the window, only open
+        // work keeps the conversation read for In flight (review, lens 3 round 17).
+        using var console = Console();
+
+        console.Broker.Conversations[0].LastActivityUtc =
+            DateTimeOffset.UtcNow.AddDays(-10).ToString("O", CultureInfo.InvariantCulture);
+        console.Broker.Conversations[0].HasOpenExchange = true;
+        console.Broker.Conversations[0].LastClosedUtc = string.Empty;
+
+        Said(console, 14_400, 20, Wire.MessageType.Request, Person, Billing, Ask("Which ledger should the export use?"));
+        Exchange(console, 20, open: true);
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Person, WaitedOn = Billing, ExchangeId = 20 });
+
+        Assert.Contains("Which ledger should the export use?", await GetAsync(console, "/Inbox?view=flight"), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_follow_up_is_a_new_request_to_the_rows_agent_in_its_conversation()
     {
         using var console = Console();

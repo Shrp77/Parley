@@ -860,6 +860,16 @@ public sealed class ConversationRepository(SqliteConnection connection)
                         OR EXISTS (SELECT 1 FROM shared_files f WHERE f.conversation_id = c.id)
                         -- Everything moved out of it: it stays, and says what left (SPEC.md 5.0).
                         OR EXISTS (SELECT 1 FROM conversation_moves mv WHERE mv.source = c.id)
+                ),
+                -- Each conversation's newest close, found in one pass rather than once per conversation: nothing indexes
+                -- exchanges by conversation, and a lookup per row read the whole table for every conversation on every page
+                -- (review, lens 1 round 19). Every closed_utc is written as UTC round-trip text, so the greatest text is the
+                -- latest instant.
+                closes AS (
+                    SELECT conversation_id AS id, max(closed_utc) AS last_closed
+                      FROM exchanges
+                     WHERE closed_utc IS NOT NULL
+                     GROUP BY conversation_id
                 )
                 SELECT c.id                                       AS Id,
                        a.messages                                 AS Messages,
@@ -872,12 +882,10 @@ public sealed class ConversationRepository(SqliteConnection connection)
                        (SELECT l.parent FROM conversation_links l
                          WHERE l.child = c.id)                    AS Parent,
                        (c.state = 'CLOSED')                       AS Closed,
-                       (SELECT e.closed_utc FROM exchanges e
-                         WHERE e.conversation_id = c.id AND e.closed_utc IS NOT NULL
-                         ORDER BY unixepoch(e.closed_utc, 'subsec') DESC
-                         LIMIT 1)                                 AS LastClosedUtc
+                       cl.last_closed                             AS LastClosedUtc
                   FROM conversations c
                   JOIN activity a ON a.id = c.id
+                  LEFT JOIN closes cl ON cl.id = c.id
                  WHERE (@IncludeArchived OR c.archived_utc IS NULL)
                    AND (@Participant IS NULL
                         OR EXISTS (SELECT 1 FROM conversation_participants p

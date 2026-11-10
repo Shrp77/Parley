@@ -147,6 +147,22 @@ public sealed class ConversationListingTests : IDisposable
     }
 
     [Fact]
+    public async Task Of_several_closes_the_listing_gives_the_newest()
+    {
+        // One exchange closed long ago, another just now with no message: the oldest close reported would drop the
+        // conversation from the Inbox's window (review, lens 3 round 17).
+        var old = Discussion("pricing", "orders@test", "billing@test", minute: 0, messages: 1);
+        var recent = Discussion("pricing", "orders@test", "inventory@test", minute: 2, messages: 1);
+
+        Execute($"UPDATE exchanges SET closed_utc = '{Stamp(10)}' WHERE id = {old};");
+        Execute($"UPDATE exchanges SET closed_utc = '{Stamp(50)}' WHERE id = {recent};");
+
+        var pricing = Assert.Single(await _conversations.ListAsync(cancellationToken: Ct), c => c.Id == "pricing");
+
+        Assert.Equal(DateTimeOffset.Parse(Stamp(50), System.Globalization.CultureInfo.InvariantCulture), pricing.LastClosedUtc);
+    }
+
+    [Fact]
     public async Task A_conversation_is_counted_once_however_many_messages_it_holds()
     {
         // The join that multiplies. Three messages on one conversation must be one row saying
