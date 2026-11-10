@@ -80,7 +80,7 @@ address and any warnings. Inside a project:
 - **Health**: flagged work (including a turn stopped on a refused permission), who is waiting on
   whom, message sizes refused, clarifications, and what requests came to.
 - **Notifications**: a bell that tells you when something needs you.
-- **Settings**: choose which agents are ticked by default in a new conversation, and the other
+- **Settings**: choose which agents are ticked by default in a new conversation (kept in this browser only), and the other
   project-level actions. Renaming a project is the terminal's, in two steps: remove it and name the new one. Its
   conversations stay behind and its repositories must be enrolled again.
 - **Parley's settings** (the Settings item above the project): the console's theme and density, and
@@ -290,8 +290,9 @@ or drop a file. In a conversation that has already started, it is placed as your
 goes, and the message ends with a list of what was attached, each with its hash, for the agent to fetch. A conversation
 that has not started yet has nowhere to hold a file, so your words go first and a second message follows with the files
 and their hashes. If nobody takes those first words, the files are not placed, and you attach them again when you send
-again. If some recipients refuse, the page keeps your words, your picks and the files it placed, so sending again does
-not upload them a second time; anyone who already took the message gets it again. Pasted text longer than 4,000 characters becomes a file too,
+again. If some recipients refuse, the page keeps your picks and the files it placed, so sending again does not upload
+them a second time, and it keeps your words unless everyone already took them; anyone who already took a message gets it
+again. Pasted text longer than 4,000 characters becomes a file too,
 named `pasted-…txt`, rather than words in the box. Placing is the only way a file
 gets in. Nothing else may change the folder, and Parley puts it right when something does.
 
