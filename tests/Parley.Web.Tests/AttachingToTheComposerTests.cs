@@ -220,9 +220,11 @@ public sealed partial class AttachingToTheComposerTests
 
         Assert.Contains($"name=\"Attached\" value=\"shot.png|{Parley.Core.ContentHash.Of(Png).Value}\"", after, StringComparison.Ordinal);
 
-        // The retry goes to billing alone: orders has the words and the files already (review, lens 1 round 22).
+        // Both stay ticked. Narrowing the retry to the refused was undone by the page's own remembered ticks in a browser
+        // and, without script, dropped an agent that took the words but missed the files (review, lens 1 round 23); a
+        // retry that repeats to some is the recorded cost.
         Assert.Contains($"name=\"Targets\" value=\"{Billing}\" checked=\"checked\"", after, StringComparison.Ordinal);
-        Assert.DoesNotContain($"name=\"Targets\" value=\"{Orders}\" checked=\"checked\"", after, StringComparison.Ordinal);
+        Assert.Contains($"name=\"Targets\" value=\"{Orders}\" checked=\"checked\"", after, StringComparison.Ordinal);
     }
 
     [Fact]
