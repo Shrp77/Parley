@@ -52,9 +52,9 @@ the spec's *Being started* becomes *Not running*: nothing records that a start i
 - "Show older" moves the window back by its own length: `?closed=2` covers days 7 to 14 by default, and so on.
 - An exchange whose messages retention removed still has its snapshot (opened, closed, outcome), so it is listed with no
   quotation.
-- **Rationale**: no new operation or storage (FR-008). Every one of the person's conversations is exported: an exchange can close inside the window with no message of its
-  own in its conversation (settled by a Request elsewhere, or moved after settling), so a filter by last message lost it
-  (review, lens 1 round 17).
+- **Rationale**: no new operation or storage (FR-008). Conversations with open work, a message in the window, or an exchange closed in the window are exported; the last
+  is the broker's `last_closed_utc`, since an exchange can close with no message in its conversation (settled by a
+  Request elsewhere, or moved after settling), which a filter by last message lost (review, lens 1 rounds 17 and 18).
 - **Alternatives considered**: a new "closed exchanges for an agent" operator read. Rejected for now: the export path is
   correct and its cost is bounded by conversations active in the window. Revisit if a deployment shows it slow.
 
