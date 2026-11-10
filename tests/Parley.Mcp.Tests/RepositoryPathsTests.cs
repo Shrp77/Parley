@@ -42,12 +42,15 @@ public sealed class RepositoryPathsTests : IDisposable
     [InlineData("docs ")]
     [InlineData("docs  ")]
     [InlineData("docs\u3000")]
+    [InlineData("docs.")]
+    [InlineData("docs..")]
     public void A_path_through_a_folder_ending_in_a_space_is_refused(string name)
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "Win32 path rules");
         Assert.SkipUnless(TryLink(@"\\?\" + Path.Combine(_root, name), _outside), "symbolic links need Developer Mode here");
 
-        Assert.NotNull(RepositoryPaths.Resolve(_root, Path.Combine(name, "notes.md"), out _));
+        var said = RepositoryPaths.Resolve(_root, Path.Combine(name, "notes.md"), out var zzResolved);
+        Assert.True(said is not null, $"DIAG resolved={zzResolved} fullpath={Path.GetFullPath(Path.Combine(_root, name, "notes.md"))}");
     }
 
     [Fact]
