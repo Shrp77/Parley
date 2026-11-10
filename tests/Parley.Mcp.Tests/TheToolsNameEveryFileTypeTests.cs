@@ -43,6 +43,17 @@ public sealed partial class TheToolsNameEveryFileTypeTests
         Assert.Equal(SharedFileName.AllowedExtensions, named);
     }
 
+    [Fact]
+    public void The_fetch_tool_tells_an_agent_not_to_commit_a_fetched_image_unless_asked()
+    {
+        // Without the guard an agent fetching an image into its repository was not told to leave it out of a commit, so
+        // another participant's picture went into that repository's history (review, lens 3 round 35).
+        // Read with whitespace folded, because the description's line breaks are where the source wraps.
+        var text = Regex.Replace(Description("parley_file_fetch"), @"\s+", " ", RegexOptions.None, TimeSpan.FromSeconds(1));
+
+        Assert.Contains("Don't commit a fetched image unless asked.", text, StringComparison.Ordinal);
+    }
+
     private static string Description(string described)
     {
         var (tool, parameter) = described.Split(' ') is [var name, var argument] ? (name, argument) : (described, null);

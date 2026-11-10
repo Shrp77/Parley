@@ -115,6 +115,38 @@ public sealed class ImagesInTheConversationTests : IDisposable
     }
 
     [Fact]
+    public async Task An_image_over_the_inline_limit_has_no_thumbnail_and_offers_to_show_it_anyway()
+    {
+        // Without the guard an image over the inline limit was drawn as a thumbnail the console refuses to serve, a broken
+        // picture with no way to see it (review, lens 3 round 35). Its size is the placement's record, so no large file is
+        // written.
+        var big = new byte[Png.Length];
+        Png.CopyTo(big, 0);
+        _console.Broker.Files.Add(View("big.png", big, "2026-09-14T12:00:00Z", size: Parley.Client.Files.Placements.InlineLimitBytes + 1));
+        _console.Broker.Contents["big.png"] = big;
+
+        using var client = _console.CreateClient();
+
+        var body = await client.GetStringAsync(
+            new Uri($"/Conversations/Media?project={FilesConsole.Project}&id={Conversation}", UriKind.Relative), Ct);
+
+        var cards = Regex.Matches(body, "<figure class=\"placed-card\">.*?</figure>", RegexOptions.Singleline, TimeSpan.FromSeconds(5))
+            .Select(match => match.Value)
+            .ToList();
+        var card = Assert.Single(cards, c => c.Contains("big.png", StringComparison.Ordinal));
+        var small = Assert.Single(cards, c => c.Contains("mockup.png", StringComparison.Ordinal));
+
+        Assert.DoesNotContain("<img", card, StringComparison.Ordinal);
+        Assert.DoesNotContain("class=\"thumb\"", card, StringComparison.Ordinal);
+        Assert.Contains("class=\"thumb-tile\"", card, StringComparison.Ordinal);
+        Assert.Contains("larger than is shown here.", card, StringComparison.Ordinal);
+        Assert.Matches(new Regex("<a href=\"[^\"]*large=true[^\"]*\"[^>]*>Show anyway</a>", RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1)), card);
+
+        // And one under the limit still has its thumbnail, so the tile is the limit's doing.
+        Assert.Contains("<img", small, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Media_lists_images_and_other_files_newest_first_with_a_way_back_to_each()
     {
         using var client = _console.CreateClient();
@@ -184,6 +216,27 @@ public sealed class PlacementsInTheTranscriptTests
         Assert.True(before >= 0 && message > before && after > message, $"before {before}, message {message}, after {after}");
         Assert.Contains("handler=Image", page, StringComparison.Ordinal);
         Assert.Contains("id=\"viewer\"", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_conversation_a_file_started_shows_the_file_and_never_says_nothing_was_recorded()
+    {
+        // Without the guard a conversation that holds only a placed file said nothing was recorded under its name, above
+        // the file it holds (review, lens 3 round 35).
+        using var console = new TranscriptConsole();
+
+        console.Broker.Files.Add(new Wire.SharedFileView
+        {
+            ConversationId = "shared", Folder = "shared", Name = "first.png", SizeBytes = 10, Sha256 = new string('e', 64),
+            PlacedBy = "billing@test", PlacedUtc = "2026-09-16T09:00:00Z",
+        });
+
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+
+        Assert.Contains("id=\"f-FIRST.PNG\"", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("Nothing was recorded under this identifier.", page, StringComparison.Ordinal);
     }
 
     [Fact]

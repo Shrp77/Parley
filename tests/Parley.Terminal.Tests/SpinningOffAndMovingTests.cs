@@ -368,6 +368,36 @@ public sealed class SpinningOffAndMovingTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task The_name_dialog_says_a_line_naming_this_conversation_is_added_to_what_is_sent()
+    {
+        // Without the guard the person was not told that their words go out under a line naming the parent conversation,
+        // though the line is sent as theirs (review, lens 3 round 35).
+        var (shell, driving, message) = await SeatedAsync();
+        using var held = shell;
+
+        Assert.True(shell.Transcript.Reach(message));
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Transcript));
+
+        await driving.PressThenSettleAsync(Key.B.WithAlt, () => shell.Settled);
+
+        var form = (FormDialog)driving.Find(SpinningOff.Title);
+        driving.App.LayoutAndDraw(true);
+
+        // The dialog wraps its words, so what it draws is read as one run of text: each screen row it covers, with its
+        // border and shadow taken out.
+        var frame = form.FrameToScreen();
+        var rows = driving.Text().Replace("\r", string.Empty, StringComparison.Ordinal).Split('\n');
+        var inside = rows
+            .Skip(frame.Y)
+            .Take(frame.Height)
+            .Select(row => row.Length > frame.X ? row[frame.X..Math.Min(row.Length, frame.Right)] : string.Empty)
+            .Select(row => new string([.. row.Select(c => c >= (char)0x2500 && c <= (char)0x259F ? ' ' : c)]));
+        var drawn = string.Join(' ', string.Join(' ', inside).Split(' ', StringSplitOptions.RemoveEmptyEntries));
+
+        Assert.True(drawn.Contains(Parley.Client.Rendering.Quoting.OpeningIsAdded, StringComparison.Ordinal), drawn);
+    }
+
+    [Fact]
     public async Task Alt_v_on_a_drawn_conversation_opens_the_list_to_tick_and_nothing_else()
     {
         var (shell, driving, message) = await SeatedAsync();

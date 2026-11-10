@@ -339,4 +339,42 @@ public sealed class TheInboxOnTheTerminalTests
 
         Prompting.Close(seated.Session.App, seated.Shell.InboxSession);
     }
+
+    [Fact]
+    public void The_follow_up_is_live_on_an_agents_row_and_never_on_the_facilitators()
+    {
+        // Without the guard the follow-up was offered on the facilitator's row, which is never given work, so the status
+        // line named a command that could only do nothing (review, lens 3 round 35).
+        var facilitator = Parley.Core.Facilitation.On(Walking.Alpha);
+        var waiting = Parley.Client.Seating.InboxView.WaitingOnYou;
+        var reading = new Parley.Client.Seating.InboxReading(
+            [
+                new Parley.Client.Seating.InboxRow(5, "billing-talk", Seated.Billing, waiting, DateTimeOffset.UnixEpoch.AddHours(2), null, null, null),
+                new Parley.Client.Seating.InboxRow(6, "asking", facilitator, waiting, DateTimeOffset.UnixEpoch.AddHours(1), null, null, null),
+            ],
+            7,
+            0,
+            DateTimeOffset.UnixEpoch,
+            DateTimeOffset.UnixEpoch.AddDays(7));
+
+        using var driving = Driving.Open();
+
+        var (inbox, token) = InboxWindow.Open(driving.App, Walking.Alpha.Value, reading);
+
+        driving.App.LayoutAndDraw(true);
+
+        var lines = inbox.Shown.ToList();
+
+        bool Offered() => inbox.Table.Live(KeyContext.InboxDialog, inbox).Any(action => action.Label == InboxWindow.FollowUpTitle);
+
+        inbox.Select(lines.FindIndex(line => line.Contains($"{facilitator.Value} in asking", StringComparison.Ordinal)));
+        Assert.Equal(facilitator, inbox.Selected?.Agent);
+        Assert.False(Offered(), "the follow-up is offered on the facilitator's row");
+
+        inbox.Select(lines.FindIndex(line => line.Contains($"{Seated.Billing.Value} in billing-talk", StringComparison.Ordinal)));
+        Assert.Equal(Seated.Billing, inbox.Selected?.Agent);
+        Assert.True(Offered(), "the follow-up is not offered on an agent's row");
+
+        Prompting.Close(driving.App, token);
+    }
 }

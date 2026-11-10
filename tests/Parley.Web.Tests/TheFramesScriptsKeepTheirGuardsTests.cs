@@ -80,6 +80,33 @@ public sealed class TheFramesScriptsKeepTheirGuardsTests
         Assert.True(opens > closes, "the panel a press opens is not recorded where a second press looks for it");
     }
 
+    [Fact]
+    public void A_thumbnail_that_will_not_load_is_replaced_by_its_tile()
+    {
+        // Without the guard the tile was added beside the broken thumbnail rather than in its place, so the broken picture
+        // stayed on the page, still a link to bytes the console refuses (review, lens 3 round 35).
+        // Read with comments taken out and whitespace folded to single spaces, because neither is what the script does.
+        var viewer = Page("src/Parley.Web/Pages/Conversations/_Viewer.cshtml");
+        var script = Assert.Single(
+            Regex.Matches(viewer, @"<script>(?<body>.*?)</script>", RegexOptions.Singleline, TimeSpan.FromSeconds(5)),
+            match => match.Groups["body"].Value.Contains("thumb-tile", StringComparison.Ordinal)).Groups["body"].Value;
+        var code = Regex.Replace(script, @"/\*[\s\S]*?\*/|(?<![:""'])//[^\n]*", string.Empty, RegexOptions.None, TimeSpan.FromSeconds(2));
+        code = Regex.Replace(code, @"\s+", " ", RegexOptions.None, TimeSpan.FromSeconds(1));
+
+        const string Replaces =
+            "document.addEventListener(\"error\", function (e) { " +
+            "var img = e.target; " +
+            "if (!img || img.tagName !== \"IMG\" || !img.closest || !img.closest(\"a.thumb\")) { return; } " +
+            "var link = img.closest(\"a.thumb\"); " +
+            "var tile = document.createElement(\"p\"); " +
+            "tile.className = \"thumb-tile\"; " +
+            "tile.textContent = (img.alt || \"This file\") + \": not a readable image.\"; " +
+            "link.replaceWith(tile); " +
+            "}, true);";
+
+        Assert.True(code.Contains(Replaces, StringComparison.Ordinal), "a thumbnail that fails to load is no longer replaced by its tile");
+    }
+
     /// <summary>The one inline script in the frame that holds a piece of text.</summary>
     /// <param name="holding">The text.</param>
     /// <returns>The script's body.</returns>
