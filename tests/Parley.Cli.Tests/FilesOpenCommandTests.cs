@@ -3,8 +3,8 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// <c>parley files open</c>: a placed file opened in place, on the machine that holds it and on no other (SPEC.md §10.2,
-/// §13).
+/// <c>parley files open</c>: a placed file opened in place on the machine that holds it, and as a checked copy read
+/// through the broker anywhere else (SPEC.md §10.2, §13).
 /// </summary>
 /// <remarks>
 /// Through the launcher's seam throughout, which records instead of launching; the refusals are checked by what was
@@ -65,6 +65,20 @@ public sealed class FilesOpenCommandTests : IAsyncDisposable
         var (path, _) = Assert.Single(_files.Launched);
         Assert.Equal("net of tax", await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken));
         Assert.Contains("Opened a copy of notes.md", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_open_refused_launches_nothing_and_exits_one()
+    {
+        // An image whose leading bytes are not its format is never launched (0.58.1); the command said so and exited 0
+        // with no test to notice (review, lens 3 round 29).
+        await _files.PlaceAsync(Billing, "diagram.png", "not an image", "pricing");
+
+        var (code, output, _) = await _files.RunAsync("open", "diagram.png");
+
+        Assert.Equal(1, code);
+        Assert.Empty(_files.Launched);
+        Assert.Contains("diagram.png", output, StringComparison.Ordinal);
     }
 
     [Fact]
