@@ -204,4 +204,81 @@ public sealed class TheInboxOnTheTerminalTests
         Assert.DoesNotContain(ExchangeView.Lines([detail]), line => line.Contains('\u001b', StringComparison.Ordinal));
         Assert.Equal("There is no exchange #9 in this project.", ExchangeView.Lines([new(9, null, [], null, null)])[0]);
     }
+
+    [Fact]
+    public void An_exchange_whose_words_were_pruned_says_so()
+    {
+        // Without the line a pruned exchange showed its heading and nothing under it, as though it had never been said
+        // (review, lens 3 round 31).
+        var pruned = new Parley.Client.Seating.ExchangeDetail(
+            4, "room", [],
+            new Parley.Core.ExchangeSnapshot(4, Parley.Core.ExchangeState.Closed, DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch),
+            null);
+
+        var lines = ExchangeView.Lines([pruned]);
+
+        Assert.StartsWith("Exchange #4 in room.", lines[0], StringComparison.Ordinal);
+        Assert.Contains("  Its words were removed by retention.", lines);
+    }
+
+    [Fact]
+    public async Task A_follow_up_with_no_seat_to_send_it_from_says_so()
+    {
+        // Without the guard the follow-up box opened with no seat behind it, and what was typed went nowhere (review, lens 3
+        // round 31).
+        await using var seated = await Seated.OpenAsync(Ct, withBeta: true);
+
+        await seated.AskAsync(Seated.Billing, "billing-talk", Ct, go: false);
+
+        seated.Focus<RoomRegion>();
+        await seated.Session.PressThenSettleAsync(new Key(Shell.InboxKey).WithAlt, () => seated.Shell.Settled);
+
+        var inbox = Assert.IsType<InboxWindow>(seated.Shell.InboxShown);
+
+        inbox.Select(inbox.Shown.ToList().FindIndex(line => line.Contains("billing-talk", StringComparison.Ordinal)));
+
+        // Moved to another project, with the Inbox's project's hold dropped as an idle surface drops it.
+        await seated.Shell.GoAsync(Parley.Client.Views.ViewPlace.Into(Seated.Beta));
+        await seated.Shell.Settled;
+        seated.Shell.Seats!.Sweep(DateTimeOffset.UtcNow.AddDays(1));
+        Assert.Null(seated.Shell.Seats.Held(Walking.Alpha.Value));
+
+        inbox.NewKeyDownEvent(new Key(InboxWindow.FollowUpKey).WithAlt);
+        await seated.Shell.Settled;
+
+        Assert.Equal("A follow-up goes out as you, and you are not seated in this project.", seated.Shell.Said);
+
+        Prompting.Close(seated.Session.App, seated.Shell.InboxSession);
+    }
+
+    [Fact]
+    public async Task A_follow_up_with_no_words_sends_nothing_and_says_so()
+    {
+        // Without the guard an empty follow-up went to the broker and came back in SeatVoice's words, "Nothing was asked
+        // for", which reads as though the person asked for nothing rather than wrote nothing (review, lens 3 round 31).
+        await using var seated = await Seated.OpenAsync(Ct);
+
+        await seated.AskAsync(Seated.Billing, "billing-talk", Ct, go: false);
+
+        seated.Focus<RoomRegion>();
+        await seated.Session.PressThenSettleAsync(new Key(Shell.InboxKey).WithAlt, () => seated.Shell.Settled);
+
+        var inbox = Assert.IsType<InboxWindow>(seated.Shell.InboxShown);
+
+        inbox.Select(inbox.Shown.ToList().FindIndex(line => line.Contains("billing-talk", StringComparison.Ordinal)));
+
+        var before = (await seated.Operators.ExportAsync("billing-talk", Ct)).Messages.Count;
+
+        inbox.NewKeyDownEvent(new Key(InboxWindow.FollowUpKey).WithAlt);
+
+        var typing = (TextDialog)seated.Session.Find(InboxWindow.FollowUpTitle);
+
+        typing.Finish(taken: true);
+        await seated.Shell.Settled;
+
+        Assert.Equal("Nothing was written, so nothing was sent.", seated.Shell.Said);
+        Assert.Equal(before, (await seated.Operators.ExportAsync("billing-talk", Ct)).Messages.Count);
+
+        Prompting.Close(seated.Session.App, seated.Shell.InboxSession);
+    }
 }
