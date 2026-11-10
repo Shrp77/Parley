@@ -162,6 +162,59 @@ public sealed class NoLinkLeadsALookupOffThisMachineTests : IDisposable
     }
 
     [Fact]
+    public async Task The_folder_browser_never_marks_a_folder_whose_git_leads_off_this_machine_as_a_repository()
+    {
+        // Without the guard any .git that was not missing marked its folder a repository, a link to another machine's share
+        // included, so the browser offered to enrol a folder whose history is somebody else's (review, lens 3 round 34).
+        var orders = Path.Combine(_root, "orders");
+        Directory.CreateDirectory(orders);
+        Directory.CreateDirectory(Path.Combine(_root, "billing", ".git"));
+        var link = Path.Combine(orders, ".git");
+        var host = "192.0.2." + Random.Shared.Next(10, 250).ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        try
+        {
+            Directory.CreateSymbolicLink(link, OperatingSystem.IsWindows() ? $@"\\{host}\share\.git" : $"//{host}/share/.git");
+        }
+        catch (Exception refused) when (refused is IOException or UnauthorizedAccessException)
+        {
+            Assert.Skip($"this machine cannot make a folder link here: {refused.Message}");
+        }
+
+        try
+        {
+            var folders = await FoldersAsync();
+
+            Assert.True(folders["billing"], "a folder with a .git of its own was not marked a repository");
+            Assert.False(folders["orders"], "a folder whose .git leads to another machine was marked a repository");
+        }
+        finally
+        {
+            // The link alone, by its exact path, never what it leads to.
+            Directory.Delete(link);
+        }
+    }
+
+    /// <summary>Asks the console's folder browser for <see cref="_root"/>.</summary>
+    /// <returns>Each folder's name, and whether it was marked a repository.</returns>
+    private async Task<Dictionary<string, bool>> FoldersAsync()
+    {
+        using var console = new TranscriptConsole();
+        using var client = console.CreateClient();
+
+        var body = await client.GetStringAsync(
+            new Uri("/?handler=Folders&path=" + Uri.EscapeDataString(_root), UriKind.Relative),
+            TestContext.Current.CancellationToken);
+
+        using var json = System.Text.Json.JsonDocument.Parse(body);
+
+        return json.RootElement.GetProperty("folders").EnumerateArray().ToDictionary(
+            folder => folder.GetProperty("name").GetString()!,
+            folder => folder.GetProperty("repo").GetBoolean(),
+            StringComparer.Ordinal);
+    }
+
+    [Fact]
     public void A_scan_for_repositories_passes_over_such_a_link_unread()
     {
         _ = LinkToAShare("docs");

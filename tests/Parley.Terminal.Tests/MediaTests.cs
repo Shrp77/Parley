@@ -89,6 +89,43 @@ public sealed class MediaTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Choosing_the_second_item_opens_the_second_item()
+    {
+        // Without the guard every choice opened the first item listed, whichever the person picked (review, lens 3 round 34).
+        // Both real images, so either may be launched (0.58.1); the older is listed second.
+        await _files.PlaceAsync(Billing, "older.gif", "GIF89a-first", "pricing");
+        await _files.PlaceAsync(Billing, "newer.gif", "GIF89a-second", "pricing");
+
+        using var driving = Driving.Open();
+        using var shell = await IntoTheConversationAsync(driving, _files, _directory.FullName);
+
+        var pane = Enumerable.Range(0, 4).FirstOrDefault(
+            at =>
+            {
+                shell.Focus(at);
+                return shell.Actions().Any(a => a.Label == Media.Title);
+            },
+            -1);
+
+        Assert.True(pane >= 0, "no pane of the project view offers a conversation's media");
+
+        await shell.Actions().Single(a => a.Label == Media.Title).Run();
+        await shell.Settled;
+
+        var list = (ChoiceDialog)driving.Find(Media.Title);
+        var rows = FilesOnScreen.Choices(list).Where(c => c.StartsWith("  [", StringComparison.Ordinal)).ToList();
+
+        Assert.Contains("[image] newer.gif", rows[0], StringComparison.Ordinal);
+        Assert.Contains("[image] older.gif", rows[1], StringComparison.Ordinal);
+
+        driving.Row(list.Choices, "[image] older.gif");
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        var path = Assert.Single(driving.Launched);
+        Assert.Equal("GIF89a-first", await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task The_transcript_draws_each_placement_as_a_line_of_its_own()
     {
         await _files.PlaceAsync(Billing, "mockup.png", "an image", "pricing");

@@ -192,6 +192,63 @@ public sealed class TheInboxOnTheTerminalTests
     }
 
     [Fact]
+    public async Task A_message_naming_two_exchanges_offers_them_both_and_never_names_only_the_first()
+    {
+        // Without the guard a message naming two exchanges said "Open exchange #<first>" on the status line, though the key
+        // opens both (review, lens 3 round 34).
+        await using var seated = await Seated.OpenAsync(Ct);
+
+        var first = await seated.AsksAsync(Seated.Orders, Seated.Billing, "Which ledger?", "ledgers", Ct);
+        var second = await seated.AsksAsync(Seated.Orders, Seated.Billing, "Which period?", "periods", Ct);
+
+        _ = await seated.AsksAsync(
+            Seated.Orders, seated.Person, $"See exchange #{first} and exchange #{second}; both matter.", "notes", Ct);
+
+        await Walking.GoAsync(seated.Shell, Viewing.Conversation, "notes");
+        await seated.Shell.Settled;
+
+        var export = await seated.Operators.ExportAsync("notes", Ct);
+        var naming = export.Messages.Single(message => message.PayloadJson.Contains("both matter", StringComparison.Ordinal));
+
+        Assert.True(seated.Shell.Transcript.Reach(naming.Id));
+        Assert.Equal(2, seated.Shell.ReferencesUnder.Select(found => found.Exchange).Distinct().Count());
+        Assert.Equal(Shell.ReferenceTitle, seated.Shell.ReferenceSays);
+    }
+
+    [Fact]
+    public async Task An_inbox_read_that_lands_after_the_person_moved_to_another_project_opens_nothing()
+    {
+        // Without the guard the Inbox read for alpha opened over beta, the project the person had moved to while it was read
+        // (review, lens 3 round 34).
+        await using var seated = await Seated.OpenAsync(Ct, withBeta: true);
+
+        await seated.AskAsync(Seated.Billing, "billing-talk", Ct, go: false);
+
+        // Holds the work queue, so the Inbox's read waits behind it until the person has moved.
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        seated.Shell.Queued(_ => gate.Task);
+
+        seated.Focus<RoomRegion>();
+        seated.Session.Press(new Key(Shell.InboxKey).WithAlt);
+
+        await seated.Shell.GoAsync(Parley.Client.Views.ViewPlace.Into(Seated.Beta));
+
+        gate.SetResult();
+        await seated.Shell.Settled;
+
+        var shown = seated.Shell.InboxShown;
+
+        if (shown is not null)
+        {
+            Prompting.Close(seated.Session.App, seated.Shell.InboxSession);
+        }
+
+        Assert.Null(shown);
+        Assert.Equal(Seated.Beta, seated.Shell.Place.Project);
+    }
+
+    [Fact]
     public void Every_line_of_the_exchange_dialog_is_inert()
     {
         var detail = new Parley.Client.Seating.ExchangeDetail(
