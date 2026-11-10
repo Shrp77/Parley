@@ -168,6 +168,18 @@ public sealed class InboxViewsTests
     }
 
     [Fact]
+    public void An_exchange_closed_exactly_where_a_window_starts_is_in_the_older_window_only()
+    {
+        // Every instant is in exactly one window: a window runs from just after its start up to and including its end.
+        IReadOnlyList<Message> messages = [Said(1, 52, MessageType.Request, Orders, Me)];
+        IReadOnlyList<ExchangeSnapshot> exchanges = [Closed(52, 7)];
+
+        Assert.Equal(Now.AddDays(-7), exchanges[0].ClosedUtc);
+        Assert.Empty(Read([], messages, exchanges).Rows);
+        Assert.Equal([52L], Read([], messages, exchanges, older: 1).Rows.Select(row => row.Exchange));
+    }
+
+    [Fact]
     public void A_closed_exchange_with_every_message_pruned_is_not_claimed_as_the_persons()
     {
         // Retention removed the messages: nothing left says the person was on it, so it is not listed as theirs.

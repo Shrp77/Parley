@@ -175,6 +175,25 @@ public sealed partial class AttachingToTheComposerTests
     }
 
     [Fact]
+    public async Task A_new_conversation_whose_files_are_refused_after_the_words_went_says_the_words_went_and_the_files_did_not()
+    {
+        // In a conversation not started yet the files follow the words. The words reached orders, then the placement was
+        // refused: the page must not read as though nothing was sent, nor name files nobody holds.
+        using var console = Seated();
+        var attempts = 0;
+
+        console.Broker.Placing = (header, _) => ++attempts == 1
+            ? new Wire.PlaceFileReply { Rejection = Wire.FileRejection.ConversationNotAssignable, Name = header.Name, ConversationId = header.ConversationId }
+            : new Wire.PlaceFileReply { Rejection = Wire.FileRejection.ExtensionNotAllowed, Name = header.Name, ConversationId = header.ConversationId };
+
+        var page = await SendAsync(console, "Start here.", ("shot.png", Png));
+
+        Assert.Equal(2, attempts);
+        Assert.Equal("Start here.", AskOf(Assert.Single(console.Broker.Requested)));
+        Assert.Contains("Your words went, and the files did not. Nothing was sent. shot.png could not be attached", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_new_conversation_sent_to_one_agent_that_refused_keeps_its_files_for_the_retry()
     {
         // Words to two agents in a conversation not started yet, billing refused: the files went to orders alone and the

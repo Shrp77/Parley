@@ -95,4 +95,31 @@ public sealed class ParleySettingsFileTests : IDisposable
         Assert.NotNull(ParleySettings.WriteClosedDays(_root, 14));
         Assert.Equal("somebody's notes", System.IO.File.ReadAllText(File));
     }
+
+    [Fact]
+    public void A_file_whose_inbox_is_not_an_object_is_refused_and_never_written_over()
+    {
+        // Writing a window into it would replace "seven" with an object, losing what somebody wrote there.
+        const string Theirs = """{"inbox":"seven"}""";
+
+        System.IO.File.WriteAllText(File, Theirs);
+
+        var refused = ParleySettings.WriteClosedDays(_root, 14);
+
+        Assert.Equal($"{File} has an \"inbox\" that is not an object, so it was left as it is.", refused);
+        Assert.Equal(Theirs, System.IO.File.ReadAllText(File));
+        Assert.Equal(7, ParleySettings.ReadClosedDays(_root));
+    }
+
+    [Fact]
+    public void A_file_that_is_json_but_not_an_object_is_refused_and_never_written_over()
+    {
+        System.IO.File.WriteAllText(File, "[]");
+
+        var refused = ParleySettings.WriteClosedDays(_root, 14);
+
+        Assert.Equal($"{File} does not hold a JSON object, so it was left as it is.", refused);
+        Assert.Equal("[]", System.IO.File.ReadAllText(File));
+        Assert.Equal(7, ParleySettings.ReadClosedDays(_root));
+    }
 }

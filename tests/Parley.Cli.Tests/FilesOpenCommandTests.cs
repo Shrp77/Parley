@@ -109,4 +109,36 @@ public sealed class FilesOpenCommandTests : IAsyncDisposable
             "within thirty days",
             await File.ReadAllTextAsync(Assert.Single(_files.Launched).Path, TestContext.Current.CancellationToken));
     }
+
+    [Fact]
+    public async Task A_name_on_another_machine_that_two_conversations_hold_by_the_time_it_is_opened_copies_nothing()
+    {
+        // The broker found one notes.md, then the same name was placed in a second conversation before the open read the
+        // listing. Either could be meant, so neither is copied or opened: the person names its conversation.
+        var ct = TestContext.Current.CancellationToken;
+
+        await _files.PlaceAsync(Billing, "notes.md", "net of tax", "pricing");
+
+        var located = await _files.Client.DescribeFileLocationAsync(null, "notes.md", ct);
+        var location = Assert.IsType<Parley.Core.FileLocation>(located.Location);
+
+        await _files.PlaceAsync(Billing, "notes.md", "within thirty days", "returns");
+
+        var launched = new List<(string Path, bool Folder)>();
+        var launcher = new Parley.Client.Files.LocalLauncher(
+            (path, folder) =>
+            {
+                launched.Add((path, folder));
+                return true;
+            },
+            "elsewhere",
+            _files.Copies);
+
+        var opened = await launcher.OpenPlacedAsync(_files.Client, null, "notes.md", null, location, ct);
+
+        Assert.False(opened.Opened);
+        Assert.Equal($"notes.md is on {location.Machine}. Name its conversation to open a copy of it here.", opened.Said);
+        Assert.Empty(launched);
+        Assert.False(Directory.Exists(_files.Copies), "a copy was written although no conversation was named");
+    }
 }

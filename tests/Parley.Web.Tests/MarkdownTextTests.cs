@@ -141,4 +141,14 @@ public sealed class MarkdownTextTests
     {
         Assert.DoesNotContain("exchange-ref", Html(text), StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void A_reference_inside_emphasis_in_a_links_words_stays_inside_the_link_as_written()
+    {
+        // The emphasis is not the link itself but sits inside it: a button there would be a control inside an anchor.
+        var html = Html("[see *exchange #351*](https://example.com)");
+
+        Assert.DoesNotContain("exchange-ref", html, StringComparison.Ordinal);
+        Assert.Contains("<em>exchange #351</em></a>", html, StringComparison.Ordinal);
+    }
 }

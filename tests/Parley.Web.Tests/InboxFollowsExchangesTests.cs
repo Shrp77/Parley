@@ -437,6 +437,54 @@ public sealed partial class InboxFollowsExchangesTests
     }
 
     [Fact]
+    public async Task The_panel_shows_only_the_exchanges_own_messages_not_the_rest_of_its_conversation()
+    {
+        using var console = Console();
+
+        Said(console, 1, 50, Wire.MessageType.Request, Orders, Billing, Ask("Which ledger?"));
+        Said(console, 2, 51, Wire.MessageType.Request, Billing, Orders, Ask("Is the nightly export on?"));
+        Said(console, 3, 50, Wire.MessageType.Result, Billing, Orders, """{"outcomes":[{"id":"request","outcome":"answered","text":"The new one."}]}""");
+        Exchange(console, 50, open: false, Wire.ExchangeOutcome.Complete);
+        Exchange(console, 51, open: true);
+
+        var panel = await GetAsync(console, "/Exchanges/Panel?project=alpha&id=50");
+
+        Assert.Contains("Which ledger?", panel, StringComparison.Ordinal);
+        Assert.Contains("The new one.", panel, StringComparison.Ordinal);
+        Assert.DoesNotContain("Is the nightly export on?", panel, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_follow_up_with_no_words_sends_nothing_and_says_so()
+    {
+        using var console = Console();
+
+        Said(console, 1, 20, Wire.MessageType.Request, Billing, Person, Ask("Monthly or yearly?"));
+        Said(console, 2, 20, Wire.MessageType.Result, Person, Billing, """{"outcomes":[{"id":"request","outcome":"answered","text":"Yearly."}]}""");
+        Exchange(console, 20, open: false, Wire.ExchangeOutcome.Complete);
+
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(new Uri("/Inbox?view=closed", UriKind.Relative), Ct);
+
+        using var form = new FormUrlEncodedContent(
+        [
+            new("__RequestVerificationToken", Token().Match(page).Groups[1].Value),
+            new("For", RoadmapConsole.Project),
+            new("Exchange", "20"),
+            new("Agent", Billing),
+            new("Conversation", "talk"),
+            new("Words", "   "),
+        ]);
+
+        using var response = await client.PostAsync(FollowUpAction(page), form, Ct);
+        var after = await response.Content.ReadAsStringAsync(Ct);
+
+        Assert.Empty(console.Broker.Requested);
+        Assert.Contains("Nothing was written, so nothing was sent.", after, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_number_that_is_no_exchange_says_so()
     {
         using var console = Console();

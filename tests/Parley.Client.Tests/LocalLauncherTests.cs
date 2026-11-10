@@ -303,6 +303,22 @@ public sealed class LocalLauncherTests : IDisposable
     }
 
     [Fact]
+    public void With_no_copies_folder_of_its_own_nothing_is_written_or_opened()
+    {
+        // An account whose application data cannot be found has an empty copies folder. Nothing may be written relative to
+        // the working directory, which may be the person's repository, and the open must say why rather than throw.
+        var read = Read("CLAUDE.md", "an agent's words"u8.ToArray());
+        var relative = read.File!.Sha256.Value;
+
+        var launched = _launcher.OpenCopy(read, string.Empty);
+
+        Assert.False(launched.Opened);
+        Assert.Equal("This account has no folder of its own to keep a copy in, so nothing was opened.", launched.Said);
+        Assert.Empty(_launched);
+        Assert.False(Directory.Exists(relative), $"a folder {relative} was made in {Environment.CurrentDirectory}");
+    }
+
+    [Fact]
     public void The_copies_folder_is_the_users_own_not_the_shared_temp_folder()
     {
         Assert.False(
