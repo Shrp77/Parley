@@ -83,6 +83,31 @@ public sealed class OneMessageViewAndOneComposerTests
     }
 
     [Fact]
+    public void Enter_is_left_alone_with_shift_while_composing_and_when_taken_first()
+    {
+        // Without e.shiftKey Shift+Enter sends instead of making a line break; without e.isComposing the Enter that
+        // confirms an input method's text sends the half-written message. No test runs the frame's script, so the
+        // handler's early return is read from source and each key it must leave alone is named (review, lens 3 round 33).
+        var frame = Pages().Single(page => page.Name == "_Layout.cshtml").Text;
+        var start = frame.IndexOf("hasAttribute(\"data-composer\")", StringComparison.Ordinal);
+
+        Assert.True(start >= 0, "the composer's key handler was not found");
+
+        var handler = frame[start..frame.IndexOf("e.preventDefault();", start, StringComparison.Ordinal)];
+        var guard = Assert.Single(Regex.Matches(handler, """if \((?<condition>e\.key !== "Enter"[^)]*)\) \{ return; \}"""));
+        var leftAlone = guard.Groups["condition"].Value
+            .Split("||", StringSplitOptions.TrimEntries)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Equal(
+            new HashSet<string>(StringComparer.Ordinal)
+            {
+                "e.key !== \"Enter\"", "e.isComposing", "e.altKey", "e.metaKey", "e.shiftKey", "e.defaultPrevented",
+            },
+            leftAlone);
+    }
+
+    [Fact]
     public async Task The_inbox_renders_a_messages_markdown_and_its_boxes_are_composers()
     {
         using var console = new RoadmapConsole();

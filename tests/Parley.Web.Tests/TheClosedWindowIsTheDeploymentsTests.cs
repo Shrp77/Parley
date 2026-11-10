@@ -57,6 +57,32 @@ public sealed partial class TheClosedWindowIsTheDeploymentsTests : IDisposable
     }
 
     [Fact]
+    public async Task A_saved_window_is_in_the_box_when_the_page_is_opened_again()
+    {
+        // Without the deployment folder check reading the file, Settings opens showing the default week however many
+        // days were saved, and saving that box puts the default back (review, lens 3 round 33).
+        using var console = new RoadmapConsole { Root = _root };
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(new Uri("/Settings", UriKind.Relative), Ct);
+        using var form = new FormUrlEncodedContent(
+        [
+            new("__RequestVerificationToken", Token().Match(page).Groups[1].Value),
+            new("Days", "30"),
+        ]);
+
+        using var response = await client.PostAsync(new Uri("/Settings?handler=Inbox", UriKind.Relative), form, Ct);
+        Assert.Contains("Saved.", await response.Content.ReadAsStringAsync(Ct), StringComparison.Ordinal);
+
+        using var fresh = new RoadmapConsole { Root = _root };
+        using var again = fresh.CreateClient();
+        var opened = await again.GetStringAsync(new Uri("/Settings", UriKind.Relative), Ct);
+
+        Assert.NotEqual(30, ParleySettings.DefaultClosedDays);
+        Assert.Matches("""<input id="closed-days" name="Days"[^>]*value="30" />""", opened);
+    }
+
+    [Fact]
     public async Task Saving_the_window_with_no_number_asks_for_one_and_writes_nothing()
     {
         using var console = new RoadmapConsole { Root = _root };
