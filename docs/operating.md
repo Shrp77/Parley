@@ -90,8 +90,8 @@ It follows a conversation as it happens. If you are at the very end of the page 
 arrives, it follows. If you are reading earlier and a long message arrives, it leaves you where
 you are and offers a **New message** button.
 
-When an agent writes `exchange #351`, or `exchanges #349 and #351`, each number is a link to that
-exchange.
+When an agent writes `exchange #351`, or `exchanges #349 and #351`, each number is a button that
+opens that exchange under the line it is on.
 
 ## The terminal
 

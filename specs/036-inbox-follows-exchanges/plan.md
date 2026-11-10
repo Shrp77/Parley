@@ -69,7 +69,7 @@ src/Parley.Broker/OperatorConsole.cs        LocateExchangeAsync
 src/Parley.Server/                          Operators service binding
 src/Parley.Configuration/ParleySettings.cs  <root>/settings.json
 src/Parley.Client/BrokerClient.cs           LocateExchangeAsync
-src/Parley.Client/Seating/Inbox*.cs         InboxRow, AgentStanding, ExchangeEnding, InboxReading (the three views)
+src/Parley.Client/Seating/Inbox*.cs         InboxRow, InFlightStanding, ExchangeEnding, InboxReading (the three views)
 src/Parley.Client/Rendering/ExchangeReferences.cs   the grammar
 src/Parley.Client/Seating/ExchangeDetail.cs         one exchange for the panel and the dialog
 src/Parley.Client/Seating/StillOpen.cs      "exchange #N" in its own words

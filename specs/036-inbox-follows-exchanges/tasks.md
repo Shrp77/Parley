@@ -22,10 +22,10 @@
 **Goal**: an answered or sent exchange stays visible under In flight with a chip.
 **Independent test**: reply to a question; it is under In flight with a chip; when the agent asks back, it is under Waiting on you.
 
-- [x] T009 [US1] Add `InboxView`, `InboxRow`, `AgentStanding`, `ExchangeEnding`, `InboxReading` in src/Parley.Client/Seating/Inbox.cs
+- [x] T009 [US1] Add `InboxView`, `InboxRow`, `InFlightStanding`, `ExchangeEnding`, `InboxReading` in src/Parley.Client/Seating/Inbox.cs
 - [x] T010 [US1] Add `InFlightStanding` with the words of research R2 in src/Parley.Client/Seating/Inbox.cs
 - [x] T011 [US1] Add `Inbox.ReadAsync(BrokerClient, AgentName me, window, older, ct)` building Waiting on you and In flight from the graph, registry, flags and exports in src/Parley.Client/Seating/Inbox.cs
-- [x] T012 [P] [US1] Unit tests for view assignment (exclusive), the chip table and its precedence in tests/Parley.Client.Tests/InboxTests.cs
+- [x] T012 [P] [US1] Unit tests for view assignment (exclusive), the chip table and its precedence in tests/Parley.Client.Tests/InboxViewsTests.cs
 - [x] T013 [US1] Inbox page: view switch (Waiting on you, In flight, Closed) with counts, In flight rows with chips and a conversation link, in src/Parley.Web/Pages/Inbox.cshtml(.cs)
 - [x] T014 [US1] Digest changes when an edge the person is in appears, goes, or changes side, in src/Parley.Web/Pages/Inbox.cshtml.cs
 - [x] T015 [US1] Web tests: a reply moves a row to In flight, an ask-back moves it back, chips read as R2, in tests/Parley.Web.Tests/InboxFollowsExchangesTests.cs
@@ -36,7 +36,7 @@
 **Independent test**: send a Result; it is under Closed with its outcome.
 
 - [x] T016 [US2] Closed rows in `Inbox.ReadAsync`: conversations active since the window start, closed exchanges the person was on, outcome from the snapshot and the closing message, pages for "show older", in src/Parley.Client/Seating/Inbox.cs
-- [x] T017 [P] [US2] Unit tests for endings (Done, Answered, Received, Blocked with kind, Settled, ClosedByPerson), retention-pruned exchanges, the window bounds in tests/Parley.Client.Tests/InboxTests.cs
+- [x] T017 [P] [US2] Unit tests for endings (Done, Answered, Received, Blocked with kind, Settled, ClosedByPerson), retention-pruned exchanges, the window bounds in tests/Parley.Client.Tests/InboxViewsTests.cs
 - [x] T018 [US2] Closed view on the Inbox page with "show older" and the window named, in src/Parley.Web/Pages/Inbox.cshtml(.cs)
 - [x] T019 [US2] Web tests for Closed in tests/Parley.Web.Tests/InboxFollowsExchangesTests.cs
 
