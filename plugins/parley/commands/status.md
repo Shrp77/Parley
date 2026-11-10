@@ -101,8 +101,9 @@ you which of its entries are still registered.
 Say instead, in one line, where the person can see it: retiring or purging an agent in the terminal
 or the web console removes its `.mcp.json` entry and its catalogue line when the agent runs on that
 machine. An entry outlives its agent when the agent runs on another machine; when a withdrawal printed a note that it could not
-remove something; and when the agent was retired because its repository's folder was gone, which
-keeps the catalogue line so it can be reinstated. The terminal's agent list shows what is
+remove something; when the agent was retired because its repository's folder was gone, which
+keeps the catalogue line so it can be reinstated; and when the registry knows the agent by another identity than the
+repository's, which the withdrawal says and leaves the repository alone. The terminal's agent list shows what is
 registered, for the person to compare.
 
 ## 5. Say it in one place

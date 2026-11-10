@@ -71,8 +71,8 @@ address and any warnings. Inside a project:
   now, open outside Parley, or unknown, and beside it stalled, not collected yet, stopped on a refused
   permission, or retired when one applies. *Closed* is what ended in the last 7 days, with how it
   ended; the number of days is a setting, and **Show older** steps back one such window at a time.
-  Every row opens its conversation and has a box for a follow-up, which goes to that agent as a new
-  request in the same conversation. **Ask which are still open** sends each agent that has questions
+  Every row opens its conversation, and every row but the facilitator's has a box for a follow-up, which goes to that
+  agent as a new request in the same conversation. **Ask which are still open** sends each agent that has questions
   waiting on you one request per conversation, listing them, so it can say which a later message
   already answered; only the agent closes its own questions.
 - **Roadmaps**: your confirmed roadmaps, and proposals waiting for you.
