@@ -764,7 +764,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
 
         if (followWithFiles && reached.Count > 0)
         {
-            await SendFilesAfterTheFirstWordsAsync(broker, voice, reached, token).ConfigureAwait(false);
+            await SendFilesAfterTheFirstWordsAsync(broker, voice, reached, reached.Count == sent.Count, token).ConfigureAwait(false);
         }
 
         await OnGetAsync().ConfigureAwait(false);
@@ -807,7 +807,8 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
         return (null, false);
     }
 
-    private async Task SendFilesAfterTheFirstWordsAsync(BrokerClient broker, SeatVoice voice, List<string> reached, CancellationToken token)
+    private async Task SendFilesAfterTheFirstWordsAsync(
+        BrokerClient broker, SeatVoice voice, List<string> reached, bool everybody, CancellationToken token)
     {
         var placing = await PlaceAttachmentsAsync(broker, Id!, token).ConfigureAwait(false);
 
@@ -835,7 +836,12 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
             return;
         }
 
-        Attached = [];
+        // Kept while anybody the words were meant for has not had them: a retry sends the words again to those, and they
+        // need the files named with them. Cleared here, the retry gave them the words alone (review, lens 1 round 21).
+        if (everybody)
+        {
+            Attached = [];
+        }
     }
 
     /// <summary>Keeps what the broker answered, for the bell.</summary>

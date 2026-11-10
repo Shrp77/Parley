@@ -102,6 +102,7 @@ internal sealed class Seated : IAsyncDisposable
     /// <param name="mailEvery">How often the waiting count is asked for, or null (the default) not to poll at all.</param>
     /// <param name="followEvery">How often the open conversation is read again, or null (the default) not to follow.</param>
     /// <param name="withBeta">Whether to add a second project, beta, on its own broker, for what must not cross projects.</param>
+    /// <param name="root">A deployment folder to follow, so what the terminal reads there (settings.json) is real; none by default.</param>
     /// <returns>The fixture.</returns>
     internal static async Task<Seated> OpenAsync(
         CancellationToken cancellationToken,
@@ -110,7 +111,8 @@ internal sealed class Seated : IAsyncDisposable
         AddressBook? addressing = null,
         TimeSpan? mailEvery = null,
         TimeSpan? followEvery = null,
-        bool withBeta = false)
+        bool withBeta = false,
+        string? root = null)
     {
         var connection = ParleyDatabase.OpenInMemory();
         var agents = new AgentRepository(connection);
@@ -139,12 +141,21 @@ internal sealed class Seated : IAsyncDisposable
             beta = (betaConnection, LoopbackOperator.Start(betaConnection));
         }
 
-        var directory = new BrokerDirectory(
-            [
-                new ProjectSettings(Walking.Alpha, "unused.db", broker.Address, null),
-                .. beta is { } b ? [new ProjectSettings(Beta, "unused-beta.db", b.Broker.Address, null)] : Array.Empty<ProjectSettings>(),
-            ],
-            address => GrpcChannel.ForAddress(address));
+        ProjectSettings[] projects =
+        [
+            new ProjectSettings(Walking.Alpha, "unused.db", broker.Address, null),
+            .. beta is { } b ? [new ProjectSettings(Beta, "unused-beta.db", b.Broker.Address, null)] : Array.Empty<ProjectSettings>(),
+        ];
+
+        // With a root the terminal follows a deployment folder, so what it reads there (settings.json) is real.
+        if (root is not null)
+        {
+            Parley.Configuration.ProjectManifest.Write(root, projects);
+        }
+
+        var directory = root is null
+            ? new BrokerDirectory(projects, address => GrpcChannel.ForAddress(address))
+            : BrokerDirectory.FollowingRoot(root, address => GrpcChannel.ForAddress(address));
 
         var seats = new SeatBook(directory.AgentsFor);
         var driving = Driving.Open(width, height);

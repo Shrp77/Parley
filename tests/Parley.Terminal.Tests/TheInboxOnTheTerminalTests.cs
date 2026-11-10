@@ -38,6 +38,34 @@ public sealed class TheInboxOnTheTerminalTests
     }
 
     [Fact]
+    public async Task The_closed_window_is_the_one_the_deployment_keeps()
+    {
+        // The settings page saves it "here and in the terminal"; a terminal that ignored settings.json showed the default
+        // week with every test green (review, lens 3 round 19).
+        var root = Directory.CreateTempSubdirectory("parley-terminal-window").FullName;
+
+        try
+        {
+            Assert.Null(Parley.Configuration.ParleySettings.WriteClosedDays(root, 30));
+
+            await using var seated = await Seated.OpenAsync(Ct, root: root);
+
+            seated.Focus<RoomRegion>();
+            await seated.Session.PressThenSettleAsync(new Key(Shell.InboxKey).WithAlt, () => seated.Shell.Settled);
+
+            var lines = Assert.IsType<InboxWindow>(seated.Shell.InboxShown).Shown;
+
+            Assert.Contains(lines, line => line.StartsWith("Closed in the last 30 days", StringComparison.Ordinal));
+
+            Prompting.Close(seated.Session.App, seated.Shell.InboxSession);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task A_follow_up_goes_through_the_inboxs_own_project_whatever_is_in_view()
     {
         // The follow-up's sender was built from the project in view when the key was pressed. Moved off the project, it

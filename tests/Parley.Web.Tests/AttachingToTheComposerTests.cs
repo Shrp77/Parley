@@ -175,6 +175,53 @@ public sealed partial class AttachingToTheComposerTests
     }
 
     [Fact]
+    public async Task A_new_conversation_sent_to_one_agent_that_refused_keeps_its_files_for_the_retry()
+    {
+        // Words to two agents in a conversation not started yet, billing refused: the files went to orders alone and the
+        // list was cleared, so the retry gave billing the words and no files, without a word (review, lens 1 round 21).
+        const string Billing = "billing@" + RoadmapConsole.Project;
+        using var console = Seated();
+        var attempts = 0;
+
+        console.Broker.Registry.Add(new Wire.RegistryRow
+        {
+            Name = Billing, Adapter = "mcp", Tier = Wire.AgentTier.Full, Status = Wire.AgentStatus.Active,
+        });
+        console.Broker.RefusesRequestsTo.Add(Billing);
+        console.Broker.Placing = (header, bytes) => ++attempts == 1
+            ? new Wire.PlaceFileReply { Rejection = Wire.FileRejection.ConversationNotAssignable, Name = header.Name, ConversationId = header.ConversationId }
+            : new Wire.PlaceFileReply
+            {
+                Outcome = Wire.PlaceOutcome.Placed,
+                Rejection = Wire.FileRejection.None,
+                ConversationId = header.ConversationId,
+                Name = header.Name,
+                SizeBytes = bytes.Length,
+                Sha256 = Parley.Core.ContentHash.Of(bytes).Value,
+            };
+
+        using var client = console.CreateClient();
+
+        var before = await client.GetStringAsync(new Uri(Page, UriKind.Relative), Ct);
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent(Token().Match(before).Groups[1].Value), "__RequestVerificationToken" },
+            { new StringContent("Start here.", Encoding.UTF8), "Says" },
+            { new StringContent(Orders), "Targets" },
+            { new StringContent(Billing), "Targets" },
+        };
+        var part = new ByteArrayContent(Png);
+
+        part.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        form.Add(part, "Attachments", "shot.png");
+
+        using var response = await client.PostAsync(new Uri(Page, UriKind.Relative), form, Ct);
+        var after = await response.Content.ReadAsStringAsync(Ct);
+
+        Assert.Contains($"name=\"Attached\" value=\"shot.png|{Parley.Core.ContentHash.Of(Png).Value}\"", after, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task With_no_files_the_message_is_exactly_what_was_written()
     {
         using var console = Seated();

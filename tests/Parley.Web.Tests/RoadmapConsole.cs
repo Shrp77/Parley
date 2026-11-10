@@ -33,6 +33,9 @@ public sealed class RoadmapConsole : WebApplicationFactory<Program>
     /// <summary>The broker's script.</summary>
     public RoadmapBroker Broker { get; } = new();
 
+    /// <summary>A deployment root to follow, so pages that read or write it (settings.json) have one; none by default.</summary>
+    public string? Root { get; init; }
+
     /// <inheritdoc/>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -42,10 +45,21 @@ public sealed class RoadmapConsole : WebApplicationFactory<Program>
         {
             services.RemoveAll<BrokerDirectory>();
 
-            services.AddSingleton(_ => new BrokerDirectory(
-                [new ProjectSettings(ProjectName.Create(Project), "alpha.db", "http://127.0.0.1:5407", null)],
-                address => GrpcChannel.ForAddress(
-                    address, new GrpcChannelOptions { HttpHandler = Broker, DisposeHttpClient = false })));
+            GrpcChannel Connect(string address) =>
+                GrpcChannel.ForAddress(address, new GrpcChannelOptions { HttpHandler = Broker, DisposeHttpClient = false });
+
+            if (Root is { } root)
+            {
+                Parley.Configuration.ProjectManifest.Write(
+                    root, [new ProjectSettings(ProjectName.Create(Project), "alpha.db", "http://127.0.0.1:5407", null)]);
+                services.AddSingleton(_ => BrokerDirectory.FollowingRoot(root, Connect));
+            }
+            else
+            {
+                services.AddSingleton(_ => new BrokerDirectory(
+                    [new ProjectSettings(ProjectName.Create(Project), "alpha.db", "http://127.0.0.1:5407", null)],
+                    Connect));
+            }
         });
     }
 }
