@@ -18,8 +18,8 @@ public sealed class StillOpenAsksTests
     [Fact]
     public void Replacing_one_projects_asks_keeps_another_projects()
     {
-        // Without the guard a press in beta forgot what was asked in alpha, so the next press there asked agents still
-        // waiting to reply all over again (review, lens 3 round 36).
+        // Without the guard a press in beta forgot what was asked in alpha. Nobody was asked twice, since the next press
+        // there finds the ask in the broker's record, but alpha's asks were gone from the page (review, lens 3 round 36).
         var asks = new StillOpenAsks();
         var alpha = Ask("alpha", "orders", 10);
         var oldBeta = Ask("beta", "billing", 20);

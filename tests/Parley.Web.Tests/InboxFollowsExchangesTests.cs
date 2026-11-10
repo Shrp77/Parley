@@ -379,9 +379,21 @@ public sealed partial class InboxFollowsExchangesTests
         Assert.Contains("Yes.", page, StringComparison.Ordinal);
         Assert.DoesNotContain("name=\"Words\"", page, StringComparison.Ordinal);
 
+        // Without the handler's own refusal a forged form gave Parley work, which it is never given. The page above has
+        // no post form, so its token was empty and antiforgery answered 400 before the handler ran: the token comes from
+        // a page with a follow-up form on another row (review, lens 3 round 37).
+        Said(console, 3, 31, Wire.MessageType.Request, Billing, Person, Ask("Monthly or yearly?"));
+        Said(console, 4, 31, Wire.MessageType.Result, Person, Billing, """{"outcomes":[{"id":"request","outcome":"answered","text":"Yearly."}]}""");
+        Exchange(console, 31, open: false, Wire.ExchangeOutcome.Complete);
+
+        var withForm = await client.GetStringAsync(new Uri("/Inbox?view=closed", UriKind.Relative), Ct);
+        var token = Token().Match(withForm).Groups[1].Value;
+
+        Assert.NotEmpty(token);
+
         using var form = new FormUrlEncodedContent(
         [
-            new("__RequestVerificationToken", Token().Match(page).Groups[1].Value),
+            new("__RequestVerificationToken", token),
             new("For", RoadmapConsole.Project),
             new("Exchange", "30"),
             new("Agent", Facilitator),
@@ -389,8 +401,11 @@ public sealed partial class InboxFollowsExchangesTests
             new("Words", "Do this for me."),
         ]);
 
-        using var response = await client.PostAsync(new Uri("/Inbox?handler=FollowUp&view=closed", UriKind.Relative), form, Ct);
+        using var response = await client.PostAsync(FollowUpAction(withForm), form, Ct);
+        var after = await response.Content.ReadAsStringAsync(Ct);
 
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("A follow-up goes to one agent, in the conversation its row is in.", after, StringComparison.Ordinal);
         Assert.Empty(console.Broker.Requested);
     }
 
