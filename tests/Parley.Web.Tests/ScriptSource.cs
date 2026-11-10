@@ -62,6 +62,88 @@ internal static class ScriptSource
         return at;
     }
 
+    /// <summary>The whole body of the one function declared under a name in code, between its outer braces.</summary>
+    /// <param name="code">The code, as <see cref="Code"/> gives it.</param>
+    /// <param name="name">The function's name.</param>
+    /// <returns>The body, trimmed, without its outer braces.</returns>
+    /// <remarks>
+    /// Pinning a statement leaves room around it: a line added before the guard, or a function that returns early, keeps
+    /// the statement and defeats it. Pinning the whole body leaves none. Braces inside string literals are skipped.
+    /// </remarks>
+    public static string Body(string code, string name)
+    {
+        var at = Once(code, "function " + name + "(", "the function " + name + " is gone");
+        var open = code.IndexOf('{', code.IndexOf(')', at));
+
+        Assert.True(open >= 0, "the function " + name + " has no body");
+
+        var depth = 0;
+        char? quote = null;
+
+        for (var i = open; i < code.Length; i++)
+        {
+            var c = code[i];
+
+            if (quote is { } q)
+            {
+                if (c == '\\')
+                {
+                    i++;
+                }
+                else if (c == q)
+                {
+                    quote = null;
+                }
+
+                continue;
+            }
+
+            switch (c)
+            {
+                case '"' or '\'' or '`':
+                    quote = c;
+                    break;
+                case '{':
+                    depth++;
+                    break;
+                case '}' when --depth == 0:
+                    return code[(open + 1)..i].Trim();
+            }
+        }
+
+        Assert.Fail("the function " + name + " never closes");
+
+        return string.Empty;
+    }
+
+    /// <summary>Every assignment to a variable in code, each from its name to the end of its statement.</summary>
+    /// <param name="code">The code, as <see cref="Code"/> gives it.</param>
+    /// <param name="variable">The variable's name.</param>
+    /// <returns>Each assignment in the order written, such as <c>seen = note.getAttribute("data-digest")</c>.</returns>
+    /// <remarks>
+    /// A guard that compares against a variable is defeated by a second assignment anywhere, without touching the statement
+    /// pinned, so a test holds the whole list. A property of the same name (<c>x.seen = …</c>) is not the variable, and a
+    /// comparison is not an assignment.
+    /// </remarks>
+    public static IReadOnlyList<string> Assignments(string code, string variable)
+    {
+        var name = Regex.Escape(variable);
+        var found = new List<string>();
+
+        foreach (Match match in Regex.Matches(
+                     code,
+                     $@"(?<![\w$.]){name}\s*(?:[-+*/%&|^]|<<|>>>?|\?\?|&&|\|\|)?=(?!=)|(?<![\w$.])(?:\+\+|--){name}(?![\w$])|(?<![\w$.]){name}\s*(?:\+\+|--)",
+                     RegexOptions.None,
+                     TimeSpan.FromSeconds(2)))
+        {
+            var end = code.IndexOfAny([';', '}'], match.Index);
+
+            found.Add((end < 0 ? code[match.Index..] : code[match.Index..end]).Trim());
+        }
+
+        return found;
+    }
+
     private static string RepositoryPath(string relative)
     {
         var directory = AppContext.BaseDirectory;

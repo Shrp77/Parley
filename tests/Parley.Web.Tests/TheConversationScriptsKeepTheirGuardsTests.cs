@@ -171,6 +171,26 @@ public sealed class TheConversationScriptsKeepTheirGuardsTests
     }
 
     [Fact]
+    public void A_files_kind_is_read_from_the_end_of_its_name()
+    {
+        // Held whole: an extension() that returned ".md" whatever the name let a file of any kind through the pinned check
+        // above, and the send was refused (review, lens 3 round 38).
+        Assert.Equal(
+            "var at = name.lastIndexOf(\".\"); return at < 0 ? \"\" : name.slice(at).toLowerCase();",
+            ScriptSource.Body(Main, "extension"));
+    }
+
+    [Fact]
+    public void Only_a_drag_that_carries_files_is_taken()
+    {
+        // Held whole: a carriesFiles() that answered true for every drag stopped text being dragged into the box, with the
+        // pinned drag handlers untouched (review, lens 3 round 38).
+        Assert.Equal(
+            "return e.dataTransfer && [].indexOf.call(e.dataTransfer.types || [], \"Files\") >= 0;",
+            ScriptSource.Body(Main, "carriesFiles"));
+    }
+
+    [Fact]
     public void A_second_file_of_the_same_name_is_not_attached()
     {
         // Without the guard two files of one name were attached and the second replaced the first when placed (review,

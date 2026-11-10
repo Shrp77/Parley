@@ -243,6 +243,56 @@ public sealed partial class TheInboxKeepsItsServerGuardsTests
         Assert.Equal(1, Regex.Count(after, "<details class=\"dgrid-row\" role=\"row\" open=\"open\"", RegexOptions.None, TimeSpan.FromSeconds(2)));
     }
 
+    [Fact]
+    public async Task A_project_filter_keeps_only_that_projects_rows_and_counts()
+    {
+        // Without the project in Keep, choosing a project still listed every project's In flight and Closed rows, and the
+        // tab counts said so too (review, lens 3 round 38).
+        using var console = new TwoProjects();
+
+        Closed(console.Alpha, "alpha", 20, Billing, "Alpha's answer.", 30);
+        Closed(console.Beta, "beta", 21, Billing, "Beta's answer.", 30);
+        InFlight(console.Alpha, "alpha", 30, Orders, "Alpha's open request.");
+        InFlight(console.Beta, "beta", 31, Orders, "Beta's open request.");
+
+        using var client = console.CreateClient();
+
+        var everyClosed = await client.GetStringAsync(new Uri("/Inbox?view=closed", UriKind.Relative), Ct);
+        var closed = await client.GetStringAsync(new Uri("/Inbox?view=closed&scope=alpha", UriKind.Relative), Ct);
+        var flight = await client.GetStringAsync(new Uri("/Inbox?view=flight&scope=alpha", UriKind.Relative), Ct);
+
+        // Unfiltered, both projects' rows are there.
+        Assert.Contains("Beta's answer.", everyClosed, StringComparison.Ordinal);
+        Assert.Contains("In flight <span class=\"count\">2</span>", everyClosed, StringComparison.Ordinal);
+        Assert.Contains("Closed <span class=\"count\">2</span>", everyClosed, StringComparison.Ordinal);
+
+        Assert.Contains("Alpha's answer.", closed, StringComparison.Ordinal);
+        Assert.DoesNotContain("Beta's answer.", closed, StringComparison.Ordinal);
+        Assert.Contains("Alpha's open request.", flight, StringComparison.Ordinal);
+        Assert.DoesNotContain("Beta's open request.", flight, StringComparison.Ordinal);
+
+        foreach (var page in new[] { closed, flight })
+        {
+            Assert.Contains("In flight <span class=\"count\">1</span>", page, StringComparison.Ordinal);
+            Assert.Contains("Closed <span class=\"count\">1</span>", page, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>An open exchange the person asked an agent, which the agent has not answered yet.</summary>
+    private static void InFlight(RoadmapBroker broker, string project, long exchange, string agent, string ask)
+    {
+        Said(
+            broker, exchange * 10, exchange, Wire.MessageType.Request, PersonOf(project), agent,
+            "{\"ask\":" + JsonSerializer.Serialize(ask) + "}", 5, "talk");
+        broker.ExportExchanges.Add(new Wire.ExchangeSnapshot
+        {
+            ExchangeId = exchange,
+            State = Wire.ExchangeState.Open,
+            OpenedUtc = DateTimeOffset.UtcNow.AddMinutes(-5).ToString("O", CultureInfo.InvariantCulture),
+        });
+        broker.Edges.Add(new Wire.WaitingEdge { Waiter = PersonOf(project), WaitedOn = agent, ExchangeId = exchange });
+    }
+
     /// <summary>A console with two projects, alpha and beta, each answered by its own scripted broker.</summary>
     private sealed class TwoProjects : WebApplicationFactory<Program>
     {

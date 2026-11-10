@@ -136,6 +136,18 @@ public sealed class TheFramesScriptsKeepTheirGuardsTests
         ScriptSource.Once(code, "line.insertAdjacentElement(\"afterend\", panel);", "the panel no longer goes after its line");
     }
 
+    [Fact]
+    public void The_panels_line_is_chosen_in_one_place()
+    {
+        // Without this a later assignment to line, such as the button's direct parent again, put the panel inside a line of
+        // bold or a link with the pinned statement untouched (review, lens 3 round 38).
+        var code = ScriptSource.Code(Layout, "button.exchange-ref");
+
+        Assert.Equal(
+            ["line = button.closest(\"p, li, blockquote, td, th, h1, h2, h3, h4, h5, h6\") || button.parentElement"],
+            ScriptSource.Assignments(code, "line"));
+    }
+
     /// <summary>The one inline script in the frame that holds a piece of text.</summary>
     /// <param name="holding">The text.</param>
     /// <returns>The script's body.</returns>

@@ -78,6 +78,26 @@ public sealed class TheInboxScriptKeepsItsGuardsTests
     }
 
     [Fact]
+    public void Busy_is_its_three_waits_and_nothing_else()
+    {
+        // Held whole: a line added at the top of busy(), such as one returning false, kept every statement the tests above
+        // pin and let the page reload under somebody typing or reading (review, lens 3 round 38).
+        Assert.Equal(
+            "var focused = document.activeElement; if (focused && focused.matches(\"input, textarea, select\")) { return true; } " +
+            "if (document.querySelector(\"dialog[open], details[open], .exchange-panel\")) { return true; } " +
+            "return Array.prototype.some.call(document.querySelectorAll(\"main textarea\"), function (box) { return box.value.trim() !== \"\"; });",
+            ScriptSource.Body(Reload, "busy"));
+    }
+
+    [Fact]
+    public void The_digest_compared_is_only_the_one_drawn()
+    {
+        // Without this a second assignment to seen, anywhere in the script, made every answer look like a change and the
+        // page reloaded every five seconds, with the pinned comparison untouched (review, lens 3 round 38).
+        Assert.Equal(["seen = note.getAttribute(\"data-digest\")"], ScriptSource.Assignments(Reload, "seen"));
+    }
+
+    [Fact]
     public void No_asking_while_the_tab_is_hidden()
     {
         // Without the guard a tab nobody was looking at asked every five seconds, and a reload landed while it was out of
