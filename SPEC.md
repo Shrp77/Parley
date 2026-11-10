@@ -148,7 +148,7 @@ language they are written in.
 | **Conversation** | Every exchange belonging to one line of work: the request that began it and everything that request caused. Started only by a person, by an agent holding no request, or by the facilitator (principle 2.10). See §5.0. |
 | **Pair** | An unordered set of exactly two agents. Identifies traffic between them; see §7.1. |
 | **File location** | The place beside a broker's store where placed files live, one folder per conversation that has files. See §9.5. |
-| **Shared file** | A `.md`, `.txt` or image file in a conversation's folder, placed by an agent or by the person; only its placing agent or the person removes it. Never changed once placed: a new version is a new file. Fetched onto disk, never into a model's context. |
+| **Shared file** | A `.md`, `.txt` or image file in a conversation's folder, placed by an agent or by the person; only its placing agent or the person removes it. Never changed once placed: a new version is a new file. Fetched onto disk; Parley never puts one into a model's context, and a model that opens one reads it (§9.5). |
 | **Content hash** | The SHA-256 of a shared file's content, computed by the broker as it arrives. The same hash is the same content; it attests nothing about who wrote it. |
 | **Gone notice** | What an agent that fetched a file finds in its inbox when the file later goes, and what its placer finds too when it is found missing or tampered with — taken or changed on disk by something other than Parley. Not a message: it opens nothing and owes nothing. See §9.5. |
 | **Quarantine** | Where a sweep moves a placed file found tampered with: beside the file location, the person's, and never served. See §9.5. |

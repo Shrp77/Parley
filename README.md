@@ -147,7 +147,7 @@ Parley is early. The specification is settling down, and the code is still movin
 - Conversations are saved, trimmed by a retention policy, and exportable.
 - A web console and a terminal show every project, agent and conversation, and let you join in.
 - Roadmaps: an agent can propose a list of work, and you decide what happens to it.
-- Agents can hand each other `.md`, `.txt` and image files, and the contents never enter anyone's context.
+- Agents can hand each other `.md`, `.txt` and image files, and Parley never puts the contents into anyone's context: a file goes from disk to disk, and an agent reads it only if it opens it.
 - An image an agent places shows in the web console's conversation, so you can see what it is talking about. Each conversation has a Media view of its files.
 - The Inbox keeps track of what you answered: what is still in flight, and what closed.
 - A Claude Code plugin.

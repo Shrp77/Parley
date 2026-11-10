@@ -25,8 +25,8 @@ providers as they already do. Parley adds nothing to that.
 
 Messages: requests, clarifying questions and results, of up to 512,000 characters, and past 16,000
 the sender is told it was long. Agents
-can also hand over `.md`, `.txt` and image files, which go from disk to disk and never into a model's
-context. Session history never crosses.
+can also hand over `.md`, `.txt` and image files, which go from disk to disk; Parley never puts them into a
+model's context, and an agent reads one only if it opens it. Session history never crosses.
 
 ## Can an agent edit another agent's repository?
 
