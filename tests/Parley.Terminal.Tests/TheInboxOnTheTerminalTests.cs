@@ -106,6 +106,40 @@ public sealed class TheInboxOnTheTerminalTests
     }
 
     [Fact]
+    public async Task Enter_on_a_row_goes_to_its_conversation_and_the_next_line_is_sent_there()
+    {
+        // Enter read the row's conversation into the transcript but left the place and the box on the one the person was
+        // in, so the next line went to billing in the room, pulling billing into it (review, lens 1 round 25).
+        await using var seated = await Seated.OpenAsync(Ct);
+
+        await seated.AskAsync(Seated.Billing, "billing-talk", Ct, go: false);
+
+        seated.Focus<RoomRegion>();
+        await seated.Session.PressThenSettleAsync(new Key(Shell.InboxKey).WithAlt, () => seated.Shell.Settled);
+
+        var inbox = Assert.IsType<InboxWindow>(seated.Shell.InboxShown);
+
+        inbox.Select(inbox.Shown.ToList().FindIndex(line => line.Contains("billing-talk", StringComparison.Ordinal)));
+        await seated.Session.PressThenSettleAsync(Key.Enter, () => seated.Shell.Settled);
+        await seated.Shell.Settled;
+
+        Assert.Equal(Viewing.Conversation, seated.Shell.Place.Viewing);
+        Assert.Equal("billing-talk", seated.Shell.Place.Title);
+
+        seated.Shell.Line.Written = "is the ledger closed?";
+        seated.Shell.Touched();
+        seated.Shell.Line.Accept();
+        await seated.Shell.Settled;
+
+        Assert.Contains(
+            (await seated.Operators.ExportAsync("billing-talk", Ct)).Messages,
+            m => m.PayloadJson.Contains("is the ledger closed?", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            (await seated.Operators.ExportAsync(Seated.Conversation, Ct)).Messages,
+            m => m.PayloadJson.Contains("is the ledger closed?", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task A_follow_up_is_offered_on_a_row_and_never_on_a_heading()
     {
         await using var seated = await Seated.OpenAsync(Ct);

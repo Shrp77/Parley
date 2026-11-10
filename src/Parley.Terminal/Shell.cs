@@ -4724,9 +4724,17 @@ internal sealed partial class Shell : Window
             {
                 Prompting.Close(app, session);
 
-                Queue(async again =>
+                Queue(async _ =>
                 {
-                    await OpenAsync(project, row.Conversation, again).ConfigureAwait(false);
+                    // **Gone to, not only read.** Reading the row's conversation into the transcript left the place and
+                    // the box on the conversation the person was in, so the next line went there, to an agent pulled into
+                    // it; from the project view nothing was shown at all (review, lens 1 round 25).
+                    if (Current?.Name != project.Name)
+                    {
+                        return;
+                    }
+
+                    await GoAsync(ViewPlace.Into(project.Name).Into(row.Conversation)).ConfigureAwait(false);
 
                     if (row.Last is { } last && Transcript.Reach(last.Id))
                     {
