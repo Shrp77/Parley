@@ -12,9 +12,9 @@ namespace Parley.Web.Tests;
 /// for <c>image</c>, and the box's fold an "E" for <c>expand_less</c>.
 /// </para>
 /// <para>
-/// The list below is what the font was seen to draw (rendered and looked at, 2026-11-09). Reading the font itself needs a
-/// Brotli decoder this project does not carry, so a new icon is added here only after it has been seen to draw, or the
-/// font is cut again with it.
+/// The list below is what the font was seen to draw (rendered and looked at, 2026-11-09), and matches the ligatures read
+/// from the font (review, lens 3 round 16). Reading the font's ligatures in a test would need a parser for its
+/// substitution tables, so a new icon is added here only after it has been seen to draw, or the font is cut again with it.
 /// </para>
 /// </remarks>
 [Integration]
