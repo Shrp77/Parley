@@ -107,6 +107,35 @@ public sealed class TheFramesScriptsKeepTheirGuardsTests
         Assert.True(code.Contains(Replaces, StringComparison.Ordinal), "a thumbnail that fails to load is no longer replaced by its tile");
     }
 
+    [Fact]
+    public void An_exchange_that_cannot_be_read_says_so_in_its_panel()
+    {
+        // Without the guard a refused or failed read put the error page's text in the panel, or left it saying "Reading
+        // exchange #N…" for good (review, lens 3 round 37).
+        var code = ScriptSource.Code(Layout, "button.exchange-ref");
+
+        ScriptSource.Once(
+            code,
+            ".then(function (answer) { if (!answer.ok) { throw new Error(String(answer.status)); } return answer.text(); }) " +
+            ".then(function (html) { panel.innerHTML = html; }) " +
+            ".catch(function () { panel.textContent = \"Exchange #\" + number + \" could not be read. Press it again to close this.\"; });",
+            "a failed read of an exchange no longer says it could not be read");
+    }
+
+    [Fact]
+    public void An_exchange_panel_goes_after_the_line_its_reference_is_on()
+    {
+        // Without the guard the panel went after the button's direct parent, inside a line of bold or a link, splitting the
+        // sentence the reference was in (review, lens 3 round 37).
+        var code = ScriptSource.Code(Layout, "button.exchange-ref");
+
+        ScriptSource.Once(
+            code,
+            "var line = button.closest(\"p, li, blockquote, td, th, h1, h2, h3, h4, h5, h6\") || button.parentElement;",
+            "the panel's place is no longer the line the reference is on");
+        ScriptSource.Once(code, "line.insertAdjacentElement(\"afterend\", panel);", "the panel no longer goes after its line");
+    }
+
     /// <summary>The one inline script in the frame that holds a piece of text.</summary>
     /// <param name="holding">The text.</param>
     /// <returns>The script's body.</returns>
