@@ -145,6 +145,44 @@ public sealed class LinkRaceTests : IDisposable
     }
 
     [Fact]
+    public async Task Discarding_a_created_file_never_deletes_another_folders_file_of_that_name()
+    {
+        // A file is made through `repo`, a link to `real`; the link is then pointed at `other`, which holds a file of the
+        // same name. Undone by path, the discard deleted `other`'s file and left the one it made (review, lens 3 round 15).
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "the handle-held delete is Windows'");
+
+        SkipUnlessLinksCanBeMade();
+
+        var real = Directory.CreateDirectory(Path.Combine(_root, "real")).FullName;
+        var other = Directory.CreateDirectory(Path.Combine(_root, "other")).FullName;
+        var repository = Path.Combine(_root, "repo");
+        var decoy = Path.Combine(other, ".mcp.json");
+
+        await File.WriteAllTextAsync(decoy, "theirs", TestContext.Current.CancellationToken);
+        Directory.CreateSymbolicLink(repository, real);
+
+        var created = LocalOpen.Create(Path.Combine(repository, ".mcp.json"));
+
+        await created.WriteAsync("ours"u8.ToArray(), TestContext.Current.CancellationToken);
+
+        Directory.Delete(repository);
+        Directory.CreateSymbolicLink(repository, other);
+
+        try
+        {
+            LocalOpen.Discard(created, Path.Combine(repository, ".mcp.json"));
+
+            Assert.True(File.Exists(decoy), "the other folder's file was deleted");
+            Assert.Equal("theirs", await File.ReadAllTextAsync(decoy, TestContext.Current.CancellationToken));
+            Assert.False(File.Exists(Path.Combine(real, ".mcp.json")), "the file it made was left");
+        }
+        finally
+        {
+            Directory.Delete(repository);
+        }
+    }
+
+    [Fact]
     public async Task A_launch_configuration_flipped_to_a_link_to_a_share_is_never_followed()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "links to shares are a Windows sign-in");

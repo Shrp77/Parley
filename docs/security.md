@@ -103,8 +103,11 @@ comes only from the form you see, and every page that acts shows which project i
 make the console look up a folder on another machine: a path naming a network share or a device,
 or reaching one through a folder link, is refused before anything touches the disk, because on Windows the lookup alone would offer your
 sign-in to that machine. On Windows an agent's folder is opened one part at a time, and a link is followed only
-when Parley has read where it leads and that is on this machine, so an agent that swaps its folder for a link to a share
-while Parley is looking gets nothing followed to that share either.
+when Parley has read where it leads and that is on this machine, so most lookups follow nothing to a share even when
+an agent swaps its folder for a link while Parley is looking. A few still check first and act afterwards, and an agent
+that swaps its folder at exactly that moment can still make Windows reach a share: creating a new file in its folder
+(a first `.mcp.json` or `CLAUDE.md`), the node starting or restarting the agent there, and the folder browsers listing
+a folder. Closing those is planned work.
 
 **Silent damage to your files.** Project files are written atomically, preserve what they do not
 understand, and refuse to write when anything was left out of a read. Nothing is kept on a synced cloud

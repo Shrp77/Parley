@@ -150,7 +150,7 @@ public sealed class ARefreshedAgentIsGivenATurnTests : IDisposable
                 await Task.Delay(100, Ct);
             }
 
-            Assert.Contains("not restarted", Said(), StringComparison.Ordinal);
+            Assert.Contains("could not be checked", Said(), StringComparison.Ordinal);
             Assert.True(timer.Elapsed < TimeSpan.FromSeconds(15), $"took {timer.Elapsed}: the share was looked up");
             Assert.False(residents.TryGetValue(identity, out var now) && !ReferenceEquals(now, old), "it was restarted");
         }
