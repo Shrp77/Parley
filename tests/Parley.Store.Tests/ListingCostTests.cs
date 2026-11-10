@@ -12,8 +12,9 @@ namespace Parley.Store.Tests;
 /// exchanges by conversation, took about 40 seconds for 2,000 conversations of ten exchanges (review, lens 1 round 19).
 /// </para>
 /// <para>
-/// The bound is generous on purpose: the grouped pass walks this store in well under a second, the per-row lookup in
-/// tens of seconds, so only the wrong shape fails it, not a slow machine.
+/// The bound sits between the two shapes with room on both sides: the grouped pass walks this store in 0.2 to 0.5 seconds,
+/// the per-row lookup in 15 to 19 (review, lens 3 round 18), so a machine several times slower still passes the right shape
+/// and one several times faster still fails the wrong one.
 /// </para>
 /// </remarks>
 [Integration]
@@ -89,6 +90,6 @@ public sealed class ListingCostTests : IDisposable
         }
 
         Assert.Equal(Conversations, seen);
-        Assert.True(timer.Elapsed < TimeSpan.FromSeconds(10), $"walking the listing took {timer.Elapsed}");
+        Assert.True(timer.Elapsed < TimeSpan.FromSeconds(4), $"walking the listing took {timer.Elapsed}");
     }
 }
