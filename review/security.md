@@ -67,8 +67,9 @@ Check a change against each; a new page or a new path lookup must keep all of th
   `.mcp.json` or instructions file, a new catalogue) is made relative to the folder the walk opened (`LocalOpen.Create`),
   and a failed write is undone through the file's own handle (`LocalOpen.Discard`), but that does not close the race:
   with the folder flipping to a link to a share during the create, Windows itself (pid 4) still dialled the share in
-  three runs of four, most likely a file-system filter resolving the new file's name again by path (2026-11-09,
-  recorded, owner's decision pending). The walk refuses a relative link reached after a junction, since Windows
+  three runs of four, most likely a file-system filter resolving the new file's name again by path (2026-11-09;
+  owner, 2026-11-10: recorded, not blocking; staging the file in Parley's own folder and moving it into place, with the
+  other remaining check-then-lookup places, is a follow-up feature after 035). The walk refuses a relative link reached after a junction, since Windows
   resolves it from the path as reached. Each part's long name is read from its handle,
   so a short (8.3) spelling is judged as the folder it is. Off Windows a share is a
   mount and following a link to one offers no sign-in, so the walk is kept and the open is ordinary, except that a file
