@@ -192,6 +192,39 @@ public sealed class TheInboxOnTheTerminalTests
     }
 
     [Fact]
+    public async Task A_message_naming_an_exchange_that_does_not_exist_opens_one_that_says_so()
+    {
+        // Without the guard the broker's empty answer for an exchange it does not have was read as a conversation, and the
+        // terminal said "Could not read the exchanges: A conversation identifier is required" instead of that there is no
+        // such exchange (review, lens 3 round 36).
+        await using var seated = await Seated.OpenAsync(Ct);
+
+        _ = await seated.AsksAsync(Seated.Orders, seated.Person, "Billing answered on exchange #9999; see it.", "notes", Ct);
+
+        await Walking.GoAsync(seated.Shell, Viewing.Conversation, "notes");
+        await seated.Shell.Settled;
+
+        var export = await seated.Operators.ExportAsync("notes", Ct);
+        var naming = export.Messages.Single(message => message.PayloadJson.Contains("see it", StringComparison.Ordinal));
+
+        Assert.True(seated.Shell.Transcript.Reach(naming.Id));
+
+        seated.Focus<TranscriptRegion>();
+        await seated.Session.PressThenSettleAsync(new Key(Shell.ReferenceKey).WithAlt, () => seated.Shell.Settled);
+
+        var shown = seated.Shell.ExchangeShown;
+
+        if (shown is not null)
+        {
+            Prompting.Close(seated.Session.App, seated.Shell.ExchangeSession);
+        }
+
+        var lines = Assert.IsType<ExchangeView>(shown).Shown;
+
+        Assert.Equal("There is no exchange #9999 in this project.", lines[0]);
+    }
+
+    [Fact]
     public async Task A_message_naming_two_exchanges_offers_them_both_and_never_names_only_the_first()
     {
         // Without the guard a message naming two exchanges said "Open exchange #<first>" on the status line, though the key

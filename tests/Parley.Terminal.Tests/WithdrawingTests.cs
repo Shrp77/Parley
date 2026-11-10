@@ -273,6 +273,34 @@ public sealed class WithdrawingTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Retiring_and_purging_say_they_take_the_files_and_reach_this_project_only()
+    {
+        // Without the guard the terminal's dialog never said that either act takes the agent's .mcp.json entry and
+        // catalogue line, or that it reaches this project and no other, which the web console's page says (review, lens 3
+        // round 36).
+        using var driving = Driving.Open();
+        using var shell = await OpenAsync(driving);
+
+        await shell.Withdraw();
+        await shell.Settled;
+
+        var choosing = (ChoiceDialog)driving.Find(Withdrawing.Title);
+
+        Assert.Contains(".mcp.json", choosing.Described, StringComparison.Ordinal);
+        Assert.Contains("This happens in acme only", choosing.Described, StringComparison.Ordinal);
+
+        var rows = Drawn.Rows(choosing.Choices);
+
+        Assert.Equal(2, rows.Count(row => row.Contains("this project only", StringComparison.Ordinal)));
+
+        driving.Enter();
+        await shell.Settled;
+
+        Assert.Equal(Withdrawing.Kept, shell.Said);
+        await AssertStillThereAsync();
+    }
+
+    [Fact]
     public async Task Escape_at_the_name_keeps_the_agent()
     {
         using var driving = Driving.Open();

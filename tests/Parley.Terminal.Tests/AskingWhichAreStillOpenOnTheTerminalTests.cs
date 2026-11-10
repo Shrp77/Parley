@@ -71,6 +71,25 @@ public sealed class AskingWhichAreStillOpenOnTheTerminalTests
     }
 
     [Fact]
+    public async Task A_second_press_lists_an_agent_still_to_reply_as_the_first_press_did()
+    {
+        // Without the record of what the press asked, the second press found the ask again only in the broker's record,
+        // which does not say how the agent was reached, so the line that had said so named the agent instead (review,
+        // lens 3 round 36).
+        await using var seated = await Seated.OpenAsync(Ct);
+
+        var first = await PressAsync(seated);
+        var again = await PressAsync(seated);
+
+        var orders = $"{Seated.Orders.Value} in {Seated.Conversation}: ";
+
+        Assert.StartsWith("Nobody was asked.", again[0], StringComparison.Ordinal);
+        Assert.Equal(
+            Assert.Single(first, line => line.StartsWith(orders, StringComparison.Ordinal)),
+            Assert.Single(again, line => line.StartsWith(orders, StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public void The_dialog_says_when_nothing_waits_and_makes_every_line_inert()
     {
         var empty = StillOpenView.Lines("Nobody was asked.", []);
