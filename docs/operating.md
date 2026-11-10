@@ -144,7 +144,7 @@ newest first, and Enter opens the one you choose.
 
 **The inbox and exchanges.** `Alt+i`, on a project's conversations or in the room, opens the inbox
 with the same three views as the web console (*Waiting on you*, *In flight* and *Closed*); it reads
-the number of days set in the web console's settings, and shows the current window only. `Alt+o`
+the number of days set in the web console's settings, and shows the current window only. Enter on a row goes to its conversation. `Alt+o`
 asks which questions are still open, as the web console's button does. On a message that names
 exchanges (`exchange #351`), `Alt+g` opens them. In the inbox, `Alt+u` sends the agent on the row a new request that follows up on its exchange.
 

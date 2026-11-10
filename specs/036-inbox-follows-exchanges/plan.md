@@ -79,7 +79,7 @@ src/Parley.Web/Pages/Inbox.cshtml(.cs)      the three views, follow-up
 src/Parley.Web/Pages/Exchanges/Panel.cshtml(.cs)    the panel fragment
 src/Parley.Web/Pages/Settings.cshtml(.cs)   the closed window
 src/Parley.Web/Pages/Shared/_Layout.cshtml  the panel script and styles
-src/Parley.Terminal/InboxView.cs, ExchangeView.cs, Shell.cs, ShellCommands.cs, KeyContext.cs, CommandTables.cs
+src/Parley.Terminal/InboxWindow.cs, ExchangeView.cs, Shell.cs, ShellCommands.cs, KeyContext.cs, CommandTables.cs
 plugins/parley/README.md                    the reference form
 SPEC.md                                     §5.6, §10.2
 tests/…                                     one test class per story, plus the grammar and the settings file

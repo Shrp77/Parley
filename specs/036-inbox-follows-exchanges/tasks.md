@@ -23,12 +23,12 @@
 **Independent test**: reply to a question; it is under In flight with a chip; when the agent asks back, it is under Waiting on you.
 
 - [x] T009 [US1] Add `InboxView`, `InboxRow`, `AgentStanding`, `ExchangeEnding`, `InboxReading` in src/Parley.Client/Seating/Inbox.cs
-- [x] T010 [US1] Add `AgentStanding.From(AgentRecord, FlagReport, exchange)` with the words of research R2 in src/Parley.Client/Seating/AgentStanding.cs
+- [x] T010 [US1] Add `InFlightStanding` with the words of research R2 in src/Parley.Client/Seating/Inbox.cs
 - [x] T011 [US1] Add `Inbox.ReadAsync(BrokerClient, AgentName me, window, older, ct)` building Waiting on you and In flight from the graph, registry, flags and exports in src/Parley.Client/Seating/Inbox.cs
 - [x] T012 [P] [US1] Unit tests for view assignment (exclusive), the chip table and its precedence in tests/Parley.Client.Tests/InboxTests.cs
 - [x] T013 [US1] Inbox page: view switch (Waiting on you, In flight, Closed) with counts, In flight rows with chips and a conversation link, in src/Parley.Web/Pages/Inbox.cshtml(.cs)
 - [x] T014 [US1] Digest changes when an edge the person is in appears, goes, or changes side, in src/Parley.Web/Pages/Inbox.cshtml.cs
-- [x] T015 [US1] Web tests: a reply moves a row to In flight, an ask-back moves it back, chips read as R2, in tests/Parley.Web.Tests/InboxViewsTests.cs
+- [x] T015 [US1] Web tests: a reply moves a row to In flight, an ask-back moves it back, chips read as R2, in tests/Parley.Web.Tests/InboxFollowsExchangesTests.cs
 
 ## Phase 4: User Story 2 — Closed (P2)
 
@@ -38,13 +38,13 @@
 - [x] T016 [US2] Closed rows in `Inbox.ReadAsync`: conversations active since the window start, closed exchanges the person was on, outcome from the snapshot and the closing message, pages for "show older", in src/Parley.Client/Seating/Inbox.cs
 - [x] T017 [P] [US2] Unit tests for endings (Done, Answered, Received, Blocked with kind, Settled, ClosedByPerson), retention-pruned exchanges, the window bounds in tests/Parley.Client.Tests/InboxTests.cs
 - [x] T018 [US2] Closed view on the Inbox page with "show older" and the window named, in src/Parley.Web/Pages/Inbox.cshtml(.cs)
-- [x] T019 [US2] Web tests for Closed in tests/Parley.Web.Tests/InboxViewsTests.cs
+- [x] T019 [US2] Web tests for Closed in tests/Parley.Web.Tests/InboxFollowsExchangesTests.cs
 
 ## Phase 5: User Story 3 — Follow up (P2)
 
 - [x] T020 [US3] `OnPostFollowUpAsync` sending a Request to the row's agent in its conversation, words kept on refusal, not offered for the facilitator, in src/Parley.Web/Pages/Inbox.cshtml.cs
-- [x] T021 [US3] Follow-up box (shared `_Composer`) on every row in src/Parley.Web/Pages/Inbox.cshtml
-- [x] T022 [US3] Web tests: sent to the right agent and conversation, old exchange untouched, refusal keeps words, no box for the facilitator, in tests/Parley.Web.Tests/InboxViewsTests.cs
+- [x] T021 [US3] Follow-up box (shared `_Composer`) on every row but the facilitator's in src/Parley.Web/Pages/Inbox.cshtml
+- [x] T022 [US3] Web tests: sent to the right agent and conversation, old exchange untouched, refusal keeps words, no box for the facilitator, in tests/Parley.Web.Tests/InboxFollowsExchangesTests.cs
 
 ## Phase 6: User Story 6 — Exchange references (P2)
 
@@ -54,7 +54,7 @@
 - [x] T026 [US6] References become buttons in plain text nodes only, in src/Parley.Web/MarkdownText.cs; `data-project` on message containers in Inbox and _Conversation
 - [x] T027 [US6] Panel page src/Parley.Web/Pages/Exchanges/Panel.cshtml(.cs), no layout, read only
 - [x] T028 [US6] Panel script and styles in src/Parley.Web/Pages/Shared/_Layout.cshtml
-- [x] T029 [US6] Web tests: buttons only for the form, not in code or links; panel shows the exchange, says when there is none; reading changes nothing, in tests/Parley.Web.Tests/ExchangeReferenceTests.cs
+- [x] T029 [US6] Web tests: buttons only for the form, not in code or links; panel shows the exchange, says when there is none; reading changes nothing, in tests/Parley.Web.Tests/InboxFollowsExchangesTests.cs
 - [x] T030 [US6] "exchange #N" in `StillOpen.Ask` (src/Parley.Client/Seating/StillOpen.cs) and the instruction bullet in src/Parley.Mcp/ParleyInstructions.cs; plugin README; update tests that pin either
 
 ## Phase 7: User Story 4 — The window setting (P3)
@@ -66,7 +66,7 @@
 
 ## Phase 8: User Story 5 — The terminal (P3)
 
-- [x] T035 [US5] `InboxView` dialog (TableDialog, KeyContext, CommandTables) in src/Parley.Terminal/InboxView.cs
+- [x] T035 [US5] `InboxWindow` dialog (TableDialog, KeyContext, CommandTables) in src/Parley.Terminal/InboxWindow.cs
 - [x] T036 [US5] `ExchangeView` dialog in src/Parley.Terminal/ExchangeView.cs
 - [x] T037 [US5] Shell commands: open the Inbox, follow up, open exchange #N from the transcript cursor, in src/Parley.Terminal/Shell.cs and ShellCommands.cs
 - [x] T038 [US5] Terminal tests in tests/Parley.Terminal.Tests/TheInboxOnTheTerminalTests.cs; KeysTakenBeforeTheTableTests samples

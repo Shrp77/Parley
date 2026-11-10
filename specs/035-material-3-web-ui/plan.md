@@ -16,7 +16,7 @@ then every page checked in light and dark at three widths. The audit ([audit.md]
 **Testing**: xUnit v3 web tests (`Parley.Web.Tests`); page captures in headless Edge; a contrast check over the scheme
 **Target Platform**: modern desktop browsers on the operator's machine (Edge, Chrome, Firefox)
 **Project Type**: web console within an existing .NET solution
-**Performance Goals**: no added network requests beyond one cached font file; no added script
+**Performance Goals**: no added network requests beyond one cached font file; one small added script, which applies the theme and density chosen in Settings before the stylesheet loads
 **Constraints**: works without script where it does today; no network fetch at run time; CSP and framing unchanged; peer text
 encoded; existing tests keep passing; terminal untouched
 **Scale/Scope**: 23 pages, one shared stylesheet (~2,150 lines), three pages with their own style blocks
