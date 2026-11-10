@@ -105,7 +105,8 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             row.Archived,
             ItemOf(row.Item),
             string.IsNullOrEmpty(row.Parent) ? null : row.Parent,
-            row.Closed));
+            row.Closed,
+            Read(row.LastClosedUtc)));
 
         return new ConversationPage(
             [.. conversations],

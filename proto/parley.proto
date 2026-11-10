@@ -1221,6 +1221,7 @@ message ConversationSummary {
   optional RoadmapItemRef item = 8;   // section 5.7: set when it is a reserved item conversation
   string parent = 9;                  // section 5.0: empty when it has none
   bool closed = 10;
+  string last_closed_utc = 11;        // when an exchange in it last closed; empty when none has
 }
 
 message LocateExchangeRequest {

@@ -152,6 +152,8 @@ public sealed partial class InboxFollowsExchangesTests
         console.Broker.Conversations[0].LastActivityUtc =
             DateTimeOffset.UtcNow.AddDays(-10).ToString("O", CultureInfo.InvariantCulture);
         console.Broker.Conversations[0].HasOpenExchange = false;
+        console.Broker.Conversations[0].LastClosedUtc =
+            DateTimeOffset.UtcNow.AddDays(-2).ToString("O", CultureInfo.InvariantCulture);
 
         Said(console, 14_400, 20, Wire.MessageType.Request, Orders, Person, Ask("Which rate for the nightly export?"));
         Exchange(console, 20, open: false, Wire.ExchangeOutcome.Settled);

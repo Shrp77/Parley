@@ -293,11 +293,13 @@ public static class Inbox
         }
         while (next is { Length: > 0 });
 
-        // Every one of the person's conversations. A conversation's last activity is its newest message, and an exchange can
-        // close inside the window with no message of its own in that conversation: a question settled by a Request
-        // elsewhere, or one the person moved after it was settled. Filtered by activity, such an exchange was never listed
-        // as closed (review, lens 1 round 17).
+        // Only what could hold a row: open work, a message since the window opened, or an exchange that closed since. The
+        // close is the broker's own: an exchange can close with no message in its conversation (a question settled by a
+        // Request elsewhere, or moved after it was settled), and read by messages alone it was never listed (review, lens
+        // 1 round 17). Exporting every conversation instead made each render cost the person's whole history, queued
+        // through the broker's one gate ahead of every agent (lens 1 round 18).
         var wanted = conversations
+            .Where(c => c.HasOpenExchange || c.LastActivityUtc >= from || c.LastClosedUtc >= from)
             .Select(c => c.Id)
             .Distinct(StringComparer.Ordinal)
             .ToList();

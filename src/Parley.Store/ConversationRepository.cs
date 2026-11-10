@@ -871,7 +871,11 @@ public sealed class ConversationRepository(SqliteConnection connection)
                        (c.archived_utc IS NOT NULL)               AS Archived,
                        (SELECT l.parent FROM conversation_links l
                          WHERE l.child = c.id)                    AS Parent,
-                       (c.state = 'CLOSED')                       AS Closed
+                       (c.state = 'CLOSED')                       AS Closed,
+                       (SELECT e.closed_utc FROM exchanges e
+                         WHERE e.conversation_id = c.id AND e.closed_utc IS NOT NULL
+                         ORDER BY unixepoch(e.closed_utc, 'subsec') DESC
+                         LIMIT 1)                                 AS LastClosedUtc
                   FROM conversations c
                   JOIN activity a ON a.id = c.id
                  WHERE (@IncludeArchived OR c.archived_utc IS NULL)
@@ -929,7 +933,8 @@ public sealed class ConversationRepository(SqliteConnection connection)
                 row.Archived,
                 reserved is { } r ? new RoadmapItemRef(r.RoadmapId, r.RoadmapNumber, r.Title, r.ItemNumber, r.Removed) : null,
                 row.Parent,
-                row.Closed));
+                row.Closed,
+                row.LastClosedUtc is { Length: > 0 } closed ? ExchangeRow.ParseTimestamp(closed) : null));
         }
 
         return summaries;
@@ -1292,6 +1297,8 @@ public sealed class ConversationRepository(SqliteConnection connection)
         public bool HasOpenExchange { get; init; }
 
         public bool Archived { get; init; }
+
+        public string? LastClosedUtc { get; init; }
     }
 
     private sealed class ConversationRow

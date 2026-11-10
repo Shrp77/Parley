@@ -356,8 +356,8 @@ public static class LocalOpen
 
         if (!OperatingSystem.IsWindows())
         {
-            created.Dispose();
-
+            // Removed before the close: a close flushes what a failed write left in the buffer, throws again on a full
+            // disk, and the delete after it was skipped, leaving an empty file (review, lens 1 round 18).
             try
             {
                 System.IO.File.Delete(path);
@@ -365,6 +365,15 @@ public static class LocalOpen
             catch (Exception failed) when (failed is IOException or UnauthorizedAccessException)
             {
                 // Left for the person: nothing else here may remove it.
+            }
+
+            try
+            {
+                created.Dispose();
+            }
+            catch (IOException)
+            {
+                // The file is gone; the buffer it held has nowhere to go.
             }
 
             return;

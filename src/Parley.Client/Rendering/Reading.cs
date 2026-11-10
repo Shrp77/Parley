@@ -164,7 +164,7 @@ public static class Reading
         var placed = new Queue<SharedFile>(Files.Placements.InOrder(files ?? []));
 
         // Looked up by id once each, not searched for at every header: that was quadratic in the messages (lens 1 round 17).
-        var written = export.Messages.GroupBy(m => m.Id).ToDictionary(g => g.Key, g => g.First().CreatedUtc);
+        var byId = export.Messages.GroupBy(m => m.Id).ToDictionary(g => g.Key, g => g.First());
 
         // A move's note sits where the entries are, or were, by its earliest message's place in the broker's order (SPEC.md §5.0).
         var moves = new Queue<MoveRecord>(
@@ -188,7 +188,7 @@ public static class Reading
                     lines.Add(new TranscriptLine(Pad(ConversationWording.MoveLine(moves.Dequeue(), conversation!, zone)), LineKind.Annotation, null));
                 }
 
-                foreach (var file in Files.Placements.Before(placed, written[at]))
+                foreach (var file in Files.Placements.Before(placed, byId[at].CreatedUtc))
                 {
                     lines.Add(new TranscriptLine(Pad(Files.Placements.Line(file, zone)), LineKind.Annotation, null));
                 }
@@ -201,7 +201,7 @@ public static class Reading
                 continue;
             }
 
-            var message = export.Messages.First(m => m.Id == id);
+            var message = byId[id];
 
             if (Settled(message, export) is { Count: > 0 } settled)
             {

@@ -992,7 +992,8 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
                 HasOpenExchange = summary.HasOpenExchange,
                 Archived = summary.Archived,
                 Parent = summary.Parent ?? string.Empty,
-                Closed = summary.Closed
+                Closed = summary.Closed,
+                LastClosedUtc = summary.LastClosedUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty
             };
 
             if (summary.Item is { } item)
