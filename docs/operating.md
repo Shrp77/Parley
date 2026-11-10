@@ -146,7 +146,7 @@ newest first, and Enter opens the one you choose.
 with the same three views as the web console (*Waiting on you*, *In flight* and *Closed*); it reads
 the number of days set in the web console's settings, and shows the current window only. `Alt+o`
 asks which questions are still open, as the web console's button does. On a message that names
-exchanges (`exchange #351`), `Alt+g` opens them.
+exchanges (`exchange #351`), `Alt+g` opens them. In the inbox, `Alt+u` sends the agent on the row a new request that follows up on its exchange.
 
 **The room says what each agent is doing:**
 

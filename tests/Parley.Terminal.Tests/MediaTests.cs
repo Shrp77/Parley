@@ -52,7 +52,8 @@ public sealed class MediaTests : IAsyncDisposable
     {
         await _files.PlaceAsync(Billing, "older.png", "first", "pricing");
         await _files.PlaceAsync(Billing, "notes.md", "net of tax", "pricing");
-        await _files.PlaceAsync(Billing, "newer.png", "second", "pricing");
+        // Real leading bytes: an image whose first bytes are not its format is never launched (0.58.1).
+        await _files.PlaceAsync(Billing, "newer.gif", "GIF89a-second", "pricing");
 
         using var driving = Driving.Open();
         using var shell = await IntoTheConversationAsync(driving, _files, _directory.FullName);
@@ -76,15 +77,15 @@ public sealed class MediaTests : IAsyncDisposable
         Assert.Contains(Media.CannotDraw, list.Described, StringComparison.Ordinal);
         Assert.Contains("2 image(s) and 1 other file(s)", list.Described, StringComparison.Ordinal);
         Assert.Equal(3, rows.Count);
-        Assert.Contains("[image] newer.png", rows[0], StringComparison.Ordinal);
+        Assert.Contains("[image] newer.gif", rows[0], StringComparison.Ordinal);
         Assert.Contains("[image] older.png", rows[1], StringComparison.Ordinal);
         Assert.Contains("[text] notes.md", rows[2], StringComparison.Ordinal);
 
-        driving.Row(list.Choices, "[image] newer.png");
+        driving.Row(list.Choices, "[image] newer.gif");
         await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         var path = Assert.Single(driving.Launched);
-        Assert.Equal("second", await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken));
+        Assert.Equal("GIF89a-second", await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken));
     }
 
     [Fact]
