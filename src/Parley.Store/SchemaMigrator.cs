@@ -131,7 +131,16 @@ public static class SchemaMigrator
             {
                 command.Transaction = transaction;
                 command.CommandText = sql;
-                command.ExecuteNonQuery();
+
+                // Step every statement here rather than with ExecuteNonQuery. An ADD COLUMN on a STRICT table reads as
+                // a statement that returns rows, and the provider then runs the rest while the reader is disposed and
+                // swallows their errors: a disk filling up during 008 committed the column without its backfill and
+                // reported the store upgraded (review, lens 2 round 34). NextResult runs the next statement and throws.
+                using var reader = command.ExecuteReader();
+
+                while (reader.NextResult())
+                {
+                }
             }
 
             using (var bump = connection.CreateCommand())
