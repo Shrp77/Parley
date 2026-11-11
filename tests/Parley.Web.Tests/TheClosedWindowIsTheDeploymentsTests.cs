@@ -57,6 +57,28 @@ public sealed partial class TheClosedWindowIsTheDeploymentsTests : IDisposable
     }
 
     [Fact]
+    public async Task Saving_a_window_of_one_day_says_one_day()
+    {
+        using var console = new RoadmapConsole { Root = _root };
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(new Uri("/Settings", UriKind.Relative), Ct);
+        using var form = new FormUrlEncodedContent(
+        [
+            new("__RequestVerificationToken", Token().Match(page).Groups[1].Value),
+            new("Days", "1"),
+        ]);
+
+        using var response = await client.PostAsync(new Uri("/Settings?handler=Inbox", UriKind.Relative), form, Ct);
+
+        Assert.Contains(
+            "Saved. The Inbox's Closed view covers 1 day, here and in the terminal.",
+            System.Net.WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync(Ct)),
+            StringComparison.Ordinal);
+        Assert.Equal(1, ParleySettings.ReadClosedDays(_root));
+    }
+
+    [Fact]
     public async Task A_saved_window_is_in_the_box_when_the_page_is_opened_again()
     {
         // Without the deployment folder check reading the file, Settings opens showing the default week however many

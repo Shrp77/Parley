@@ -406,6 +406,39 @@ public sealed class TheInboxOnTheTerminalTests
     }
 
     [Fact]
+    public void A_rows_words_are_cut_at_a_hundred_characters_and_marked_as_cut()
+    {
+        // The row's line is wider than the screen, so the list's own line is read: what the list was given to draw.
+        var words = string.Concat(Enumerable.Range(0, 30).Select(i => $"w{i:D2} "));
+        var said = new Parley.Core.Message(
+            1, 5, Parley.Core.MessageType.Clarify, Seated.Billing, Seated.Orders, "test",
+            $$"""{"text":"{{words}}"}""", "billing-talk", DateTimeOffset.UnixEpoch, null);
+        var reading = new Parley.Client.Seating.InboxReading(
+            [
+                new Parley.Client.Seating.InboxRow(
+                    5, "billing-talk", Seated.Billing, Parley.Client.Seating.InboxView.WaitingOnYou,
+                    DateTimeOffset.UnixEpoch.AddHours(2), said, null, null),
+            ],
+            7,
+            0,
+            DateTimeOffset.UnixEpoch,
+            DateTimeOffset.UnixEpoch.AddDays(7));
+
+        using var driving = Driving.Open();
+
+        var (inbox, token) = InboxWindow.Open(driving.App, Walking.Alpha.Value, reading);
+
+        driving.App.LayoutAndDraw(true);
+
+        var line = inbox.Shown.Single(shown => shown.Contains("billing-talk", StringComparison.Ordinal));
+
+        Prompting.Close(driving.App, token);
+
+        Assert.True(words.Trim().Length > 100);
+        Assert.EndsWith(". " + words[..100] + "…", line, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_follow_up_is_live_on_an_agents_row_and_never_on_the_facilitators()
     {
         // Without the guard the follow-up was offered on the facilitator's row, which is never given work, so the status

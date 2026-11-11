@@ -170,6 +170,15 @@ public sealed class ConversationWordingTests
     }
 
     [Fact]
+    public void The_note_says_the_next_message_went_elsewhere_and_not_here()
+    {
+        Assert.Equal(
+            "orders@test's next message went to billing@test in other, not here.",
+            ConversationWording.WroteElsewhereLine(
+                new WroteElsewhere(3, 1, AgentName.Create("orders@test"), AgentName.Create("billing@test"), "other")));
+    }
+
+    [Fact]
     public void A_note_after_the_last_message_is_not_lost()
     {
         var export = new ConversationExport(

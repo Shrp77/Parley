@@ -73,6 +73,22 @@ public sealed class ImagesInTheConversationTests : IDisposable
     }
 
     [Fact]
+    public async Task An_image_may_be_kept_by_the_persons_browser_and_never_by_a_shared_cache()
+    {
+        using var client = _console.CreateClient();
+
+        using var response = await client.GetAsync(Image("mockup.png", ContentHash.Of(Png).Value), Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var cache = response.Headers.CacheControl;
+
+        Assert.NotNull(cache);
+        Assert.True(cache.Private, cache.ToString());
+        Assert.False(cache.Public, cache.ToString());
+    }
+
+    [Fact]
     public async Task A_file_named_as_an_image_whose_bytes_are_a_page_is_never_served()
     {
         using var client = _console.CreateClient();
