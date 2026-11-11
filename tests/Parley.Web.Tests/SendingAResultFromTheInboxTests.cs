@@ -158,6 +158,38 @@ public sealed partial class SendingAResultFromTheInboxTests
     }
 
     [Fact]
+    public async Task A_result_replied_from_the_conversation_reaches_the_bell_as_sent()
+    {
+        // The conversation's reply had the Inbox's flaw: it told the bell through a match on "Sent.", and a Result that
+        // went says "Sent, and the exchange is closed.", so the bell listed a send that went as refused.
+        using var console = Asked();
+        using var client = console.CreateClient();
+
+        var page = $"/Conversations/Detail?project={RoadmapConsole.Project}&id=shared";
+        var before = await client.GetStringAsync(new Uri(page, UriKind.Relative), Ct);
+
+        using var form = new FormUrlEncodedContent(
+        [
+            new("__RequestVerificationToken", Token().Match(before).Groups[1].Value),
+            new("Says", "Switched it on; it runs at two."),
+            new("ReplyTo", Exchange.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            new("Outcome", "done"),
+        ]);
+
+        using var response = await client.PostAsync(new Uri(page, UriKind.Relative), form, Ct);
+        _ = await response.Content.ReadAsStringAsync(Ct);
+
+        Assert.Single(console.Broker.Resulted, sent => sent.ExchangeId == Exchange);
+
+        var told = Assert.Single(
+            console.Services.GetRequiredService<NotificationLog>().All(),
+            one => string.Equals(one.Source, "Reply", StringComparison.Ordinal));
+
+        Assert.StartsWith("Sent, and", told.Text, StringComparison.Ordinal);
+        Assert.True(told.Good, "a Result that went was listed in the bell as refused");
+    }
+
+    [Fact]
     public async Task The_outcome_of_each_item_is_labelled_on_screen()
     {
         using var console = Asked();

@@ -500,6 +500,21 @@ public sealed partial class InboxFollowsExchangesTests
     }
 
     [Fact]
+    public async Task The_panels_way_to_its_conversation_leaves_the_frame_it_was_opened_in()
+    {
+        // The panel is also drawn inside the roadmap's framed conversation. Without target="_top" the link opened the
+        // whole console inside that frame, a console nested in a console.
+        using var console = Console();
+
+        Said(console, 1, 50, Wire.MessageType.Request, Orders, Billing, Ask("Which ledger?"));
+        Exchange(console, 50, open: true);
+
+        var panel = await GetAsync(console, "/Exchanges/Panel?project=alpha&id=50");
+
+        Assert.Matches("""<a href="/Conversations/Detail\?[^"]*" target="_top">Open it in its conversation</a>""", panel);
+    }
+
+    [Fact]
     public async Task A_number_that_is_no_exchange_says_so()
     {
         using var console = Console();

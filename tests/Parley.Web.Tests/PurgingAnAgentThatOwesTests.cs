@@ -53,6 +53,54 @@ public sealed partial class PurgingAnAgentThatOwesTests
         Assert.DoesNotContain(console.Broker.Paths, called => called.EndsWith("/Purge", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task An_owing_agent_is_purged_once_the_person_ticks_the_acceptance()
+    {
+        // Only the refusal half was held: a gate that ignored the box, and so never let an owing agent go, passed every
+        // test, and the person could tick it and type the name and still be told the agent was kept.
+        using var console = new RoadmapConsole();
+
+        console.Broker.Registry.Add(new Wire.RegistryRow
+        {
+            Name = Agent, Adapter = "mcp", Tier = Wire.AgentTier.Full, Status = Wire.AgentStatus.Active,
+        });
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Waiter, WaitedOn = Agent, ExchangeId = 7 });
+
+        using var client = console.CreateClient();
+        var path = $"/Projects/Act?project={RoadmapConsole.Project}&action=purge&subject={Agent}";
+        var page = await client.GetStringAsync(new Uri(path, UriKind.Relative), Ct);
+
+        using var form = new FormUrlEncodedContent(
+        [
+            new("__RequestVerificationToken", Token().Match(page).Groups[1].Value),
+            new("AcceptOwed", "true"),
+            new("Typed", Agent),
+        ]);
+
+        using var response = await client.PostAsync(new Uri(path, UriKind.Relative), form, Ct);
+        var body = WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync(Ct));
+
+        Assert.Contains(console.Broker.Paths, called => called.EndsWith("/Purge", StringComparison.Ordinal));
+        Assert.DoesNotContain(AgentWithdrawal.Kept + " ", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Purging_an_agent_that_owes_says_what_is_lost_and_offers_the_acceptance()
+    {
+        // Without the box on the page the person could never tick it, so an owing agent could not be purged at all.
+        using var console = new RoadmapConsole();
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Waiter, WaitedOn = Agent, ExchangeId = 7 });
+
+        var page = await DescribedAsync(console, "purge");
+
+        Assert.Contains("name=\"AcceptOwed\"", page, StringComparison.Ordinal);
+        Assert.Contains(AgentWithdrawal.AcceptOwed, page, StringComparison.Ordinal);
+        Assert.Contains(
+            $"<p class=\"unreachable\">{Agent} owes a Result in 1 open exchange(s). {Waiter} is waiting, and will find the exchange gone rather than still open.</p>",
+            page,
+            StringComparison.Ordinal);
+    }
+
     private static async Task<string> DescribedAsync(RoadmapConsole console, string action)
     {
         console.Broker.Registry.Add(new Wire.RegistryRow
