@@ -374,6 +374,38 @@ public sealed class TheInboxOnTheTerminalTests
     }
 
     [Fact]
+    public void An_empty_view_says_nothing_a_pruned_row_says_its_words_were_removed_and_one_day_is_singular()
+    {
+        // Drawn, not read off the lines held in memory: an empty view says "Nothing." under its heading, a row whose words
+        // retention removed says so instead of ending blank, and a window of one day reads "1 day".
+        var reading = new Parley.Client.Seating.InboxReading(
+            [
+                new Parley.Client.Seating.InboxRow(
+                    5, "billing-talk", Seated.Billing, Parley.Client.Seating.InboxView.WaitingOnYou,
+                    DateTimeOffset.UnixEpoch.AddHours(2), null, null, null),
+            ],
+            1,
+            0,
+            DateTimeOffset.UnixEpoch,
+            DateTimeOffset.UnixEpoch.AddDays(1));
+
+        using var driving = Driving.Open();
+
+        var (_, token) = InboxWindow.Open(driving.App, Walking.Alpha.Value, reading);
+
+        driving.App.LayoutAndDraw(true);
+
+        var screen = driving.Text();
+
+        Prompting.Close(driving.App, token);
+
+        Assert.Contains("owes you an answer. its words were removed by retention", screen, StringComparison.Ordinal);
+        Assert.Contains("In flight (0)", screen, StringComparison.Ordinal);
+        Assert.Contains("Closed in the last 1 day (0)", screen, StringComparison.Ordinal);
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(screen, @"^\W*Nothing\.", System.Text.RegularExpressions.RegexOptions.Multiline).Count);
+    }
+
+    [Fact]
     public void The_follow_up_is_live_on_an_agents_row_and_never_on_the_facilitators()
     {
         // Without the guard the follow-up was offered on the facilitator's row, which is never given work, so the status

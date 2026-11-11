@@ -102,6 +102,37 @@ public sealed class WroteElsewhereTests : IDisposable
     }
 
     [Fact]
+    public async Task An_exchange_moved_twice_is_placed_by_its_first_move_so_the_note_stays_where_it_was_written()
+    {
+        // orders asked billing here (E), then went straight to an older exchange elsewhere. The person moves E here to an
+        // existing conversation, then on again. E was written here: the note stays here, and the conversation E only
+        // passed through says nothing of orders, because each message is placed by the first move of its exchange made
+        // after it.
+        const string Between = "passed-through";
+
+        await AskAsync(Billing, Person, "Are the invoices ready?", Between);
+
+        var older = await AskAsync(Billing, Orders, "Which ledger?", Older);
+        await AskAsync(Person, Orders, "Sort the pricing script", Here);
+        var e = await AskAsync(Orders, Billing, "Who owns the script?", Here);
+        await ClarifyAsync(older, Orders, "Back to the ledger: monthly?");
+
+        var clarify = LastMessage();
+
+        var first = await _console.MoveExchangesAsync(Here, Between, false, [e], T0.AddMinutes(5), Ct);
+        Assert.True(first.Moved, first.Refused);
+
+        var second = await _console.MoveExchangesAsync(Between, "moved-on", true, [e], T0.AddMinutes(6), Ct);
+        Assert.True(second.Moved, second.Refused);
+
+        var noted = Assert.Single(await NotedHereAsync());
+
+        Assert.Equal((clarify, Older), (noted.Message, noted.Conversation));
+        Assert.DoesNotContain((await _console.ExportAsync(Between, Ct)).WroteElsewhere!, note => note.From == Orders);
+        Assert.Empty((await _console.ExportAsync("moved-on", Ct)).WroteElsewhere!);
+    }
+
+    [Fact]
     public async Task A_clarify_written_after_its_exchange_was_moved_is_still_noted_where_the_agent_was()
     {
         // The person moved an older exchange to a new conversation; later orders answers here and goes straight to that

@@ -71,8 +71,9 @@ address and any warnings. Inside a project:
   now, open outside Parley, or unknown, and beside it stalled, not collected yet, stopped on a refused
   permission, or retired when one applies. *Closed* is what ended in the last 7 days, with how it
   ended; the number of days is a setting, and **Show older** steps back one such window at a time.
-  Every row opens its conversation. A row in *Waiting on you* has a box for your result or reply, a box to ask the
-  agent to clarify, and a button to close it without answering. A row in *In flight* or *Closed* has a box for a
+  Every row opens its conversation. In *Waiting on you*, a request has a box for your result, a box to ask the
+  agent to clarify, and a button to close it without answering. A question the agent asked you has a box for your
+  reply and the same button. A row in *In flight* or *Closed* has a box for a
   follow-up, which goes to that agent as a new request in the same conversation; the facilitator's rows have none. **Ask which are still open** sends each agent that has questions
   waiting on you one request per conversation, listing them, so it can say which a later message
   already answered; only the agent closes its own questions.

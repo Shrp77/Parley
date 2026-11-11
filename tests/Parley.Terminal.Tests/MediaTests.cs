@@ -89,6 +89,33 @@ public sealed class MediaTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_conversation_with_exactly_one_image_says_the_terminal_cannot_draw_it()
+    {
+        await _files.PlaceAsync(Billing, "only.gif", "GIF89a-only", "pricing");
+
+        using var driving = Driving.Open();
+        using var shell = await IntoTheConversationAsync(driving, _files, _directory.FullName);
+
+        var pane = Enumerable.Range(0, 4).FirstOrDefault(
+            at =>
+            {
+                shell.Focus(at);
+                return shell.Actions().Any(a => a.Label == Media.Title);
+            },
+            -1);
+
+        Assert.True(pane >= 0, "no pane of the project view offers a conversation's media");
+
+        await shell.Actions().Single(a => a.Label == Media.Title).Run();
+        await shell.Settled;
+
+        var list = (ChoiceDialog)driving.Find(Media.Title);
+
+        Assert.Contains("1 image(s) and 0 other file(s)", list.Described, StringComparison.Ordinal);
+        Assert.Contains(Media.CannotDraw, list.Described, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Choosing_the_second_item_opens_the_second_item()
     {
         // Without the guard every choice opened the first item listed, whichever the person picked (review, lens 3 round 34).

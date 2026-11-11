@@ -69,6 +69,49 @@ public sealed partial class TheInboxFollowsWhatChangesTests
     }
 
     [Fact]
+    public async Task One_of_two_requests_to_the_same_agent_being_answered_moves_the_fingerprint()
+    {
+        // The person waits on orders twice, and orders' turns are not reported, so where orders stands reads the same
+        // before and after. Only the person's own edge changes: the fingerprint must hold those edges, not only the ones
+        // that wait on the person.
+        using var console = Seated();
+        using var client = console.CreateClient();
+
+        console.Broker.Edges.Clear();
+        console.Broker.Registry.Add(new Wire.RegistryRow
+        {
+            Name = Orders,
+            Adapter = "test",
+            Tier = Wire.AgentTier.Full,
+            Status = Wire.AgentStatus.Active,
+        });
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Person, WaitedOn = Orders, ExchangeId = 2 });
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Person, WaitedOn = Orders, ExchangeId = 3 });
+
+        var before = await DigestAsync(client);
+
+        _ = console.Broker.Edges.RemoveAll(edge => edge.ExchangeId == 3);
+
+        Assert.NotEqual(before, await DigestAsync(client));
+    }
+
+    [Fact]
+    public async Task A_project_that_did_not_answer_reads_differently_from_one_with_nothing_waiting()
+    {
+        // A broker that cannot be reached is not a broker with nothing waiting: when it comes back, the page must notice.
+        using var console = Seated();
+        using var client = console.CreateClient();
+
+        console.Broker.Edges.Clear();
+
+        var empty = await DigestAsync(client);
+
+        console.Broker.FailsOn = "/DescribeWaiting";
+
+        Assert.NotEqual(empty, await DigestAsync(client));
+    }
+
+    [Fact]
     public async Task Asking_for_the_fingerprint_collects_nothing_and_seats_nobody()
     {
         using var console = Seated();
