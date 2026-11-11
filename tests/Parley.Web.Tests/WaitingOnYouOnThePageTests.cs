@@ -70,7 +70,10 @@ public sealed class WaitingOnYouOnThePageTests
         // to close the person's own Request, which only its receiver can, and the broker refused it.
         Assert.Contains("data-exchange=\"5\" data-agent=\"" + Orders + "\" data-request=\"0\"", page, StringComparison.Ordinal);
         Assert.Contains("data-exchange=\"1\" data-agent=\"" + Orders + "\" data-request=\"1\"", page, StringComparison.Ordinal);
-        Assert.Contains("button.getAttribute(\"data-request\") !== \"1\"", page, StringComparison.Ordinal);
+        Assert.Contains(
+            "outcome.hidden = button.getAttribute(\"data-request\") !== \"1\";",
+            ScriptSource.Code(page, "button.reply-to"),
+            StringComparison.Ordinal);
         Assert.DoesNotContain("hasAttribute(\"data-request\")", page, StringComparison.Ordinal);
     }
 

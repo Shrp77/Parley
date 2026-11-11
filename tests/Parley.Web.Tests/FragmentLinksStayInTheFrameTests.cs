@@ -51,4 +51,22 @@ public sealed class FragmentLinksStayInTheFrameTests
 
         Assert.Empty(sentToTop);
     }
+
+    [Fact]
+    public void The_embedded_click_script_leaves_a_link_that_names_its_target_alone()
+    {
+        // The theory above holds the page's links to the script's rule; this holds the script to it. Without `!a.target`
+        // every in-page link, `_self` included, was sent to the whole window and the person left the roadmap (review,
+        // lens 3 round 41). Read as code, comments out, so the rule commented out behind a weaker one fails here.
+        var layout = ScriptSource.Page("src/Parley.Web/Pages/Shared/_Layout.cshtml");
+        var script = Assert.Single(
+            Regex.Matches(layout, @"<script data-embed-links>(?<body>.*?)</script>", RegexOptions.Singleline, TimeSpan.FromSeconds(5)));
+
+        Assert.Equal(
+            "document.addEventListener(\"click\", function (e) { " +
+            "var a = e.target && e.target.closest ? e.target.closest(\"a[href]\") : null; " +
+            "if (a && !a.target && !a.hasAttribute(\"download\") && a.origin === window.location.origin) { a.target = \"_top\"; } " +
+            "}, true);",
+            ScriptSource.Fold(script.Groups["body"].Value).Trim());
+    }
 }

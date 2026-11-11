@@ -25,6 +25,11 @@ public sealed class OneMessageViewAndOneComposerTests
         Directory.GetFiles(RepositoryPath("src/Parley.Web/Pages"), "*.cshtml", SearchOption.AllDirectories)
             .Select(path => (Path.GetFileName(path), File.ReadAllText(path)));
 
+    /// <summary>The frame's composer key handler script, as code.</summary>
+    /// <returns>The script with its comments taken out and its whitespace folded.</returns>
+    private static string ComposerKeys() =>
+        ScriptSource.Code(Pages().Single(page => page.Name == "_Layout.cshtml").Text, "hasAttribute(\"data-composer\")");
+
     [Fact]
     public void Only_the_message_partial_renders_what_a_message_says()
     {
@@ -75,11 +80,12 @@ public sealed class OneMessageViewAndOneComposerTests
 
         Assert.Equal(["_Layout.cshtml"], sending);
 
-        var frame = Pages().Single(page => page.Name == "_Layout.cshtml").Text;
+        // Read as code, comments out, so a line commented out behind a weaker one no longer counts as there.
+        var handler = ComposerKeys();
 
         // Ctrl+Enter makes a line, as in the terminal; it no longer sends.
-        Assert.Contains("if (e.ctrlKey) { lineBreak(", frame, StringComparison.Ordinal);
-        Assert.Contains("hasAttribute(\"data-composer\")", frame, StringComparison.Ordinal);
+        Assert.Contains("if (e.ctrlKey) { lineBreak(", handler, StringComparison.Ordinal);
+        Assert.Contains("form.requestSubmit()", handler, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -88,7 +94,8 @@ public sealed class OneMessageViewAndOneComposerTests
         // Without e.shiftKey Shift+Enter sends instead of making a line break; without e.isComposing the Enter that
         // confirms an input method's text sends the half-written message. No test runs the frame's script, so the
         // handler's early return is read from source and each key it must leave alone is named (review, lens 3 round 33).
-        var frame = Pages().Single(page => page.Name == "_Layout.cshtml").Text;
+        // Read as code, comments out, so a guard commented out behind a weaker line no longer counts as there.
+        var frame = ComposerKeys();
         var start = frame.IndexOf("hasAttribute(\"data-composer\")", StringComparison.Ordinal);
 
         Assert.True(start >= 0, "the composer's key handler was not found");

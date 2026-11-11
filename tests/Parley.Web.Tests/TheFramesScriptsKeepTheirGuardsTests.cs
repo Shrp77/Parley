@@ -7,9 +7,9 @@ namespace Parley.Web.Tests;
 /// Guards in the frame's own scripts: the timed reload, the tidying banner and an exchange reference's panel.
 /// </summary>
 /// <remarks>
-/// There is no script engine in these tests, so each is read from the frame's source, as
-/// <c>OneMessageViewAndOneComposerTests</c> reads it, and held to the exact condition the guard is, so taking the guard
-/// out fails here.
+/// There is no script engine in these tests, so each is read from the frame's source through <see cref="ScriptSource"/>,
+/// with comments taken out and whitespace folded, and held to the exact condition the guard is, so taking the guard out,
+/// or commenting it out behind a weaker line, fails here.
 /// </remarks>
 [Unit]
 public sealed class TheFramesScriptsKeepTheirGuardsTests
@@ -50,6 +50,9 @@ public sealed class TheFramesScriptsKeepTheirGuardsTests
 
         Assert.Matches(new Regex(@"shown\.hidden = said\.length === 0;", RegexOptions.None, TimeSpan.FromSeconds(1)), script);
         Assert.DoesNotMatch(new Regex(@"shown\.hidden = (false|true)\b", RegexOptions.None, TimeSpan.FromSeconds(1)), script);
+
+        // And nothing else sets it, so a second assignment beside the pinned one cannot undo it.
+        Assert.Equal(["shown.hidden = said.length === 0"], ScriptSource.Assignments(script, "shown.hidden"));
     }
 
     [Fact]
@@ -57,8 +60,7 @@ public sealed class TheFramesScriptsKeepTheirGuardsTests
     {
         // Without the guard every press on "exchange #N" added another panel under the line, and none could be closed
         // (review, lens 3 round 34).
-        // Read with its whitespace folded to single spaces, because how the source is indented is not what it does.
-        var script = Regex.Replace(Script("button.exchange-ref"), @"\s+", " ", RegexOptions.None, TimeSpan.FromSeconds(1));
+        var script = Script("button.exchange-ref");
 
         const string Closes =
             "var open = button.getAttribute(\"data-panel\"); " +
@@ -70,9 +72,10 @@ public sealed class TheFramesScriptsKeepTheirGuardsTests
             "return; " +
             "}";
 
-        var closes = script.IndexOf(Closes, StringComparison.Ordinal);
+        var closes = ScriptSource.Once(script, Closes, "a press on a reference with its panel open no longer closes the panel and stops");
 
-        Assert.True(closes >= 0, "a press on a reference with its panel open no longer closes the panel and stops");
+        // And what the close reads is what the button recorded, with nothing set over it first.
+        Assert.Equal(["open = button.getAttribute(\"data-panel\")"], ScriptSource.Assignments(script, "open"));
 
         // The close comes before a panel is made, and the panel made is the one a second press reads back.
         var opens = script.IndexOf("button.setAttribute(\"data-panel\", panel.id);", StringComparison.Ordinal);
@@ -148,18 +151,10 @@ public sealed class TheFramesScriptsKeepTheirGuardsTests
             ScriptSource.Assignments(code, "line"));
     }
 
-    /// <summary>The one inline script in the frame that holds a piece of text.</summary>
-    /// <param name="holding">The text.</param>
-    /// <returns>The script's body.</returns>
-    private static string Script(string holding)
-    {
-        var scripts = Regex.Matches(Layout, @"<script>(?<body>.*?)</script>", RegexOptions.Singleline, TimeSpan.FromSeconds(5))
-            .Select(match => match.Groups["body"].Value)
-            .Where(body => body.Contains(holding, StringComparison.Ordinal))
-            .ToList();
-
-        return Assert.Single(scripts);
-    }
+    /// <summary>The one inline script in the frame whose code holds a piece of text, as code.</summary>
+    /// <param name="holding">The text, which must be in the code and not only in a comment.</param>
+    /// <returns>The script's code, comments out and whitespace folded.</returns>
+    private static string Script(string holding) => ScriptSource.Code(Layout, holding);
 
     private static string Page(string relative) => File.ReadAllText(RepositoryPath(relative));
 

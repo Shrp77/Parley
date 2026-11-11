@@ -281,6 +281,23 @@ public sealed class FilesPageTests : IDisposable
             : "(no outcome on the page) " + WebUtility.HtmlDecode(Regex.Replace(body, "<[^>]+>", " ", RegexOptions.None, TimeSpan.FromSeconds(2)));
     }
 
+    [Fact]
+    public async Task The_upload_picker_offers_images_as_well_as_text()
+    {
+        // Without this the picker offered only .md and .txt after images could be placed (SPEC.md §9.5), so a person could
+        // not choose a picture to upload from the page (review, lens 3 round 41).
+        using var client = _console.CreateClient();
+
+        var body = await client.GetStringAsync(new Uri(Page, UriKind.Relative), Ct);
+        var picker = Regex.Match(
+            body, """<input id="upload" name="upload" type="file" accept="(?<accept>[^"]*)" """, RegexOptions.None, TimeSpan.FromSeconds(2));
+
+        Assert.True(picker.Success, "the upload picker is not on the page");
+        Assert.Equal(
+            [".gif", ".jpeg", ".jpg", ".md", ".png", ".txt", ".webp"],
+            picker.Groups["accept"].Value.Split(',', StringSplitOptions.TrimEntries).Order(StringComparer.Ordinal));
+    }
+
     private static Wire.SharedFileView View(string conversation, string name, long size, string hash, string placedBy) => new()
     {
         ConversationId = conversation,

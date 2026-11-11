@@ -303,6 +303,28 @@ public sealed class ConversationPanelTests
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Fact]
+    public async Task A_new_conversation_says_so_to_the_script_that_ticks_the_default_agent()
+    {
+        // The page's script ticks the project's default agent only in `.recipients[data-new="true"]`. Without the marker a
+        // new conversation started with nobody ticked; with it on every conversation, the default was ticked into one that
+        // already had its own people (review, lens 3 round 41).
+        using (var fresh = new TranscriptConsole())
+        using (var client = fresh.CreateClient())
+        {
+            var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+
+            Assert.Contains("<aside class=\"recipients\" aria-label=\"Who to talk to\" data-new=\"true\">", page, StringComparison.Ordinal);
+        }
+
+        using var asked = Asked();
+        using var spoken = asked.CreateClient();
+
+        var said = await spoken.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+
+        Assert.Contains("<aside class=\"recipients\" aria-label=\"Who to talk to\" data-new=\"false\">", said, StringComparison.Ordinal);
+    }
+
     private static string Seen(string html)
     {
         var at = html.IndexOf("data-seen=\"", StringComparison.Ordinal);

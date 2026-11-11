@@ -28,7 +28,7 @@ public sealed class ParleySettingsTests
         // closed window, which the terminal reads too (spec 036).
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(page, "method=\"post\"", System.Text.RegularExpressions.RegexOptions.IgnoreCase));
         Assert.Contains("action=\"/Settings?handler=Inbox\"", page, StringComparison.Ordinal);
-        Assert.Contains("localStorage.setItem(key, value)", page, StringComparison.Ordinal);
+        Assert.Contains("localStorage.setItem(key, value)", ScriptSource.Code(page, "function write(key, value)"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -92,6 +92,12 @@ public sealed class ParleySettingsTests
         var applied = page.IndexOf("localStorage.getItem(\"parley.theme\")", StringComparison.Ordinal);
 
         Assert.True(applied > 0);
+
+        // And it is code, not a comment, in the script that sets the theme.
+        Assert.Contains(
+            "if (theme === \"light\" || theme === \"dark\") { document.documentElement.setAttribute(\"data-theme\", theme); }",
+            ScriptSource.Code(page, "var theme = localStorage.getItem(\"parley.theme\")"),
+            StringComparison.Ordinal);
         Assert.True(applied < page.IndexOf("<style", StringComparison.Ordinal));
     }
 }

@@ -69,8 +69,11 @@ public sealed class FrameTests
         // The constant is right until the frame wraps to two lines, which it does on a narrow
         // screen — and then every offset above is wrong by however much it grew, with nothing
         // anywhere reporting it.
-        Assert.Contains("ResizeObserver", Layout, StringComparison.Ordinal);
-        Assert.Contains("'--frame'", Layout, StringComparison.Ordinal);
+        // Read as code, comments out, so a measurement commented out no longer counts as there.
+        var measures = ScriptSource.Code(Layout, "'--frame'");
+
+        Assert.Contains("new ResizeObserver(apply).observe(frame);", measures, StringComparison.Ordinal);
+        Assert.Contains("document.documentElement.style.setProperty( '--frame', frame.getBoundingClientRect().height + 'px');", measures, StringComparison.Ordinal);
 
         // And the stylesheet still carries a real figure, because that is what a reader with no
         // scripts keeps.
