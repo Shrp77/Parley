@@ -249,12 +249,12 @@ public sealed class InboxModel(
     /// </remarks>
     public async Task<IActionResult> OnPostFollowUpAsync()
     {
-        var hold = For is { Length: > 0 } project ? seats.Held(project) : null;
+        var (_, hold, _, why) = await SeatedAsync().ConfigureAwait(false);
         var settings = For is { Length: > 0 } named ? directory.Find(named) : null;
 
         if (hold is null || settings is null)
         {
-            return await NotSeatedAsync(followUp: true, "sent").ConfigureAwait(false);
+            return await NotSeatedAsync(followUp: true, "sent", why ?? "This console has no such project.").ConfigureAwait(false);
         }
 
         if (!AgentName.TryCreate(Agent, out var agent) || Facilitation.Is(agent) || string.IsNullOrWhiteSpace(Conversation))
@@ -398,11 +398,11 @@ public sealed class InboxModel(
     /// <returns>The page, saying what happened.</returns>
     public async Task<IActionResult> OnPostResultAsync()
     {
-        var (seat, hold, voice) = Seated();
+        var (seat, hold, voice, why) = await SeatedAsync().ConfigureAwait(false);
 
         if (seat is null || hold is null || voice is null)
         {
-            return await NotSeatedAsync(followUp: false, "sent").ConfigureAwait(false);
+            return await NotSeatedAsync(followUp: false, "sent", why ?? "Your seat in that project could not be taken.").ConfigureAwait(false);
         }
 
         // Zipped rather than trusted to arrive in matching lengths: these are three parallel form
@@ -440,11 +440,11 @@ public sealed class InboxModel(
     /// </remarks>
     public async Task<IActionResult> OnPostClarifyAsync()
     {
-        var (seat, hold, voice) = Seated();
+        var (seat, hold, voice, why) = await SeatedAsync().ConfigureAwait(false);
 
         if (seat is null || hold is null || voice is null)
         {
-            return await NotSeatedAsync(followUp: false, "sent").ConfigureAwait(false);
+            return await NotSeatedAsync(followUp: false, "sent", why ?? "Your seat in that project could not be taken.").ConfigureAwait(false);
         }
 
         var sent = await voice
@@ -468,11 +468,11 @@ public sealed class InboxModel(
     /// <remarks>The question may be stale, or answered elsewhere. The conversation stays open and the other side is told.</remarks>
     public async Task<IActionResult> OnPostCloseAsync()
     {
-        var (seat, hold, _) = Seated();
+        var (seat, hold, _, why) = await SeatedAsync().ConfigureAwait(false);
 
         if (seat is null || hold is null || directory.Find(For) is not { } project)
         {
-            return await NotSeatedAsync(followUp: false, "closed").ConfigureAwait(false);
+            return await NotSeatedAsync(followUp: false, "closed", why ?? "This console has no such project.").ConfigureAwait(false);
         }
 
         var read = await BrokerDirectory.ReadAsync(async () =>
@@ -584,24 +584,15 @@ public sealed class InboxModel(
     /// <summary>Says nothing was done because the person has no seat in the form's project, keeping what they typed.</summary>
     /// <param name="followUp">Whether the post was a follow-up, whose box is kept apart from a reply's.</param>
     /// <param name="done">What would have been done: <c>sent</c> or <c>closed</c>.</param>
+    /// <param name="why">Why the seat could not be taken.</param>
     /// <returns>The page.</returns>
     /// <remarks>
-    /// Posts take the seats first, so this is a broker that could not seat the person, or a form naming no project here.
-    /// A redirect lost the words, the view and any word of why, which is the fault round 2 fixed for a refused follow-up.
+    /// Posts take the seats first and the handler tries once more, so this is a broker that could not seat the person, or a
+    /// form naming no project here. A redirect lost the words, the view and any word of why, which is the fault round 2
+    /// fixed for a refused follow-up.
     /// </remarks>
-    private async Task<IActionResult> NotSeatedAsync(bool followUp, string done)
+    private async Task<IActionResult> NotSeatedAsync(bool followUp, string done, string why)
     {
-        // Asked once more for the reason: the broker's own sentence when it gives one, and when the seat comes back on this
-        // second try the words are still in the box, so a second press goes.
-        var why = For is { Length: > 0 } named && directory.Find(named) is { } project
-            ? (await PersonSeats.EnsureAsync(seats, directory, project, HttpContext.RequestAborted).ConfigureAwait(false)) switch
-            {
-                { Seated: true } => "Your seat in that project was only just taken back; press it again.",
-                { Problem: { } problem } => problem,
-                _ => "Your seat in that project could not be taken.",
-            }
-            : "This console has no such project.";
-
         Outcome = $"Nothing was {done}. {why}";
         _followUpRefused = followUp;
         _refused = !followUp;
@@ -612,16 +603,35 @@ public sealed class InboxModel(
         return Page();
     }
 
-    /// <summary>The seat this person holds in the project a form named.</summary>
-    /// <returns>The seat, the hold and a voice, or nulls when there is none.</returns>
-    private (Seat? Seat, SeatHold? Hold, SeatVoice? Voice) Seated()
+    /// <summary>The seat this person holds in the project a form named, taken back first when it was let go.</summary>
+    /// <returns>The seat, the hold and a voice, or nulls and why there is none.</returns>
+    /// <remarks>
+    /// <b>A press of Send is the person asking for it to go</b> (owner, 2026-11-11). The seats are taken before the handler
+    /// runs; when that failed and taking it again here works, the words go now rather than coming back with "press it
+    /// again". One more try, not a loop: a broker that refuses twice is said so, with the words kept.
+    /// </remarks>
+    private async Task<(Seat? Seat, SeatHold? Hold, SeatVoice? Voice, string? Problem)> SeatedAsync()
     {
-        if (directory.Find(For) is not { } project || seats.Held(project.Name.Value) is not { } hold)
+        if (For is not { Length: > 0 } || directory.Find(For) is not { } project)
         {
-            return (null, null, null);
+            return (null, null, null, "This console has no such project.");
         }
 
-        return (hold.Seat, hold, new SeatVoice(directory.AgentsFor(project), hold.Seat));
+        var hold = seats.Held(project.Name.Value);
+
+        if (hold is null)
+        {
+            var again = await PersonSeats.EnsureAsync(seats, directory, project, HttpContext.RequestAborted).ConfigureAwait(false);
+
+            if (again.Hold is not { } taken)
+            {
+                return (null, null, null, again.Problem ?? "Your seat in that project could not be taken.");
+            }
+
+            hold = taken;
+        }
+
+        return (hold.Seat, hold, new SeatVoice(directory.AgentsFor(project), hold.Seat), null);
     }
 
     /// <summary>Reads what is waiting in every project this person is seated in.</summary>
