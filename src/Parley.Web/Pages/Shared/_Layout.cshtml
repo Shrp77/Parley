@@ -385,7 +385,9 @@
         .rail a[aria-current] .icon { font-variation-settings: "FILL" 1; }
         .rail-label { overflow: hidden; text-overflow: ellipsis; }
 
-        .rail-toggle { width: 100%; background: none; box-shadow: none; margin-top: auto; order: 2; cursor: pointer; }
+        /* The foot, always at the bottom: Parley's settings, then the toggle under it, expanded or collapsed. */
+        .rail nav.rail-foot { margin-top: auto; padding-top: 0.5rem; border-top: 1px solid var(--md-sys-color-outline-variant); }
+        .rail-toggle { width: 100%; background: none; box-shadow: none; order: 2; cursor: pointer; }
         .rail-toggle .icon { transition: transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard); }
         html[data-nav="collapsed"] .rail-toggle .icon { transform: rotate(180deg); }
 
@@ -2302,8 +2304,9 @@
             ("/", "Projects", "grid_view", path == "/" && !agentsView),
             ("/?tab=agents", "All Agents", "group", onAgentsTab),
             ("/Inbox", "Inbox", "inbox", path.StartsWith("/Inbox", StringComparison.Ordinal)),
-            ("/Settings", "Settings", "settings", path == "/Settings"),
         };
+        // At the foot with the toggle, in both states, so a project's own items never sit between it and the rest.
+        var parleySettings = ("/Settings", "Settings", "settings", path == "/Settings");
         var inProjectRail = new List<(string Href, string Label, string Icon, bool Current)>();
 
         if (project.Length > 0)
@@ -2354,6 +2357,12 @@
                     </a>
                 }
             }
+        </nav>
+        <nav class="rail-foot" aria-label="Console settings">
+            <a href="@parleySettings.Item1" title="@parleySettings.Item2" aria-current="@(parleySettings.Item4 ? "page" : null)">
+                <span class="icon" aria-hidden="true">@parleySettings.Item3</span>
+                <span class="rail-label">@parleySettings.Item2</span>
+            </a>
         </nav>
         <button type="button" class="rail-toggle" id="rail-toggle" aria-controls="rail" aria-expanded="true">
             <span class="icon" aria-hidden="true">chevron_left</span>
@@ -2844,6 +2853,81 @@
                 var holder = holderFor(e);
 
                 if (holder && holder.parleyAttach) { holder.parleyAttach([].slice.call(e.dataTransfer.files)); }
+            });
+        })();
+    </script>
+    @* **A message half written is kept until it is sent** (ComposerBox; owner, 2026-11-13: a reply half written in the Inbox
+       was gone after answering another message first). Every box with a `data-draft` key saves its words in this browser as
+       they are typed, and gets them back when it is drawn empty again: after a reload, a send elsewhere, or a return another
+       day. A box the server drew with words in it shows those, since a refused send keeps exactly what was sent. A form
+       that is sent drops its drafts; a send the page itself stopped was never sent and keeps them. Files are not kept: a
+       page cannot hand back files the browser chose. *@
+    <script>
+        (function () {
+            var prefix = "parley-draft:";
+            var keepFor = 14 * 24 * 60 * 60 * 1000;
+            var store;
+
+            try { store = window.localStorage; store.getItem(prefix); } catch (e) { return; }
+
+            function read(key) {
+                try {
+                    var kept = JSON.parse(store.getItem(prefix + key) || "null");
+
+                    return kept && typeof kept.text === "string" ? kept.text : "";
+                } catch (e) { return ""; }
+            }
+
+            function write(key, text) {
+                try {
+                    if (text.trim() === "") { store.removeItem(prefix + key); }
+                    else { store.setItem(prefix + key, JSON.stringify({ text: text, at: Date.now() })); }
+                } catch (e) { }
+            }
+
+            // A draft nobody came back to in two weeks answers something long settled.
+            try {
+                for (var i = store.length - 1; i >= 0; i--) {
+                    var name = store.key(i);
+
+                    if (name && name.indexOf(prefix) === 0) {
+                        var old = null;
+
+                        try { old = JSON.parse(store.getItem(name)); } catch (e) { }
+                        if (!old || typeof old.at !== "number" || Date.now() - old.at > keepFor) { store.removeItem(name); }
+                    }
+                }
+            } catch (e) { }
+
+            document.querySelectorAll("textarea[data-composer][data-draft]").forEach(function (box) {
+                var key = box.getAttribute("data-draft");
+
+                if (box.value.trim() !== "") { write(key, box.value); return; }
+
+                var text = read(key);
+
+                if (text === "") { return; }
+
+                box.value = text;
+
+                // Shown, not only kept: a reply in a closed Inbox row opens it, and the conversation page's box comes back.
+                var row = box.closest("details");
+
+                if (row) { row.open = true; }
+                box.dispatchEvent(new Event("input", { bubbles: true }));
+                document.dispatchEvent(new CustomEvent("parley:compose"));
+            });
+
+            document.addEventListener("input", function (e) {
+                var box = e.target;
+
+                if (box instanceof HTMLTextAreaElement && box.hasAttribute("data-draft")) { write(box.getAttribute("data-draft"), box.value); }
+            });
+
+            document.addEventListener("submit", function (e) {
+                if (e.defaultPrevented || !(e.target instanceof HTMLFormElement)) { return; }
+
+                e.target.querySelectorAll("textarea[data-draft]").forEach(function (box) { write(box.getAttribute("data-draft"), ""); });
             });
         })();
     </script>

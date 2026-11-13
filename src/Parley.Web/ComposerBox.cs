@@ -15,6 +15,10 @@ namespace Parley.Web;
 /// <c>multipart/form-data</c>, and its handler places what arrives as <c>Attachments</c> through <see cref="ComposerFiles"/>.
 /// </param>
 /// <param name="Attached">Files an earlier press placed before its send failed, kept so they are not uploaded again.</param>
+/// <param name="Draft">
+/// Which message this box is for, as the key its draft is kept under in this browser: the project and the exchange or
+/// conversation it answers. None for a box whose words are not a message.
+/// </param>
 /// <remarks>
 /// <para>
 /// <b>One box and one set of keys everywhere a person types more than a line</b> (owner, 2026-11-06: "Anywhere where you
@@ -31,6 +35,12 @@ namespace Parley.Web;
 /// and the same paste in the Inbox did nothing, because the conversation page carried its own copy). The partial draws
 /// the attachment area and one script in the frame runs it for every box that has one.
 /// </para>
+/// <para>
+/// <b>A message box keeps what was typed until it is sent</b> (owner, 2026-11-13: a reply half written in the Inbox was
+/// gone after answering another message first). The frame's script saves the words under <see cref="Draft"/> as they are
+/// typed, puts them back when the box is drawn empty again, and drops them when the form is sent. A box the server drew
+/// with words in it (a refused send kept them) shows those words, since they are what was last sent.
+/// </para>
 /// </remarks>
 public sealed record ComposerBox(
     string Name,
@@ -43,7 +53,8 @@ public sealed record ComposerBox(
     bool Required = true,
     int? MaxLength = null,
     bool Attach = false,
-    IReadOnlyList<string>? Attached = null)
+    IReadOnlyList<string>? Attached = null,
+    string? Draft = null)
 {
     /// <summary>What every composer says about its keys.</summary>
     public const string Keys = "Enter sends. Shift+Enter or Ctrl+Enter makes a new line.";

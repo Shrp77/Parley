@@ -142,7 +142,8 @@
                                     Rows: 2,
                                     Label: $"Follow up with {row.Agent.Role}: a new request in {row.Conversation}",
                                     Attach: true,
-                                    Attached: kept ? [.. Model.Attached] : null))" />
+                                    Attached: kept ? [.. Model.Attached] : null,
+                                    Draft: $"{project}/follow-up/{row.Exchange}"))" />
                                 <button type="submit">Send follow-up</button>
                             </form>
                         }

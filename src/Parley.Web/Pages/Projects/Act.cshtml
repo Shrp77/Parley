@@ -67,7 +67,8 @@ else
         {
             @* A message to the agent, so it is the console's one composer, with the same keys as every other. *@
             <p>
-                <partial name="_Composer" model="@(new Parley.Web.ComposerBox("text", Id: "text", Rows: 4, Label: "Your reply:"))" />
+                <partial name="_Composer" model="@(new Parley.Web.ComposerBox(
+                    "text", Id: "text", Rows: 4, Label: "Your reply:", Draft: $"{Model.Project}/asked-back/{Model.Subject}"))" />
             </p>
         }
 

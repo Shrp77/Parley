@@ -896,7 +896,8 @@ become, not by where the box is: text that becomes one of the person's messages 
 Clarify asking back, or a Result on an agent's Request to them) is written in a message box, and every message box on a
 surface takes the same keys, the same attachments (a file pasted, dropped or picked is placed in the conversation and
 named in the message, §9.5; pasted text past the surface's threshold becomes a file), and keeps the words and files a
-refused send leaves, so nothing is typed or attached twice. A new place that takes such text is a message box by this
+refused send leaves, so nothing is typed or attached twice. A surface that can also keeps a message box's unsent
+words where the person left them, through a reload or a visit elsewhere, until they are sent. A new place that takes such text is a message box by this
 rule, without being listed. Text that names or describes something is not a message, even when an agent later reads
 it: a conversation's or project's name, an ownership line, a roadmap's text, a reason given when closing. Such a box
 takes no attachments.

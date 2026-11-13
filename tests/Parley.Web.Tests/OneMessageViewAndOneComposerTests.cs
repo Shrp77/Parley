@@ -211,6 +211,10 @@ public sealed class OneMessageViewAndOneComposerTests
         Assert.DoesNotContain("**new**", body, StringComparison.Ordinal);
         Assert.Matches("""<textarea data-composer id="t-1-request" name="Texts" """, page);
         Assert.Matches("""<textarea data-composer id="c-1" name="Clarification" """, page);
+
+        // Each keeps its draft under its own exchange, in its own project: an exchange's number is one store's.
+        Assert.Contains($"data-draft=\"{RoadmapConsole.Project}/result/1/request\"", page, StringComparison.Ordinal);
+        Assert.Contains($"data-draft=\"{RoadmapConsole.Project}/clarify/1\"", page, StringComparison.Ordinal);
     }
 
     private static string RepositoryPath(string relative)

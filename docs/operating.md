@@ -303,6 +303,11 @@ again. Pasted text longer than 4,000 characters becomes a file too,
 named `pasted-…txt`, rather than words in the box. Placing is the only way a file
 gets in. Nothing else may change the folder, and Parley puts it right when something does.
 
+Words you have typed in a message box and not sent are kept in your browser. Go and answer something else, reload, or
+come back the next day, and they are back in the box; an Inbox row holding them opens. They go when you send. Attached
+files are not kept this way, since a page cannot pick files for you again. A draft nobody comes back to is dropped after
+two weeks.
+
 **The sweep.** The broker checks the whole file location when it starts, and again whenever a
 list, fetch, removal or placement finds something wrong. This check is the sweep. It does three
 things:

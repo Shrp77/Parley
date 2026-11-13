@@ -32,7 +32,7 @@
         <label for="@Model.Id">@label</label>
     }
     <textarea data-composer id="@Model.Id" name="@Model.Name" rows="@Model.Rows" required="@Model.Required"
-              maxlength="@Model.MaxLength" placeholder="@Model.Placeholder">@Model.Value</textarea>
+              maxlength="@Model.MaxLength" placeholder="@Model.Placeholder" data-draft="@Model.Draft">@Model.Value</textarea>
     @if (Model.ShowKeys)
     {
         <span class="composer-note">@Parley.Web.ComposerBox.Keys</span>

@@ -144,7 +144,7 @@ internal static class ScriptSource
         return found;
     }
 
-    private static string RepositoryPath(string relative)
+    public static string RepositoryPath(string relative)
     {
         var directory = AppContext.BaseDirectory;
 

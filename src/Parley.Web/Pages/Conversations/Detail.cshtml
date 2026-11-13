@@ -239,7 +239,8 @@ else
         Placeholder: Model.Seat is null ? "What do you want them to do, or to know?" : Framing.AskExample,
         ShowKeys: false,
         Attach: true,
-        Attached: [.. Model.Attached]))" />
+        Attached: [.. Model.Attached],
+        Draft: $"{Model.Project}/conversation/{Model.Id}"))" />
 
     <div class="composer-send">
         <span class="composer-note">@Parley.Web.ComposerBox.Keys</span>
