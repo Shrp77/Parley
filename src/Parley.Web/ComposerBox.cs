@@ -10,6 +10,11 @@ namespace Parley.Web;
 /// <param name="ShowKeys">Whether the partial says which keys send, or the page says it beside its own Send button.</param>
 /// <param name="Required">Whether the form may not be sent with it empty.</param>
 /// <param name="MaxLength">The most characters it takes, or none; only where the store holds that bound.</param>
+/// <param name="Attach">
+/// Whether files may be pasted or dropped into it, to go with the words. Its form must be sent as
+/// <c>multipart/form-data</c>, and its handler places what arrives as <c>Attachments</c> through <see cref="ComposerFiles"/>.
+/// </param>
+/// <param name="Attached">Files an earlier press placed before its send failed, kept so they are not uploaded again.</param>
 /// <remarks>
 /// <para>
 /// <b>One box and one set of keys everywhere a person types more than a line</b> (owner, 2026-11-06: "Anywhere where you
@@ -21,6 +26,11 @@ namespace Parley.Web;
 /// <para>
 /// A box that only shows text and takes none (<c>readonly</c>) is not a composer.
 /// </para>
+/// <para>
+/// <b>Attaching is the composer's too</b> (owner, 2026-11-13: a screenshot pasted on the conversation page was attached,
+/// and the same paste in the Inbox did nothing, because the conversation page carried its own copy). The partial draws
+/// the attachment area and one script in the frame runs it for every box that has one.
+/// </para>
 /// </remarks>
 public sealed record ComposerBox(
     string Name,
@@ -31,8 +41,17 @@ public sealed record ComposerBox(
     string? Label = null,
     bool ShowKeys = true,
     bool Required = true,
-    int? MaxLength = null)
+    int? MaxLength = null,
+    bool Attach = false,
+    IReadOnlyList<string>? Attached = null)
 {
     /// <summary>What every composer says about its keys.</summary>
     public const string Keys = "Enter sends. Shift+Enter or Ctrl+Enter makes a new line.";
+
+    /// <summary>How long pasted text may be before it is attached as a file rather than put in the box.</summary>
+    /// <remarks>
+    /// A log or a stack trace pasted into the box is a long message the agent has to read whole; as a file it is named in a
+    /// line and fetched only if wanted. Well under the soft limit, so a paste never makes a message long by itself.
+    /// </remarks>
+    public const int PasteBecomesAFileOver = 4000;
 }

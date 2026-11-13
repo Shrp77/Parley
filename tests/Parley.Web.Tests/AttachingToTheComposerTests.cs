@@ -321,8 +321,8 @@ public sealed partial class AttachingToTheComposerTests
 
         Assert.Contains("enctype=\"multipart/form-data\"", page, StringComparison.Ordinal);
         Assert.Contains("data-types=\".md .txt .png .jpg .jpeg .gif .webp\"", page, StringComparison.Ordinal);
-        Assert.Contains($"data-paste-limit=\"{Parley.Web.Pages.Conversations.DetailModel.PasteBecomesAFileOver}\"", page, StringComparison.Ordinal);
-        Assert.DoesNotContain(".svg", page[page.IndexOf("id=\"attachments\"", StringComparison.Ordinal)..], StringComparison.Ordinal);
+        Assert.Contains($"data-paste-limit=\"{ComposerBox.PasteBecomesAFileOver}\"", page, StringComparison.Ordinal);
+        Assert.DoesNotContain(".svg", page[page.IndexOf("class=\"attachments\"", StringComparison.Ordinal)..], StringComparison.Ordinal);
     }
 
     [Fact]

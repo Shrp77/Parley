@@ -68,7 +68,7 @@
             function busy() {
                 var focused = document.activeElement;
                 if (focused && focused.matches("input, textarea, select")) { return true; }
-                if (document.querySelector("dialog[open], details[open], .exchange-panel")) { return true; }
+                if (document.querySelector("dialog[open], details[open], .exchange-panel, main .attachment")) { return true; }
                 return Array.prototype.some.call(document.querySelectorAll("main textarea"), function (box) { return box.value.trim() !== ""; });
             }
 
@@ -311,10 +311,12 @@
                                 @* One field per item the request carried. The broker checks the result against the
                                    stored request and names the items it expected when they differ, so this form
                                    cannot close the exchange on items nobody asked about. *@
-                                <form method="post" asp-page-handler="Result" class="reply">
+                                <form method="post" asp-page-handler="Result" class="reply" enctype="multipart/form-data">
                                     <input type="hidden" name="For" value="@projectName" />
                                     <input type="hidden" name="Exchange" value="@item.Message.ExchangeId" />
+                                    <input type="hidden" name="Conversation" value="@item.Message.ConversationId" />
 
+                                    @* Files go with the first item's words: the form sends one Result, and its files are named once. *@
                                     @foreach (var id in owed)
                                     {
                                         <input type="hidden" name="Ids" value="@id" />
@@ -324,7 +326,9 @@
                                             Id: $"t-{item.Message.ExchangeId}-{id}",
                                             Rows: 2,
                                             Label: $"{id} — what was done, the answer, or what blocks it",
-                                            ShowKeys: false))" />
+                                            ShowKeys: false,
+                                            Attach: id == owed[0],
+                                            Attached: id == owed[0] ? Model.KeptFiles(item.Message.ExchangeId, "Result") : null))" />
                                         @* Labelled on screen, not only for a screen reader: an unlabelled "Done" read as a
                                            button or a state, not as the outcome the agent is told. *@
                                         <label for="v-@item.Message.ExchangeId-@id">Outcome for @id</label>
@@ -349,15 +353,18 @@
                             {
                                 @* The other move a holder has: ask what was meant, or answer what they asked you.
                                    Either way the turn goes to them. *@
-                                <form method="post" asp-page-handler="Clarify" class="reply">
+                                <form method="post" asp-page-handler="Clarify" class="reply" enctype="multipart/form-data">
                                     <input type="hidden" name="For" value="@projectName" />
                                     <input type="hidden" name="Exchange" value="@item.Message.ExchangeId" />
+                                    <input type="hidden" name="Conversation" value="@item.Message.ConversationId" />
                                     <partial name="_Composer" model="@(new Parley.Web.ComposerBox(
                                         "Clarification",
                                         Model.Kept(item.Message.ExchangeId) ? Model.Clarification : null,
                                         Id: $"c-{item.Message.ExchangeId}",
                                         Rows: 2,
-                                        Label: item.OwesReply ? "Your reply" : "Or ask them to clarify"))" />
+                                        Label: item.OwesReply ? "Your reply" : "Or ask them to clarify",
+                                        Attach: true,
+                                        Attached: Model.KeptFiles(item.Message.ExchangeId, "Clarify")))" />
                                     <button type="submit">@(item.OwesReply ? "Reply" : "Ask")</button>
                                 </form>
                                 @* For a question gone stale or answered elsewhere. Nothing is said on the person's behalf: the

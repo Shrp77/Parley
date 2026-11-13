@@ -891,6 +891,16 @@ exchanges the person's words settled:
   have, and changes nothing else: no message, and the depth does not move. The agent then answers
   it with an ordinary Result.
 
+**Every place a person writes a message to an agent behaves the same.** The rule is drawn by what the words
+become, not by where the box is: text that becomes one of the person's messages (a Request, a reply to a question, a
+Clarify asking back, or a Result on an agent's Request to them) is written in a message box, and every message box on a
+surface takes the same keys, the same attachments (a file pasted, dropped or picked is placed in the conversation and
+named in the message, §9.5; pasted text past the surface's threshold becomes a file), and keeps the words and files a
+refused send leaves, so nothing is typed or attached twice. A new place that takes such text is a message box by this
+rule, without being listed. Text that names or describes something is not a message, even when an agent later reads
+it: a conversation's or project's name, an ownership line, a roadmap's text, a reason given when closing. Such a box
+takes no attachments.
+
 **A reply does not close the question; the agent does.** After a reply on its exchange the agent decides
 whether it was enough. If it was, it sends the Result. If it was not, it sends another Clarify. The broker
 closes nothing on the agent's behalf (principle 2.5), and no surface does either.

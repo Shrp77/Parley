@@ -1,13 +1,40 @@
 @model Parley.Web.ComposerBox
+@using Parley.Core
 @* **The box a person types in, the same everywhere** (owner, 2026-11-06). Its keys are the frame's handler for every
-   `data-composer` box, so no page writes its own: see ComposerBox. *@
-@if (Model.Label is { Length: > 0 } label)
-{
-    <label for="@Model.Id">@label</label>
-}
-<textarea data-composer id="@Model.Id" name="@Model.Name" rows="@Model.Rows" required="@Model.Required"
-          maxlength="@Model.MaxLength" placeholder="@Model.Placeholder">@Model.Value</textarea>
-@if (Model.ShowKeys)
-{
-    <span class="composer-note">@ComposerBox.Keys</span>
-}
+   `data-composer` box, so no page writes its own: see ComposerBox. A message box (SPEC.md §5.6) also takes files: this
+   draws where they wait, and the frame's script for every `data-attach` holder pastes, drops and lists them. The holder
+   lays out as if it were not there, so a page's own layout of the box is unchanged. *@
+<div class="composer-box" data-attach="@(Model.Attach ? "" : null)">
+    @if (Model.Attach)
+    {
+        @* What was pasted or dropped. The script draws the rest; these are files an earlier press placed before its send failed. *@
+        <p class="attach-note" role="status" hidden></p>
+        <ul class="attachments" aria-label="Attached files"
+            data-types="@string.Join(' ', SharedFileName.AllowedExtensions)"
+            data-types-in-words="@SharedFileName.AllowedExtensionsInWords"
+            data-paste-limit="@Parley.Web.ComposerBox.PasteBecomesAFileOver">
+            @foreach (var entry in Model.Attached ?? [])
+            {
+                var kept = Parley.Client.Rendering.Attaching.NameOf(entry);
+
+                <li class="attachment">
+                    <span class="attachment-tile">@System.IO.Path.GetExtension(kept).TrimStart('.').ToUpperInvariant()</span>
+                    <span class="attachment-name" title="@kept">@kept</span>
+                    <button type="button" class="attachment-remove" aria-label="Remove @kept"><span class="icon" aria-hidden="true">close</span></button>
+                    <input type="hidden" name="Attached" value="@entry" />
+                </li>
+            }
+        </ul>
+        <input type="file" class="attach-files" name="Attachments" multiple hidden />
+    }
+    @if (Model.Label is { Length: > 0 } label)
+    {
+        <label for="@Model.Id">@label</label>
+    }
+    <textarea data-composer id="@Model.Id" name="@Model.Name" rows="@Model.Rows" required="@Model.Required"
+              maxlength="@Model.MaxLength" placeholder="@Model.Placeholder">@Model.Value</textarea>
+    @if (Model.ShowKeys)
+    {
+        <span class="composer-note">@Parley.Web.ComposerBox.Keys</span>
+    }
+</div>

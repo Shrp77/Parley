@@ -33,7 +33,8 @@ public sealed class TheInboxScriptKeepsItsGuardsTests
     public void No_reload_while_a_row_or_an_exchange_panel_is_open()
     {
         // Without the guard the page reloaded under somebody reading an opened row or an exchange's panel, and closed it
-        // (review, lens 3 round 37).
+        // (review, lens 3 round 37). And under a box holding files with no words yet: a reload drops them, since a page
+        // cannot hand back files the browser chose.
         var open = Assert.Single(Regex.Matches(
             Reload,
             """if \(document\.querySelector\("(?<selector>[^"]*)"\)\) \{ return true; \}""",
@@ -41,7 +42,7 @@ public sealed class TheInboxScriptKeepsItsGuardsTests
             TimeSpan.FromSeconds(1)));
 
         Assert.Equal(
-            new HashSet<string>(StringComparer.Ordinal) { "dialog[open]", "details[open]", ".exchange-panel" },
+            new HashSet<string>(StringComparer.Ordinal) { "dialog[open]", "details[open]", ".exchange-panel", "main .attachment" },
             ScriptSource.Terms(open.Groups["selector"].Value, ","));
 
         // And they are what the pages draw: a row is a details, and the frame's panel is an exchange-panel.
@@ -84,7 +85,7 @@ public sealed class TheInboxScriptKeepsItsGuardsTests
         // pin and let the page reload under somebody typing or reading (review, lens 3 round 38).
         Assert.Equal(
             "var focused = document.activeElement; if (focused && focused.matches(\"input, textarea, select\")) { return true; } " +
-            "if (document.querySelector(\"dialog[open], details[open], .exchange-panel\")) { return true; } " +
+            "if (document.querySelector(\"dialog[open], details[open], .exchange-panel, main .attachment\")) { return true; } " +
             "return Array.prototype.some.call(document.querySelectorAll(\"main textarea\"), function (box) { return box.value.trim() !== \"\"; });",
             ScriptSource.Body(Reload, "busy"));
     }

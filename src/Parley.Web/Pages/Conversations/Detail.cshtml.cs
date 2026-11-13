@@ -26,9 +26,6 @@ namespace Parley.Web.Pages.Conversations;
 [RequestFormLimits(MultipartBodyLengthLimit = Parley.Web.Pages.Projects.FilesModel.PlaceLimitBytes)]
 public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parley.Web.Notifications.NotificationLog notices) : PageModel
 {
-    /// <summary>How long pasted text may be before it becomes a file instead of words in the box.</summary>
-    public const int PasteBecomesAFileOver = 4000;
-
     /// <summary>Which project this conversation belongs to.</summary>
     [BindProperty(SupportsGet = true)]
     public string? Project { get; set; }
@@ -780,40 +777,9 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
         return Page();
     }
 
-    private async Task<(string? Problem, bool ConversationNotStarted)> PlaceAttachmentsAsync(
-        BrokerClient broker, string conversation, CancellationToken token)
-    {
-        foreach (var file in Attachments.ToList())
-        {
-            var content = file.OpenReadStream();
-
-            await using (content.ConfigureAwait(false))
-            {
-                var placed = await BrokerDirectory.ReadAsync(
-                    () => broker.PlacePersonsFileAsync(conversation, Path.GetFileName(file.FileName), content, token)).ConfigureAwait(false);
-
-                if (placed.Value is { Rejection: FileRejection.ConversationNotAssignable })
-                {
-                    return (null, true);
-                }
-
-                if (placed.Value is { Outcome: PlaceOutcome.Placed or PlaceOutcome.AlreadyCurrent, Sha256: { } hash } done)
-                {
-                    Attached.Add(Attaching.Entry(done.Name, hash.Value));
-                    Attachments.Remove(file);
-                    continue;
-                }
-
-                var why = placed.Reachable
-                    ? Parley.Client.Files.PlacementSaid.Of(placed.Value!, file.FileName, bytes => $"{bytes} bytes")
-                    : placed.Problem;
-
-                return ($"Nothing was sent. {file.FileName} could not be attached, so attach it again: {why}", false);
-            }
-        }
-
-        return (null, false);
-    }
+    private Task<(string? Problem, bool ConversationNotStarted)> PlaceAttachmentsAsync(
+        BrokerClient broker, string conversation, CancellationToken token) =>
+        ComposerFiles.PlaceAsync(broker, conversation, Attachments, Attached, token);
 
     private async Task SendFilesAfterTheFirstWordsAsync(
         BrokerClient broker, SeatVoice voice, List<string> reached, bool everybody, CancellationToken token)

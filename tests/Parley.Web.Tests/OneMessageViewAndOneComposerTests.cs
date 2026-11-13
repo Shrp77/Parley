@@ -71,6 +71,57 @@ public sealed class OneMessageViewAndOneComposerTests
     }
 
     [Fact]
+    public void Only_the_composer_draws_an_attachment_area_and_only_the_frame_takes_a_paste_or_a_drop()
+    {
+        // The owner, 2026-11-13: a screenshot pasted on the conversation page was attached, and in the Inbox nothing
+        // happened, because the conversation page carried its own copy. Attaching is the composer's (SPEC.md §5.6).
+        var drawing = Pages()
+            .Where(page => page.Text.Contains("class=\"attachments\"", StringComparison.Ordinal)
+                           || page.Text.Contains("name=\"Attachments\"", StringComparison.Ordinal))
+            .Select(page => page.Name)
+            .ToList();
+
+        Assert.Equal(["_Composer.cshtml"], drawing);
+
+        var taking = Pages()
+            .Where(page => Regex.IsMatch(page.Text, "addEventListener\\(\"(paste|drop)\"", RegexOptions.None, TimeSpan.FromSeconds(1)))
+            .Select(page => page.Name)
+            .ToList();
+
+        Assert.Equal(["_Layout.cshtml"], taking);
+    }
+
+    [Fact]
+    public void Every_page_that_sends_a_message_from_the_seat_takes_files_in_its_composer()
+    {
+        // Drawn by what the page does, not by a list of pages (SPEC.md §5.6): a page model that sends a Request, a reply or
+        // a Result in the person's voice is a message box, and a new one is held to this without being named here.
+        var sends = new Regex(@"\.(RequestAsync|RequestOpeningAsync|ClarifyAsync|ResultAsync)\(", RegexOptions.None, TimeSpan.FromSeconds(1));
+        var models = Directory.GetFiles(RepositoryPath("src/Parley.Web/Pages"), "*.cshtml.cs", SearchOption.AllDirectories)
+            .Where(path => sends.IsMatch(File.ReadAllText(path)))
+            .ToList();
+
+        Assert.NotEmpty(models);
+
+        foreach (var model in models)
+        {
+            var page = model[..^".cs".Length];
+            var markup = File.ReadAllText(page)
+                         + string.Concat(Directory.GetFiles(Path.GetDirectoryName(page)!, "_*.cshtml").Select(File.ReadAllText));
+
+            Assert.True(
+                File.ReadAllText(model).Contains("IList<IFormFile> Attachments", StringComparison.Ordinal),
+                $"{Path.GetFileName(model)} sends a message and takes no files");
+            Assert.True(
+                markup.Contains("Attach: true", StringComparison.Ordinal),
+                $"{Path.GetFileName(page)} sends a message and its composer takes no files");
+            Assert.True(
+                markup.Contains("enctype=\"multipart/form-data\"", StringComparison.Ordinal),
+                $"{Path.GetFileName(page)} sends a message and its form cannot carry files");
+        }
+    }
+
+    [Fact]
     public void Only_the_frame_sends_on_enter()
     {
         var sending = Pages()

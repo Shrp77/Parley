@@ -291,8 +291,9 @@ once nobody needs it.
 You place a file of your own from the terminal or the console, into a conversation, the way an agent
 does; `parley files place` does the same from the command line. There and in the terminal, a file that is itself
 a link, or a path on another machine, is refused before it is read: copy the file here and place the copy. The
-console uploads whatever your browser reads from the file you pick. In a conversation's message box in the console you can also paste
-or drop a file. In a conversation that has already started, it is placed as yours when you send, before the message
+console uploads whatever your browser reads from the file you pick. In any box in the console where you write a message to an agent (a Request, a reply, a
+Result or a follow-up) you can also paste or drop a file; a box for naming something takes none. In a conversation
+that has already started, it is placed as yours when you send, before the message
 goes, and the message ends with a list of what was attached, each with its hash, for the agent to fetch. A conversation
 that has not started yet has nowhere to hold a file, so your words go first and a second message follows with the files
 and their hashes. If nobody takes those first words, the files are not placed, and you attach them again when you send

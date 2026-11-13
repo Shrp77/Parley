@@ -26,7 +26,7 @@
     </ul>
 }
 
-<form method="post" class="move-form">
+<form method="post" class="move-form" enctype="multipart/form-data">
     <p>
         <label for="name">What it is called</label><br />
         <input id="name" name="Name" type="text" required autocomplete="off" spellcheck="false" maxlength="@Parley.Client.ConversationName.Longest"
@@ -47,7 +47,7 @@
 
     <p>
         <partial name="_Composer" model="@(new Parley.Web.ComposerBox(
-            "Says", Model.Says, Id: "says", Rows: 12, Label: "What you want to say"))" />
+            "Says", Model.Says, Id: "says", Rows: 12, Label: "What you want to say", Attach: true))" />
         <br /><small>@Parley.Client.Rendering.Quoting.OpeningIsAdded</small>
     </p>
 

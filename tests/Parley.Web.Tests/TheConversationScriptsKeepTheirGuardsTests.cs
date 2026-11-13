@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
-using Parley.Web.Pages.Conversations;
 using Xunit;
 
 namespace Parley.Web.Tests;
@@ -21,6 +20,12 @@ public sealed class TheConversationScriptsKeepTheirGuardsTests
 
     /// <summary>The page's main script, which holds the composer, the filter, attaching and the chips.</summary>
     private static string Main => ScriptSource.Code(Detail, "parley:compose");
+
+    /// <summary>
+    /// The frame's attaching script, which every message box runs (SPEC.md §5.6): pasting, dropping and the chips.
+    /// </summary>
+    private static string Attach =>
+        ScriptSource.Code(ScriptSource.Page("src/Parley.Web/Pages/Shared/_Layout.cshtml"), "holder.parleyAttach = addAll;");
 
     /// <summary>The recipients tree's script, which draws the To line and its chips.</summary>
     private static string Tree => ScriptSource.Code(Detail, "window.parleyTree = (function () {");
@@ -83,7 +88,7 @@ public sealed class TheConversationScriptsKeepTheirGuardsTests
             "outcome.hidden = button.getAttribute(\"data-request\") !== \"1\"; document.dispatchEvent(new CustomEvent(\"parley:compose\"));",
             "choosing a reply no longer asks for the composer to open");
         ScriptSource.Once(
-            Main,
+            Attach,
             "function addAll(chosen) { say(\"\"); chosen.forEach(add); sync(); document.dispatchEvent(new CustomEvent(\"parley:compose\")); }",
             "adding files no longer asks for the composer to open");
     }
@@ -162,12 +167,12 @@ public sealed class TheConversationScriptsKeepTheirGuardsTests
         // Without the guard a file of any kind was attached, and the send was refused with every file to choose again
         // (review, lens 3 round 37).
         var check = ScriptSource.Once(
-            Main,
+            Attach,
             "if (types.indexOf(extension(file.name)) < 0) { say(file.name + \" was not attached. Only \" + list.getAttribute(\"data-types-in-words\") + \" files can be.\"); return; }",
             "a file of a kind that may not be placed is attached");
 
-        Assert.True(check < Main.IndexOf("files.push(file);", StringComparison.Ordinal), "the kind is no longer checked before the file is kept");
-        ScriptSource.Once(Main, "var types = (list.getAttribute(\"data-types\") || \"\").split(\" \");", "the kinds are no longer read from the page");
+        Assert.True(check < Attach.IndexOf("files.push(file);", StringComparison.Ordinal), "the kind is no longer checked before the file is kept");
+        ScriptSource.Once(Attach, "var types = (list.getAttribute(\"data-types\") || \"\").split(\" \");", "the kinds are no longer read from the page");
     }
 
     [Fact]
@@ -177,7 +182,7 @@ public sealed class TheConversationScriptsKeepTheirGuardsTests
         // above, and the send was refused (review, lens 3 round 38).
         Assert.Equal(
             "var at = name.lastIndexOf(\".\"); return at < 0 ? \"\" : name.slice(at).toLowerCase();",
-            ScriptSource.Body(Main, "extension"));
+            ScriptSource.Body(Attach, "extension"));
     }
 
     [Fact]
@@ -187,7 +192,7 @@ public sealed class TheConversationScriptsKeepTheirGuardsTests
         // pinned drag handlers untouched (review, lens 3 round 38).
         Assert.Equal(
             "return e.dataTransfer && [].indexOf.call(e.dataTransfer.types || [], \"Files\") >= 0;",
-            ScriptSource.Body(Main, "carriesFiles"));
+            ScriptSource.Body(Attach, "carriesFiles"));
     }
 
     [Fact]
@@ -196,22 +201,23 @@ public sealed class TheConversationScriptsKeepTheirGuardsTests
         // Without the guard two files of one name were attached and the second replaced the first when placed (review,
         // lens 3 round 37).
         var check = ScriptSource.Once(
-            Main,
+            Attach,
             "if (files.some(function (f) { return f.name === file.name; })) { say(file.name + \" is already attached.\"); return; }",
             "a file whose name is already attached is attached again");
 
-        Assert.True(check < Main.IndexOf("files.push(file);", StringComparison.Ordinal), "the name is no longer checked before the file is kept");
+        Assert.True(check < Attach.IndexOf("files.push(file);", StringComparison.Ordinal), "the name is no longer checked before the file is kept");
     }
 
     [Fact]
     public void The_box_is_not_required_when_files_are_attached()
     {
         // Without the guard the browser refused to send files with no words, saying the box must be filled in (review,
-        // lens 3 round 37).
+        // lens 3 round 37). A box the page drew as not required never becomes required.
         ScriptSource.Once(
-            Main,
-            "box.required = list.querySelector(\".attachment\") === null;",
+            Attach,
+            "box.required = needed && list.querySelector(\".attachment\") === null;",
             "the box no longer stops being required when files are attached");
+        ScriptSource.Once(Attach, "var needed = box.required;", "whether the page drew the box required is no longer read");
     }
 
     [Fact]
@@ -220,21 +226,24 @@ public sealed class TheConversationScriptsKeepTheirGuardsTests
         // Without the guard a paste of any length went into the box as words, past what the page says becomes a file
         // (review, lens 3 round 37).
         ScriptSource.Once(
-            Main,
+            Attach,
             "if (text.length > limit) { e.preventDefault(); addAll([new File([text], pastedName(\".txt\"), { type: \"text/plain\" })]); return; }",
             "a paste over the threshold no longer becomes a file");
         ScriptSource.Once(
-            Main,
+            Attach,
             "var limit = Number(list.getAttribute(\"data-paste-limit\"));",
             "the threshold is no longer read from the page");
 
-        // The page carries the server's number, and the operating guide says the same number.
-        Assert.Contains("data-paste-limit=\"@Parley.Web.Pages.Conversations.DetailModel.PasteBecomesAFileOver\"", Detail, StringComparison.Ordinal);
+        // The composer carries the server's number, and the operating guide says the same number.
+        Assert.Contains(
+            "data-paste-limit=\"@Parley.Web.ComposerBox.PasteBecomesAFileOver\"",
+            ScriptSource.Page("src/Parley.Web/Pages/Shared/_Composer.cshtml"),
+            StringComparison.Ordinal);
 
         var guide = Regex.Replace(ScriptSource.Page("docs/operating.md"), @"\s+", " ", RegexOptions.None, TimeSpan.FromSeconds(1));
 
         Assert.Contains(
-            $"Pasted text longer than {DetailModel.PasteBecomesAFileOver.ToString("N0", CultureInfo.InvariantCulture)} characters becomes a file too",
+            $"Pasted text longer than {ComposerBox.PasteBecomesAFileOver.ToString("N0", CultureInfo.InvariantCulture)} characters becomes a file too",
             guide,
             StringComparison.Ordinal);
     }
@@ -244,9 +253,9 @@ public sealed class TheConversationScriptsKeepTheirGuardsTests
     {
         // Without the guard a spreadsheet's cells pasted as a picture of themselves rather than as the words (review, lens 3
         // round 37).
-        var words = ScriptSource.Once(Main, "if (text.length > 0) { return; }", "a paste holding words no longer stops before its files");
-        var limit = Main.IndexOf("if (text.length > limit)", StringComparison.Ordinal);
-        var files = Main.IndexOf("var pasted = [].slice.call(clip.files || []);", StringComparison.Ordinal);
+        var words = ScriptSource.Once(Attach, "if (text.length > 0) { return; }", "a paste holding words no longer stops before its files");
+        var limit = Attach.IndexOf("if (text.length > limit)", StringComparison.Ordinal);
+        var files = Attach.IndexOf("var pasted = [].slice.call(clip.files || []);", StringComparison.Ordinal);
 
         Assert.True(limit >= 0 && files >= 0, "the paste handler was not found");
         Assert.True(limit < words && words < files, "the words are no longer taken before the clipboard's files");
@@ -258,11 +267,11 @@ public sealed class TheConversationScriptsKeepTheirGuardsTests
         // Without the guard every pasted image kept the clipboard's own name, "image.png", and the second was refused as
         // already attached (review, lens 3 round 37).
         ScriptSource.Once(
-            Main,
+            Attach,
             "addAll(pasted.map(function (f) { return images[f.type] ? new File([f], pastedName(images[f.type]), { type: f.type }) : f; }));",
             "a pasted image no longer gets a name of its own");
         ScriptSource.Once(
-            Main,
+            Attach,
             "return \"pasted-\" + now.getFullYear() + two(now.getMonth() + 1) + two(now.getDate()) + \"-\" + two(now.getHours()) + two(now.getMinutes()) + two(now.getSeconds()) + \"-\" + random + ext;",
             "a pasted file's name no longer carries its time and a random part");
     }
@@ -278,7 +287,7 @@ public sealed class TheConversationScriptsKeepTheirGuardsTests
             "who is picked is no longer read before a send");
         ScriptSource.Once(
             Main,
-            "if (form.querySelector(\".attachment\") && !picked && !(reply && reply.value)) { e.preventDefault(); say(\"Nobody is picked, so nothing was sent. Your files are still here.\"); }",
+            "if (form.querySelector(\".attachment\") && !picked && !(reply && reply.value)) { e.preventDefault(); if (note) { note.textContent = \"Nobody is picked, so nothing was sent. Your files are still here.\"; note.hidden = false; } }",
             "a send with files and nobody picked is no longer stopped");
     }
 
@@ -287,12 +296,12 @@ public sealed class TheConversationScriptsKeepTheirGuardsTests
     {
         // Without the guard the chip went from the page and its file was still sent (review, lens 3 round 37).
         ScriptSource.Once(
-            Main,
+            Attach,
             "files = files.filter(function (f) { return f !== item.parleyFile; }); item.remove(); sync();",
             "a removed chip's file is still among the files sent");
-        ScriptSource.Once(Main, "item.parleyFile = file;", "a chip no longer knows its file");
+        ScriptSource.Once(Attach, "item.parleyFile = file;", "a chip no longer knows its file");
         ScriptSource.Once(
-            Main,
+            Attach,
             "files.forEach(function (f) { carried.items.add(f); }); input.files = carried.files;",
             "what the form sends is no longer the files kept");
     }
@@ -303,13 +312,26 @@ public sealed class TheConversationScriptsKeepTheirGuardsTests
         // Without the guard a file let fall outside the box opened in the browser, and the conversation and its draft were
         // gone (review, lens 3 round 37).
         ScriptSource.Once(
-            Main,
-            "document.addEventListener(\"dragover\", function (e) { if (!carriesFiles(e)) { return; } e.preventDefault(); form.classList.add(\"dropping\"); });",
+            Attach,
+            "document.addEventListener(\"dragover\", function (e) { if (!carriesFiles(e)) { return; } e.preventDefault();",
             "dragging a file over the page no longer stops the browser opening it");
         ScriptSource.Once(
-            Main,
-            "document.addEventListener(\"drop\", function (e) { form.classList.remove(\"dropping\"); if (!carriesFiles(e)) { return; } e.preventDefault();",
+            Attach,
+            "document.addEventListener(\"drop\", function (e) { unmark(); if (!carriesFiles(e)) { return; } e.preventDefault();",
             "dropping a file on the page no longer stops the browser opening it");
+    }
+
+    [Fact]
+    public void A_drop_goes_to_the_box_it_lands_on_then_the_one_being_written_in_then_the_only_one()
+    {
+        // With several message boxes on a page (the Inbox), a drop with no rule would attach to whichever box the script
+        // found first, under a row the person was not answering.
+        Assert.Equal(
+            "var at = e.target instanceof Element ? e.target.closest(\"form\") : null; "
+            + "var inForm = at ? at.querySelector(\"[data-attach]\") : null; "
+            + "var focused = document.activeElement instanceof Element ? document.activeElement.closest(\"[data-attach]\") : null; "
+            + "return inForm || focused || (holders.length === 1 ? holders[0] : null);",
+            ScriptSource.Body(Attach, "holderFor"));
     }
 
     [Fact]

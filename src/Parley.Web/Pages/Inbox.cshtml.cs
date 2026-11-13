@@ -39,6 +39,8 @@ public sealed record Pending(
 /// <param name="seats">The seats this console is holding.</param>
 /// <param name="notices">What the console tells the person, which the bell lists.</param>
 /// <param name="stillOpen">What the page last asked about which questions are still open.</param>
+[RequestSizeLimit(Parley.Web.Pages.Projects.FilesModel.PlaceLimitBytes)]
+[RequestFormLimits(MultipartBodyLengthLimit = Parley.Web.Pages.Projects.FilesModel.PlaceLimitBytes)]
 public sealed class InboxModel(
     BrokerDirectory directory,
     SeatBook seats,
@@ -95,6 +97,26 @@ public sealed class InboxModel(
 
     /// <summary>Whether a send was just refused, so what the person wrote goes back in its boxes.</summary>
     private bool _refused;
+
+    /// <summary>Which form's files were kept when a send was refused: <c>Result</c> or <c>Clarify</c>.</summary>
+    /// <remarks>Both forms of a row answer one exchange, so the exchange alone would put the files back in both.</remarks>
+    private string? _filesFor;
+
+    /// <summary>What the person pasted or dropped into a message box, to place and name in the message.</summary>
+    [BindProperty, FromForm]
+    public IList<IFormFile> Attachments { get; set; } = [];
+
+    /// <summary>Files an earlier press placed before its send failed, each as its name and hash, so they are not uploaded again.</summary>
+    /// <remarks>Only ever words in a message the person is sending: nothing is opened or fetched from these.</remarks>
+    [BindProperty, FromForm]
+    public IList<string> Attached { get; set; } = [];
+
+    /// <summary>The files a refused send kept for one form of a row, to go back in its box.</summary>
+    /// <param name="exchange">The row's exchange.</param>
+    /// <param name="form"><c>Result</c> or <c>Clarify</c>.</param>
+    /// <returns>The kept files, or nothing.</returns>
+    public IReadOnlyList<string>? KeptFiles(long exchange, string form) =>
+        Kept(exchange) && string.Equals(_filesFor, form, StringComparison.Ordinal) ? [.. Attached] : null;
 
     /// <summary>Whether this exchange's form was just refused, and holds what the person wrote.</summary>
     /// <param name="exchange">The exchange.</param>
@@ -165,7 +187,7 @@ public sealed class InboxModel(
     [BindProperty, FromForm]
     public string? Agent { get; set; }
 
-    /// <summary>The conversation a follow-up goes in.</summary>
+    /// <summary>The conversation a follow-up goes in, and where the files a message names are placed.</summary>
     [BindProperty, FromForm]
     public string? Conversation { get; set; }
 
@@ -262,16 +284,21 @@ public sealed class InboxModel(
             _followUpRefused = true;
             Outcome = "A follow-up goes to one agent, in the conversation its row is in.";
         }
-        else if (string.IsNullOrWhiteSpace(Words))
+        else if (string.IsNullOrWhiteSpace(Words) && Attachments.Count == 0 && Attached.Count == 0)
         {
             _followUpRefused = true;
             Outcome = "Nothing was written, so nothing was sent.";
+        }
+        else if (await PlaceFilesAsync(settings).ConfigureAwait(false) is { } placeProblem)
+        {
+            _followUpRefused = true;
+            Outcome = placeProblem;
         }
         else
         {
             var voice = new SeatVoice(directory.AgentsFor(settings), hold.Seat);
             var sent = await voice
-                .RequestOpeningAsync(agent, Words, Conversation, HttpContext.RequestAborted)
+                .RequestOpeningAsync(agent, Attaching.Message(Words, Attached), Conversation, HttpContext.RequestAborted)
                 .ConfigureAwait(false);
 
             _followUpRefused = !sent.Sent;
@@ -416,6 +443,19 @@ public sealed class InboxModel(
             .Where(r => !string.IsNullOrWhiteSpace(r.Id))
             .ToList();
 
+        _filesFor = "Result";
+
+        if (await PlaceFilesAsync(directory.Find(For)!).ConfigureAwait(false) is { } placeProblem)
+        {
+            return await RefusedAsync(seat, placeProblem).ConfigureAwait(false);
+        }
+
+        // The form sends one Result, so its files are named once, after the first item's words.
+        if (outcomes.Count > 0 && Attached.Count > 0)
+        {
+            outcomes[0] = outcomes[0] with { Text = Attaching.Message(outcomes[0].Text, Attached) };
+        }
+
         var sent = await voice
             .ResultAsync(hold, Exchange, outcomes, HttpContext.RequestAborted)
             .ConfigureAwait(false);
@@ -447,8 +487,15 @@ public sealed class InboxModel(
             return await NotSeatedAsync(followUp: false, "sent", why ?? "Your seat in that project could not be taken.").ConfigureAwait(false);
         }
 
+        _filesFor = "Clarify";
+
+        if (await PlaceFilesAsync(directory.Find(For)!).ConfigureAwait(false) is { } placeProblem)
+        {
+            return await RefusedAsync(seat, placeProblem).ConfigureAwait(false);
+        }
+
         var sent = await voice
-            .ClarifyAsync(hold, Exchange, Clarification, HttpContext.RequestAborted)
+            .ClarifyAsync(hold, Exchange, Attaching.Message(Clarification, Attached), HttpContext.RequestAborted)
             .ConfigureAwait(false);
 
         // Read off the flag, never the words: a Result that went says "Sent, and…", which a match on "Sent." took as refused.
@@ -593,10 +640,49 @@ public sealed class InboxModel(
     /// </remarks>
     private async Task<IActionResult> NotSeatedAsync(bool followUp, string done, string why)
     {
-        Outcome = $"Nothing was {done}. {why}";
+        // A browser cannot fill a file field again, so files that were not placed have to be chosen again, and it says so.
+        Outcome = Attachments.Count > 0 ? $"Nothing was {done}. {why} Attach your files again." : $"Nothing was {done}. {why}";
         _followUpRefused = followUp;
         _refused = !followUp;
         Me = seats.Seats().FirstOrDefault()?.Seat;
+
+        await LoadAsync().ConfigureAwait(false);
+
+        return Page();
+    }
+
+    /// <summary>Places the files the person attached, in the conversation the form named, before the message is sent.</summary>
+    /// <param name="project">The form's project.</param>
+    /// <returns>Why nothing may be sent, or nothing when every file is placed or there were none.</returns>
+    private async Task<string?> PlaceFilesAsync(ProjectSettings project)
+    {
+        if (Attachments.Count == 0)
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(Conversation))
+        {
+            return "Nothing was sent. The files had no conversation to go in, so attach them again.";
+        }
+
+        var placing = await ComposerFiles
+            .PlaceAsync(new BrokerClient(directory.ClientFor(project)), Conversation, Attachments, Attached, HttpContext.RequestAborted)
+            .ConfigureAwait(false);
+
+        return placing.Problem
+               ?? (placing.ConversationNotStarted ? "Nothing was sent. The conversation could not be found, so attach the files again." : null);
+    }
+
+    /// <summary>Says a reply or Result was not sent, keeping its words and the files already placed.</summary>
+    /// <param name="seat">The person's seat.</param>
+    /// <param name="problem">Why.</param>
+    /// <returns>The page.</returns>
+    private async Task<IActionResult> RefusedAsync(Seat seat, string problem)
+    {
+        _refused = true;
+        Outcome = problem;
+        Me = seat;
 
         await LoadAsync().ConfigureAwait(false);
 
