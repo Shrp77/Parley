@@ -11,23 +11,13 @@
         .SelectMany(p => p.Delivered.Select(item => (Project: p.Project, Item: item)))
         .ToList();
     var shown = everything.Where(row => Model.Keep(row.Project, row.Item)).ToList();
-
-    // One line of what was said, for the row; the whole of it is in the row when it is opened.
-    static string Preview(Payload payload)
-    {
-        var text = payload.Said is { Length: > 0 } said ? said
-            : payload.Points.Count > 0 ? string.Join(" / ", payload.Points.Select(point => point.Text))
-            : payload.Raw ?? string.Empty;
-
-        text = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-
-        return text.Length > 140 ? text[..140] + "…" : text;
-    }
 }
 
 @* The page is a data grid: a title, then Create, Filters and the grid, in that order. The first three stay where they are
    and the grid is what scrolls, with its header row held at its top. A message is one row; opening it shows the whole of it
-   and the ways to answer it. *@
+   and the ways to answer it, and its line stays at the top of the grid while it is read, so who it is with and where are
+   always in sight and a press closes it from anywhere in it. There is no column for what was said: a line of it never fit
+   and told nothing the opened row does not (owner, 2026-11-13). *@
 
 <div class="view">
     <div class="view-title">
@@ -257,7 +247,7 @@
         <p class="unreachable" role="alert">@line</p>
     }
 
-    <section class="view-card dgrid" style="--cols: minmax(9rem, 1fr) 6rem minmax(7rem, 0.7fr) minmax(8rem, 0.9fr) 8rem minmax(12rem, 2.4fr) 7rem; --min: 60rem;" aria-label="Waiting on you">
+    <section class="view-card dgrid" style="--cols: minmax(9rem, 1.2fr) 6rem minmax(7rem, 0.8fr) minmax(8rem, 1.2fr) 8rem 8rem; --min: 46rem;" aria-label="Waiting on you">
         <div class="dgrid-inner" role="table">
             <div class="dgrid-head" role="row">
                 <span role="columnheader">From</span>
@@ -265,7 +255,6 @@
                 <span role="columnheader">Project</span>
                 <span role="columnheader">Conversation</span>
                 <span role="columnheader">When</span>
-                <span role="columnheader">Message</span>
                 <span role="columnheader">Status</span>
             </div>
 
@@ -285,7 +274,6 @@
                         <span role="cell">@projectName</span>
                         <span role="cell" class="faint">@(item.Message.ConversationId is { Length: > 0 } c ? c : "")</span>
                         <span role="cell" class="faint">@item.Message.CreatedUtc.ToLocalTime().ToString("d MMM HH:mm", System.Globalization.CultureInfo.InvariantCulture)</span>
-                        <span role="cell">@Preview(payload)</span>
                         <span role="cell" class="alarm">@(item.OwesResult ? "Owes a result" : "Owes a reply")</span>
                     </summary>
 

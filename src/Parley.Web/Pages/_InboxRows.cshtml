@@ -5,23 +5,6 @@
     var view = Model.Showing;
     var rows = Model.RowsOf(view);
 
-    static string Preview(Parley.Core.Message? message)
-    {
-        if (message is null)
-        {
-            return "Its words were removed by retention.";
-        }
-
-        var payload = Payload.Read(message.PayloadJson);
-        var text = payload.Said is { Length: > 0 } said ? said
-            : payload.Points.Count > 0 ? string.Join(" / ", payload.Points.Select(point => point.Text))
-            : payload.Raw ?? string.Empty;
-
-        text = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-
-        return text.Length > 140 ? text[..140] + "…" : text;
-    }
-
     string Older(int older)
     {
         var query = Microsoft.AspNetCore.Http.QueryString.Create(
@@ -58,7 +41,7 @@
     </p>
 }
 
-<section class="view-card dgrid" style="--cols: minmax(9rem, 1fr) minmax(7rem, 0.7fr) minmax(8rem, 0.9fr) 5rem 8rem minmax(12rem, 2.4fr) minmax(9rem, 1fr); --min: 60rem;"
+<section class="view-card dgrid" style="--cols: minmax(9rem, 1.2fr) minmax(7rem, 0.8fr) minmax(8rem, 1.2fr) 5rem 8rem minmax(9rem, 1fr); --min: 50rem;"
          aria-label="@(view == InboxView.InFlight ? "In flight" : "Closed")">
     <div class="dgrid-inner" role="table">
         <div class="dgrid-head" role="row">
@@ -67,7 +50,6 @@
             <span role="columnheader">Conversation</span>
             <span role="columnheader">Exchange</span>
             <span role="columnheader">@(view == InboxView.InFlight ? "Last moved" : "Closed")</span>
-            <span role="columnheader">Last said</span>
             <span role="columnheader">@(view == InboxView.InFlight ? "Where it stands" : "How it ended")</span>
         </div>
 
@@ -86,7 +68,6 @@
                     <span role="cell" class="faint">@row.Conversation</span>
                     <span role="cell" class="faint">#@row.Exchange</span>
                     <span role="cell" class="faint">@((row.Ended?.ClosedUtc ?? row.MovedUtc).ToLocalTime().ToString("d MMM HH:mm", System.Globalization.CultureInfo.InvariantCulture))</span>
-                    <span role="cell">@Preview(row.Last)</span>
                     <span role="cell">
                         @if (row.Standing is { } standing)
                         {
@@ -123,6 +104,10 @@
                         {
                             <p class="faint">@Speaker.From(said) to @Speaker.To(said), @LocalTime.Clock(said.CreatedUtc):</p>
                             <partial name="_MessageBody" model="@Payload.Read(said.PayloadJson)" />
+                        }
+                        else
+                        {
+                            <p class="faint">Its last words were removed by retention.</p>
                         }
 
                         @if (row.FollowUp)

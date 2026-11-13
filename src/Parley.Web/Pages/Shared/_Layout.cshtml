@@ -1464,6 +1464,12 @@
         details.dgrid-row > summary { list-style: none; cursor: pointer; }
         details.dgrid-row > summary::-webkit-details-marker { display: none; }
         details.dgrid-row[open] > summary { background: var(--quiet-wash); }
+        /* An open row's line stays just under the header while what is in it scrolls, so who it is with, the project and
+           the conversation stay in sight and a press closes it from anywhere in it (owner, 2026-11-13). Its background is
+           opaque, or the text scrolling under it shows through. The frame's script measures the header into
+           --dgrid-head-h; the value here is its usual height, for a page with no script. */
+        .dgrid { --dgrid-head-h: 2.75rem; }
+        details.dgrid-row[open] > summary { position: sticky; top: var(--dgrid-head-h); z-index: 1; border-bottom: 1px solid var(--rule); }
         .dgrid-detail { padding: 0.4rem 1.1rem 1rem; border-top: 1px solid var(--rule); }
         .dgrid-detail .letter { margin-top: 0; }
         .dgrid-detail .facts { display: grid; grid-template-columns: 7rem minmax(0, 1fr); gap: 0.3rem 1rem; margin: 0.6rem 0 0; }
@@ -2004,7 +2010,10 @@
         /* Tables and lists: rows on the surface, a hover state layer on a row that opens. */
         table { border-radius: var(--md-sys-shape-corner-medium); border-color: var(--md-sys-color-outline-variant); background: var(--md-ext-color-card); }
         th, td { padding: 0.75rem 1rem; }
-        details.dgrid-row > summary:hover, .grid-row > summary:hover, details.dgrid-row[open] > summary { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
+        details.dgrid-row > summary:hover, .grid-row > summary:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
+        details.dgrid-row[open] > summary, details.dgrid-row[open] > summary:hover {
+            background: linear-gradient(color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent) 0 0), var(--card);
+        }
         .dgrid { border-radius: var(--md-sys-shape-corner-large); }
 
         /* Cards: outlined, at the medium corner, on the card surface. */
@@ -2853,6 +2862,25 @@
                 var holder = holderFor(e);
 
                 if (holder && holder.parleyAttach) { holder.parleyAttach([].slice.call(e.dataTransfer.files)); }
+            });
+        })();
+    </script>
+    @* Where an open grid row's line sticks: just under its grid's header, however tall the header is drawn (density, a
+       wrapped label). *@
+    <script>
+        (function () {
+            function measure(grid) {
+                var head = grid.querySelector(".dgrid-head");
+
+                if (head) { grid.style.setProperty("--dgrid-head-h", head.offsetHeight + "px"); }
+            }
+
+            document.querySelectorAll(".dgrid").forEach(function (grid) {
+                measure(grid);
+
+                var head = grid.querySelector(".dgrid-head");
+
+                if (head && window.ResizeObserver) { new ResizeObserver(function () { measure(grid); }).observe(head); }
             });
         })();
     </script>
