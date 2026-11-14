@@ -678,7 +678,14 @@ message TurnReport {
   oneof phase {
     TurnStarted started = 3;
     TurnEnded ended = 4;
+    // How many background tasks the agent has running, said whenever it changes (section 11.6). A turn the agent begins on
+    // its own when one finishes is reported as started and ended like any other.
+    BackgroundWork background = 5;
   }
+}
+
+message BackgroundWork {
+  int32 tasks = 1;
 }
 
 message TurnStarted {
@@ -1055,6 +1062,9 @@ message RegistryRow {
   // The repository's identifier (section 4.1.1), empty when the agent presented none. Never shown: a surface uses it to
   // tell a catalogued checkout from an agent already registered under another name, and to name the checkout to a node.
   string identity = 18;
+
+  // How many background tasks its node last said it has running (section 11.6); zero when none, or when nobody reports.
+  int32 background_tasks = 19;
 }
 
 message RefusalsReply {

@@ -784,7 +784,8 @@ public static class NodeCommand
 
                 // Named to the broker first, so the process it starts is known as Parley's (SPEC.md §11.7).
                 var launched = reporter is null ? null : await reporter.LaunchAsync(agent).ConfigureAwait(false);
-                var resident = ResidentAgent.Start(agent, invocation, workspace, TimeProvider.System, launched);
+                var resident = Watched(
+                    ResidentAgent.Start(agent, invocation, workspace, TimeProvider.System, launched), identity, residents, output);
                 residents[identity] = resident;
 
                 // Every project joined here that starts this checkout knows it as Parley's too (this one again, with
@@ -1569,12 +1570,16 @@ public static class NodeCommand
             }
 
             var launched = reporter is null ? null : await reporter.LaunchAsync(agent).ConfigureAwait(false);
-            var restarted = ResidentAgent.Start(
-                agent,
-                InvocationCommand.Parse(command),
-                catalogue.WorkspaceFor(identity) ?? Directory.GetCurrentDirectory(),
-                TimeProvider.System,
-                launched);
+            var restarted = Watched(
+                ResidentAgent.Start(
+                    agent,
+                    InvocationCommand.Parse(command),
+                    catalogue.WorkspaceFor(identity) ?? Directory.GetCurrentDirectory(),
+                    TimeProvider.System,
+                    launched),
+                identity,
+                residents,
+                output);
 
             residents[identity] = restarted;
 
@@ -1694,6 +1699,83 @@ public static class NodeCommand
                     identity, role, token, resident.Workspace, () => TurnReporter.Current(resident, token))
                 .ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Tells every project joined from this table that starts a checkout what its process does on its own: its background
+    /// work, and the turns it begins itself when that work finishes (SPEC.md §11.6).
+    /// </summary>
+    /// <param name="resident">The process, just started.</param>
+    /// <param name="identity">The checkout.</param>
+    /// <param name="residents">The table.</param>
+    /// <param name="output">Where to say it.</param>
+    /// <returns>The same process.</returns>
+    /// <remarks>
+    /// <b>Every project that starts it, as a launch is told</b>, not only the one whose wake started it: one checkout is
+    /// one process for every project, and its background work is the process's, so each would otherwise read it as idle.
+    /// The board is read at each report, so a project that joins later hears the next one.
+    /// </remarks>
+    internal static ResidentAgent Watched(
+        ResidentAgent resident,
+        AgentIdentity identity,
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents,
+        TextWriter output)
+    {
+        ArgumentNullException.ThrowIfNull(resident);
+        ArgumentNullException.ThrowIfNull(residents);
+        ArgumentNullException.ThrowIfNull(output);
+
+        resident.OwnTurnPatience = TurnTimeout;
+
+        List<(TurnReporter Reporter, AgentName Named)> Projects()
+        {
+            var projects = new List<(TurnReporter, AgentName)>();
+
+            foreach (var (reporter, role) in Boards.GetOrCreateValue(residents).Starting(identity))
+            {
+                if (AgentName.TryJoin(role, resident.Name.Machine, out var named))
+                {
+                    projects.Add((reporter, named));
+                }
+            }
+
+            return projects;
+        }
+
+        resident.Watch(new OwnWork(
+            async began =>
+            {
+                await output.WriteLineAsync(
+                    $"  {resident.Name.Value}: began a turn on its own, as background work it started finished.")
+                    .ConfigureAwait(false);
+
+                foreach (var (reporter, named) in Projects())
+                {
+                    await reporter.BeganOnItsOwnAsync(named, began).ConfigureAwait(false);
+                }
+            },
+            async (began, outcome) =>
+            {
+                foreach (var (reporter, named) in Projects())
+                {
+                    await reporter.EndedOnItsOwnAsync(named, began, outcome).ConfigureAwait(false);
+                }
+            },
+            async tasks =>
+            {
+                await output.WriteLineAsync(
+                    tasks == 0
+                        ? $"  {resident.Name.Value}: its background work has finished."
+                        : $"  {resident.Name.Value}: {tasks} background task{(tasks == 1 ? string.Empty : "s")} running.")
+                    .ConfigureAwait(false);
+
+                foreach (var (reporter, named) in Projects())
+                {
+                    await reporter.BackgroundAsync(named, tasks).ConfigureAwait(false);
+                }
+            }));
+
+        return resident;
     }
 
     /// <summary>The node loops joined from one table, each with what its project calls the checkouts it starts.</summary>

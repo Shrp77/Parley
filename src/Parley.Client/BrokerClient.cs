@@ -54,7 +54,8 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
                 Read(row.TurnRunningSinceUtc),
                 Read(row.LastTurnEndedUtc),
                 row.LastTurnClean,
-                row.LastTurnPermissionDenials),
+                row.LastTurnPermissionDenials,
+                Math.Max(0, row.BackgroundTasks)),
             row.OpenOutside,
             AgentIdentity.TryRead(row.Identity, out var identity) ? identity : default))];
     }

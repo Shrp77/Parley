@@ -140,6 +140,11 @@ public sealed class NodesService : Wire.Nodes.NodesBase
                         Math.Max(0, ended.ModelTurns)),
                     context.CancellationToken).ConfigureAwait(false);
                 break;
+
+            case Wire.TurnReport.PhaseOneofCase.Background:
+                _ = await _runtime.BackgroundReportedAsync(
+                    machine, agent, request.Background.Tasks, context.CancellationToken).ConfigureAwait(false);
+                break;
         }
 
         return new Wire.Empty();

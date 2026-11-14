@@ -26,6 +26,12 @@ public enum Doing
     /// (SPEC.md §11.7). It reads what is waiting when somebody prompts it there.
     /// </summary>
     Outside = 6,
+
+    /// <summary>
+    /// Its turn ended while sub-agents or commands it started in the background still run (SPEC.md §11.6). Not idle: it
+    /// begins a turn of its own when one finishes.
+    /// </summary>
+    Background = 7,
 }
 
 /// <summary>One participant's activity.</summary>
@@ -33,11 +39,13 @@ public enum Doing
 /// <param name="Since">When that began: the turn's start when working, its end when stopped; null otherwise.</param>
 /// <param name="PermissionDenials">Tool calls its last turn had refused for want of permission, when stopped.</param>
 /// <param name="WaitingOn">Who it is waiting on, when waiting.</param>
+/// <param name="BackgroundTasks">How many background tasks it has running, when waiting on its own background work.</param>
 public sealed record Activity(
     Doing Doing,
     DateTimeOffset? Since = null,
     int PermissionDenials = 0,
-    AgentName? WaitingOn = null);
+    AgentName? WaitingOn = null,
+    int BackgroundTasks = 0);
 
 /// <summary>What a list of agents says about one.</summary>
 /// <param name="Words">What it is doing.</param>
@@ -82,11 +90,24 @@ public static class Activities
     /// <summary>The mark for an agent open outside Parley, which Parley cannot give a turn.</summary>
     public const string OutsideMark = "◇";
 
+    /// <summary>The mark for an agent whose turn ended while background work it started still runs.</summary>
+    public const string BackgroundMark = "◈";
+
+    /// <summary>What an agent waiting on its own background work is said to be doing.</summary>
+    /// <param name="tasks">How many tasks.</param>
+    /// <returns>For example <c>waiting on 2 background tasks</c>.</returns>
+    /// <remarks>One sentence in one place, so the agents list, the room and the Inbox say it the same way.</remarks>
+    public static string WaitingOnBackground(int tasks) =>
+        tasks == 1
+            ? "waiting on 1 background task"
+            : $"waiting on {tasks.ToString(CultureInfo.InvariantCulture)} background tasks";
+
     /// <summary>What the marks mean, said once beside them.</summary>
     public static IReadOnlyList<string> Legend { get; } =
     [
         $"{RunningMark} running",
         $"{WorkingMark} working on a turn",
+        $"{BackgroundMark} background work running",
         $"{StoppedMark} stopped, still owes work",
         $"{NotRunningMark} not running",
         $"{OutsideMark} open outside Parley",
@@ -181,6 +202,7 @@ public static class Activities
                 $"stopped {For(since, now)} — {Refused(activity.PermissionDenials)}",
             { Doing: Doing.Stopped, Since: { } since } => "stopped " + For(since, now),
             { Doing: Doing.Outside } => Outside,
+            { Doing: Doing.Background } => WaitingOnBackground(activity.BackgroundTasks),
             _ => string.Empty,
         };
     }
@@ -195,6 +217,7 @@ public static class Activities
         Doing.Running or Doing.Waiting => RunningMark,
         Doing.NotRunning => NotRunningMark,
         Doing.Outside => OutsideMark,
+        Doing.Background => BackgroundMark,
         _ => " ",
     };
 
@@ -275,6 +298,11 @@ public static class Activities
             return new AgentNow($"{WorkingMark} working {For(running, now)}", 0, Working: true);
         }
 
+        if (turns.BackgroundTasks > 0 && agent.Presence == AgentPresence.Running)
+        {
+            return new AgentNow($"{BackgroundMark} {WaitingOnBackground(turns.BackgroundTasks)}", 0);
+        }
+
         if (turns.LastEnded is { } ended && turns.LastPermissionDenials > 0)
         {
             return new AgentNow($"{StoppedMark} stopped {For(ended, now)} — {Refused(turns.LastPermissionDenials)}", 1);
@@ -309,6 +337,12 @@ public static class Activities
         if (turns.RunningSince is { } running)
         {
             return new Activity(Doing.Working, running);
+        }
+
+        // Its turn ended but work it started runs on, and it takes that up on its own: neither stopped nor idle.
+        if (turns.BackgroundTasks > 0 && agent.Presence == AgentPresence.Running)
+        {
+            return new Activity(Doing.Background, BackgroundTasks: turns.BackgroundTasks);
         }
 
         // Asked somebody and waiting is not stopped, whatever else it owes.

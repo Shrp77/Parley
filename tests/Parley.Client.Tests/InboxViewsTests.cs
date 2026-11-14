@@ -212,6 +212,30 @@ public sealed class InboxViewsTests
     }
 
     [Fact]
+    public void An_agent_waiting_on_its_own_background_work_is_never_idle_anywhere()
+    {
+        // SPEC.md §11.6: its turn ended while sub-agents it started run on. The Inbox chip, the agents list and the room all
+        // say so, in the same words.
+        var turns = new TurnStanding(true, null, Now.AddMinutes(-1), true, 0, BackgroundTasks: 2);
+        var agent = Agent(Orders, AgentPresence.Running, turns);
+
+        var standing = InFlightStanding.From(agent, [], 1);
+
+        Assert.Equal(AgentState.Background, standing.State);
+        Assert.Contains("2 tasks", standing.Detail, StringComparison.Ordinal);
+        Assert.Contains(
+            "waiting on 2 background tasks",
+            Parley.Client.Views.Activities.Now(agent, Now).Words,
+            StringComparison.Ordinal);
+
+        var row = Assert.Single(Parley.Client.Views.Standing.Join(
+            [agent], new HashSet<string>(StringComparer.Ordinal), "parley-console", Orders.Machine));
+
+        Assert.Equal("waiting on 2 background tasks", row.Standing);
+        Assert.NotEqual(Parley.Client.Views.Standing.Ready, row.Standing);
+    }
+
+    [Fact]
     public void An_agent_the_registry_does_not_list_is_unknown_and_never_idle()
     {
         Assert.Equal(AgentState.Unknown, InFlightStanding.From(null, [], 1).State);

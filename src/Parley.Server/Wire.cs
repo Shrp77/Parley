@@ -542,6 +542,7 @@ internal static class Conversions
             LastTurnEndedUtc = record.Turns?.LastEnded is { } ended ? Stamp(ended) : string.Empty,
             LastTurnClean = record.Turns?.LastClean ?? false,
             LastTurnPermissionDenials = record.Turns?.LastPermissionDenials ?? 0,
+            BackgroundTasks = record.Turns?.BackgroundTasks ?? 0,
             OpenOutside = record.OpenOutside,
             Identity = record.Identity.Known ? record.Identity.ToString() : string.Empty,
         };

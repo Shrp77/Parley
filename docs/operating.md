@@ -67,7 +67,7 @@ address and any warnings. Inside a project:
   chip; its **x** takes that agent off the To list.
 - **Inbox**: three views. *Waiting on you* is what agents asked you, across projects. *In flight* is
   what you answered or asked an agent that it has not replied to yet, with a chip saying where the
-  agent stands: working, idle, running (its turns are not reported), not running, cannot be started
+  agent stands: working, background work, idle, running (its turns are not reported), not running, cannot be started
   now, open outside Parley, or unknown, and beside it stalled, not collected yet, stopped on a refused
   permission, or retired when one applies. *Closed* is what ended in the last 7 days, with how it
   ended; the number of days is a setting, and **Show older** steps back one such window at a time.
@@ -161,6 +161,7 @@ You must be seated in the project. It is not a key in the inbox itself.
 | `◆ working 4m` | A turn is running for it right now |
 | `■ stopped 2h48m` | Its last turn ended while it still owes work here. A reason follows, such as `1 permission refused` |
 | `● waiting on orders` | It asked somebody and is waiting for the answer. This is not stopped |
+| `◈ waiting on 2 background tasks` | Its turn ended while sub-agents or commands it started run on. It takes up what they found on its own when they finish, and reads as working while it does |
 | `◇ open outside Parley` | Somebody opened that agent themselves, so Parley cannot give it turns. A message waits until somebody there takes a turn |
 
 The web console says the same things on a conversation's page.
@@ -168,7 +169,8 @@ The web console says the same things on a conversation's page.
 **To see who is working across a project,** look at the agents list. On the terminal it groups agents
 under *working* (with how long), *stopped on a refused permission*, *idle* and the rest, and updates
 every few seconds. On the web console's Agents tab, working agents come first, under a *Working now*
-line, and the page updates every 10 seconds. *Idle* means attached with no turn running. *Running*
+line, and the page updates every 10 seconds. An agent waiting on its own background work sorts with
+them. *Idle* means attached with no turn and no background work running. *Running*
 on its own means attached, and nobody reports whether it is in a turn, so Parley will not guess.
 These lists show who is working and for how long, not on which conversation: Parley does not record
 which conversation a turn is for.

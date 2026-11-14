@@ -79,6 +79,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
     // restart forgetting them is right by construction, where a column would be false after every crash.
     private readonly ConcurrentDictionary<AgentName, RunningTurn> _turns = new();
 
+    // What each agent's node last said it has running in the background (SPEC.md §11.6), in memory like a running turn.
+    private readonly ConcurrentDictionary<AgentName, BackgroundWork> _background = new();
+
     // When the last few turns each agent was heard to end began. A start report slower than its own end (the node's call
     // gave up after its deadline and the broker handled it anyway) carries that same time, and must not leave the agent
     // reading as working until its next report. The same time, never an earlier one: a node's clock may step back, or
@@ -1175,10 +1178,80 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return false;
         }
 
+        // A new process has no background work yet: what the last one had running went with it. The same token again is a
+        // node telling a broker about a process it already runs, whose count stands.
+        if (!_launches.TryGetValue(agent, out var was) || !string.Equals(was, token, StringComparison.Ordinal))
+        {
+            _ = _background.TryRemove(agent, out _);
+        }
+
         _launches[agent] = token;
 
         return true;
     }
+
+    /// <summary>Records how many background tasks a node says an agent has running (SPEC.md §11.6).</summary>
+    /// <param name="machine">The reporting node's machine.</param>
+    /// <param name="agent">The agent.</param>
+    /// <param name="tasks">How many.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Whether the report was accepted.</returns>
+    /// <remarks>
+    /// The same checks a turn report meets. Held in memory with the node that said it, as a running turn is, so a node that
+    /// leaves takes its word with it.
+    /// </remarks>
+    public async Task<bool> BackgroundReportedAsync(
+        string machine, AgentName agent, int tasks, CancellationToken cancellationToken = default)
+    {
+        if (tasks is < 0 or > MostBackgroundTasks
+            || !_nodes.TryGetValue(machine, out var reporter)
+            || await AcceptedTurnAsync(machine, agent, cancellationToken).ConfigureAwait(false) is null)
+        {
+            return false;
+        }
+
+        if (tasks == 0)
+        {
+            _ = _background.TryRemove(agent, out _);
+        }
+        else
+        {
+            _background[agent] = new BackgroundWork(tasks, machine);
+        }
+
+        // The node may have left while the agent was looked up, and its release swept the table before this landed.
+        if (!_nodes.TryGetValue(machine, out var still) || !ReferenceEquals(still, reporter))
+        {
+            _ = _background.TryRemove(agent, out _);
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>The most background tasks a report may claim.</summary>
+    /// <remarks>Far past anything a session runs; what it stops is a number nobody could read.</remarks>
+    internal const int MostBackgroundTasks = 10_000;
+
+    /// <summary>How many background tasks an agent has running, as its node last said; zero when none or nobody says.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>The count.</returns>
+    /// <remarks>
+    /// Only while its turns are reported and it runs: a process that ended, or one opened outside Parley, has none that
+    /// Parley knows of.
+    /// </remarks>
+    public int BackgroundTasks(AgentName agent) =>
+        _background.TryGetValue(agent, out var work)
+        && TurnsReported(agent)
+        && _attached.TryGetValue(agent.Value, out var sessions)
+        && !sessions.IsEmpty
+            ? work.Tasks
+            : 0;
+
+    /// <summary>What a node said an agent has running in the background.</summary>
+    /// <param name="Tasks">How many tasks.</param>
+    /// <param name="Machine">The node that said so, whose leaving ends the claim.</param>
+    private sealed record BackgroundWork(int Tasks, string Machine);
 
     /// <summary>
     /// The name a repository is registered as on a machine now; or, when none is, <paramref name="fallback"/>, unless
@@ -1329,6 +1402,11 @@ public sealed class BrokerRuntime : IAsyncDisposable
         foreach (var turn in _turns.Where(entry => entry.Value.Machine == joined.Machine).ToList())
         {
             _ = _turns.TryRemove(turn);
+        }
+
+        foreach (var work in _background.Where(entry => entry.Value.Machine == joined.Machine).ToList())
+        {
+            _ = _background.TryRemove(work);
         }
 
         await LeaveIfUnheldAsync(joined.Machine, cancellationToken).ConfigureAwait(false);

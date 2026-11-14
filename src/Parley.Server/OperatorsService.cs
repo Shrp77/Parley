@@ -549,7 +549,8 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
                 _runtime.TurnRunningSince(row.Name),
                 latest.TryGetValue(row.Name, out var last) ? last.EndedUtc : null,
                 last?.Clean ?? false,
-                last?.PermissionDenials ?? 0),
+                last?.PermissionDenials ?? 0,
+                _runtime.BackgroundTasks(row.Name)),
             OpenOutside = _runtime.OpenOutside(row.Name),
         })));
 

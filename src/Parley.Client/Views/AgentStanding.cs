@@ -225,6 +225,12 @@ public static class Standing
             return Working;
         }
 
+        // Not idle: its turn ended while work it started runs on, and it takes that up itself (SPEC.md §11.6).
+        if (running && turns.BackgroundTasks > 0)
+        {
+            return Activities.WaitingOnBackground(turns.BackgroundTasks);
+        }
+
         if (turns.LastEnded is not null && turns.LastPermissionDenials > 0)
         {
             return StoppedRefused;

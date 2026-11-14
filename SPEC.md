@@ -1,6 +1,6 @@
 ﻿# Parley Protocol Specification
 
-**Version:** 0.16
+**Version:** 0.17
 **Status:** Unstable. Breaking changes expected before 1.0.
 **License:** Apache-2.0
 
@@ -3786,9 +3786,28 @@ process its machine's node started (§11.7), or, when it is not running at all, 
 **One opened outside Parley is unknown**: no node gives it a turn, so nothing reports one, and what the node
 last reported for that name describes a different process.
 
+**A turn's end is not the end of the agent's work.** A runner can start sub-agents or commands in the
+background and end its turn with its reply while they run; Claude Code does this by default for a sub-agent
+started headless. When one finishes, the runner begins a turn of its own, with nobody's prompt, and ends it with
+a result marked as answering that work. So a node reads its agent's output as it arrives, turn or no turn, and:
+
+- **reports how many background tasks the agent has running**, whenever that changes, held by the broker in
+  memory with the node that said it, like a running turn, and cleared when that node leaves or a new process is
+  launched under the name;
+- **reports a turn the agent begins on its own as a turn**, begun and ended like any other, so the agent reads as
+  working while it takes up what its background work found. A turn the node is asked to give meanwhile waits
+  for it, as the runner would make the prompt wait;
+- **never takes the result of a turn the agent began on its own as the reply to one the node gave.** Read only
+  inside given turns, that result waited for the next one, which took it as its own reply at once: the agent read
+  as idle while it worked on the person's message, and every reply after went to the turn after its own.
+
+These reach every project whose node starts the agent's checkout, because they are the process's, not one
+project's.
+
 **A list of agents says who is working.** Where turns are reported, an agent is *working* for as long as a
-turn has run, *stopped* when its last turn had a tool call refused for want of permission, and *idle* when
-attached with no turn running. Where they are not, it reads by its presence alone. A turn report does not say
+turn has run, *stopped* when its last turn had a tool call refused for want of permission, *waiting on its
+background work* when no turn runs and background tasks it started do, and *idle* when attached with no turn
+and no background work running. Where they are not, it reads by its presence alone. A turn report does not say
 which conversation the turn is for, so a list says who and for how long, and not on what.
 
 **A report is accepted only for an agent on the reporting node's machine, from a node that is joined.**
@@ -4890,7 +4909,7 @@ decided is removed and its number is not reused, so the list has gaps.
 
 ## 18. Protocol version
 
-The protocol version is **0.16** and the storage schema version is **8**.
+The protocol version is **0.17** and the storage schema version is **8**.
 
 The version is `major.minor` and has no patch level, because a protocol change is either visible
 across the boundary or is not a protocol change at all. **While the major is zero, the minor

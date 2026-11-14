@@ -24,7 +24,8 @@ namespace Parley.Core;
 /// context, and a placed file is never changed: a new version is a new name. An agent may propose a
 /// roadmap, which only a person confirms, edits or declines; it opens no exchange, and the agent is told
 /// only what became of its proposal. A person may stop or restart an agent its node started, which the
-/// node does once the agent's turn is over.
+/// node does once the agent's turn is over. A node reports how many background tasks an agent has running,
+/// and a turn the agent begins on its own when one finishes.
 /// </para>
 /// <para>
 /// Kept here rather than read from the document at run time, so an implementation that ships without
@@ -34,5 +35,5 @@ namespace Parley.Core;
 public static class ProtocolVersion
 {
     /// <summary>The protocol version, as SPEC.md declares it.</summary>
-    public const string Current = "0.16";
+    public const string Current = "0.17";
 }

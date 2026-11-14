@@ -41,6 +41,9 @@ public enum AgentState
 
     /// <summary>Nothing the broker reports says.</summary>
     Unknown = 6,
+
+    /// <summary>Running, no turn running, and background work it started still runs: it carries on when that finishes.</summary>
+    Background = 7,
 }
 
 /// <summary>A flag the broker raised on an exchange (SPEC.md §6).</summary>
@@ -63,17 +66,19 @@ public enum ExchangeFlag
 /// <param name="State">Where the agent stands now.</param>
 /// <param name="Since">When its running turn started, for <see cref="AgentState.Working"/>.</param>
 /// <param name="Flag">A flag on the exchange, if the broker raised one.</param>
+/// <param name="BackgroundTasks">How many background tasks the agent has running, for <see cref="AgentState.Background"/>.</param>
 /// <remarks>
 /// <b>Never more than the broker reported</b> (spec 036, FR-006). "Working" means a turn is running, not that the agent is
 /// working on the person's message, and nothing records that a start is under way, so there is no "being started" (research
 /// R2). The words are written here once, so the web console and the terminal say the same thing.
 /// </remarks>
-public sealed record InFlightStanding(AgentState State, DateTimeOffset? Since, ExchangeFlag? Flag)
+public sealed record InFlightStanding(AgentState State, DateTimeOffset? Since, ExchangeFlag? Flag, int BackgroundTasks = 0)
 {
     /// <summary>The chip's own words.</summary>
     public string Chip => State switch
     {
         AgentState.Working => "Working",
+        AgentState.Background => "Background work",
         AgentState.Idle => "Idle",
         AgentState.Running => "Running",
         AgentState.NotRunning => "Not running",
@@ -88,6 +93,9 @@ public sealed record InFlightStanding(AgentState State, DateTimeOffset? Since, E
         AgentState.Working when Since is { } since =>
             $"A turn has been running since {since.ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture)}.",
         AgentState.Working => "A turn is running.",
+        AgentState.Background =>
+            $"Its turn ended while background work it started runs on ({(BackgroundTasks == 1 ? "1 task" : $"{BackgroundTasks.ToString(CultureInfo.InvariantCulture)} tasks")}). "
+            + "It carries on when that work finishes.",
         AgentState.Idle => "No turn is running, and it has not replied.",
         AgentState.Running => "Its turns are not reported, so Parley cannot say whether it is working.",
         AgentState.NotRunning => "A node can start it; Parley starts it when a message waits for it.",
@@ -124,6 +132,7 @@ public sealed record InFlightStanding(AgentState State, DateTimeOffset? Since, E
             { Presence: AgentPresence.Startable } => AgentState.NotRunning,
             { Presence: AgentPresence.Running, Turns: not { Reported: true } } => AgentState.Running,
             { Presence: AgentPresence.Running, Turns.RunningSince: not null } => AgentState.Working,
+            { Presence: AgentPresence.Running, Turns.BackgroundTasks: > 0 } => AgentState.Background,
             { Presence: AgentPresence.Running } => AgentState.Idle,
             _ => AgentState.Unknown,
         };
@@ -143,7 +152,11 @@ public sealed record InFlightStanding(AgentState State, DateTimeOffset? Since, E
             .Cast<ExchangeFlag?>()
             .FirstOrDefault();
 
-        return new InFlightStanding(state, state == AgentState.Working ? agent?.Turns?.RunningSince : null, flag);
+        return new InFlightStanding(
+            state,
+            state == AgentState.Working ? agent?.Turns?.RunningSince : null,
+            flag,
+            state == AgentState.Background ? agent?.Turns?.BackgroundTasks ?? 0 : 0);
     }
 }
 
