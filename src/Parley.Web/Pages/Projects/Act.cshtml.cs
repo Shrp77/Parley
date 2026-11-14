@@ -72,6 +72,9 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     [BindProperty, FromForm]
     public string? Text { get; set; }
 
+    /// <summary>The agents typing <c>@</c> offers in a reply to a question asked back, read only for that action.</summary>
+    public IReadOnlyList<string> Mentionable { get; private set; } = [];
+
     /// <summary>Why the person is closing a conversation, when they give a reason.</summary>
     /// <remarks>
     /// Told to every participant holding open work in it (§5.3). Optional, because a close with no reason
@@ -119,6 +122,15 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
             Proposed = read.Value?.Questions
                 .FirstOrDefault(q => q.Agent == answering && q.State == QuestionState.Waiting)?.Flattened;
+        }
+
+        if (string.Equals(Action, "replyaskedback", StringComparison.OrdinalIgnoreCase))
+        {
+            var roll = await BrokerDirectory.ReadAsync(async () =>
+                await new BrokerClient(directory.ClientFor(project)).RegistryAsync(HttpContext.RequestAborted)
+                    .ConfigureAwait(false)).ConfigureAwait(false);
+
+            Mentionable = [.. Parley.Client.Rendering.RoomRoster.NotInIt(roll.Value, [], PersonSeat.On(project.Name)).Select(agent => agent.Value)];
         }
 
         // What it owes, as the terminal's dialog says it: the debt is what makes the difference between retiring and

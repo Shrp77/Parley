@@ -19,6 +19,11 @@ namespace Parley.Web;
 /// Which message this box is for, as the key its draft is kept under in this browser: the project and the exchange or
 /// conversation it answers. None for a box whose words are not a message.
 /// </param>
+/// <param name="Mentions">
+/// The agents typing <c>@</c> offers, by full name: the project's, as its page knows them. Choosing one completes the name
+/// in the words; where the form also carries a <c>Targets</c> box for that agent, it is ticked too. None for a box whose
+/// words are not a message.
+/// </param>
 /// <remarks>
 /// <para>
 /// <b>One box and one set of keys everywhere a person types more than a line</b> (owner, 2026-11-06: "Anywhere where you
@@ -41,6 +46,11 @@ namespace Parley.Web;
 /// typed, puts them back when the box is drawn empty again, and drops them when the form is sent. A box the server drew
 /// with words in it (a refused send kept them) shows those words, since they are what was last sent.
 /// </para>
+/// <para>
+/// <b>Typing <c>@</c> offers the project's agents in every message box</b> (owner, 2026-11-13: it worked on the conversation
+/// page and not in the Inbox, which had no copy of it). The name stays in the words and never addresses anybody: who a
+/// message goes to is the form's, never parsed out of what it says (SPEC.md §13).
+/// </para>
 /// </remarks>
 public sealed record ComposerBox(
     string Name,
@@ -54,7 +64,8 @@ public sealed record ComposerBox(
     int? MaxLength = null,
     bool Attach = false,
     IReadOnlyList<string>? Attached = null,
-    string? Draft = null)
+    string? Draft = null,
+    IReadOnlyList<string>? Mentions = null)
 {
     /// <summary>What every composer says about its keys.</summary>
     public const string Keys = "Enter sends. Shift+Enter or Ctrl+Enter makes a new line.";

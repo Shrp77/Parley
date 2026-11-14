@@ -1734,6 +1734,11 @@
         form.dropping { outline: 2px dashed var(--accent); outline-offset: -4px; }
         /* The composer partial's holder lays out as if it were not there, so each page's own layout of the box holds. */
         .composer-box { display: contents; }
+        /* The agents typing @@ offers, just above the box it was typed in; the frame's script places it. */
+        .mention-list { position: absolute; margin: 0; padding: 0.25rem; list-style: none; max-height: 14rem; overflow: auto; background: var(--md-sys-color-surface-container); border: 0; border-radius: var(--md-sys-shape-corner-extra-small); box-shadow: var(--md-sys-elevation-2); z-index: 20; }
+        .mention-list[hidden] { display: none; }
+        .mention-list li { padding: 0.35rem 0.6rem; border-radius: 6px; cursor: pointer; overflow-wrap: anywhere; }
+        .mention-list li[aria-selected="true"], .mention-list li:hover { background: var(--quiet-wash); }
 
         /* Keyboard focus and jumps stop short of the box rather than underneath it. A margin on everything but the box,
            never padding on the page: the browser keeps the caret clear of the page's padding as the person types, and the
@@ -2863,6 +2868,150 @@
 
                 if (holder && holder.parleyAttach) { holder.parleyAttach([].slice.call(e.dataTransfer.files)); }
             });
+        })();
+    </script>
+    @* **Typing @@ offers the project's agents, in every message box** (ComposerBox; owner, 2026-11-13: it worked on the
+       conversation page and not in the Inbox). The names are the box's `data-mentions`, which its page read from the
+       registry. Choosing one completes the @@name in the words, which stay: it is part of what the person said. It never
+       addresses anybody (a payload is never parsed for addressing, SPEC.md §13); where the form carries a `Targets` box for
+       that agent, as the conversation page and a spin-off do, that box is ticked, and that is what addresses them. Arrow
+       keys move, Enter or Tab choose, Escape closes. Taken in the capture phase, before the frame's Enter-sends handler. *@
+    <script>
+        (function () {
+            var list = document.createElement("ul");
+            var box = null;
+            var shown = [];
+            var at = 0;
+            var start = -1;
+            var choosing = false;
+
+            list.id = "mention-list";
+            list.className = "mention-list";
+            list.setAttribute("role", "listbox");
+            list.hidden = true;
+
+            function close() { list.hidden = true; shown = []; start = -1; }
+
+            function names(of) {
+                return (of.getAttribute("data-mentions") || "").split(" ").filter(function (n) { return n !== ""; });
+            }
+
+            // The @@word being typed, if the caret is at the end of one that begins at a word boundary.
+            function word(of) {
+                var upto = of.value.slice(0, of.selectionStart);
+                var m = /(^|\s)@@([A-Za-z0-9@@._\-]*)$/.exec(upto);
+
+                return m ? { from: upto.length - m[2].length - 1, query: m[2].toLowerCase() } : null;
+            }
+
+            function target(form, name) {
+                return form ? [].slice.call(form.elements).filter(function (el) {
+                    return el instanceof HTMLInputElement && el.name === "Targets" && el.value === name;
+                })[0] || null : null;
+            }
+
+            // Just above the box, inside its form, which is made the list's frame if nothing else positions it.
+            function place() {
+                var form = box.form;
+
+                if (!form) { close(); return; }
+                if (list.parentNode !== form) { form.appendChild(list); }
+                if (getComputedStyle(form).position === "static") { form.style.position = "relative"; }
+
+                list.style.left = box.offsetLeft + "px";
+                list.style.width = box.offsetWidth + "px";
+                list.style.bottom = (form.clientHeight - box.offsetTop) + "px";
+            }
+
+            function draw() {
+                list.replaceChildren();
+
+                shown.forEach(function (name, i) {
+                    var li = document.createElement("li");
+                    var ticked = target(box.form, name);
+
+                    li.setAttribute("role", "option");
+                    li.setAttribute("aria-selected", i === at ? "true" : "false");
+                    li.textContent = name + (ticked && ticked.checked ? " (chosen)" : "");
+                    li.addEventListener("mousedown", function (e) { e.preventDefault(); choose(name); });
+                    list.appendChild(li);
+                });
+
+                list.hidden = shown.length === 0;
+
+                if (!list.hidden) { place(); }
+            }
+
+            function update(e) {
+                var typed = e.target;
+
+                if (choosing || !(typed instanceof HTMLTextAreaElement) || !typed.hasAttribute("data-mentions")) { return; }
+
+                box = typed;
+
+                var w = word(box);
+
+                if (!w) { close(); return; }
+
+                start = w.from;
+                shown = names(box).filter(function (n) { return n.toLowerCase().indexOf(w.query) >= 0; })
+                    .sort(function (a, b) {
+                        var x = a.toLowerCase().indexOf(w.query) === 0 ? 0 : 1;
+                        var y = b.toLowerCase().indexOf(w.query) === 0 ? 0 : 1;
+
+                        return x - y || a.localeCompare(b);
+                    }).slice(0, 8);
+                at = 0;
+                draw();
+            }
+
+            function choose(name) {
+                var end = box.selectionStart;
+                var before = box.value.slice(0, start);
+                var after = box.value.slice(end);
+
+                // The mention stays in the words: it may be an instruction to that agent the others should see.
+                var mention = "@@" + name + (/^\s/.test(after) ? "" : " ");
+
+                box.value = before + mention + after;
+                box.selectionStart = box.selectionEnd = before.length + mention.length;
+
+                var ticked = target(box.form, name);
+
+                if (ticked && !ticked.checked) {
+                    ticked.checked = true;
+                    ticked.dispatchEvent(new Event("change", { bubbles: true }));
+                }
+
+                close();
+                box.focus();
+
+                // Told as typing is, so the draft keeps the name; not offered again for the name just completed.
+                choosing = true;
+                box.dispatchEvent(new Event("input", { bubbles: true }));
+                choosing = false;
+            }
+
+            document.addEventListener("input", update);
+            document.addEventListener("click", update);
+            document.addEventListener("focusout", function (e) { if (e.target === box) { close(); } });
+
+            document.addEventListener("keydown", function (e) {
+                if (list.hidden || e.target !== box) { return; }
+
+                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    e.preventDefault();
+                    at = (at + (e.key === "ArrowDown" ? 1 : shown.length - 1)) % shown.length;
+                    draw();
+                } else if (e.key === "Enter" || e.key === "Tab") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    choose(shown[at]);
+                } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    close();
+                }
+            }, true);
         })();
     </script>
     @* Where an open grid row's line sticks: just under its grid's header, however tall the header is drawn (density, a

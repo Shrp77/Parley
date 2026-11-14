@@ -58,6 +58,10 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// </remarks>
     public IReadOnlyList<AgentName> NotInIt { get; private set; } = [];
 
+    /// <summary>The agents typing <c>@</c> offers in the box: everyone the recipients tree offers, the person aside.</summary>
+    public IReadOnlyList<string> Mentionable =>
+        [.. Participants.Concat(NotInIt).Where(agent => !PersonSeat.Is(agent)).Select(agent => agent.Value).Distinct(StringComparer.Ordinal)];
+
     /// <summary>Where each exchange stands, by identifier.</summary>
     public IReadOnlyDictionary<long, ExchangeSnapshot> Exchanges { get; private set; } =
         new Dictionary<long, ExchangeSnapshot>();

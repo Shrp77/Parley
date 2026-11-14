@@ -81,6 +81,14 @@ public sealed class InboxModel(
     /// <summary>What is waiting in each project this person is seated in.</summary>
     public IReadOnlyList<Pending> Projects { get; private set; } = [];
 
+    private Dictionary<string, IReadOnlyList<string>> mentionable = new(StringComparer.Ordinal);
+
+    /// <summary>The agents typing <c>@</c> offers in a box answering something in a project.</summary>
+    /// <param name="project">The project's name.</param>
+    /// <returns>Their full names, or none when the project's registry could not be read.</returns>
+    public IReadOnlyList<string> MentionsIn(string project) =>
+        mentionable.TryGetValue(project, out var names) ? names : [];
+
     /// <summary>How much is waiting for this name while no seat is held, and whether every project answered.</summary>
     /// <remarks>
     /// Only read when <see cref="Projects"/> is empty. The absence of a collector is not the absence of mail, which
@@ -843,6 +851,20 @@ public sealed class InboxModel(
 
             return (project.Name.Value, read.Value, read.Problem);
         })).ConfigureAwait(false);
+        // Who typing @ offers in each project's boxes. A registry that cannot be read offers nobody; the box still sends.
+        var rosters = await Task.WhenAll(directory.Projects.Select(async project =>
+        {
+            var roll = await BrokerDirectory.ReadAsync(async () =>
+                await new BrokerClient(directory.ClientFor(project)).RegistryAsync(token).ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            return (Project: project.Name.Value, Names: RoomRoster.NotInIt(roll.Value, [], PersonSeat.On(project.Name)));
+        })).ConfigureAwait(false);
+
+        mentionable = rosters.ToDictionary(
+            roster => roster.Project,
+            roster => (IReadOnlyList<string>)[.. roster.Names.Select(name => name.Value)],
+            StringComparer.Ordinal);
         Asked = await StillOpen.StandingAsync(
             stillOpen.Latest(),
             name => directory.Find(name) is { } known ? new BrokerClient(directory.ClientFor(known)) : null,

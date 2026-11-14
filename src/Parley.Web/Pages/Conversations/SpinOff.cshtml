@@ -48,7 +48,8 @@
     <p>
         <partial name="_Composer" model="@(new Parley.Web.ComposerBox(
             "Says", Model.Says, Id: "says", Rows: 12, Label: "What you want to say", Attach: true,
-            Draft: $"{Model.Project}/spin-off/{Model.Id}"))" />
+            Draft: $"{Model.Project}/spin-off/{Model.Id}",
+            Mentions: [.. Model.Agents.Select(agent => agent.Value)]))" />
         <br /><small>@Parley.Client.Rendering.Quoting.OpeningIsAdded</small>
     </p>
 

@@ -128,7 +128,8 @@
                                     Label: $"Follow up with {row.Agent.Role}: a new request in {row.Conversation}",
                                     Attach: true,
                                     Attached: kept ? [.. Model.Attached] : null,
-                                    Draft: $"{project}/follow-up/{row.Exchange}"))" />
+                                    Draft: $"{project}/follow-up/{row.Exchange}",
+                                    Mentions: Model.MentionsIn(project)))" />
                                 <button type="submit">Send follow-up</button>
                             </form>
                         }

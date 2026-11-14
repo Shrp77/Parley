@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.58.20, protocol 0.15, schema 8. Nothing has been released, but **live stores hold work
+- Version 0.58.21, protocol 0.15, schema 8. Nothing has been released, but **live stores hold work
   in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
   `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
   upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
@@ -464,7 +464,9 @@ Decided and built. The reasoning is in `SPEC.md`, the feature's `research.md` an
   conversation's name, an ownership line, roadmap text, a close reason) takes no files. The same test fails a page model
   that sends in the person's voice without all three. A message box also passes `Draft:`, a key naming its project and
   exchange or conversation, and the layout keeps its unsent words in `localStorage` until the form is sent
-  (`MessageDraftsAreKeptTests`).
+  (`MessageDraftsAreKeptTests`). It passes `Mentions:` too, the project's agents, and the layout's one script offers them when
+  `@` is typed; a mention ticks a `Targets` box only where the form carries one, and never addresses by itself
+  (`MentionsInEveryMessageBoxTests`).
 - **Hold screens to what is drawn, not what is held in memory.** Read the laid-out screen or
   `Driver.Contents`, not a field, and press a key rather than calling its seam.
 - **Anything drawing somebody else's text** (a payload, a broker detail, a path, a log line)

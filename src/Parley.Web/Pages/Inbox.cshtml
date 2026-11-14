@@ -317,7 +317,8 @@
                                             ShowKeys: false,
                                             Attach: id == owed[0],
                                             Attached: id == owed[0] ? Model.KeptFiles(item.Message.ExchangeId, "Result") : null,
-                                            Draft: $"{projectName}/result/{item.Message.ExchangeId}/{id}"))" />
+                                            Draft: $"{projectName}/result/{item.Message.ExchangeId}/{id}",
+                                            Mentions: Model.MentionsIn(projectName)))" />
                                         @* Labelled on screen, not only for a screen reader: an unlabelled "Done" read as a
                                            button or a state, not as the outcome the agent is told. *@
                                         <label for="v-@item.Message.ExchangeId-@id">Outcome for @id</label>
@@ -354,7 +355,8 @@
                                         Label: item.OwesReply ? "Your reply" : "Or ask them to clarify",
                                         Attach: true,
                                         Attached: Model.KeptFiles(item.Message.ExchangeId, "Clarify"),
-                                        Draft: $"{projectName}/clarify/{item.Message.ExchangeId}"))" />
+                                        Draft: $"{projectName}/clarify/{item.Message.ExchangeId}",
+                                        Mentions: Model.MentionsIn(projectName)))" />
                                     <button type="submit">@(item.OwesReply ? "Reply" : "Ask")</button>
                                 </form>
                                 @* For a question gone stale or answered elsewhere. Nothing is said on the person's behalf: the
