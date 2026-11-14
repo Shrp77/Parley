@@ -297,6 +297,45 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The node waits for the current turn to end, so this says only that it was asked (SPEC.md §11.1). The agent is
+    /// started again by the next work for it, as any agent is: retirement, not this, keeps one out.
+    /// </remarks>
+    public override Task<Wire.DidItReply> Stop(Wire.StopRequest request, ServerCallContext context) =>
+        StopOrRestart(request, context, restart: false);
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The same as <see cref="Stop"/>, then started again with its launch configuration read afresh. An agent that is
+    /// not running is not started by this: that is <see cref="Start"/>.
+    /// </remarks>
+    public override Task<Wire.DidItReply> Restart(Wire.StopRequest request, ServerCallContext context) =>
+        StopOrRestart(request, context, restart: true);
+
+    private Task<Wire.DidItReply> StopOrRestart(Wire.StopRequest request, ServerCallContext context, bool restart)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var agent = Acted(request.Agent);
+        var because = string.IsNullOrWhiteSpace(request.Because) ? "the person asked for it" : request.Because;
+
+        return _runtime.RequestStop(agent, restart, because) switch
+        {
+            StopOutcome.Sent => Task.FromResult(new Wire.DidItReply { Changed = true }),
+            StopOutcome.NotRunning => Task.FromResult(new Wire.DidItReply { Changed = false }),
+            StopOutcome.OpenOutside => throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"'{agent.Value}' is open outside Parley — somebody started it in an editor — so Parley holds no process "
+                + "of it to stop. Close it where it was opened.")),
+            _ => throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"No node on '{agent.Machine}' can stop '{agent.Value}': its node is not connected, or does not list it "
+                + "among what it can start. Run `parley up` on that machine, or restart the broker there.")),
+        };
+    }
+
+    /// <inheritdoc/>
     public override async Task<Wire.DidItReply> Retire(Wire.AgentRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);

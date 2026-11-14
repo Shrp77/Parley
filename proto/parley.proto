@@ -716,7 +716,18 @@ message NodeCommand {
     // Sent once, for an agent's first ownership line accepted automatically (section 11.1), and never for an agent the
     // node did not start.
     RefreshAgent refresh = 4;
+
+    // A person's stop or restart of an agent this node started (section 11.1), once its current turn is over. Never for
+    // an agent the node did not start.
+    StopAgent stop = 5;
   }
+}
+
+message StopAgent {
+  string agent = 1;
+  string because = 2;            // for the operator's benefit, never the agent's
+  string identity = 3;           // which checkout, when the broker knows; the node finds it by this and not by the name
+  bool restart = 4;              // start it again once it has stopped, reading its launch configuration afresh
 }
 
 message RefreshAgent {
@@ -844,6 +855,12 @@ service Operators {
 
   // Causes a launch and never a registration (section 12.3).
   rpc Start(StartRequest) returns (DidItReply);
+
+  // A person's stop or restart of an agent its node started (section 11.1). The node waits for the agent's current turn to
+  // end. Refused for an agent open outside Parley and for one whose machine has no node; changed is false when it is not
+  // running. A stopped agent is started again by the next work for it, as any agent is: only retirement keeps one out.
+  rpc Stop(StopRequest) returns (DidItReply);
+  rpc Restart(StopRequest) returns (DidItReply);
 
   // The file location (section 9.5). Placing as the person, removing any file and pruning them all are the person's:
   // no agent places as somebody else or removes another's files. Describing where a file is lets a surface on that
@@ -983,6 +1000,11 @@ enum DestroyVerdict {
 }
 
 message StartRequest {
+  string agent = 1;
+  string because = 2;              // for whoever reads the node's log
+}
+
+message StopRequest {
   string agent = 1;
   string because = 2;              // for whoever reads the node's log
 }

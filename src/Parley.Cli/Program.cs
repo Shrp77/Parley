@@ -351,8 +351,8 @@ if (arguments.Count == 0)
 var verb = arguments[0];
 var rest = arguments.Skip(1).ToArray();
 
-// **The fourteen operator operations that are the terminal's.** Held as data rather than
-// as fourteen case arms so that the refusal, the help and the test that holds them read one list --
+// **The operator operations that are the terminal's.** Held as data rather than
+// as a case arm each so that the refusal, the help and the test that holds them read one list --
 // three copies of a set like this agree until one of them is edited.
 //
 // `registry` and `open` are deliberately not here: the installers invoke both, so every command
@@ -361,7 +361,7 @@ string[] Moved =
 [
     "retire", "reinstate", "purge", "export", "force-conclude", "prune", "start",
     "archive", "unarchive", "destroy", "refusals", "clarifications", "results", "flags",
-    "spin-off", "move",
+    "spin-off", "move", "stop", "restart",
 ];
 
 // Options are taken centrally, above the verb, because a flag consumed by the command it belongs

@@ -467,6 +467,32 @@ public sealed class JoinedNode : IAsyncDisposable
         });
     }
 
+    /// <summary>Asks the node to stop an agent it started, or restart it, once its turn is over (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="identity">Its identity when the broker knows one, so the node can find the checkout by it.</param>
+    /// <param name="restart">Whether to start it again once it has stopped.</param>
+    /// <param name="because">Why, for the operator's benefit.</param>
+    /// <returns><see langword="true"/> if the command was queued.</returns>
+    /// <remarks>
+    /// A person's act, where a refresh is the broker's. The node waits for the turn lock, as for a refresh, because only
+    /// the node knows whether a turn is in progress, and a turn is bounded by the node's patience.
+    /// </remarks>
+    internal bool RequestStop(AgentName agent, AgentIdentity identity, bool restart, string because)
+    {
+        if (!Can(agent, identity))
+        {
+            return false;
+        }
+
+        return _commands.Writer.TryWrite(new Wire.NodeCommand
+        {
+            Stop = new Wire.StopAgent
+            {
+                Agent = agent.Value, Because = because, Identity = IdentityText(identity), Restart = restart,
+            }
+        });
+    }
+
     private static string IdentityText(AgentIdentity identity) => identity.Known ? identity.ToString() : string.Empty;
 
     /// <summary>Ends the stream without touching the registry.</summary>

@@ -154,6 +154,26 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     }
 
     /// <inheritdoc/>
+    public async Task<bool> StopAsync(AgentName agent, string because, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.StopAsync(
+            new Wire.StopRequest { Agent = agent.Value, Because = because ?? string.Empty },
+            cancellationToken: cancellationToken);
+
+        return reply.Changed;
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> RestartAsync(AgentName agent, string because, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.RestartAsync(
+            new Wire.StopRequest { Agent = agent.Value, Because = because ?? string.Empty },
+            cancellationToken: cancellationToken);
+
+        return reply.Changed;
+    }
+
+    /// <inheritdoc/>
     public async Task<ConversationExport> ExportAsync(string conversationId, CancellationToken cancellationToken = default)
     {
         var reply = await _operators.ExportAsync(

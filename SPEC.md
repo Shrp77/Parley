@@ -1,6 +1,6 @@
 ﻿# Parley Protocol Specification
 
-**Version:** 0.15
+**Version:** 0.16
 **Status:** Unstable. Breaking changes expected before 1.0.
 **License:** Apache-2.0
 
@@ -3458,6 +3458,8 @@ other could.
 | `unarchive(conversation)` | Reverse it. |
 | `destroy(conversation)` | Delete a conversation and every message, exchange and file belonging to it, for every participant. Destroys its peers' side too and cannot be undone. Leaves the record of §14, which holds facts and no content. Named apart from `purge`, which takes an agent: two operations on different subjects sharing one name is how the wrong one gets bound. |
 | `start(agent)` | Ask a node that can resolve this agent's name to a catalogued checkout (§12) to launch it now, rather than waiting for a question to arrive. Returns whether a node accepted the request. The agent registers itself on attaching, exactly as §12.3 permits — this operation causes a launch and never a registration. Refused for the person seat: nothing starts a person. Refused for an agent open outside Parley (§11.7): a second process in one checkout is two models editing it. |
+| `stop(agent)` | Ask the node that started this agent to stop it once its current turn is over (§11.1). Returns whether a node was asked: false when nothing is running under the name. It ends a process and never work: what the agent owes stays owed, and the next work for it starts it again, because only retirement gates routing (§14). Refused for the person seat and the facilitator, for an agent open outside Parley (§11.7), which belongs to whoever opened it, and for one whose machine has no node joined that can start it. |
+| `restart(agent)` | As `stop`, then started again with its launch configuration read afresh. False, and nothing started, when it is not running: that is `start`'s. Refused where `stop` is. |
 | `place_persons_file(conversation_id, name, bytes)` | Place a file as the person, into a conversation that exists, under §9.5's rules for a placement: renamed for its characters, refused when the name already holds other content or a file nothing placed, and already current when it is the person's own with the same content. The file is the person's. Named apart from §10.1's `file_place`, which is an agent's. |
 | `list_shared_files(conversation_id?, page)` | Every file in the location, with its conversation, size, content hash, placer and when, totals per conversation and overall, how many placements and bytes each agent has made, and how many files in the folders listed are not listed because nothing placed them, which the next sweep deletes (§9.5). Paged, and the broker bounds the page whatever is asked for. Named apart from §10.1's `file_list`, which does not report placement counts. |
 | `remove_files(files)` | Remove any files, whichever agent placed them (§9.5). A name held by several conversations must name one; names not present are reported without preventing the rest. Named apart from §10.1's `file_remove`, which removes only the caller's own. |
@@ -3619,7 +3621,7 @@ the sender's. The bound is one wasted turn per new message, the evidence is the 
 §10.2 already keeps, and an agent that keeps leaving work untouched is flagged to the person running
 the deployment (§6) rather than retried for ever.
 
-Three things end a resident agent, and nothing else may:
+Four things end a resident agent, and nothing else may:
 
 1. **The node stops**, and tells every agent it started to quit.
 2. **The agent's own process ends**, which the node observes directly and does not fight.
@@ -3628,6 +3630,10 @@ Three things end a resident agent, and nothing else may:
    node waits until no turn is in progress, then stops the agent and starts it again with its launch
    configuration read afresh. It refreshes only an agent it started itself; an agent attached from
    somebody's editor window is never refreshed, and its line waits for its next start.
+4. **A person stops or restarts it** (§10.2 `stop`, `restart`). The node waits until no turn is in
+   progress, as for a refresh, then stops the agent, and for a restart starts it again with its
+   launch configuration read afresh. Only an agent the node started: one open outside Parley
+   (§11.7) belongs to whoever opened it.
 
 The third is argued rather than slipped in, because the paragraph below is the reason this list is
 short. The process holds what the agent has learned. The question is asked just after the agent first
@@ -3635,6 +3641,15 @@ attaches, when it has learned almost nothing, so a restart then costs little. Le
 the line would cost the whole point of asking. So it happens once, for the first line only, and never
 mid-turn. The broker sends it only when the agent owes no open exchange. Every later change of line
 waits for a natural restart, when throwing away what the agent has learned would be the wrong trade.
+
+The fourth is the person's, and the trade is theirs to make, because they can see what the broker cannot:
+that an agent is stuck, is running a session they no longer trust, or should read a launch configuration
+they just changed. It ends a process and nothing else. What the agent owes stays owed and its
+conversations are untouched, so it is not a way to end work (§6) and is never a timeout: the broker
+never stops an agent on its own account. A stopped agent is started again by the next work for it, as
+any agent is, because only retirement gates routing (§14); a person who wants it kept out retires it.
+It waits for the turn rather than cutting it short, and a turn is bounded by the node's patience, so the
+wait is bounded too.
 
 A turn that runs past the node's patience is **not** one of them. The process holds everything the
 agent has learned, and discarding that because a single turn ran long is a far worse trade than
@@ -4875,7 +4890,7 @@ decided is removed and its number is not reused, so the list has gaps.
 
 ## 18. Protocol version
 
-The protocol version is **0.15** and the storage schema version is **8**.
+The protocol version is **0.16** and the storage schema version is **8**.
 
 The version is `major.minor` and has no patch level, because a protocol change is either visible
 across the boundary or is not a protocol change at all. **While the major is zero, the minor

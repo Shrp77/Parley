@@ -204,6 +204,17 @@ files there. Retiring can be undone from the same place, but reinstating writes 
 agent again for it to start. Purging cannot be undone. The web console's Agents tab does the same,
 with the same words and the same typed name, because both run one implementation.
 
+**Stopping or restarting a running agent.** Press Enter on a running agent's row in the terminal, or open
+its page in the web console, and choose Stop or Restart. Its node lets the current turn finish, then stops
+it, and for a restart starts it again so it reads its launch configuration afresh. What it owes stays owed
+and its conversations are untouched; only what the running session had learned is lost. A stopped agent is
+started again by the next work for it. To keep it from being started, retire it. Neither is offered for an
+agent somebody opened in an editor, because Parley did not start that process and cannot stop it.
+
+An agent reads as *stranded* when nothing has it open and its machine's node is not connected, so
+nothing can start it. Its work waits. The broker's own node rejoins by itself after a dropped
+connection; on another machine, run `parley up` there.
+
 **An agent whose repository is gone is retired for you.** When a node is asked to start an agent and
 finds its folder deleted, on the disk that holds your home folder, while the folder above it is still there
 and in use, it starts nothing and the broker retires the agent; the node's output says so. Put the repository

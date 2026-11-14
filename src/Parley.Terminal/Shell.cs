@@ -2438,6 +2438,15 @@ internal sealed partial class Shell : Window
     /// <summary>What the row menu offers on an agent that is not running, before the name.</summary>
     private const string StartThisTitle = "Start ";
 
+    /// <summary>What the row menu offers on a running agent Parley started, to restart it, before the name.</summary>
+    internal const string RestartThisTitle = "Restart ";
+
+    /// <summary>What the row menu offers on a running agent Parley started, to stop it, before the name.</summary>
+    internal const string StopThisTitle = "Stop ";
+
+    /// <summary>The choice that leaves a running agent alone.</summary>
+    private const string KeepItRunning = "Keep it running";
+
     /// <summary>
     /// Opens what can be done with the row under the cursor in the agents list.
     /// </summary>
@@ -2495,6 +2504,14 @@ internal sealed partial class Shell : Window
             if (Agents.SelectedStanding is { Running: false, Retired: false, StartableHere: true })
             {
                 entries.Add((StartThisTitle + name.Value, StartSelected));
+            }
+
+            // Only a process Parley started: one open outside Parley is whoever opened it's, and no node holds it.
+            if (Agents.SelectedStanding is { Running: true } running
+                && !string.Equals(running.Standing, Standing.Outside, StringComparison.Ordinal))
+            {
+                entries.Add((RestartThisTitle + name.Value, () => StopSelected(restart: true)));
+                entries.Add((StopThisTitle + name.Value, () => StopSelected(restart: false)));
             }
         }
 
@@ -2584,6 +2601,58 @@ internal sealed partial class Shell : Window
         });
 
         return Settled;
+    }
+
+    /// <summary>Asks this agent's node to stop it, or restart it, from its row, once the person has read what it costs.</summary>
+    /// <param name="restart">Whether to start it again.</param>
+    /// <returns>When the description is open.</returns>
+    /// <remarks>
+    /// The deliberate act is choosing the second entry of a menu that describes the act, keeping it running being the
+    /// first: nothing is destroyed (what it owes stays owed), so a typed name would ask more than the act takes. The same
+    /// operator operation the web console uses (§10.2 <c>stop</c>, <c>restart</c>).
+    /// </remarks>
+    private Task StopSelected(bool restart)
+    {
+        if (App is not { } app
+            || Current is not { } project
+            || Agents.Selected is not { } row
+            || !AgentName.TryCreate(row.Name, out var agent))
+        {
+            return Task.CompletedTask;
+        }
+
+        var act = (restart ? RestartThisTitle : StopThisTitle) + agent.Value;
+        var menu = Prompting.Choose(
+            act,
+            restart ? StoppingWords.Restarting(agent.Value) : StoppingWords.Stopping(agent.Value),
+            [KeepItRunning, act]);
+        var opened = Prompting.Open(app, menu);
+
+        menu.Done += (_, chosen) =>
+        {
+            Prompting.Close(app, opened);
+
+            if (chosen != act)
+            {
+                return;
+            }
+
+            Queue(async token =>
+            {
+                var client = new BrokerClient(_directory.ClientFor(project));
+                var asked = await BrokerDirectory.ReadAsync(async () =>
+                    restart
+                        ? await client.RestartAsync(agent, "a person restarted it from its row", token).ConfigureAwait(false)
+                        : await client.StopAsync(agent, "a person stopped it from its row", token).ConfigureAwait(false))
+                    .ConfigureAwait(false);
+
+                Said = asked.Problem ?? StoppingWords.Outcome(agent.Value, restart, asked.Value);
+
+                await SelectAsync(project, token).ConfigureAwait(false);
+            });
+        };
+
+        return Task.CompletedTask;
     }
 
     /// <summary>Opens the menu of what the focused region can do.</summary>

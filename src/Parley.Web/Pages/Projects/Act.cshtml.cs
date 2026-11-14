@@ -158,6 +158,11 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
             "start" => ($"The node on '{Subject}'s machine is asked to start it. It costs no turn. A retired agent is "
                       + "not started, and nothing can be asked of a machine whose node is not running.", false),
 
+            // Not destructive: what it owes stays owed. What is lost is what the session had learned, which is said.
+            "stop" => (Parley.Client.Rendering.StoppingWords.Stopping(Subject), false),
+
+            "restart" => (Parley.Client.Rendering.StoppingWords.Restarting(Subject), false),
+
             "purge" => (AgentWithdrawal.Purging + " Its name becomes free for another agent; retiring it instead "
                       + "achieves everything except freeing the name, and keeps its peers' side of those conversations. "
                       + AgentWithdrawal.TheFiles + " " + ThisProjectOnly, true),
@@ -277,6 +282,11 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
                 "start" => DescribeStart(broker.StartAsync(agent, "a person asked from the web UI", token)),
 
+                "stop" => DescribeStop(agent, restart: false, broker.StopAsync(agent, "a person stopped it from the web UI", token)),
+
+                "restart" => DescribeStop(
+                    agent, restart: true, broker.RestartAsync(agent, "a person restarted it from the web UI", token)),
+
                 // Composed, because what a person types *here* is their own line and is recorded as
                 // theirs. A proposal an agent wrote arrives through the conversation it was agreed
                 // in and is accepted from that conversation, carrying it -- which is why `source`
@@ -315,6 +325,9 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
         await start.ConfigureAwait(false)
             ? "Its node was asked to start it."
             : "Nothing was asked: it is retired, so reinstate it first, or no node on its machine is running.";
+
+    private static async Task<string> DescribeStop(AgentName agent, bool restart, Task<bool> asked) =>
+        Parley.Client.Rendering.StoppingWords.Outcome(agent.Value, restart, await asked.ConfigureAwait(false));
 
     /// <summary>Writes the line where it takes effect, then records that a person accepted it.</summary>
     /// <param name="project">

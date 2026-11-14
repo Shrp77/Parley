@@ -1396,6 +1396,46 @@ public sealed class BrokerRuntime : IAsyncDisposable
     public bool RequestAttention(AgentName agent, string because) =>
         Ask(agent, because) is WakeOutcome.Started or WakeOutcome.AlreadyRunning;
 
+    /// <summary>Asks an agent's node to stop it, or restart it, once its turn is over (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="restart">Whether to start it again once it has stopped.</param>
+    /// <param name="because">Why, for the operator's benefit.</param>
+    /// <returns>What became of the asking.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Only a process Parley started.</b> One opened in somebody's editor is theirs (§11.7), and no node holds it.
+    /// </para>
+    /// <para>
+    /// <b>The pending wake is let go when the command is sent</b>, so the next work for the agent starts it again rather
+    /// than being suppressed by a turn the stop is about to end.
+    /// </para>
+    /// </remarks>
+    public StopOutcome RequestStop(AgentName agent, bool restart, string because)
+    {
+        if (PersonSeat.Is(agent)
+            || Facilitation.Is(agent)
+            || !_attached.TryGetValue(agent.Value, out var sessions)
+            || sessions.IsEmpty)
+        {
+            return StopOutcome.NotRunning;
+        }
+
+        if (sessions.All(session => !session.StartedByParley))
+        {
+            return StopOutcome.OpenOutside;
+        }
+
+        if (!_nodes.TryGetValue(agent.Machine, out var node)
+            || !node.RequestStop(agent, IdentityOf(agent), restart, because))
+        {
+            return StopOutcome.NoNode;
+        }
+
+        _ = _pending.TryRemove(agent.Value, out _);
+
+        return StopOutcome.Sent;
+    }
+
     /// <summary>
     /// Asks an agent's machine to see to its mail, unless something already has.
     /// </summary>

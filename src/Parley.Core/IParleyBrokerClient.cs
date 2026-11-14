@@ -325,6 +325,36 @@ public interface IParleyBrokerClient
     Task<bool> StartAsync(
         AgentName agent, string because, CancellationToken cancellationToken = default);
 
+    /// <summary>Ask the node that started an agent to stop it once its current turn is over (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="because">Why, for whoever reads the node's log.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether its node was asked; false when nothing is running under the name.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>It ends a process, not the agent.</b> What it owes stays owed, and the next work for it starts it again, as any
+    /// agent is started: only retirement keeps one out. What the process had learned is lost, which is the cost a person
+    /// is told before doing it.
+    /// </para>
+    /// <para>
+    /// Refused for an agent open outside Parley, which belongs to whoever opened it, and for one whose machine has no
+    /// node joined, since then nothing holds its process.
+    /// </para>
+    /// </remarks>
+    Task<bool> StopAsync(
+        AgentName agent, string because, CancellationToken cancellationToken = default);
+
+    /// <summary>Ask the node that started an agent to stop it once its turn is over and start it again.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="because">Why, for whoever reads the node's log.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether its node was asked; false when nothing is running under the name, which is a start's to fix.</returns>
+    /// <remarks>
+    /// The new process reads its launch configuration afresh. Refused where <see cref="StopAsync"/> is.
+    /// </remarks>
+    Task<bool> RestartAsync(
+        AgentName agent, string because, CancellationToken cancellationToken = default);
+
     /// <summary>Place a file as the person, into a conversation that exists (SPEC.md §10.2 <c>place_persons_file</c>).</summary>
     /// <param name="conversationId">The conversation.</param>
     /// <param name="name">The name to place it under; characters outside the set become <c>_</c> (§9.5).</param>

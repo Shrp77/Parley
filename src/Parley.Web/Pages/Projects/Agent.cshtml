@@ -87,7 +87,18 @@ else
        opens a page that describes the act before anything happens. *@
     <div class="actions" role="group" aria-label="Actions">
         <a class="button tonal" href="/Projects/Ownership?project=@Model.Project#agent-@agent.Name.Value">What this agent is responsible for</a>
-        <a class="button tonal" href="/Projects/Act?project=@Model.Project&amp;action=start&amp;subject=@agent.Name.Value">Start</a>
+        @if (agent.Presence == AgentPresence.Running && !agent.OpenOutside)
+        {
+            @* Only a process Parley started: one open outside Parley belongs to whoever opened it, and no node holds it. *@
+            <a class="button tonal" href="/Projects/Act?project=@Model.Project&amp;action=restart&amp;subject=@agent.Name.Value"
+               title="Stop it once its current turn is over and start it again.">Restart</a>
+            <a class="button tonal" href="/Projects/Act?project=@Model.Project&amp;action=stop&amp;subject=@agent.Name.Value"
+               title="Stop it once its current turn is over. The next work for it starts it again.">Stop</a>
+        }
+        else
+        {
+            <a class="button tonal" href="/Projects/Act?project=@Model.Project&amp;action=start&amp;subject=@agent.Name.Value">Start</a>
+        }
         @if (agent.Status == AgentStatus.Retired)
         {
             <a class="button tonal" href="/Projects/Act?project=@Model.Project&amp;action=reinstate&amp;subject=@agent.Name.Value"

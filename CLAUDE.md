@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.58.22, protocol 0.15, schema 8. Nothing has been released, but **live stores hold work
+- Version 0.59.0, protocol 0.16, schema 8. Nothing has been released, but **live stores hold work
   in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
   `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
   upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
@@ -29,6 +29,8 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
   its leading bytes are checked (SPEC.md §9.5); `read_shared_file` reads a file as the person and records nothing.
 - Feature 036, the Inbox following an exchange after it is answered (In flight, Closed, follow-up, `exchange #N`
   references), is built on the 035 branch: `specs/036-inbox-follows-exchanges/`.
+- Feature 038, a person stopping or restarting an agent its node started (SPEC.md §11.1's fourth way an agent ends), is
+  built on the 035 branch: `specs/038-stop-and-restart-agents/`. The node waits for the turn; it ends a process, never work.
 - A person speaks to an agent only with a Request. An agent's row menu in the terminal has one
   ownership entry, *What this agent is responsible for* (`Alt+n`).
 - Design work runs through Spec Kit: `/speckit-specify`, `/speckit-plan`, `/speckit-tasks`

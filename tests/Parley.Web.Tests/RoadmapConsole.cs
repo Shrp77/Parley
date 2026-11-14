@@ -108,6 +108,12 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <summary>Every Result the person sent, in order. Each one taken closes its exchange, as the broker does.</summary>
     public List<Wire.ResultRequest> Resulted { get; } = [];
 
+    /// <summary>Every stop a person asked for.</summary>
+    public List<Wire.StopRequest> Stopped { get; } = [];
+
+    /// <summary>Every restart a person asked for.</summary>
+    public List<Wire.StopRequest> Restarted { get; } = [];
+
     /// <summary>When set, the proposals read is not implemented, as a broker older than roadmaps would answer.</summary>
     public bool Old { get; set; }
 
@@ -372,6 +378,8 @@ public sealed class RoadmapBroker : HttpMessageHandler
                 "/parley.v1.Operators/Implements" => new Wire.ImplementsReply { ProtocolVersion = Parley.Core.ProtocolVersion.Current },
                 "/parley.v1.Operators/SpinOff" => Spun(Wire.SpinOffRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/AbandonSpinOff" => Taken(Wire.SpinOffRequest.Parser.ParseFrom(payload)),
+                "/parley.v1.Operators/Stop" => Asked(Stopped, Wire.StopRequest.Parser.ParseFrom(payload)),
+                "/parley.v1.Operators/Restart" => Asked(Restarted, Wire.StopRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Agents/Request" when Seats && RefusesRequestsTo.Contains(Requested[^1].To) => new Wire.RequestReply
                 {
                     Outcomes = { new Wire.RequestOutcome { Ok = false, Rejection = Wire.RequestRejection.Duplicate } },
@@ -415,6 +423,13 @@ public sealed class RoadmapBroker : HttpMessageHandler
         SpunOff.Add(asked);
 
         return new Wire.SpinOffReply { Refused = SpinOffRefusal };
+    }
+
+    private static Wire.DidItReply Asked(List<Wire.StopRequest> into, Wire.StopRequest asked)
+    {
+        into.Add(asked);
+
+        return new Wire.DidItReply { Changed = true };
     }
 
     private Wire.DidItReply Taken(Wire.SpinOffRequest asked)
