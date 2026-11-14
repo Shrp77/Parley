@@ -739,8 +739,13 @@ if (verb == "serve" && rest.Length == 0)
 
             using var channel = GrpcChannel.ForAddress(addresses[0]);
 
+            // **Keeps trying, because nobody is watching it.** This is what the logon entry runs. A stream that drops
+            // while the broker keeps serving (seen when a busy broker's HTTP/2 connection closed under thread-pool
+            // starvation) ended the node for good, and every agent in the project read as stranded until somebody
+            // restarted the entry. A deliberate stop cancels `stopping`, which every retry checks first.
             return await NodeCommand.RunAsync(
-                channel, addresses[0], from, reporting, project.Name.Value, residents, stopping)
+                channel, addresses[0], from, reporting, project.Name.Value, residents, stopping,
+                keepTrying: true)
                 .ConfigureAwait(false);
         }
 

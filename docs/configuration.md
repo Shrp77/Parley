@@ -68,7 +68,8 @@ install script runs `autostart install` for you.
 The process the entry starts also runs this machine's node in every project and starts the web console
 on `127.0.0.1:5280`. `autostart install --web-ui <url>` moves the console and `autostart install
 --no-web-ui` leaves it out. A `parley serve` you start yourself runs neither unless given `--with-node`
-and `--with-web-ui`. If the
+and `--with-web-ui`. A node it runs that loses its connection to the broker keeps its agents and joins
+again by itself, as `parley up --keep-trying` does. If the
 console cannot start, because the address is taken or the tool is not installed, the broker says
 so and keeps serving.
 
