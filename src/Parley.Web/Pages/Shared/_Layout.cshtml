@@ -1573,9 +1573,12 @@
             min-width: 0;
         }
 
+        /* One column, however long: the rail is a nav, and the console's nav rule wraps, which once a long conversation
+           filled the rail's height started a second column of ticks. Only the narrow layout's horizontal rail wraps. */
         .timeline {
             display: flex;
             flex-direction: column;
+            flex-wrap: nowrap;
             align-items: stretch;
             gap: 2px;
             padding: 0.5rem 0.4rem;
