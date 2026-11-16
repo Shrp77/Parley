@@ -164,6 +164,52 @@ public static class ProposalText
         (items.Count == 1 ? "item " : "items ")
         + string.Join(", ", items.Select(n => n.ToString(CultureInfo.InvariantCulture)));
 
+    /// <summary>A proposal's content with each line whose words are a live item's, word for word, naming that item.</summary>
+    /// <param name="proposed">What was proposed.</param>
+    /// <param name="roadmap">The roadmap it would revise.</param>
+    /// <returns>The content, and how many of its lines now name an item.</returns>
+    /// <exception cref="ArgumentNullException">An argument is null.</exception>
+    /// <remarks>
+    /// <para>
+    /// A proposal cannot name an item by number (SPEC.md §5.7), so confirmed as a revision as it arrives it would remove
+    /// every item the roadmap has, the unchanged ones included, and part them from their conversations. This is the
+    /// surface numbering the lines for the person, who sees the numbers in the text before confirming.
+    /// </para>
+    /// <para>
+    /// <b>Only the same words, compared exactly once trimmed</b>, and each item at most once: an agent gets an item's
+    /// number onto a line only by repeating that item's own words, which is that item. Anything looser would let a
+    /// proposal put different words on an item's conversation.
+    /// </para>
+    /// </remarks>
+    public static (RoadmapContent Content, int Kept) KeepingUnchanged(RoadmapContent proposed, Roadmap roadmap)
+    {
+        ArgumentNullException.ThrowIfNull(proposed);
+        ArgumentNullException.ThrowIfNull(roadmap);
+
+        var free = roadmap.Items.Where(item => !item.Removed).OrderBy(item => item.Position).ToList();
+        var items = new List<RoadmapItemDraft>(proposed.Items.Count);
+        var kept = 0;
+
+        foreach (var line in proposed.Items)
+        {
+            var same = line.Number is null
+                ? free.FirstOrDefault(item => string.Equals(item.Text.Trim(), line.Text.Trim(), StringComparison.Ordinal))
+                : null;
+
+            if (same is null)
+            {
+                items.Add(line);
+                continue;
+            }
+
+            _ = free.Remove(same);
+            items.Add(line with { Number = same.Number });
+            kept++;
+        }
+
+        return (proposed with { Items = items }, kept);
+    }
+
     /// <summary>What a revision does to the roadmap's items, said wherever a person chooses one.</summary>
     /// <remarks>
     /// One sentence for both surfaces, so neither tells the person less: the store keeps a live item a line names by number

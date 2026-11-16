@@ -72,6 +72,22 @@ else if (Model.Proposal is { } proposal)
                 <label><input type="radio" name="Target" value="new" checked="@(revising ? null : "checked")" /> A new roadmap</label>
                 <label><input type="radio" name="Target" value="@revises.Id" checked="@(revising ? "checked" : null)" /> A revision of roadmap #@revises.Number, <em>@revises.Title</em></label>
                 <p class="composer-note">@Parley.Client.Roadmaps.ProposalText.RevisionReplaces</p>
+                @* A proposal cannot number its own lines, so the page offers to number those whose words are unchanged. *@
+                @if (Model.Kept is { } kept)
+                {
+                    <p class="composer-note" role="status">
+                        <strong>@kept of @proposal.Content.Items.Count lines</strong> have the same words as an item roadmap #@revises.Number has,
+                        and now carry <code>| item: n</code> in the box above. Confirmed as a revision, those items and their
+                        conversations are kept. A line with different words is a new item.
+                    </p>
+                }
+                else
+                {
+                    <p class="composer-note">
+                        <a href="/Roadmaps/Proposal?project=@Model.Project&amp;id=@proposal.Id&amp;keep=true">Number the lines whose words are unchanged</a>,
+                        so a revision keeps those items and their conversations. This replaces what is in the box.
+                    </p>
+                }
                 <input type="hidden" name="Revision" value="@(Model.Revision ?? revises.Revision)" />
                 <input type="hidden" name="RevisionOf" value="@(Model.RevisionOf ?? revises.Id)" />
                 @if (Model.Superseding is { Length: > 0 } superseding)

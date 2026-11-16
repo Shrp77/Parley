@@ -70,4 +70,59 @@ public static class ComposerFiles
 
         return (null, false);
     }
+
+    /// <summary>Places the attached files in a conversation the words have just gone to, then names them to everybody reached.</summary>
+    /// <param name="broker">The project's broker.</param>
+    /// <param name="voice">The person's voice.</param>
+    /// <param name="notices">What the console tells the person.</param>
+    /// <param name="project">The project's name.</param>
+    /// <param name="conversation">The conversation the words went to.</param>
+    /// <param name="attachments">What the browser sent.</param>
+    /// <param name="attached">Files placed, as entries.</param>
+    /// <param name="reached">Who took the words.</param>
+    /// <param name="token">Cancels the work.</param>
+    /// <returns>When done.</returns>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// For a page whose send may start the conversation: one that does not exist yet has nowhere to hold a file, so the
+    /// words go first (SPEC.md §9.5). Such a page then moves to the conversation, so what went wrong is said in the bell.
+    /// </remarks>
+    public static async Task SendAfterWordsAsync(
+        BrokerClient broker,
+        Parley.Client.Seating.SeatVoice voice,
+        Parley.Web.Notifications.NotificationLog notices,
+        string project,
+        string conversation,
+        IList<IFormFile> attachments,
+        IList<string> attached,
+        IReadOnlyList<AgentName> reached,
+        CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(voice);
+        ArgumentNullException.ThrowIfNull(notices);
+        ArgumentNullException.ThrowIfNull(attachments);
+        ArgumentNullException.ThrowIfNull(reached);
+
+        if (attachments.Count == 0)
+        {
+            return;
+        }
+
+        var placing = await PlaceAsync(broker, conversation, attachments, attached, token).ConfigureAwait(false);
+
+        if (placing.Problem is not null || placing.ConversationNotStarted)
+        {
+            notices.Add(project, conversation, "Files",
+                $"Your words went, and the files did not. {placing.Problem ?? "The conversation could not be found."}", false);
+
+            return;
+        }
+
+        foreach (var agent in reached)
+        {
+            var said = await voice.RequestAsync(agent, Attaching.Message(null, attached), conversation, token).ConfigureAwait(false);
+
+            notices.Add(project, conversation, agent.Value, said, said.StartsWith("Sent.", StringComparison.Ordinal));
+        }
+    }
 }

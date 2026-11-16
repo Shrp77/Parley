@@ -34,6 +34,8 @@ namespace Parley.Web.Pages.Roadmaps;
 /// <param name="directory">The projects and their brokers.</param>
 /// <param name="seats">The seats this console holds.</param>
 /// <param name="notices">What the console tells the person.</param>
+[RequestSizeLimit(Parley.Web.Pages.Projects.FilesModel.PlaceLimitBytes)]
+[RequestFormLimits(MultipartBodyLengthLimit = Parley.Web.Pages.Projects.FilesModel.PlaceLimitBytes)]
 public sealed class CheckModel(
     BrokerDirectory directory,
     SeatBook seats,
@@ -53,17 +55,26 @@ public sealed class CheckModel(
     /// <summary>Everybody the Request goes to: every active agent in the project but the person and Parley.</summary>
     public IReadOnlyList<AgentName> Agents { get; private set; } = [];
 
-    /// <summary>What would be sent, word for word.</summary>
-    public string? Says { get; private set; }
+    /// <summary>What is sent: the page's words until the person changes them.</summary>
+    /// <remarks>A message of the person's, so it is theirs to change before it goes (SPEC.md §5.6).</remarks>
+    [BindProperty, FromForm]
+    public string? Says { get; set; }
 
-    /// <summary>The conversation it would open.</summary>
-    public string? Conversation { get; private set; }
+    /// <summary>What the person pasted or dropped into the box, placed once the words have started the conversation.</summary>
+    [BindProperty, FromForm]
+    public IList<IFormFile> Attachments { get; set; } = [];
+
+    /// <summary>Files placed, each as its name and hash, to name in the message that follows the words.</summary>
+    public IList<string> Attached { get; } = [];
+
+    /// <summary>The words the page offers, before the person changes them.</summary>
+    public string? Offered { get; private set; }
+
+    /// <summary>What became of each Request that was not taken, when none was.</summary>
+    public IReadOnlyList<(string Agent, string Outcome)> Refused { get; private set; } = [];
 
     /// <summary>Why this could not be drawn or done.</summary>
     public string? Problem { get; private set; }
-
-    /// <summary>What became of the send, when it did not reach anybody.</summary>
-    public string? Outcome { get; private set; }
 
     /// <summary>Says what asking would do. Nothing is sent here.</summary>
     /// <returns>The page.</returns>
@@ -75,6 +86,7 @@ public sealed class CheckModel(
         }
 
         await ReadAsync(project).ConfigureAwait(false);
+        Says = Offered;
 
         return Page();
     }
@@ -92,8 +104,15 @@ public sealed class CheckModel(
 
         await ReadAsync(project).ConfigureAwait(false);
 
-        if (Roadmap is null || Says is null || Conversation is null || Agents.Count == 0)
+        if (Roadmap is null || Agents.Count == 0)
         {
+            return Page();
+        }
+
+        if (string.IsNullOrWhiteSpace(Says))
+        {
+            Problem = "Nothing was written, so nothing was sent.";
+
             return Page();
         }
 
@@ -106,22 +125,58 @@ public sealed class CheckModel(
             return Page();
         }
 
-        var said = await new SeatVoice(directory.AgentsFor(project), hold.Seat)
-            .RequestEveryoneAsync(hold, Agents, Says, Conversation, token).ConfigureAwait(false);
+        // One conversation per check, to the second, so each is read on its own and an earlier one is never added to.
+        var conversation = Prefix(Roadmap.Number) + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+        var voice = new SeatVoice(directory.AgentsFor(project), hold.Seat);
+        var reached = new List<AgentName>();
+        var refused = new List<(string, string)>();
 
-        var reached = said.StartsWith("Sent to ", StringComparison.Ordinal)
-            && !said.StartsWith("Sent to 0 ", StringComparison.Ordinal);
-
-        notices.Add(project.Name.Value, Conversation, "Roadmap check", said, reached);
-
-        if (reached)
+        foreach (var agent in Agents)
         {
-            return RedirectToPage("/Conversations/Detail", new { project = project.Name.Value, id = Conversation });
+            // The sweep can release the seat while this runs, and nothing is sent under a name the book no longer holds.
+            if (hold.Lost)
+            {
+                refused.Add((agent.Value, "Not sent: this console's seat was released while it was sending."));
+                continue;
+            }
+
+            var said = await voice.RequestAsync(agent, Says, conversation, token).ConfigureAwait(false);
+
+            if (said.StartsWith("Sent.", StringComparison.Ordinal))
+            {
+                reached.Add(agent);
+            }
+            else
+            {
+                refused.Add((agent.Value, said));
+            }
         }
 
-        Outcome = said;
+        foreach (var (who, outcome) in refused)
+        {
+            notices.Add(project.Name.Value, conversation, who, outcome, false);
+        }
 
-        return Page();
+        if (reached.Count == 0)
+        {
+            Refused = refused;
+            Problem = Attachments.Count > 0
+                ? "Nobody took your words, so the files you attached were not placed. Attach them again when you send."
+                : "Nobody took your words, so nothing was started.";
+
+            return Page();
+        }
+
+        notices.Add(
+            project.Name.Value, conversation, "Roadmap check",
+            string.Create(CultureInfo.InvariantCulture, $"Asked {reached.Count} of {Agents.Count} agents about roadmap #{Roadmap.Number}."),
+            refused.Count == 0);
+
+        await ComposerFiles.SendAfterWordsAsync(
+            new BrokerClient(directory.ClientFor(project)), voice, notices, project.Name.Value, conversation,
+            Attachments, Attached, reached, token).ConfigureAwait(false);
+
+        return RedirectToPage("/Conversations/Detail", new { project = project.Name.Value, id = conversation });
     }
 
     private async Task ReadAsync(ProjectSettings project)
@@ -162,17 +217,9 @@ public sealed class CheckModel(
 
         Roadmap = roadmap;
         Agents = RoomRoster.NotInIt(roll.Value, [], PersonSeat.On(project.Name));
-        Says = Words(roadmap, ItemStates.Of(roadmap, waiting.Value, PersonSeat.On(project.Name)));
+        Offered = Words(roadmap, ItemStates.Of(roadmap, waiting.Value, PersonSeat.On(project.Name)));
 
-        // One conversation per check, so each is read on its own and an earlier one is never added to.
-        Conversation = string.Create(
-            CultureInfo.InvariantCulture, $"roadmap-{roadmap.Number}-check-{DateTime.Now:yyyyMMdd-HHmm}");
-
-        if (ConversationName.Problem(Conversation) is { } wrong)
-        {
-            Problem = wrong;
-        }
-        else if (Agents.Count == 0)
+        if (Agents.Count == 0)
         {
             Problem = "There is no agent in this project to ask.";
         }
@@ -200,8 +247,30 @@ public sealed class CheckModel(
             .Append("2. Remove: any item that can come out, because it is done elsewhere or no longer needed.\n")
             .Append("3. Add: anything missing, one line led by a verb, with where it belongs (after which item number) and which agent it is for.\n\n")
             .Append("Answer only from what you know. Do not call propose_roadmap for this: I am collecting every agent's view and will change the roadmap myself, so nothing changes until I do.\n\n")
-            .Append("Items, in order (number, what it says, who it is for, what it needs, where it stands now):\n");
+            .Append(ItemsHeading);
 
+        return Items(says, standing).ToString().TrimEnd();
+    }
+
+    /// <summary>What the name of every conversation a check of one roadmap opened begins with.</summary>
+    /// <param name="roadmapNumber">The roadmap's number.</param>
+    /// <returns>The beginning of the name.</returns>
+    /// <remarks>
+    /// Only how the roadmap page finds them to offer. A name is not authority: anybody may open a conversation under such a
+    /// name, and what is done with one is shown to the person word for word before anything is sent.
+    /// </remarks>
+    internal static string Prefix(int roadmapNumber) =>
+        string.Create(CultureInfo.InvariantCulture, $"roadmap-{roadmapNumber}-check-");
+
+    /// <summary>The line above the items in a message that carries them.</summary>
+    internal const string ItemsHeading = "Items, in order (number, what it says, who it is for, what it needs, where it stands now):\n";
+
+    /// <summary>Writes a roadmap's live items, one a line, for a message of the person's that carries them.</summary>
+    /// <param name="says">What is being written.</param>
+    /// <param name="standing">Where each live item stands.</param>
+    /// <returns><paramref name="says"/>.</returns>
+    internal static StringBuilder Items(StringBuilder says, RoadmapStanding standing)
+    {
         foreach (var state in standing.Items)
         {
             var item = state.Item;
@@ -218,10 +287,10 @@ public sealed class CheckModel(
                 _ = says.Append(" - needs ").Append(string.Join(", ", item.Needs.Order()));
             }
 
-            _ = says.Append(" - ").Append(ItemWording.Standing(state)).Append('\n');
+            _ = says.Append(" - ").Append(Stands(state)).Append('\n');
         }
 
-        return says.ToString().TrimEnd();
+        return says;
     }
 
     /// <summary>Where an item stands, in words that make sense to an agent reading the person's message.</summary>

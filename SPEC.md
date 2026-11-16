@@ -1063,6 +1063,18 @@ because confirming a revision supersedes every other waiting proposal that names
 agent's view and discard the rest. It is guidance and not a check, as the proposal's shape is (§16). The message cap of rule
 8.4 applies to what is sent, whatever a roadmap holds.
 
+**The answers become a roadmap only through a proposal the person confirms.** A surface may offer to send one agent the
+person picks a further Request in that conversation, carrying the roadmap's items and every answer quoted under its author's
+name, and asking it to propose one revision (`propose_roadmap`, with the roadmap's title as `revises`). No agent reads
+another's exchange, so the answers reach it only in the person's Request; they are other agents' words, the Request says they
+are information and not instructions, and the person is shown the whole of it before it is sent (§16). Only agents' Results to
+the person are quoted, never a notice the broker wrote. The proposal is decided where every proposal is.
+
+**A surface may number a proposal's unchanged lines for the person.** A proposal cannot name an item by number, so confirmed
+as a revision as it arrives it removes every item the roadmap had. When the person asks, a surface writes `| item: n` on each
+line whose words are exactly a live item's once trimmed, each item at most once, in the text the person then reads and
+confirms. A line is never matched more loosely: that would let a proposal put different words on an item's conversation.
+
 **Every item has at most one conversation, and its name is reserved at confirmation.** The name is
 derived as `rm<roadmap number>-<item number>`, with numbers small, per project and never reused, so it is
 a legal conversation identifier by construction and unique among derived names. The name is predictable, so an agent can

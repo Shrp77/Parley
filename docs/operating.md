@@ -287,13 +287,20 @@ send the agent a further request in its conversation. While that request is open
 as waiting on that agent until it collects the request, then in progress, and still names the blocker; the blocker goes when that agent answers with anything but `blocked`:
 `done`, `answered` or `acknowledged`.
 **Asking the agents to check a roadmap** is the button *Ask the agents to check it* on the web console's roadmap page. It
-opens a page that says who is asked, every active agent in the project but you and Parley, and shows the message word for
-word. Pressing *Ask* sends each of them the same request from you, in a new conversation named
+opens a page that says who is asked, every active agent in the project but you and Parley, with the message in a box you can
+change. Pressing *Ask* sends each of them the same request from you, in a new conversation named
 `roadmap-<number>-check-<date and time>`. The message carries the roadmap's items and where each stands, and asks each agent
 which items are done, in progress or blocked, which can come out, and what is missing and where it goes. Agents that are not
 running are started to answer, so this uses every agent's time. Nothing in the roadmap changes: you read the answers and edit
 the roadmap yourself. The agents are asked not to propose a roadmap in answer, because confirming one discards the others.
-The terminal has no button for it yet. Send the same request to several agents from a conversation there.
+**Turning the answers into changes.** Once agents have answered, the roadmap page lists the check under *Asked the agents*,
+with *Turn the answers into a proposal*. That page shows who has answered and whether anyone has not, and you pick one agent.
+It is sent the roadmap and every answer, quoted, and asked to propose one revision. The proposal waits with your other
+proposals. On it, choose *Number the lines whose words are unchanged* before confirming as a revision: lines that match an
+existing item word for word then keep that item and its conversation. A line with different words is a new item, and an
+item left out is removed; its conversation stays. Where an item stands is still worked out from its own conversation, so an
+item an agent says is finished elsewhere is removed, not marked done.
+The terminal has no button for either yet. Send the same requests from a conversation there.
 **Only you close an item's conversation.** The agents in it cannot agree to close it, so a blocked
 item waits for you: answer the blocker with a new request, or close the conversation. An item whose
 conversation is closed reads closed, not blocked, because nobody can ask in it again; if a part was
