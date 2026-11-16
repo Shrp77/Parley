@@ -1052,6 +1052,17 @@ words are put in the box as text:** an agent proposed them, so a surface never r
 or as addressing, and the agents ticked are the item's own whatever a link to the conversation asks,
 never a default the surface would otherwise apply.
 
+**Asking the agents how a roadmap stands is the person's request too, and adds no operation.** A surface may offer, beside a
+roadmap, to ask every active agent in the project (never the person's seat or Parley) where its items stand, which can be
+removed and what is missing and where it goes. It says who is asked and what is sent, word for word, and nothing is sent
+until the person confirms: then each agent receives the same ordinary Request (§5.6, §12.3) from the person's seat, in one
+new conversation, carrying the roadmap's items as text, so the agent reads the roadmap as the person's words and not through
+any operation of its own (principle 2.12). Each answers in its own Result, and **nothing a roadmap holds changes**: the
+person reads the answers and edits the roadmap, or does not. The Request asks that no agent call `propose_roadmap` in answer,
+because confirming a revision supersedes every other waiting proposal that names the roadmap (above), which would keep one
+agent's view and discard the rest. It is guidance and not a check, as the proposal's shape is (§16). The message cap of rule
+8.4 applies to what is sent, whatever a roadmap holds.
+
 **Every item has at most one conversation, and its name is reserved at confirmation.** The name is
 derived as `rm<roadmap number>-<item number>`, with numbers small, per project and never reused, so it is
 a legal conversation identifier by construction and unique among derived names. The name is predictable, so an agent can

@@ -286,6 +286,14 @@ sets a state by hand. To change what an item says, edit the roadmap. To resolve 
 send the agent a further request in its conversation. While that request is open the item reads
 as waiting on that agent until it collects the request, then in progress, and still names the blocker; the blocker goes when that agent answers with anything but `blocked`:
 `done`, `answered` or `acknowledged`.
+**Asking the agents to check a roadmap** is the button *Ask the agents to check it* on the web console's roadmap page. It
+opens a page that says who is asked, every active agent in the project but you and Parley, and shows the message word for
+word. Pressing *Ask* sends each of them the same request from you, in a new conversation named
+`roadmap-<number>-check-<date and time>`. The message carries the roadmap's items and where each stands, and asks each agent
+which items are done, in progress or blocked, which can come out, and what is missing and where it goes. Agents that are not
+running are started to answer, so this uses every agent's time. Nothing in the roadmap changes: you read the answers and edit
+the roadmap yourself. The agents are asked not to propose a roadmap in answer, because confirming one discards the others.
+The terminal has no button for it yet. Send the same request to several agents from a conversation there.
 **Only you close an item's conversation.** The agents in it cannot agree to close it, so a blocked
 item waits for you: answer the blocker with a new request, or close the conversation. An item whose
 conversation is closed reads closed, not blocked, because nobody can ask in it again; if a part was

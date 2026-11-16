@@ -19,7 +19,11 @@ else if (Model.Roadmap is { } roadmap && Model.Standing is { } standing)
        conversation and never set here. *@
     <p role="status">@ItemWording.Next(standing)</p>
 
-    <p class="actions"><a class="button tonal" href="/Roadmaps/Edit?project=@Model.Project&amp;id=@roadmap.Id">Edit this roadmap</a></p>
+    @* Asking is a page that says who and what first, and a POST there sends; the button sends nothing. *@
+    <p class="actions">
+        <a class="button tonal" href="/Roadmaps/Edit?project=@Model.Project&amp;id=@roadmap.Id">Edit this roadmap</a>
+        <a class="button tonal" href="/Roadmaps/Check?project=@Model.Project&amp;id=@roadmap.Id" title="Ask every agent where these items stand, what can come out, and what is missing">Ask the agents to check it</a>
+    </p>
 
     @if (Model.Agents.Count > 0)
     {
