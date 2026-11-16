@@ -1251,15 +1251,55 @@
         .move-list { padding-left: 1.2rem; display: grid; gap: 0.5rem; overflow-wrap: anywhere; }
         .move-actions { display: flex; align-items: center; gap: 1rem; }
 
-        /* A closed panel: a narrow strip, with the name running down it. Only where there are columns to
-           close; below that the panel is simply at the top of the page. */
+        /* A closed panel: a narrow strip of icons, with the name running down it, at every width. A narrow window starts
+           with it closed (the page's script). The panel's boxes stay where they are in the page, because forms and the
+           followed region find them there, and their wrapper, laid out as if absent while the panel is open, becomes the
+           box an icon brings out, beside the strip and over the conversation, holding only that icon's part. */
         .panel-strip { display: none; }
+        .panel-body { display: contents; }
 
-        @@media (min-width: 60.01rem) {
-            .convo-page.panel-closed { grid-template-columns: 3rem minmax(0, 1fr); }
-            .panel-closed .panel-tools, .panel-closed .side { display: none; }
-            .panel-closed .panel-strip { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; padding: 0.5rem 0; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); overflow: hidden; }
+        .convo-page.panel-closed { grid-template-columns: 3rem minmax(0, 1fr); }
+        .panel-closed .panel-strip { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; padding: 0.5rem 0; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); overflow: hidden; }
+        .panel-closed .panel-body { display: none; }
+        .strip-glyph { width: 1.25rem; height: 1.25rem; }
+        .strip-count:empty { display: none; }
+        .panel-closed .strip-button[aria-expanded="true"] { --md-btn-container: var(--md-sys-color-secondary-container); --md-btn-content: var(--md-sys-color-on-secondary-container); }
+
+        .panel-closed[data-pop] .panel-body,
+        .panel-closed .panel-body:has(.move-bar:not([hidden])) {
+            position: absolute;
+            top: 0;
+            left: 3.6rem;
+            z-index: 6;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+            width: min(24rem, calc(100vw - 7rem));
+            max-height: calc(100vh - var(--frame) - 5.5rem);
+            overflow-y: auto;
+            padding: 0.6rem;
+            background: var(--md-sys-color-surface-container, var(--page));
+            border: 1px solid var(--md-sys-color-outline-variant);
+            border-radius: var(--md-sys-shape-corner-medium);
+            box-shadow: var(--md-sys-elevation-3);
         }
+
+        /* Its parts flow in the box, which scrolls as one. */
+        .panel-closed .panel-body > .panel-tools, .panel-closed .panel-body > .side { display: contents; }
+
+        /* Only the icon's part, and the bar that says what is picked to move, which stays out while picking. */
+        .panel-closed:not([data-pop]) .panel-body :is(.panel-tools, .side) > :not(.move-bar),
+        .panel-closed[data-pop="about"] .panel-body :is(.panel-tools, .side) > :not(.convo-head, .convo-links, .move-bar),
+        .panel-closed[data-pop="find"] .panel-body :is(.panel-tools, .side) > :not(.find, .move-bar),
+        .panel-closed[data-pop="filter"] .panel-body :is(.panel-tools, .side) > :not(.filter, .move-bar),
+        .panel-closed[data-pop="waiting"] .panel-body :is(.panel-tools, .side) > :not(.waiting-on-you, #elsewhere, .move-bar),
+        .panel-closed[data-pop="to"] .panel-body :is(.panel-tools, .side) > :not(.recipients, .roster-legend, .move-bar) {
+            display: none;
+        }
+
+        /* The box is the panel now, so the close button that would close it again has nothing to do. */
+        .panel-closed #panel-close { display: none; }
+        .panel-closed .panel-tools .filter-title { display: inline; }
 
         .strip-button { --md-btn-container: transparent; --md-btn-content: var(--md-sys-color-on-surface-variant); --md-btn-outline: var(--md-sys-color-outline); position: relative; display: inline-grid; place-items: center; width: 2.5rem; min-width: 2.5rem; height: 2.5rem; padding: 0; }
         .strip-button[hidden], .strip-note[hidden] { display: none; }
@@ -2210,10 +2250,11 @@
 
         @@media (max-width: 60rem) {
             .convo-page, .conversation { grid-template-columns: minmax(0, 1fr); }
+            .convo-page.panel-closed { grid-template-columns: 3rem minmax(0, 1fr); }
 
-            .convo-panel { position: static; max-height: none; }
-            .side { overflow-y: visible; }
-            #panel-close { display: none; }
+            /* Open, the panel sits above the conversation. Closed, its strip stays beside it, in reach as the page scrolls. */
+            .convo-page:not(.panel-closed) .convo-panel { position: static; max-height: none; }
+            .convo-page:not(.panel-closed) .side { overflow-y: visible; }
 
             /* Horizontal above the conversation, where a vertical rail beside it
                would have nowhere to be. */

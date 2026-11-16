@@ -12,26 +12,41 @@
    is waiting and who to write to scroll inside the rest of it. *@
 <div class="convo-page" id="convo-page">
 <aside class="convo-panel" id="convo-panel" aria-label="This conversation">
-    @* Remembered in this browser, and set before the panel is drawn so a closed panel does not flash open. *@
+    @* Closed or open is remembered in this browser, once for a wide window and once for a narrow one, and set before the
+       panel is drawn so a closed panel does not flash open. A narrow window starts with it closed, because there the
+       panel's boxes take the room the conversation needs. The width is the page script's `narrow` too. *@
     <script>
         try {
-            if (window.localStorage.getItem("parley-convo-panel") === "closed") {
-                document.getElementById("convo-page").classList.add("panel-closed");
-            }
+            (function () {
+                var narrow = window.matchMedia("(max-width: 90rem)").matches;
+                var chosen = window.localStorage.getItem(narrow ? "parley-convo-panel-narrow" : "parley-convo-panel");
+
+                if (narrow ? chosen !== "open" : chosen === "closed") {
+                    document.getElementById("convo-page").classList.add("panel-closed");
+                }
+            })();
         } catch (e) { }
     </script>
 
-    @* What a closed panel leaves: the way to open it, the way through what is waiting, and the name. *@
+    @* What a closed panel leaves: the way to open it, an icon for each of its boxes, which brings out just that box while
+       the pointer is on it (or until a click puts it away again), the way through what is waiting, and the name. *@
     <div class="panel-strip">
         <button type="button" id="panel-open" class="strip-button" title="Open this panel" aria-label="Open this panel"><span class="icon" aria-hidden="true">chevron_right</span></button>
-        <button type="button" class="strip-button" id="strip-waiting" data-waiting-step="1" title="Go to the next message waiting on you" aria-label="Go to the next message waiting on you" hidden>
+        <button type="button" class="strip-button" data-pop="about" aria-controls="panel-body" aria-expanded="false" title="This conversation: its name, files, export, spin off and move" aria-label="This conversation"><span class="icon" aria-hidden="true">info</span></button>
+        <button type="button" class="strip-button" data-pop="find" aria-controls="panel-body" aria-expanded="false" title="Find in this conversation" aria-label="Find in this conversation" hidden>@* Drawn, because the console's cut-down icon font has no magnifier. *@<svg class="strip-glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14.5 14.5 20 20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        <button type="button" class="strip-button" data-pop="filter" aria-controls="panel-body" aria-expanded="false" title="Show only some of the conversation" aria-label="Show only some of the conversation" hidden><span class="icon" aria-hidden="true">tune</span></button>
+        <button type="button" class="strip-button" id="strip-waiting" data-pop="waiting" data-waiting-step="1" aria-controls="panel-body" aria-expanded="false" title="Go to the next message waiting on you" aria-label="Go to the next message waiting on you" hidden>
             <span class="icon" aria-hidden="true">inbox</span>
             <span class="strip-count" id="strip-count"></span>
         </button>
+        <button type="button" class="strip-button" data-pop="to" aria-controls="panel-body" aria-expanded="false" title="Who to write to" aria-label="Who to write to" hidden><span class="icon" aria-hidden="true">group</span></button>
         <span class="strip-note" id="strip-filtered" hidden>Filtered</span>
         <span class="strip-name">@Model.Id</span>
     </div>
 
+    @* Laid out as if it were not there while the panel is open. With the panel closed it is the box an icon brings out,
+       holding only that icon's part of the panel. *@
+    <div class="panel-body" id="panel-body">
     <div class="panel-tools">
         @* Opening it shows what the conversation is. Ordering is said once, plainly: it is the broker's record and not a
            wall clock, because the agents run on different machines and a timeline sorted on their clocks would misorder
@@ -137,6 +152,7 @@
     {
         <partial name="_FollowedSide" model="Model" />
     }
+    </div>
 </aside>
 
 <div class="convo-main">
@@ -1151,16 +1167,132 @@ else
 
             closer.hidden = false;
 
-            function setClosed(closed) {
-                page.classList.toggle("panel-closed", closed);
+            // A wide window and a narrow one each remember their own choice: a person who closes the panel on a small
+            // window has not asked for it closed on a large one. Narrow starts closed. The width is the inline script's.
+            var narrow = window.matchMedia("(max-width: 90rem)");
 
+            function remembered() { return narrow.matches ? "parley-convo-panel-narrow" : "parley-convo-panel"; }
+
+            function apply() {
+                var chosen = null;
+
+                try { chosen = window.localStorage.getItem(remembered()); } catch (e) { }
+
+                var closed = narrow.matches ? chosen !== "open" : chosen === "closed";
+
+                page.classList.toggle("panel-closed", closed);
+                if (!closed) { putAway(); }
+            }
+
+            function setClosed(closed) {
                 try {
-                    window.localStorage.setItem("parley-convo-panel", closed ? "closed" : "open");
+                    window.localStorage.setItem(remembered(), closed ? "closed" : "open");
                 } catch (e) { }
+
+                page.classList.toggle("panel-closed", closed);
+                if (!closed) { putAway(); }
             }
 
             closer.addEventListener("click", function () { setClosed(true); });
             opener.addEventListener("click", function () { setClosed(false); });
+            if (narrow.addEventListener) { narrow.addEventListener("change", apply); }
+
+            // A closed panel's icons each bring out one part of it. The pointer on an icon brings its part out, and moving
+            // off both the icon and the part puts it away after a moment, unless something in it has the focus (a word
+            // half typed into find). A click keeps it out until another click, Escape, or a click elsewhere: the way in
+            // for a keyboard and for a touch screen, which has no pointer to rest.
+            var body = document.getElementById("panel-body");
+            var pops = [].slice.call(document.querySelectorAll(".panel-strip [data-pop]"));
+            var kept = false;
+            var leaving = 0;
+
+            function popped() { return page.getAttribute("data-pop"); }
+
+            function bringOut(name) {
+                window.clearTimeout(leaving);
+                page.setAttribute("data-pop", name);
+                pops.forEach(function (b) { b.setAttribute("aria-expanded", b.getAttribute("data-pop") === name ? "true" : "false"); });
+            }
+
+            function putAway() {
+                window.clearTimeout(leaving);
+                kept = false;
+                page.removeAttribute("data-pop");
+                pops.forEach(function (b) { b.setAttribute("aria-expanded", "false"); });
+            }
+
+            function leave() {
+                if (kept) { return; }
+                window.clearTimeout(leaving);
+                leaving = window.setTimeout(function () {
+                    if (!kept && !(body && body.contains(document.activeElement))) { putAway(); }
+                }, 350);
+            }
+
+            pops.forEach(function (button) {
+                var name = button.getAttribute("data-pop");
+
+                button.addEventListener("mouseenter", function () {
+                    if (page.classList.contains("panel-closed") && (!kept || popped() === name)) { bringOut(name); }
+                });
+                button.addEventListener("mouseleave", leave);
+
+                // The inbox's click still goes to the next message waiting; it brings its list out as well.
+                button.addEventListener("click", function () {
+                    if (kept && popped() === name && !button.hasAttribute("data-waiting-step")) {
+                        putAway();
+                        return;
+                    }
+
+                    bringOut(name);
+                    kept = true;
+                });
+            });
+
+            if (body) {
+                body.addEventListener("mouseenter", function () { if (popped()) { window.clearTimeout(leaving); } });
+                body.addEventListener("mouseleave", function () { if (popped()) { leave(); } });
+            }
+
+            document.addEventListener("keydown", function (e) {
+                if (e.key !== "Escape" || !popped()) { return; }
+
+                var from = document.querySelector('.panel-strip [data-pop="' + popped() + '"]');
+
+                putAway();
+                if (from) { from.focus({ preventScroll: true }); }
+            });
+
+            document.addEventListener("click", function (e) {
+                if (popped() && !e.target.closest(".convo-panel")) { putAway(); }
+            });
+
+            // An icon is offered only for a part the panel has now. Find and the tree come with the page, the filter once
+            // its script has built it, and what is waiting here or elsewhere as the page follows the conversation.
+            function offer() {
+                var here = function (selector) { return !!document.querySelector("#panel-body " + selector); };
+                var filter = document.getElementById("filter");
+
+                pops.forEach(function (button) {
+                    switch (button.getAttribute("data-pop")) {
+                        case "find": button.hidden = !here(".find"); break;
+                        case "filter": button.hidden = !filter || filter.hidden; break;
+                        case "to": button.hidden = !here(".recipients"); break;
+                        case "waiting": button.hidden = !here("a[data-waiting]") && !here("#elsewhere details"); break;
+                    }
+                });
+
+                if (popped()) {
+                    var shown = document.querySelector('.panel-strip [data-pop="' + popped() + '"]');
+
+                    if (!shown || shown.hidden) { putAway(); }
+                }
+            }
+
+            if (body && window.MutationObserver) {
+                new MutationObserver(offer).observe(body, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden"] });
+            }
+            window.setTimeout(offer, 0);
 
             // In the order they sit in the transcript, not grouped by agent as the list is: going through them should only
             // ever move one way down the conversation.
@@ -1187,9 +1319,10 @@ else
 
                 if (where) { where.textContent = at >= 0 ? (at + 1) + " of " + links.length : ""; }
 
-                if (count) { count.textContent = links.length; }
+                // Empty rather than 0 when only other conversations have something waiting, which shows no badge.
+                if (count) { count.textContent = links.length > 0 ? links.length : ""; }
 
-                if (strip) { strip.hidden = links.length === 0; }
+                if (strip) { strip.hidden = links.length === 0 && !document.querySelector("#elsewhere details"); }
             }
 
             // A message the filter is hiding cannot be scrolled to, and the link would appear not to work. What was asked for

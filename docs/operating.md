@@ -40,7 +40,12 @@ is a new request too.
 
 Everything still waiting on you is listed in the room, one row per agent with a count. Enter on a
 row lists the questions and takes you to the one you choose. The web console shows the same list
-in the panel beside the transcript, or above it on a narrow screen.
+in the panel beside the transcript.
+
+In a window narrower than 1440 pixels the panel starts closed: a strip of icons beside the conversation. Rest the pointer on
+an icon and just that box comes out over the conversation: the conversation's name and actions, find, the filter, what is
+waiting on you, or who to write to. Click an icon to keep its box out until you click again or press Escape. The arrow at
+the top opens the whole panel, and a wide window and a narrow one each remember whether you left it open.
 
 **Being at the seat is an open connection and nothing else.** There is no heartbeat. A surface
 nobody has touched for twenty minutes drops its connection, because an open tab is not a person
