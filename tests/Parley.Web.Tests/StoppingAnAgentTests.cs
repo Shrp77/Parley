@@ -105,4 +105,71 @@ public sealed class StoppingAnAgentTests
         Assert.Equal(Agent, Assert.Single(asked).Agent);
         Assert.Contains($"node to {action} it once its current turn is over", outcome, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task One_a_node_that_is_gone_left_running_offers_kill_and_neither_start_nor_stop_and_says_nobody_opened_it()
+    {
+        using var console = new RoadmapConsole();
+        var row = Row(Wire.AgentPresence.Running, openOutside: true);
+
+        row.Unsupervised = true;
+        console.Broker.Registry.Add(row);
+
+        var page = await AgentPageAsync(console);
+
+        Assert.Contains("action=kill&subject=" + Agent, page, StringComparison.Ordinal);
+        Assert.DoesNotContain("action=start&", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("action=stop&", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("action=restart&", page, StringComparison.Ordinal);
+        Assert.Contains("Nobody opened it in an editor.", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task One_somebody_opened_in_an_editor_is_not_offered_kill()
+    {
+        using var console = new RoadmapConsole();
+
+        console.Broker.Registry.Add(Row(Wire.AgentPresence.Running, openOutside: true));
+
+        var page = await AgentPageAsync(console);
+
+        Assert.DoesNotContain("action=kill&", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("Left running.", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Kill_is_described_first_and_asked_only_on_a_post()
+    {
+        using var console = new RoadmapConsole();
+        using var client = console.CreateClient();
+        var path = $"/Projects/Act?project={RoadmapConsole.Project}&action=kill&subject={Agent}";
+
+        using var page = await client.GetAsync(new Uri(path, UriKind.Relative), Ct);
+        var html = await page.Content.ReadAsStringAsync(Ct);
+        var said = WebUtility.HtmlDecode(html);
+
+        Assert.Contains("ends the process now", said, StringComparison.Ordinal);
+        Assert.Contains("whatever it is in the middle of is lost", said, StringComparison.Ordinal);
+        Assert.Empty(console.Broker.Killed);
+
+        var token = Regex.Match(
+            html, """name="__RequestVerificationToken"[^>]*value="([^"]+)""", RegexOptions.None, TimeSpan.FromSeconds(2))
+            .Groups[1].Value;
+
+        using var posting = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["__RequestVerificationToken"] = token }),
+        };
+
+        if (page.Headers.TryGetValues("Set-Cookie", out var cookies))
+        {
+            posting.Headers.Add("Cookie", string.Join("; ", cookies.Select(c => c.Split(';')[0])));
+        }
+
+        using var done = await client.SendAsync(posting, Ct);
+        var outcome = WebUtility.HtmlDecode(await done.Content.ReadAsStringAsync(Ct));
+
+        Assert.Equal(Agent, Assert.Single(console.Broker.Killed).Agent);
+        Assert.Contains("Asked the node to end", outcome, StringComparison.Ordinal);
+    }
 }

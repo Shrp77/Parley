@@ -666,6 +666,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="registration">What the adapter said about itself.</param>
     /// <param name="cancellationToken">Cancels the attach.</param>
     /// <param name="launchToken">What the node that started this process put in its environment, or null (SPEC.md §11.7).</param>
+    /// <param name="processId">The process its adapter said hosts it, or null (SPEC.md §11.1).</param>
     /// <returns>The attachment, which the caller disposes when the stream ends.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="registration"/> is null.</exception>
     /// <exception cref="InvalidOperationException">
@@ -674,7 +675,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
     public async Task<AttachedAgent> AttachAsync(
         AgentRecord registration,
         CancellationToken cancellationToken = default,
-        string? launchToken = null)
+        string? launchToken = null,
+        long? processId = null)
     {
         ArgumentNullException.ThrowIfNull(registration);
 
@@ -743,7 +745,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
             // **Started by Parley only by the token its node reported for its latest launch** (SPEC.md §11.7), checked
             // whenever it matters (AttachedAgent.StartedByParley) rather than spent here.
             var attached = new AttachedAgent(
-                this, registration.Name, broker, started, launchToken is { Length: > 0 } ? launchToken : null);
+                this, registration.Name, broker, started, launchToken is { Length: > 0 } ? launchToken : null, processId);
 
             // Last, so that a failure above leaves nothing to find. Appended rather than
             // assigned: the name may already be here, and both sessions are real.
@@ -1325,6 +1327,68 @@ public sealed class BrokerRuntime : IAsyncDisposable
         && _attached.TryGetValue(agent.Value, out var sessions)
         && !sessions.IsEmpty
         && sessions.All(session => !session.StartedByParley);
+
+    /// <summary>Whether an agent runs as a process a node started and a node that is gone still owns (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>
+    /// True when it is attached, no attachment presented a token a node now holds, and at least one presented some token.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <b>A token is what tells it from a process somebody opened in an editor.</b> A node puts one in the environment of
+    /// every agent it starts and an editor has none. A broker forgets the tokens it was told when it restarts, and a new
+    /// node knows only what it started, so a process a node started before an install is still holding a token nobody
+    /// holds: read as "open outside Parley" it was blamed on somebody who never opened it.
+    /// </para>
+    /// <para>
+    /// <see cref="OpenOutside"/> is also true for it, because no node can give it a turn. A person's session that happens to
+    /// run beside it is not mistaken for it: that one has no token.
+    /// </para>
+    /// </remarks>
+    public bool Unsupervised(AgentName agent) =>
+        !PersonSeat.Is(agent)
+        && !Facilitation.Is(agent)
+        && _attached.TryGetValue(agent.Value, out var sessions)
+        && !sessions.IsEmpty
+        && sessions.All(session => !session.StartedByParley)
+        && sessions.Any(session => session.LaunchToken is { Length: > 0 });
+
+    /// <summary>Asks the node on an agent's machine to end a process a node that is gone left running (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="because">Why, for the operator's benefit.</param>
+    /// <returns>What became of the asking.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Only one that presented a token and was not started by the current node</b>, so a process somebody opened in an
+    /// editor is never ended from here, and a supervised one is stopped the ordinary way, which waits for its turn.
+    /// </para>
+    /// <para>
+    /// <b>The process is the one its adapter named, and only a label.</b> The node checks what it is asked to end before
+    /// it does (§11.1). Of the sessions that qualify, the first to name a process is used: an agent has one process, and a
+    /// second is an editor's, which has no token.
+    /// </para>
+    /// </remarks>
+    public KillOutcome RequestKill(AgentName agent, string because)
+    {
+        if (!Unsupervised(agent) || !_attached.TryGetValue(agent.Value, out var sessions))
+        {
+            return KillOutcome.NotLeftRunning;
+        }
+
+        var left = sessions.Where(session => !session.StartedByParley && session.LaunchToken is { Length: > 0 }).ToList();
+
+        if (left.Select(session => session.ProcessId).FirstOrDefault(id => id is > 0) is not { } process)
+        {
+            return KillOutcome.NoProcess;
+        }
+
+        if (!_nodes.TryGetValue(agent.Machine, out var node) || !node.RequestKill(agent, process, because))
+        {
+            return KillOutcome.NoNode;
+        }
+
+        return KillOutcome.Sent;
+    }
 
     /// <summary>Whether this agent's turns are reported (SPEC.md §11.6).</summary>
     /// <param name="agent">The agent.</param>

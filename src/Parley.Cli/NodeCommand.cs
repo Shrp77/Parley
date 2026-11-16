@@ -288,6 +288,10 @@ public static class NodeCommand
                                     .ConfigureAwait(false);
                                 break;
 
+                            case Wire.NodeCommand.CommandOneofCase.Kill:
+                                await KillAsync(command.Kill, residents, output).ConfigureAwait(false);
+                                break;
+
                             default:
                                 // A command this build does not know can only be a bug: the wire
                                 // changes in step with the node. Named loudly and failed, but the
@@ -1409,6 +1413,88 @@ public static class NodeCommand
         await ReplaceWhenIdleAsync(
             stop.Agent, stop.Identity, stop.Restart ? Ending.Restart : Ending.Stop, catalogue, project, residents, output,
             cancellationToken, reporter).ConfigureAwait(false);
+    }
+
+    /// <summary>Ends a process a node that is gone left running, which a person asked for (SPEC.md §11.1).</summary>
+    /// <param name="kill">What the broker said: the agent, and the process its adapter named.</param>
+    /// <param name="residents">The agents running here, none of which this ends.</param>
+    /// <param name="output">Where to report.</param>
+    /// <returns>A task that completes once the process has ended or been refused.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The process is a label an adapter gave and is checked before anything is ended.</b> It must be a running process
+    /// named <c>claude</c>, which is what the node starts for an agent; it must not be one this node hosts, which is
+    /// stopped, not killed; and it must not be this node. Whatever else is named is refused and said, so an adapter that
+    /// named the wrong process, or a number that has since been reused, ends nothing.
+    /// </para>
+    /// <para>
+    /// <b>It does not wait for a turn.</b> No node holds the process, so nothing can say when one ends. The whole tree
+    /// ends, which is what the agent's own shells and tests are part of.
+    /// </para>
+    /// </remarks>
+    internal static async Task KillAsync(
+        Wire.KillProcess kill,
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents,
+        TextWriter output)
+    {
+        ArgumentNullException.ThrowIfNull(kill);
+        ArgumentNullException.ThrowIfNull(residents);
+        ArgumentNullException.ThrowIfNull(output);
+
+        await output.WriteLineAsync($"  {kill.Agent}: {EndProcess(kill, residents)}").ConfigureAwait(false);
+    }
+
+    private static string EndProcess(Wire.KillProcess asked, ConcurrentDictionary<AgentIdentity, ResidentAgent> residents)
+    {
+        if (asked.ProcessId is <= 1 or > int.MaxValue)
+        {
+            return "not ended: the broker named no process that can be one.";
+        }
+
+        var id = (int)asked.ProcessId;
+
+        if (id == Environment.ProcessId)
+        {
+            return "not ended: the process named is this node.";
+        }
+
+        if (residents.Values.Any(resident => resident.ProcessId == id))
+        {
+            return $"not ended: process {id} is one this node hosts. Stop it instead, which waits for its turn.";
+        }
+
+        System.Diagnostics.Process process;
+
+        try
+        {
+            process = System.Diagnostics.Process.GetProcessById(id);
+        }
+        catch (ArgumentException)
+        {
+            return $"nothing to end: process {id} is not running.";
+        }
+
+        using (process)
+        {
+            try
+            {
+                if (!string.Equals(process.ProcessName, "claude", StringComparison.OrdinalIgnoreCase))
+                {
+                    return $"not ended: process {id} is '{process.ProcessName}', not an agent's own kind of process.";
+                }
+
+                process.Kill(entireProcessTree: true);
+
+                return process.WaitForExit(TimeSpan.FromSeconds(5))
+                    ? $"ended process {id} ({asked.Because})."
+                    : $"asked process {id} to end ({asked.Because}); it has not yet.";
+            }
+            catch (Exception failure) when (failure is InvalidOperationException
+                or System.ComponentModel.Win32Exception or NotSupportedException)
+            {
+                return $"not ended: process {id}: {failure.Message}";
+            }
+        }
     }
 
     /// <summary>Finds the resident a refresh, restart or stop is for, and hands its ending off the loop.</summary>

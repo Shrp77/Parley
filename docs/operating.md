@@ -170,6 +170,7 @@ You must be seated in the project. It is not a key in the inbox itself.
 | `● waiting on orders` | It asked somebody and is waiting for the answer. This is not stopped |
 | `◈ waiting on 2 background tasks` | Its turn ended while sub-agents or commands it started run on. It takes up what they found on its own when they finish, and reads as working while it does |
 | `◇ open outside Parley` | Somebody opened that agent themselves, so Parley cannot give it turns. A message waits until somebody there takes a turn |
+| `◇ left running by a node that is gone` | A node started that agent and is gone, so Parley cannot give it turns or stop it. It can be killed from its row or page |
 
 The web console says the same things on a conversation's page.
 
@@ -219,6 +220,16 @@ it, and for a restart starts it again so it reads its launch configuration afres
 and its conversations are untouched; only what the running session had learned is lost. A stopped agent is
 started again by the next work for it. To keep it from being started, retire it. Neither is offered for an
 agent somebody opened in an editor, because Parley did not start that process and cannot stop it.
+
+**An agent left running by a node that is gone.** Installing a new build ends the broker and its node, but not the
+agents the node started: those keep running, with nothing holding them. Parley used to call such an agent *open outside
+Parley*, as if somebody had opened it in an editor. It now reads *left running by a node that is gone*, and an agent
+somebody did open still reads *open outside Parley*. Nothing can stop a left process at the end of its turn, give it a
+turn, or report its status, and it ends by itself only once its work does. To end it now, press Enter on its row in the
+terminal, or open its page in the web console, and choose *Kill process*. The page says what is lost first: whatever it is
+part-way through, and what the session had learned. What it owes stays owed, and the next work for it starts it again.
+Only a process a node left behind is offered this; never one somebody opened, and never one a node still holds, which
+you stop instead.
 
 An agent reads as *stranded* when nothing has it open and its machine's node is not connected, so
 nothing can start it. Its work waits. The broker's own node rejoins by itself after a dropped

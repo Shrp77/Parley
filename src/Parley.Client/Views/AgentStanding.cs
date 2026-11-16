@@ -65,6 +65,9 @@ public static class Standing
     /// <summary>Running only as a process Parley did not start, so Parley cannot give it turns (SPEC.md §11.7).</summary>
     public const string Outside = "open outside Parley, so Parley cannot give it turns";
 
+    /// <summary>Running as a process a node that is gone started, so Parley cannot give it turns or stop it (SPEC.md §11.1).</summary>
+    public const string Left = "left running by a node that is gone, so Parley cannot give it turns";
+
     /// <summary>It is retired, by a person or because its workspace was found gone.</summary>
     public const string Retired = "retired";
 
@@ -167,6 +170,7 @@ public static class Standing
                 // The person reads here or away and nothing else: whether anybody is there is the one fact a
                 // peer asking them needs.
                 seat ? (agent.Presence == AgentPresence.Here ? Here : Away)
+                    : agent.Unsupervised && !retired ? Left
                     : agent.OpenOutside && !retired ? Outside
                     : !retired && FromTurns(agent, running) is { } turn ? turn
                     : Phrase(retired, running, agent.Presence, startable, everRun: true),

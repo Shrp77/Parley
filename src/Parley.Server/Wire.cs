@@ -544,6 +544,7 @@ internal static class Conversions
             LastTurnPermissionDenials = record.Turns?.LastPermissionDenials ?? 0,
             BackgroundTasks = record.Turns?.BackgroundTasks ?? 0,
             OpenOutside = record.OpenOutside,
+            Unsupervised = record.Unsupervised,
             Identity = record.Identity.Known ? record.Identity.ToString() : string.Empty,
         };
     }

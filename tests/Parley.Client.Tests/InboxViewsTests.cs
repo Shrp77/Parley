@@ -236,6 +236,30 @@ public sealed class InboxViewsTests
     }
 
     [Fact]
+    public void An_agent_left_running_by_a_node_that_is_gone_is_never_called_open_outside_Parley_anywhere()
+    {
+        // SPEC.md §11.1. Nobody opened it in an editor: a node started it and is gone. Open outside Parley blamed somebody who
+        // had not, so the Inbox chip, the agents list and the room say what happened, in the same words, and an agent that
+        // somebody did open says what it said before.
+        var left = Agent(Orders, AgentPresence.Running, outside: true) with { Unsupervised = true };
+        var editor = Agent(Orders, AgentPresence.Running, outside: true);
+
+        Assert.Equal(AgentState.Left, InFlightStanding.From(left, [], 1).State);
+        Assert.Equal(AgentState.OpenOutside, InFlightStanding.From(editor, [], 1).State);
+        Assert.Equal("Left running", new InFlightStanding(AgentState.Left, null, null).Chip);
+        Assert.DoesNotContain("editor", new InFlightStanding(AgentState.Left, null, null).Detail, StringComparison.Ordinal);
+
+        Assert.Equal("left running by a node that is gone", Parley.Client.Views.Activities.Now(left, Now).Words);
+        Assert.Equal("open outside Parley", Parley.Client.Views.Activities.Now(editor, Now).Words);
+
+        var row = Assert.Single(Parley.Client.Views.Standing.Join(
+            [left], new HashSet<string>(StringComparer.Ordinal), "parley-console", Orders.Machine));
+
+        Assert.Equal(Parley.Client.Views.Standing.Left, row.Standing);
+        Assert.NotEqual(Parley.Client.Views.Standing.Outside, row.Standing);
+    }
+
+    [Fact]
     public void An_agent_the_registry_does_not_list_is_unknown_and_never_idle()
     {
         Assert.Equal(AgentState.Unknown, InFlightStanding.From(null, [], 1).State);

@@ -40,12 +40,16 @@ public enum Doing
 /// <param name="PermissionDenials">Tool calls its last turn had refused for want of permission, when stopped.</param>
 /// <param name="WaitingOn">Who it is waiting on, when waiting.</param>
 /// <param name="BackgroundTasks">How many background tasks it has running, when waiting on its own background work.</param>
+/// <param name="Left">
+/// When <see cref="Doing.Outside"/>: a node that is gone started it, rather than somebody opening it in an editor (SPEC.md §11.1).
+/// </param>
 public sealed record Activity(
     Doing Doing,
     DateTimeOffset? Since = null,
     int PermissionDenials = 0,
     AgentName? WaitingOn = null,
-    int BackgroundTasks = 0);
+    int BackgroundTasks = 0,
+    bool Left = false);
 
 /// <summary>What a list of agents says about one.</summary>
 /// <param name="Words">What it is doing.</param>
@@ -201,6 +205,7 @@ public static class Activities
             { Doing: Doing.Stopped, Since: { } since, PermissionDenials: > 0 } =>
                 $"stopped {For(since, now)} — {Refused(activity.PermissionDenials)}",
             { Doing: Doing.Stopped, Since: { } since } => "stopped " + For(since, now),
+            { Doing: Doing.Outside, Left: true } => LeftRunning,
             { Doing: Doing.Outside } => Outside,
             { Doing: Doing.Background } => WaitingOnBackground(activity.BackgroundTasks),
             _ => string.Empty,
@@ -283,6 +288,11 @@ public static class Activities
             return new AgentNow("retired", 3);
         }
 
+        if (agent.Unsupervised)
+        {
+            return new AgentNow("left running by a node that is gone", 2);
+        }
+
         if (agent.OpenOutside)
         {
             return new AgentNow("open outside Parley", 2);
@@ -317,12 +327,15 @@ public static class Activities
     /// <remarks>It names what follows from it, because that is what a person needs: Parley cannot hand it work.</remarks>
     public const string Outside = "open outside Parley — no turns from Parley";
 
+    /// <summary>What an agent left running by a node that is gone is said to be doing (SPEC.md §11.1).</summary>
+    public const string LeftRunning = "left running by a node that is gone — no turns from Parley";
+
     private static Activity Derive(AgentRecord agent, ConversationExport export, List<WaitingEdge> here)
     {
         // First: whatever the node last reported for this name describes a different process (SPEC.md §11.7).
         if (agent.OpenOutside)
         {
-            return new Activity(Doing.Outside);
+            return new Activity(Doing.Outside, Left: agent.Unsupervised);
         }
 
         var presence = agent.Presence == AgentPresence.Running ? Doing.Running : Doing.NotRunning;

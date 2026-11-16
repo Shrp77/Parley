@@ -132,6 +132,26 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// </remarks>
     public string? SessionId => _sessionId;
 
+    /// <summary>Gets the operating system's identifier of the agent's process, or 0 once it cannot be read.</summary>
+    /// <remarks>
+    /// So a node can tell a process it hosts from one a node that is gone left behind, and never end the first as the second
+    /// (SPEC.md §11.1).
+    /// </remarks>
+    public int ProcessId
+    {
+        get
+        {
+            try
+            {
+                return _process.Id;
+            }
+            catch (InvalidOperationException)
+            {
+                return 0;
+            }
+        }
+    }
+
     /// <summary>Gets whether the agent's process is still running.</summary>
     public bool IsAlive
     {

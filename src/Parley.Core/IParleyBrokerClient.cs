@@ -355,6 +355,26 @@ public interface IParleyBrokerClient
     Task<bool> RestartAsync(
         AgentName agent, string because, CancellationToken cancellationToken = default);
 
+    /// <summary>Ask the node on an agent's machine to end a process a node that is gone left running (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="because">Why, for whoever reads the node's log.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether the node was asked; false when nothing is running under the name.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Only for a process left running by a node that is gone</b>: one that presented a launch token no node now holds.
+    /// A process opened in somebody's editor has none and is never ended here, and a supervised one is stopped, which
+    /// waits for its turn. This does not wait: the process ends with whatever it was doing, which is the cost a person is
+    /// told before doing it.
+    /// </para>
+    /// <para>
+    /// Refused for an agent that is not so left, for one whose adapter did not say which process hosts it, and where no
+    /// node is joined for its machine.
+    /// </para>
+    /// </remarks>
+    Task<bool> KillAsync(
+        AgentName agent, string because, CancellationToken cancellationToken = default);
+
     /// <summary>Place a file as the person, into a conversation that exists (SPEC.md §10.2 <c>place_persons_file</c>).</summary>
     /// <param name="conversationId">The conversation.</param>
     /// <param name="name">The name to place it under; characters outside the set become <c>_</c> (§9.5).</param>

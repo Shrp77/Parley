@@ -2444,6 +2444,9 @@ internal sealed partial class Shell : Window
     /// <summary>What the row menu offers on a running agent Parley started, to stop it, before the name.</summary>
     internal const string StopThisTitle = "Stop ";
 
+    /// <summary>What the row menu offers on a running agent a node that is gone left behind, to end its process, before the name.</summary>
+    internal const string KillThisTitle = "Kill process of ";
+
     /// <summary>The choice that leaves a running agent alone.</summary>
     private const string KeepItRunning = "Keep it running";
 
@@ -2506,8 +2509,15 @@ internal sealed partial class Shell : Window
                 entries.Add((StartThisTitle + name.Value, StartSelected));
             }
 
+            // One a node that is gone left running can be ended, not stopped: nothing holds it to wait for its turn.
+            if (Agents.SelectedStanding is { Running: true } left
+                && string.Equals(left.Standing, Standing.Left, StringComparison.Ordinal))
+            {
+                entries.Add((KillThisTitle + name.Value, KillSelected));
+            }
+
             // Only a process Parley started: one open outside Parley is whoever opened it's, and no node holds it.
-            if (Agents.SelectedStanding is { Running: true } running
+            else if (Agents.SelectedStanding is { Running: true } running
                 && !string.Equals(running.Standing, Standing.Outside, StringComparison.Ordinal))
             {
                 entries.Add((RestartThisTitle + name.Value, () => StopSelected(restart: true)));
@@ -2647,6 +2657,51 @@ internal sealed partial class Shell : Window
                     .ConfigureAwait(false);
 
                 Said = asked.Problem ?? StoppingWords.Outcome(agent.Value, restart, asked.Value);
+
+                await SelectAsync(project, token).ConfigureAwait(false);
+            });
+        };
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Asks this agent's machine to end the process a node that is gone left running, once the person has read what it costs.</summary>
+    /// <returns>When the description is open.</returns>
+    /// <remarks>
+    /// The same deliberate act as a stop's: choosing the second entry of a menu that describes it, keeping it running being
+    /// the first. The operator operation the web console uses (§10.2 <c>kill</c>).
+    /// </remarks>
+    private Task KillSelected()
+    {
+        if (App is not { } app
+            || Current is not { } project
+            || Agents.Selected is not { } row
+            || !AgentName.TryCreate(row.Name, out var agent))
+        {
+            return Task.CompletedTask;
+        }
+
+        var act = KillThisTitle + agent.Value;
+        var menu = Prompting.Choose(act, StoppingWords.Killing(agent.Value), [KeepItRunning, act]);
+        var opened = Prompting.Open(app, menu);
+
+        menu.Done += (_, chosen) =>
+        {
+            Prompting.Close(app, opened);
+
+            if (chosen != act)
+            {
+                return;
+            }
+
+            Queue(async token =>
+            {
+                var client = new BrokerClient(_directory.ClientFor(project));
+                var asked = await BrokerDirectory.ReadAsync(async () =>
+                    await client.KillAsync(agent, "a person ended it from its row", token).ConfigureAwait(false))
+                    .ConfigureAwait(false);
+
+                Said = asked.Problem ?? StoppingWords.KillOutcome(agent.Value, asked.Value);
 
                 await SelectAsync(project, token).ConfigureAwait(false);
             });

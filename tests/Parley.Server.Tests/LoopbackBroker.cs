@@ -301,6 +301,7 @@ internal sealed class AttachedClient : IAsyncDisposable
     /// </param>
     /// <param name="identity">The repository's identifier, when its launch configuration carries one (SPEC.md §4.1.1).</param>
     /// <param name="over">A channel to attach over, shared with other calls; a new one when <see langword="null"/>.</param>
+    /// <param name="processId">The process the adapter says hosts it, as a label; none when 0.</param>
     /// <returns>The attached client.</returns>
     public static async Task<AttachedClient> AttachAsync(
         LoopbackBroker broker,
@@ -312,7 +313,8 @@ internal sealed class AttachedClient : IAsyncDisposable
         string? launchToken = null,
         JoinedNodeClient? startedBy = null,
         string? identity = null,
-        GrpcChannel? over = null)
+        GrpcChannel? over = null,
+        long processId = 0)
     {
         if (startedBy is not null)
         {
@@ -348,7 +350,10 @@ internal sealed class AttachedClient : IAsyncDisposable
                 LaunchToken = launchToken ?? string.Empty,
 
                 // Reported as a label, never as authority (§4.1.1).
-                Identity = identity ?? string.Empty
+                Identity = identity ?? string.Empty,
+
+                // The process that hosts the adapter, a label too (§11.1); none when 0.
+                ProcessId = processId
             },
             cancellationToken: cancellationToken);
 

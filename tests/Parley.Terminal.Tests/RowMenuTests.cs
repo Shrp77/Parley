@@ -113,6 +113,59 @@ public sealed class RowMenuTests
 
         Assert.Equal(startedByParley, offered.Contains(Shell.StopThisTitle + orders.Value));
         Assert.Equal(startedByParley, offered.Contains(Shell.RestartThisTitle + orders.Value));
+
+        // Neither a supervised process nor somebody's editor is one to kill.
+        Assert.DoesNotContain(Shell.KillThisTitle + orders.Value, offered);
+    }
+
+    [Fact]
+    public async Task One_a_node_that_is_gone_left_running_offers_kill_and_neither_stop_nor_restart()
+    {
+        // SPEC.md §11.1. It carries a launch token no node now holds: nothing holds its process to wait for a turn, so
+        // the menu offers the one thing that can be done, and not what the broker would refuse.
+        await using var seated = await OnAgentsAsync();
+        using var channel = Grpc.Net.Client.GrpcChannel.ForAddress(seated.Address);
+        var nodes = new Parley.Transport.Nodes.NodesClient(channel);
+        var agents = new Parley.Transport.Agents.AgentsClient(channel);
+        var orders = Seated.Orders;
+
+        using var joined = nodes.Join(
+            new Parley.Transport.JoinRequest
+            {
+                Machine = orders.Machine,
+                StartableRoles = { orders.Role },
+                ProtocolVersion = Parley.Core.ProtocolVersion.Current,
+                ReportsTurns = true,
+            },
+            cancellationToken: Ct);
+
+        Assert.True(await joined.ResponseStream.MoveNext(Ct), "the node was never told it joined");
+
+        using var attached = agents.Attach(
+            new Parley.Transport.AttachRequest
+            {
+                Agent = orders.Value,
+                Adapter = "test",
+                Tier = Parley.Transport.AgentTier.Pull,
+                ProtocolVersion = Parley.Core.ProtocolVersion.Current,
+                LaunchToken = "from-a-node-that-is-gone",
+                ProcessId = 4242,
+            },
+            cancellationToken: Ct);
+
+        Assert.True(await attached.ResponseStream.MoveNext(Ct), "the attach stream said nothing");
+
+        await seated.Shell.RefreshAsync(Ct);
+        await seated.Shell.Settled;
+        await Walking.GoAsync(seated.Shell, Viewing.Project);
+        seated.Focus<AgentsRegion>();
+
+        var offered = Open(seated, orders.Value);
+
+        Assert.Contains(Shell.KillThisTitle + orders.Value, offered);
+        Assert.DoesNotContain(Shell.StopThisTitle + orders.Value, offered);
+        Assert.DoesNotContain(Shell.RestartThisTitle + orders.Value, offered);
+        Assert.DoesNotContain("Start " + orders.Value, offered);
     }
 
     [Fact]

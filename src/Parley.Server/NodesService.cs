@@ -498,6 +498,21 @@ public sealed class JoinedNode : IAsyncDisposable
         });
     }
 
+    /// <summary>Tells the node to end a process a node that is gone left running (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent it belongs to.</param>
+    /// <param name="processId">What the agent's adapter said hosts it.</param>
+    /// <param name="because">Why, for the node's log.</param>
+    /// <returns>Whether the command was queued.</returns>
+    /// <remarks>
+    /// Not through <c>Can</c>: this node did not start the process and cannot start the agent from it, which is why it is
+    /// being ended. Only for a machine this node is joined for.
+    /// </remarks>
+    internal bool RequestKill(AgentName agent, long processId, string because) =>
+        _commands.Writer.TryWrite(new Wire.NodeCommand
+        {
+            Kill = new Wire.KillProcess { Agent = agent.Value, ProcessId = processId, Because = because },
+        });
+
     private static string IdentityText(AgentIdentity identity) => identity.Known ? identity.ToString() : string.Empty;
 
     /// <summary>Ends the stream without touching the registry.</summary>

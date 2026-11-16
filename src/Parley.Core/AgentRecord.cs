@@ -82,6 +82,11 @@ namespace Parley.Core;
 /// reports and never an authority: it lets an attach under a new name rename the row it already holds, and only
 /// from the same repository on the same machine. It never decides who may attach.
 /// </param>
+/// <param name="Unsupervised">
+/// Running as a process a node started and a node that is gone still owns (SPEC.md §11.1): it presented a launch token no
+/// node now holds. <paramref name="OpenOutside"/> is also true for it. Observed from the attachments the broker holds; on
+/// the operator's registry only.
+/// </param>
 /// <remarks>
 /// Credentials are deliberately not a field here, and should not become one. The broker
 /// persists no credential reference or value for any agent (SPEC.md §12); a field on this
@@ -102,7 +107,8 @@ public sealed record AgentRecord(
     OwnershipSource? OwnsSource = null,
     TurnStanding? Turns = null,
     bool OpenOutside = false,
-    AgentIdentity Identity = default)
+    AgentIdentity Identity = default,
+    bool Unsupervised = false)
 {
     /// <summary>Whether this row is the facilitator's (SPEC.md principle 2.11).</summary>
     /// <remarks>

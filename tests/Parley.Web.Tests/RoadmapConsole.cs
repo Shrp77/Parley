@@ -114,6 +114,9 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <summary>Every restart a person asked for.</summary>
     public List<Wire.StopRequest> Restarted { get; } = [];
 
+    /// <summary>Every kill of a process a node that is gone left running it was asked for.</summary>
+    public List<Wire.StopRequest> Killed { get; } = [];
+
     /// <summary>When set, the proposals read is not implemented, as a broker older than roadmaps would answer.</summary>
     public bool Old { get; set; }
 
@@ -380,6 +383,7 @@ public sealed class RoadmapBroker : HttpMessageHandler
                 "/parley.v1.Operators/AbandonSpinOff" => Taken(Wire.SpinOffRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/Stop" => Asked(Stopped, Wire.StopRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/Restart" => Asked(Restarted, Wire.StopRequest.Parser.ParseFrom(payload)),
+                "/parley.v1.Operators/Kill" => Asked(Killed, Wire.StopRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Agents/Request" when Seats && RefusesRequestsTo.Contains(Requested[^1].To) => new Wire.RequestReply
                 {
                     Outcomes = { new Wire.RequestOutcome { Ok = false, Rejection = Wire.RequestRejection.Duplicate } },

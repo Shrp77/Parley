@@ -336,6 +336,37 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Does not wait for a turn: the process is one no node holds, so nothing can say when one ends (SPEC.md §11.1). What it
+    /// was doing is lost, and the next work for the agent starts it again as any agent is started.
+    /// </remarks>
+    public override Task<Wire.DidItReply> Kill(Wire.StopRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var agent = Acted(request.Agent);
+        var because = string.IsNullOrWhiteSpace(request.Because) ? "the person asked for it" : request.Because;
+
+        return _runtime.RequestKill(agent, because) switch
+        {
+            KillOutcome.Sent => Task.FromResult(new Wire.DidItReply { Changed = true }),
+            KillOutcome.NotLeftRunning => throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"'{agent.Value}' is not running as a process a node left behind, so there is nothing to end here. One "
+                + "open in somebody's editor is theirs to close, and one a node supervises is stopped, not killed.")),
+            KillOutcome.NoProcess => throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"'{agent.Value}' was left running by a node that is gone, but its adapter did not say which process hosts "
+                + "it, so none can be named. End its `claude` process by hand, or wait for it to finish.")),
+            _ => throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"No node is joined for '{agent.Machine}', so nothing there can end the process of '{agent.Value}'. Run "
+                + "`parley up` on that machine, or restart the broker there.")),
+        };
+    }
+
+    /// <inheritdoc/>
     public override async Task<Wire.DidItReply> Retire(Wire.AgentRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -552,6 +583,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
                 last?.PermissionDenials ?? 0,
                 _runtime.BackgroundTasks(row.Name)),
             OpenOutside = _runtime.OpenOutside(row.Name),
+            Unsupervised = _runtime.Unsupervised(row.Name),
         })));
 
         return reply;

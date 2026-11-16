@@ -115,7 +115,8 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         try
         {
             attached = await _runtime.AttachAsync(
-                registration, context.CancellationToken, Blank(request.LaunchToken)).ConfigureAwait(false);
+                registration, context.CancellationToken, Blank(request.LaunchToken),
+                request.ProcessId > 0 ? request.ProcessId : null).ConfigureAwait(false);
         }
         catch (InvalidOperationException exception)
         {

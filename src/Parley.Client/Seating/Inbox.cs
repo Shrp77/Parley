@@ -44,6 +44,9 @@ public enum AgentState
 
     /// <summary>Running, no turn running, and background work it started still runs: it carries on when that finishes.</summary>
     Background = 7,
+
+    /// <summary>Running as a process a node that is gone started: no node can give it a turn or stop it (SPEC.md §11.1).</summary>
+    Left = 8,
 }
 
 /// <summary>A flag the broker raised on an exchange (SPEC.md §6).</summary>
@@ -84,6 +87,7 @@ public sealed record InFlightStanding(AgentState State, DateTimeOffset? Since, E
         AgentState.NotRunning => "Not running",
         AgentState.CannotStart => "Cannot be started now",
         AgentState.OpenOutside => "Open outside Parley",
+        AgentState.Left => "Left running",
         _ => "Unknown",
     };
 
@@ -101,6 +105,7 @@ public sealed record InFlightStanding(AgentState State, DateTimeOffset? Since, E
         AgentState.NotRunning => "A node can start it; Parley starts it when a message waits for it.",
         AgentState.CannotStart => "Nothing happens until somebody starts it.",
         AgentState.OpenOutside => "It reads this when it is prompted where it is open.",
+        AgentState.Left => "A node that is gone started it, so Parley cannot give it a turn or stop it. It reads this when it next looks.",
         _ => "Nothing the broker reports says where it stands.",
     };
 
@@ -127,6 +132,7 @@ public sealed record InFlightStanding(AgentState State, DateTimeOffset? Since, E
         var state = agent switch
         {
             null => AgentState.Unknown,
+            { Unsupervised: true } => AgentState.Left,
             { OpenOutside: true } => AgentState.OpenOutside,
             { Presence: AgentPresence.Stranded } => AgentState.CannotStart,
             { Presence: AgentPresence.Startable } => AgentState.NotRunning,

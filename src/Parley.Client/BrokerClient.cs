@@ -57,7 +57,8 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
                 row.LastTurnPermissionDenials,
                 Math.Max(0, row.BackgroundTasks)),
             row.OpenOutside,
-            AgentIdentity.TryRead(row.Identity, out var identity) ? identity : default))];
+            AgentIdentity.TryRead(row.Identity, out var identity) ? identity : default,
+            row.Unsupervised))];
     }
 
     /// <summary>Reads how an accepted line was arrived at, off a registry row.</summary>
@@ -168,6 +169,16 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     public async Task<bool> RestartAsync(AgentName agent, string because, CancellationToken cancellationToken = default)
     {
         var reply = await _operators.RestartAsync(
+            new Wire.StopRequest { Agent = agent.Value, Because = because ?? string.Empty },
+            cancellationToken: cancellationToken);
+
+        return reply.Changed;
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> KillAsync(AgentName agent, string because, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.KillAsync(
             new Wire.StopRequest { Agent = agent.Value, Because = because ?? string.Empty },
             cancellationToken: cancellationToken);
 

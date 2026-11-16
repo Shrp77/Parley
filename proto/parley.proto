@@ -110,6 +110,11 @@ message AttachRequest {
   // The repository's identifier (`parleyAgentId`), empty when it has none. A label and never authority (section 4.1.1):
   // presented under a name the project does not hold, from the workspace and machine that hold it, it renames the agent.
   string identity = 10;
+
+  // The process that hosts this adapter -- the editor or `claude` that started it -- when the adapter can say, else 0. A
+  // label and never authority: it lets a person end a process left running by a node that is gone (section 11.1), and a
+  // node ends it only after checking it is one of the agent's own kind.
+  int64 process_id = 11;
 }
 
 message Event {
@@ -727,7 +732,17 @@ message NodeCommand {
     // A person's stop or restart of an agent this node started (section 11.1), once its current turn is over. Never for
     // an agent the node did not start.
     StopAgent stop = 5;
+
+    // A person's end of a process left running by a node that is gone (section 11.1): not one this node started, so
+    // there is no turn to wait for. The node checks what it is told to end before it does.
+    KillProcess kill = 6;
   }
+}
+
+message KillProcess {
+  string agent = 1;
+  int64 process_id = 2;          // what the agent's adapter said hosts it
+  string because = 3;            // for the operator's benefit, never the agent's
 }
 
 message StopAgent {
@@ -868,6 +883,10 @@ service Operators {
   // running. A stopped agent is started again by the next work for it, as any agent is: only retirement keeps one out.
   rpc Stop(StopRequest) returns (DidItReply);
   rpc Restart(StopRequest) returns (DidItReply);
+
+  // End a process left running by a node that is gone (section 11.1). Only for an agent whose process presented a launch
+  // token no node now holds; never for one open in somebody's editor, which has no token, and never for a supervised one.
+  rpc Kill(StopRequest) returns (DidItReply);
 
   // The file location (section 9.5). Placing as the person, removing any file and pruning them all are the person's:
   // no agent places as somebody else or removes another's files. Describing where a file is lets a surface on that
@@ -1065,6 +1084,10 @@ message RegistryRow {
 
   // How many background tasks its node last said it has running (section 11.6); zero when none, or when nobody reports.
   int32 background_tasks = 19;
+
+  // Running as a process a node started and a node that is gone still owns (section 11.1): its launch token is one no
+  // node now holds. `open_outside` is also true, since no node can give it a turn, but it was not opened by somebody.
+  bool unsupervised = 20;
 }
 
 message RefusalsReply {
