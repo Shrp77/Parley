@@ -710,6 +710,106 @@ else
             mark();
         })();
 
+        // The timeline follows the reader. The tick of the message the reader is on is marked, and the rail, which has no
+        // scrollbar, scrolls itself to keep that tick in view. "On" is the last message to have started above a line a third
+        // of the way down the window, or the last one when the reader is at the very end of the page, where no message can
+        // reach that line.
+        //
+        // The rail is replaced whenever the conversation follows, and a replaced rail starts at the top, so where it was is
+        // kept and put back first. A rail the reader is pointing at or has focus in is theirs: it is marked and never moved.
+        (function () {
+            var queued = false;
+            var railTop = 0;
+
+            function rail() { return document.querySelector(".timeline"); }
+
+            function turns() {
+                return [].slice.call(document.querySelectorAll("#followed ol.transcript > li.turn[id^='m']:not(.filtered-out)"));
+            }
+
+            function reading() {
+                var all = turns();
+
+                if (all.length === 0) { return null; }
+
+                if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 24) { return all[all.length - 1]; }
+
+                var line = window.innerHeight / 3;
+                var low = 0;
+                var high = all.length - 1;
+
+                // The tops only increase down the page, so the last one at or above the line is found by halving.
+                while (low < high) {
+                    var mid = Math.ceil((low + high) / 2);
+
+                    if (all[mid].getBoundingClientRect().top <= line) { low = mid; } else { high = mid - 1; }
+                }
+
+                return all[low];
+            }
+
+            function track() {
+                queued = false;
+
+                var bar = rail();
+                var turn = reading();
+
+                if (!bar || !turn) { return; }
+
+                var tick = bar.querySelector('a[href="#' + turn.id + '"]');
+
+                if (!tick) { return; }
+
+                if (!tick.classList.contains("here")) {
+                    bar.querySelectorAll(".tick.here").forEach(function (t) {
+                        t.classList.remove("here");
+                        t.removeAttribute("aria-current");
+                    });
+                    tick.classList.add("here");
+                    tick.setAttribute("aria-current", "true");
+                }
+
+                // Only a rail that scrolls, and not one the reader is using.
+                if (bar.scrollHeight <= bar.clientHeight + 1 || bar.matches(":hover") || bar.contains(document.activeElement)) { return; }
+
+                var at = tick.getBoundingClientRect();
+                var box = bar.getBoundingClientRect();
+                var margin = box.height * 0.2;
+
+                if (at.top < box.top + margin || at.bottom > box.bottom - margin) {
+                    bar.scrollTop += (at.top + at.height / 2) - (box.top + box.height / 2);
+                }
+            }
+
+            function soon() {
+                if (queued) { return; }
+
+                queued = true;
+                window.requestAnimationFrame(track);
+            }
+
+            // Scroll events do not bubble, so the rail's own are heard in the capture phase.
+            document.addEventListener("scroll", function (e) {
+                var bar = rail();
+
+                if (bar && e.target === bar) { railTop = bar.scrollTop; }
+            }, true);
+
+            window.addEventListener("scroll", soon, { passive: true });
+            window.addEventListener("resize", soon);
+            window.addEventListener("hashchange", soon);
+            document.addEventListener("parley:followed", function () {
+                var bar = rail();
+
+                if (bar) { bar.scrollTop = railTop; }
+
+                track();
+            });
+            window.addEventListener("load", soon);
+
+            track();
+        })();
+
         // Showing only some of the conversation. A message is kept when it involves who was asked for:
         // "only between me and an agent" keeps the messages the person sent or was sent, and the agents
         // list keeps those sent by or to any agent ticked. Both together keep what satisfies both, which

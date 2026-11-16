@@ -1615,10 +1615,15 @@
 
         /* One column, however long: the rail is a nav, and the console's nav rule wraps, which once a long conversation
            filled the rail's height started a second column of ticks. Only the narrow layout's horizontal rail wraps. */
+        /* No scrollbar, and still scrollable: by wheel, touch and keys, and by the page itself, which keeps the tick of the
+           message being read in view. A bar beside a column of ticks only drew the eye to the wrong thing. */
+        .timeline::-webkit-scrollbar { display: none; }
+
         .timeline {
             display: flex;
             flex-direction: column;
             flex-wrap: nowrap;
+            scrollbar-width: none;
             align-items: stretch;
             gap: 2px;
             padding: 0.5rem 0.4rem;
@@ -1642,6 +1647,12 @@
         }
 
         .timeline .tick:hover, .timeline .tick:focus-visible { opacity: 1; }
+
+        /* The message being read. A ring, so it still shows when the tint does not, and it outranks what dims the others. */
+        .timeline .tick.here, .timeline.focused .tick.here:not(.kin) {
+            opacity: 1;
+            box-shadow: 0 0 0 2px var(--md-sys-color-primary, var(--ink));
+        }
 
         /* An exchange a person closed, marked by shape as well as tint: it is taller and outlined,
            so it is findable on a screen where the colours are not. */

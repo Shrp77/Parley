@@ -42,6 +42,8 @@ Everything still waiting on you is listed in the room, one row per agent with a 
 row lists the questions and takes you to the one you choose. The web console shows the same list
 in the panel beside the transcript.
 
+The timeline beside a conversation follows you: it rings the tick of the message you are reading and scrolls itself to keep that tick in view. It has no scrollbar. Scroll it with the wheel or the touch screen, and while the pointer is on it, it is yours and is not moved.
+
 In a window narrower than 1440 pixels the panel starts closed: a strip of icons beside the conversation. Rest the pointer on
 an icon and just that box comes out over the conversation: the conversation's name and actions, find, the filter, what is
 waiting on you, or who to write to. Click an icon to keep its box out until you click again or press Escape. The arrow at
