@@ -359,6 +359,10 @@
 
         .page { margin-left: var(--rail-w); padding: 0 clamp(1rem, 2vw, 1.5rem) 4rem; min-width: 0; }
 
+        /* The conversation page ends in its composer, which is pinned to the bottom of the window. Padding under it is a
+           strip of page showing between the box and the edge of the window. */
+        .page:has(.convo-page) { padding-bottom: 0; }
+
         .rail .brand { min-height: 3.5rem; padding: 0 0.75rem 0.5rem 0.875rem; margin-bottom: 0.25rem; white-space: nowrap; font: var(--md-sys-typescale-title-medium); }
         .rail .brand img { flex: none; }
         .rail .brand .rail-label { color: var(--md-sys-color-on-surface); }
@@ -990,11 +994,11 @@
             display: flex;
             align-items: flex-start;
             gap: 0.65rem;
-            max-width: min(56rem, 100%);
+            max-width: 100%;
         }
 
         /* A message continuing an exchange sits in from the one that opened it, with a rule showing what it hangs from. */
-        li.turn.in-thread { margin-left: 2.75rem; padding-left: 0.75rem; border-left: 2px solid var(--rule); max-width: min(52rem, calc(100% - 2.75rem)); }
+        li.turn.in-thread { margin-left: 2.75rem; padding-left: 0.75rem; border-left: 2px solid var(--rule); max-width: calc(100% - 2.75rem); }
         .thread-of { display: block; margin: 0 0 0.4rem; overflow: hidden; font-size: 0.78rem; color: var(--ink-soft); text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
         .thread-of:hover { color: var(--ink); text-decoration: underline; }
         .thread-focus { padding: 0; font: inherit; color: var(--accent); text-decoration: underline; cursor: pointer; background: none; border: none; }
@@ -2238,25 +2242,13 @@
 
            One set of breakpoints, so every column folds at the same widths.
 
-           The shell takes the whole window and the reading measure grows slowly: a
-           bubble is capped, so a wide window buys room for the panel, the roster
-           and the rail before it buys longer lines. Below 75rem the navigation is a
+           The shell takes the whole window, and so does a bubble: the conversation runs
+           from the panel to the rail, however wide the window. Below 75rem the navigation is a
            rail; below 60rem the three columns stop fitting and the page becomes one;
            below 40rem it is a phone. */
 
         @@media (min-width: 90rem) {
             .conversation { gap: 2rem; }
-
-            /* A little more room for a bubble once the shell has stopped growing, so the
-               transcript does not end a couple of hundred pixels short of the rail. Still a
-               measure, not a line across the monitor: a bubble is mostly short lines. */
-            li.turn { max-width: min(64rem, 100%); }
-        }
-
-        /* A monitor: a code block or a table in a message gets the room, and prose still stops well short of the edge. */
-        @@media (min-width: 120rem) {
-            li.turn { max-width: min(76rem, 100%); }
-            li.turn.in-thread { max-width: min(72rem, calc(100% - 2.75rem)); }
         }
 
         @@media (max-width: 60rem) {
