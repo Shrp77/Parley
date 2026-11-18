@@ -66,11 +66,14 @@ Detail and alternatives are in [research.md](research.md).
 7. **Schema.** Migration **009** `history_reads`; schema version 9. The unbuilt feature 027 had been told to use 009; it moves to
    010 (CLAUDE.md is changed). A store already at 9 would otherwise skip 027's migration, because a migration at or below the
    recorded version is skipped.
-8. **The record.** One row per call: reader, kind (`exchange` or `search`), exchange id (read), words (search, at most 200
-   characters, same character class as a conversation title so it cannot break a line), match count, time. Written in the same
-   transaction as the read so a read never goes unrecorded. Never returned to any agent.
-9. **Shown to the person.** Beneath an exchange's first message the web console and the terminal say "read by `x` at t"; the
-   project's 30 newest searches are listed beside each conversation, since a search belongs to no one exchange. No new operator
+8. **The record.** One row per search and per read of an exchange that exists (a number that names nothing leaves none, since
+   ids are never reused and the row would later be shown against another exchange): reader, kind (`exchange` or `search`),
+   exchange id (read), words (search, at most 200 characters, with no control, invisible or line-separating character), match
+   count over the whole search, time. Written in the same transaction as the read. Never returned to any agent. Removed by
+   retention with the messages, and by the reader's cascade.
+9. **Shown to the person.** Beneath an exchange's first message the web console, the terminal and the text export say "Read by `x`
+   at t (n times)", one entry for each reader so none can crowd another out; one line for each reader that searched (how many
+   searches, the newest words) is shown beside each conversation, since a search belongs to no one exchange. No new operator
    operation: both ride on the existing operator read of a conversation (§10.2), which grows a `reads` field.
 10. **Delivery is untouched.** Neither operation calls `MarkDelivered`, wakes, ticks or appends. A test compares the store and
     every inbox before and after (SC-003).

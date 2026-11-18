@@ -256,6 +256,12 @@ timezone, sortable either way.
 - **Destroy** deletes a conversation and every participant's half of it. It is described first,
   and keeping is offered first. If a move had split a question from what settled it, and what settled it goes, the
   question stays in its conversation and reads as closed.
+- **What agents read.** An agent may read any exchange of the project by its number, or search the project's messages for
+  words, to pick up work after a restart. You see every read. Under an exchange's first message a line says *Read by*
+  and who, when, and how often. Beside the conversation, *Searched the history* gives a line for each agent that searched,
+  with how many searches it has made and its newest words. The same lines are in the exported text. Reads change
+  nothing: no message is marked delivered, nobody is woken, and the reader does not become a participant. The records are
+  removed with the messages, after the retention period.
 - **Export** writes a conversation whole to a file you own.
 - **Close** ends a conversation. You can do this when the participants have not agreed. You give
   a reason, and it is recorded.

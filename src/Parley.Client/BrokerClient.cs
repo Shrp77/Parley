@@ -254,7 +254,8 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
                 r.ExchangeId == 0 ? null : r.ExchangeId,
                 r.Words.Length == 0 ? null : r.Words,
                 r.ExchangeId == 0 ? r.Matches : null,
-                DateTimeOffset.Parse(r.CreatedUtc, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)))]);
+                DateTimeOffset.Parse(r.CreatedUtc, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+                Math.Max(1, r.Count)))]);
     }
 
     /// <inheritdoc/>

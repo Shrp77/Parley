@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json;
 using Parley.Core;
 
@@ -225,6 +225,12 @@ public static class Reading
             lines.Add(new TranscriptLine(Pad(Files.Placements.Line(file, zone)), LineKind.Annotation, null));
         }
 
+        // What the project's agents searched the history for, for the person only (SPEC.md §5.8).
+        foreach (var search in SearchLines(export.Reads).Take(8))
+        {
+            lines.Add(new TranscriptLine(Pad("Searched the history: " + HistoryText.Neutralised(search)), LineKind.Annotation, null));
+        }
+
         if (conversation is not null)
         {
             foreach (var left in wrote)
@@ -300,18 +306,41 @@ public static class Reading
     {
         zone ??= TimeZoneInfo.Local;
 
-        var of = (reads ?? []).Where(r => r.ExchangeId == exchangeId).OrderBy(r => r.CreatedUtc).ToList();
+        // By reader, so one agent reading a great deal cannot push another out of the line.
+        var readers = (reads ?? [])
+            .Where(r => r.ExchangeId == exchangeId)
+            .GroupBy(r => r.Reader.Value, StringComparer.Ordinal)
+            .Select(g => (Name: g.Key, At: g.Max(r => r.CreatedUtc), Count: g.Sum(r => r.Count)))
+            .OrderBy(r => r.At)
+            .ToList();
 
-        if (of.Count == 0)
+        if (readers.Count == 0)
         {
             return null;
         }
 
-        var named = of.Take(5).Select(r =>
-            $"{r.Reader.Value} at {TimeZoneInfo.ConvertTime(r.CreatedUtc, zone).ToString("d MMM HH:mm", CultureInfo.InvariantCulture)}");
+        var named = readers.Take(5).Select(r =>
+            $"{r.Name} at {TimeZoneInfo.ConvertTime(r.At, zone).ToString("d MMM HH:mm", CultureInfo.InvariantCulture)}"
+            + (r.Count > 1 ? $" ({r.Count} times)" : string.Empty));
 
-        return "Read by " + string.Join(", ", named) + (of.Count > 5 ? $" and {of.Count - 5} more" : string.Empty);
+        return "Read by " + string.Join(", ", named) + (readers.Count > 5 ? $" and {readers.Count - 5} more" : string.Empty);
     }
+
+    /// <summary>What each agent searched the history for lately, one line for each (SPEC.md §5.8).</summary>
+    /// <param name="reads">What the export carries of what agents read.</param>
+    /// <returns>One line for each reader that searched: how many searches in all, and the newest with its matches.</returns>
+    /// <remarks>
+    /// For the person only. A line for each reader rather than a list of searches, so an agent cannot make its searches
+    /// vanish by making many; the words are the agent's own and are neutralised by whoever draws the line.
+    /// </remarks>
+    public static IReadOnlyList<string> SearchLines(IReadOnlyList<HistoryRead>? reads) =>
+        [.. (reads ?? [])
+            .Where(r => r.ExchangeId is null)
+            .GroupBy(r => r.Reader.Value, StringComparer.Ordinal)
+            .Select(g => (Latest: g.OrderByDescending(r => r.CreatedUtc).First(), Count: g.Max(r => r.Count)))
+            .OrderByDescending(r => r.Latest.CreatedUtc)
+            .Select(r => $"{r.Latest.Reader.Value}: {r.Count} {(r.Count == 1 ? "search" : "searches")}, newest “{r.Latest.Words}”"
+                + $" ({r.Latest.Matches ?? 0} {(r.Latest.Matches == 1 ? "match" : "matches")})")];
 
     /// <summary>What a reply settled, as one sentence beneath it.</summary>
     /// <param name="settled">The start of each question settled.</param>

@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Parley.Core;
@@ -40,8 +39,8 @@ public sealed class HistoryRepository(SqliteConnection connection)
     /// <summary>The most words one search takes: the statement has this many slots.</summary>
     public const int MaxWords = 8;
 
-    /// <summary>How many of the project's newest searches the person is shown beside a conversation.</summary>
-    public const int RecentSearches = 30;
+    /// <summary>How many of each reader's newest searches the person is shown beside a conversation.</summary>
+    public const int RecentSearchesPerReader = 5;
 
     private const string Columns =
         """
@@ -122,7 +121,13 @@ public sealed class HistoryRepository(SqliteConnection connection)
             slice = new ExchangeSlice(found.Conversation, state, taken, rows.Count - taken.Count);
         }
 
-        await RecordAsync(transaction, reader, "exchange", exchangeId, null, null, nowUtc, cancellationToken).ConfigureAwait(false);
+        // A number that names nothing leaves no record: ids are never reused, so a row written for one that does not yet exist
+        // would later be shown against the exchange that takes the number, a read that did not happen.
+        if (slice is not null)
+        {
+            await RecordAsync(transaction, reader, "exchange", exchangeId, null, null, nowUtc, cancellationToken).ConfigureAwait(false);
+        }
+
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         return slice;
@@ -186,15 +191,31 @@ public sealed class HistoryRepository(SqliteConnection connection)
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false)).ToList();
 
-        var total = await _connection.QuerySingleAsync<int>(
+        var remaining = await _connection.QuerySingleAsync<int>(
             new CommandDefinition(
                 $"SELECT COUNT(*) FROM messages WHERE {Where};",
                 parameters,
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
+        // What the person is shown is how many messages matched, whichever page this is, so a later page counts from the start.
+        var total = continueAfter == 0
+            ? remaining
+            : await _connection.QuerySingleAsync<int>(
+                new CommandDefinition(
+                    $"SELECT COUNT(*) FROM messages WHERE {Where};",
+                    new
+                    {
+                        parameters.W1, parameters.W2, parameters.W3, parameters.W4, parameters.W5, parameters.W6, parameters.W7, parameters.W8,
+                        parameters.Agent, parameters.Conversation, parameters.Type, parameters.Since, parameters.Until,
+                        Cursor = 0L,
+                        parameters.Limit,
+                    },
+                    transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+
         var matches = rows.Select(r => ToMatch(r, words)).ToList();
-        var notShown = Math.Max(0, total - matches.Count);
+        var notShown = Math.Max(0, remaining - matches.Count);
 
         await RecordAsync(transaction, reader, "search", null, spoken, total, nowUtc, cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -220,31 +241,40 @@ public sealed class HistoryRepository(SqliteConnection connection)
         return [.. rows.Select(r => r.ToDomain())];
     }
 
-    /// <summary>The reads of every exchange in one conversation, and the project's newest searches, newest first, for the person.</summary>
+    /// <summary>Who read the exchanges of one conversation, and each reader's newest searches, for the person.</summary>
     /// <param name="conversationId">The conversation.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>Every read of an exchange that is in it now.</returns>
     public async Task<IReadOnlyList<HistoryRead>> ReadsInConversationAsync(string conversationId, CancellationToken cancellationToken = default)
     {
+        // One row for each reader of each exchange, with how often and when last: bounded by exchanges and agents however
+        // much one agent reads, so a reader cannot push another out of what the person is shown.
         var exchanges = await _connection.QueryAsync<ReadRow>(
             new CommandDefinition(
                 """
-                SELECT r.reader AS Reader, r.exchange_id AS ExchangeId, r.words AS Words, r.matches AS Matches, r.created_utc AS CreatedUtc
+                SELECT r.reader AS Reader, r.exchange_id AS ExchangeId, NULL AS Words, NULL AS Matches,
+                       MAX(r.created_utc) AS CreatedUtc, COUNT(*) AS Total
                 FROM history_reads AS r
                 WHERE r.kind = 'exchange' AND r.exchange_id IN (SELECT id FROM exchanges WHERE conversation_id = @Conversation)
-                ORDER BY r.id DESC;
+                GROUP BY r.exchange_id, r.reader;
                 """,
                 new { Conversation = conversationId },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        // A search belongs to no exchange, so the person sees the newest searches of the project beside every conversation.
+        // A search belongs to no exchange, so beside every conversation the person is shown each reader's newest searches and
+        // how many it has made in all.
         var searches = await _connection.QueryAsync<ReadRow>(
             new CommandDefinition(
                 """
-                SELECT reader AS Reader, exchange_id AS ExchangeId, words AS Words, matches AS Matches, created_utc AS CreatedUtc
-                FROM history_reads WHERE kind = 'search' ORDER BY id DESC LIMIT @Limit;
+                SELECT s.reader AS Reader, s.exchange_id AS ExchangeId, s.words AS Words, s.matches AS Matches,
+                       s.created_utc AS CreatedUtc,
+                       (SELECT COUNT(*) FROM history_reads AS c WHERE c.kind = 'search' AND c.reader = s.reader) AS Total
+                FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY reader ORDER BY id DESC) AS rn
+                        FROM history_reads WHERE kind = 'search') AS s
+                WHERE s.rn <= @PerReader
+                ORDER BY s.id DESC;
                 """,
-                new { Limit = RecentSearches },
+                new { PerReader = RecentSearchesPerReader },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         return [.. exchanges.Concat(searches).Select(r => r.ToDomain()).OrderByDescending(r => r.CreatedUtc)];
@@ -340,7 +370,8 @@ public sealed class HistoryRepository(SqliteConnection connection)
             return string.Empty;
         }
 
-        var at = Math.Max(0, text.IndexOf(word, StringComparison.OrdinalIgnoreCase));
+        // Found as the search found it, folding the letters A to Z and no others, so the snippet is centred on the match.
+        var at = Math.Max(0, HistoryText.AsciiLower(text).IndexOf(word, StringComparison.Ordinal));
         var room = HistoryLimits.SnippetCharacters;
         var start = Math.Max(0, at - (room - word.Length) / 2);
 
@@ -357,21 +388,8 @@ public sealed class HistoryRepository(SqliteConnection connection)
             end--;
         }
 
-        var builder = new StringBuilder(room);
-
-        foreach (var c in text.AsSpan(start, end - start))
-        {
-            builder.Append(Neutral(c) ? ' ' : c);
-        }
-
-        return builder.ToString();
+        return HistoryText.Neutralised(text[start..end]);
     }
-
-    /// <summary>Whether a character could break, hide or reorder a line.</summary>
-    /// <remarks>Spelled as numbers: a raw line separator in a literal breaks the build.</remarks>
-    private static bool Neutral(char c) =>
-        c < 0x20 || (c >= 0x7f && c <= 0x9f) || c == 0xad || (c >= 0x200b && c <= 0x200f)
-        || (c >= 0x2028 && c <= 0x202e) || (c >= 0x2060 && c <= 0x206f) || c == 0xfeff;
 
     private sealed class ReadRow
     {
@@ -385,11 +403,14 @@ public sealed class HistoryRepository(SqliteConnection connection)
 
         public string CreatedUtc { get; init; } = "";
 
+        public long Total { get; init; } = 1;
+
         public HistoryRead ToDomain() => new(
             AgentName.Create(Reader),
             ExchangeId,
             Words,
             Matches is { } m ? (int)m : null,
-            ExchangeRow.ParseTimestamp(CreatedUtc));
+            ExchangeRow.ParseTimestamp(CreatedUtc),
+            (int)Math.Max(1, Total));
     }
 }

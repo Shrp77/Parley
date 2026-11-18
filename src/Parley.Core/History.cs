@@ -90,10 +90,15 @@ public sealed record HistoryFilter(
 /// <param name="ExchangeId">The exchange read, or <see langword="null"/> for a search.</param>
 /// <param name="Words">The words searched for, or <see langword="null"/> for a read of an exchange.</param>
 /// <param name="Matches">How many matched, for a search.</param>
-/// <param name="CreatedUtc">When.</param>
+/// <param name="CreatedUtc">When; for a summary of several reads, when the newest was.</param>
+/// <param name="Count">
+/// How many reads this stands for: one for a single read, and for an exchange the number of times this reader read it, or for a
+/// search the number of searches this reader has made, so a reader cannot be pushed out of view by reading a great deal.
+/// </param>
 public sealed record HistoryRead(
     AgentName Reader,
     long? ExchangeId,
     string? Words,
     int? Matches,
-    DateTimeOffset CreatedUtc);
+    DateTimeOffset CreatedUtc,
+    int Count = 1);

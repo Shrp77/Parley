@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Parley.Store;
 
@@ -759,7 +759,7 @@ public sealed class Broker
     /// <exception cref="ArgumentException">The caller is the person seat or Parley.</exception>
     /// <remarks>
     /// Words are never read as operators. They are split on whitespace, each lower-cased as <c>A</c> to <c>Z</c> are, and
-    /// every one must occur. A word with a character that could break, hide or reorder a line is refused, as such a
+    /// every one must occur. A word with a control, invisible or line-separating character is refused (<see cref="HistoryText.Unprintable"/>), as such a
     /// character is in a conversation's name, because the words are kept for the person to read.
     /// </remarks>
     public async Task<HistorySearchPage> SearchHistoryAsync(
@@ -786,16 +786,16 @@ public sealed class Broker
             return Refused("Say what to search for: one or more words.");
         }
 
-        var distinct = said.Select(AsciiLower).Distinct(StringComparer.Ordinal).ToList();
+        var distinct = said.Select(HistoryText.AsciiLower).Distinct(StringComparer.Ordinal).ToList();
 
         if (distinct.Count > HistoryRepository.MaxWords)
         {
             return Refused($"Search for at most {HistoryRepository.MaxWords} different words, then read the exchanges it finds.");
         }
 
-        if (said.Any(w => w.Any(Breaks)))
+        if (said.Any(HistoryText.Unprintable))
         {
-            return Refused("A word has a character that is not text, such as a control character. Use ordinary words.");
+            return Refused("A word has a character that is not ordinary text, such as a control, invisible or malformed character. Use ordinary words.");
         }
 
         if (_historyRate.WaitFor(reader, nowUtc) is > 0 and var wait)
@@ -829,21 +829,6 @@ public sealed class Broker
 
         await RequireRegisteredAsync(reader, cancellationToken).ConfigureAwait(false);
     }
-
-    /// <summary>Lower-cases the letters A to Z and nothing else, as the store's own <c>lower</c> does.</summary>
-    private static string AsciiLower(string word) =>
-        string.Create(word.Length, word, static (span, source) =>
-        {
-            for (var i = 0; i < source.Length; i++)
-            {
-                span[i] = source[i] is >= 'A' and <= 'Z' ? (char)(source[i] + 32) : source[i];
-            }
-        });
-
-    /// <summary>Whether a character could break, hide or reorder a line.</summary>
-    private static bool Breaks(char c) =>
-        c < 0x20 || (c >= 0x7f && c <= 0x9f) || c == 0xad || (c >= 0x200b && c <= 0x200f)
-        || (c >= 0x2028 && c <= 0x202e) || (c >= 0x2060 && c <= 0x206f) || c == 0xfeff;
 
     /// <summary>Puts a roadmap forward for a person to confirm (§5.7).</summary>
     /// <param name="proposer">The attached caller, which is the only way a proposer is ever named.</param>

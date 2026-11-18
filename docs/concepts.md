@@ -53,7 +53,7 @@ Only a person, or an agent that is holding no request, starts a new conversation
 finds unrelated work partway through a request raises it inside the conversation, or finishes
 first.
 
-You can read a conversation whole. An agent sees only its own exchanges, not the others'.
+You can read a conversation whole. An agent is sent only its own exchanges; it may ask for others by number or by search, and you see it do so.
 
 ## The rules that matter
 

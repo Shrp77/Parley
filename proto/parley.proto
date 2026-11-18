@@ -329,6 +329,7 @@ message HistoryReadRow {
   string words = 3;                // empty for a read of an exchange
   int32 matches = 4;
   string created_utc = 5;
+  int32 count = 6;                 // reads this row stands for: an exchange's by this reader, or this reader's searches
 }
 
 message ListAgentsRequest {

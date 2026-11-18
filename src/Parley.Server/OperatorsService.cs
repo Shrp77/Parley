@@ -824,6 +824,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             Words = r.Words ?? string.Empty,
             Matches = r.Matches ?? 0,
             CreatedUtc = r.CreatedUtc.ToString("O", CultureInfo.InvariantCulture),
+            Count = r.Count,
         }));
 
         reply.Messages.AddRange(exported.Messages.Select(Conversions.Out));

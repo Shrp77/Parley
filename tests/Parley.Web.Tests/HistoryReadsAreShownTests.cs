@@ -53,8 +53,8 @@ public sealed class HistoryReadsAreShownTests
 
         var page = await client.GetStringAsync(PageUri, Ct);
 
-        Assert.Contains("read by inventory@test at ", page, StringComparison.Ordinal);
-        Assert.Equal(1, page.Split("read by inventory@test").Length - 1);
+        Assert.Contains("Read by inventory@test at ", page, StringComparison.Ordinal);
+        Assert.Equal(1, page.Split("Read by inventory@test").Length - 1);
     }
 
     [Fact]
@@ -66,7 +66,9 @@ public sealed class HistoryReadsAreShownTests
         var page = await client.GetStringAsync(PageUri, Ct);
 
         Assert.Contains("Searched the history", page, StringComparison.Ordinal);
-        Assert.Contains("billing@test: <q>price gross</q>, 2 matches", page, StringComparison.Ordinal);
+        Assert.Contains("billing@test: 1 search, newest ", page, StringComparison.Ordinal);
+        Assert.Contains("price gross", page, StringComparison.Ordinal);
+        Assert.Contains("(2 matches)", page, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -78,7 +80,7 @@ public sealed class HistoryReadsAreShownTests
 
         var page = await client.GetStringAsync(PageUri, Ct);
 
-        Assert.DoesNotContain("read by ", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("class=\"history-read\"", page, StringComparison.Ordinal);
         Assert.DoesNotContain("Searched the history", page, StringComparison.Ordinal);
     }
 

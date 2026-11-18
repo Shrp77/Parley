@@ -67,15 +67,15 @@
         </section>
     }
 
-    @if (Model.Searches.Any())
+    @if (Model.SearchLines.Count > 0)
     {
-        @* What the project's agents searched the history for lately, for the person only (SPEC.md §5.8). *@
+        @* What each of the project's agents searched the history for lately, for the person only (SPEC.md §5.8). *@
         <section class="history-searches" aria-label="Searches of the history">
             <h2>Searched the history</h2>
             <ul>
-                @foreach (var search in Model.Searches.Take(8))
+                @foreach (var line in Model.SearchLines.Take(8))
                 {
-                    <li>@search.Reader.Value: <q>@search.Words</q>, @search.Matches @(search.Matches == 1 ? "match" : "matches")</li>
+                    <li>@line</li>
                 }
             </ul>
         </section>

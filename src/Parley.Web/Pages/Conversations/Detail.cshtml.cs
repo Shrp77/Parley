@@ -1,5 +1,4 @@
-﻿using System.Globalization;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Parley.Core;
 using Parley.Client.Files;
@@ -99,30 +98,14 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// <summary>Every read an agent made of an exchange here, and the project's newest searches (SPEC.md §5.8).</summary>
     public IReadOnlyList<HistoryRead> Reads { get; private set; } = [];
 
-    /// <summary>The searches of the history the project's agents made lately, newest first.</summary>
-    public IEnumerable<HistoryRead> Searches => Reads.Where(r => r.ExchangeId is null);
+    /// <summary>One line for each agent that searched the history lately: how many searches and its newest.</summary>
+    public IReadOnlyList<string> SearchLines => Reading.SearchLines(Reads);
 
     /// <summary>Says who read an exchange, for the line under its first message.</summary>
     /// <param name="exchangeId">The exchange.</param>
-    /// <returns>For example <c>read by billing@acme at 09:30</c>, or empty when nobody read it.</returns>
-    /// <remarks>
-    /// The names are the broker's own and the times are local; at most five readers are named and the rest counted, so a
-    /// busy exchange does not push its message down the page.
-    /// </remarks>
-    public string ReadsOf(long exchangeId)
-    {
-        var of = Reads.Where(r => r.ExchangeId == exchangeId).OrderBy(r => r.CreatedUtc).ToList();
-
-        if (of.Count == 0)
-        {
-            return string.Empty;
-        }
-
-        var named = of.Take(5).Select(r =>
-            $"{r.Reader.Value} at {TimeZoneInfo.ConvertTime(r.CreatedUtc, TimeZoneInfo.Local).ToString("d MMM HH:mm", CultureInfo.InvariantCulture)}");
-
-        return "read by " + string.Join(", ", named) + (of.Count > 5 ? $" and {of.Count - 5} more" : string.Empty);
-    }
+    /// <returns>For example <c>Read by billing@acme at 09:30</c>, or empty when nobody read it.</returns>
+    /// <remarks>The one wording the terminal and the text export use (<see cref="Reading.ReadLine"/>).</remarks>
+    public string ReadsOf(long exchangeId) => Reading.ReadLine(Reads, exchangeId, null) ?? string.Empty;
 
     /// <summary>What is waiting on the person in this project's other conversations, oldest first.</summary>
     public IReadOnlyList<Delivered> Elsewhere { get; private set; } = [];
