@@ -50,6 +50,16 @@ public sealed class HistoryLimitsAndTextTests
     }
 
     [Fact]
+    public void Unassigned_code_points_are_refused_in_words_and_made_a_space_in_a_snippet()
+    {
+        foreach (var unassigned in new[] { 0x0378, 0xE0080, 0x2FFFE })
+        {
+            Assert.True(HistoryText.Unprintable("a" + Chars(unassigned) + "b"));
+            Assert.Equal("a b", HistoryText.Neutralised("a" + Chars(unassigned) + "b"));
+        }
+    }
+
+    [Fact]
     public void Plain_text_in_many_scripts_passes_untouched()
     {
         string[] plain = ["naive", "na" + Chars(0x00EF) + "ve", Chars(0x65E5, 0x672C, 0x8A9E), Chars(0x0645, 0x0631, 0x062D, 0x0628, 0x0627), "100%", "a_b", Chars(0x1F680)];

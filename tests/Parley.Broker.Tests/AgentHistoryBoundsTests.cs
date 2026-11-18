@@ -402,18 +402,61 @@ public sealed class AgentHistoryBoundsTests : IDisposable
     [Fact]
     public async Task A_search_that_overruns_its_time_is_stopped_refused_charged_and_leaves_no_record()
     {
-        var slow = new Broker(_connection, BrokerOptions.Default with { SearchTimeLimit = TimeSpan.FromMilliseconds(1) });
+        // A limit of nothing is out before the search begins, which is deterministic; the scan itself being interrupted is held below.
+        var slow = new Broker(_connection, BrokerOptions.Default with { SearchTimeLimit = TimeSpan.Zero });
         await slow.StartAsync(Inventory, T0, Ct);
-
-        for (var i = 0; i < 300; i++)
-        {
-            await OpenAsync(string.Concat(Enumerable.Repeat("filler words with no match ", 400)) + i, 1 + i);
-        }
+        await OpenAsync("filler words with no match");
 
         var page = await slow.SearchHistoryAsync(Inventory, "absent", new HistoryFilter(), 0, T0.AddDays(2), Ct);
 
         Assert.Contains("took too long", page.Refusal, StringComparison.Ordinal);
         Assert.Empty(page.Matches);
         Assert.Empty(await Repository.ReadsByAsync(Inventory, Ct));
+    }
+
+    [Fact]
+    public async Task Cancelling_stops_the_scan_that_is_running_and_not_only_the_next_statement()
+    {
+        for (var i = 0; i < 300; i++)
+        {
+            await OpenAsync("filler words with no match number " + i, 1 + i);
+        }
+
+        using var cancel = new CancellationTokenSource();
+        var calls = 0;
+
+        // The first time the scan folds a case it cancels, and every later one is slow, so a scan that kept going would take long and
+        // fold hundreds of times; one that was interrupted folds a few.
+        _connection.CreateFunction<string?, string?>("lower", text =>
+        {
+            if (Interlocked.Increment(ref calls) == 1)
+            {
+                cancel.Cancel();
+            }
+
+            Thread.Sleep(2);
+
+            return text?.ToLowerInvariant();
+        });
+
+        var thrown = await Record.ExceptionAsync(() => Repository.SearchAsync(
+            Inventory, ["absent"], "absent", new HistoryFilter(), 0, T0.AddDays(1), cancel.Token));
+
+        Assert.True(thrown is OperationCanceledException or SqliteException { SqliteErrorCode: 9 }, thrown?.ToString() ?? "it was not stopped");
+        Assert.True(calls < 100, $"the scan went on: {calls} rows folded");
+        Assert.Empty(await Repository.ReadsByAsync(Inventory, Ct));
+    }
+
+    [Fact]
+    public async Task Destroying_a_conversation_removes_the_tally_of_who_read_its_exchanges_and_keeps_the_searches()
+    {
+        var id = await OpenAsync("anything");
+        await _broker.ReadExchangeAsync(Inventory, id, 0, T0.AddMinutes(5), Ct);
+        await _broker.SearchHistoryAsync(Inventory, "anything", new HistoryFilter(), 0, T0.AddMinutes(6), Ct);
+
+        await new ConversationRepository(_connection).DestroyAsync(await ConversationAsync(), T0.AddDays(1), cancellationToken: Ct);
+
+        var left = Assert.Single(await Repository.ReadsByAsync(Inventory, Ct));
+        Assert.Null(left.ExchangeId);
     }
 }

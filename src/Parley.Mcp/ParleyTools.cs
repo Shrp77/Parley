@@ -971,7 +971,8 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     [Description(
         """
         Search the messages of this project for words you remember, when you do not have the exchange number.
-        Every word must appear (at most eight different ones; the case of the letters A to Z does not matter). Words are plain text: no operators are read. Any exchange of the
+        Every word must appear (at most eight different ones, 200 characters in all; the case of the letters A to Z does not matter). A search
+        that runs longer than a second and a half is stopped: narrow it with a conversation, a participant or a time. Words are plain text: no operators are read. Any exchange of the
         project can be found, not only ones you took part in.
 
         It returns short snippets only, newest first, each with its exchange number: then read the one you need

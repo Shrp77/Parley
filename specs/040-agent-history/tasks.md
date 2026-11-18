@@ -27,7 +27,7 @@
 - [x] T008 [P] [US1] `tests/Parley.Core.Tests/HistoryEnvelopeTests.cs`: `WrapHistory` names the sender as `Wrap` does for each of participant, broker notice, facilitator, person's reply; says history and not mail; fresh token; payload inert (also covers US4).
 - [x] T009 [US1] `src/Parley.Core/TrustEnvelope.cs`: `WrapHistory(from, responderModel, payloadJson, token, conversationId, exchangeId, createdUtc)`.
 - [x] T010 [P] [US1] `tests/Parley.Store.Tests/AgentHistoryTests.cs`: read in order, `after` continuation, 64,000 bound with at least one message, unknown number, destroyed conversation reads gone, exchange moved reads under its new conversation.
-- [x] T011 [US1] `src/Parley.Store/HistoryRepository.cs`: `ReadExchangeAsync`, using `MessageRepository` row types; records the read in the same transaction (`RecordReadAsync`).
+- [x] T011 [US1] `src/Parley.Store/HistoryRepository.cs`: `ReadExchangeAsync`, using `MessageRepository` row types; records the read in the same transaction (`RecordAsync`, a tally upsert).
 - [x] T012 [US1] `src/Parley.Broker/Broker.cs` and `src/Parley.Broker/HistoryRate.cs`: `ReadExchangeAsync(caller, id, after)`; the rate window; envelope each message; no delivery, wake or tick.
 - [x] T013 [P] [US1] `tests/Parley.Broker.Tests/AgentHistoryBrokerTests.cs`: reads by a non-participant, reader not added as participant, rate refusal with retry seconds.
 - [x] T014 [US1] `src/Parley.Server/AgentsService.cs` and `Wire.cs`: `ReadExchange`; map `Found`.
@@ -59,7 +59,7 @@
 ## Phase 7: The person sees each read (FR-016)
 
 - [x] T026 `HistoryRepository.ReadsInConversationAsync` and the operator conversation read in `src/Parley.Broker/OperatorConsole.cs` and `OperatorsService.cs` return `reads`; `Parley.Client` view models carry them.
-- [x] T027 [P] Web: `src/Parley.Web/Pages/Conversations/Detail.cshtml` (a line under the exchange: "read by x at t"), the agent's page (its searches with words and match counts); `tests/Parley.Web.Tests/HistoryReadsAreShownTests.cs`.
+- [x] T027 [P] Web: `src/Parley.Web/Pages/Conversations/Detail.cshtml` (a line under the exchange: "read by x at t"), the searches beside the conversation (one line for each agent, with a count); `tests/Parley.Web.Tests/HistoryReadsAreShownTests.cs`.
 - [x] T028 [P] Terminal: the exchange view shows the lines; `tests/Parley.Terminal.Tests` drawn-screen test.
 - [x] T029 Purge: `AgentRepository` purge removes the agent's `history_reads`; test in `AgentPurgeTests`; retiring keeps them.
 

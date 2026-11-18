@@ -8,7 +8,7 @@
 Two new agent operations, `read_exchange(exchange_id, after?)` and `search_history(words, ...)`, on the Agents service, the
 `Broker`, the MCP adapter and the plugin's prose. They read the project's messages (a store is one project, so no read can
 cross a project), return them inside a **history envelope** built from the §13 envelope, change nothing a participant can
-observe, and write one **history read** record per call that only the person sees, on the exchange page of the web console and
+observe, and keep a **tally of reads** (one row for each agent and exchange, and one for each agent's searches) that only the person sees, on the exchange page of the web console and
 in the terminal. A schema migration adds the record. SPEC.md §10.1, principle 2.2, §17, §13, the constitution's boundary
 paragraph, the docs and the tests that held the old rule change in the same commit.
 

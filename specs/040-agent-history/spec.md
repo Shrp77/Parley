@@ -173,9 +173,10 @@ rule now hold the new one.
   plugin's prose and `docs/` MUST be changed together so none still says there is no history operation.
 - **FR-015**: The tests that held "no history operation" MUST be changed to hold what is now allowed and what stays forbidden:
   no write, no turn information, no other project, no roadmap, no change to delivery.
-- **FR-016**: Each read or search MUST be recorded and shown to the person on the exchange it concerns, naming the reader and
-  when. A search, which concerns no one exchange, is shown to the person beside each conversation, among the project's newest
-  searches, with the reader, the words searched for and how many matches it returned. The record is the person's to see, never an agent's: no agent can read who has read what, and
+- **FR-016**: Each read or search MUST be counted and shown to the person on the exchange it concerns, naming the reader, how often
+  and when. A search, which concerns no one exchange, is shown to the person beside each conversation, one line for each agent that
+  searched with how many searches it made, its newest words and how many matches they returned, and a line counting any agents past
+  eight. The record is the person's to see, never an agent's: no agent can read who has read what, and
   a record is not a message, an exchange or a participant, so it changes nothing under FR-006. (Decided by the owner, 2026-11-18.)
 
 ### Key Entities

@@ -1123,7 +1123,8 @@ shown against an exchange that did not exist at the time. It is a tally and not 
 exchanges whatever one agent reads, and a count is the count. The
 console, the terminal and the text export show it where the person already reads the exchange, as "Read by `x` at t" beneath its
 first message, with one entry for each reader and how often, at most five readers named and the rest counted. Beside each conversation
-they show one line for each agent that searched: how many searches it has made and its newest words and matches, at most eight lines.
+they show one line for each agent that searched: how many searches it has made and its newest words and matches, at most eight lines and
+a last line counting the agents past those.
 A search belongs to no one exchange, and a reader is shown once however much it reads, so no agent can push its own reads out of
 view. No agent can read these records, and a record is not a message, a participant or a debt, so it moves nothing.
 Retiring an agent keeps its tally. Purging it removes it, and so does retention: a row an agent has not added to for longer than the

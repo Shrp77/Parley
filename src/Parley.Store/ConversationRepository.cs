@@ -1200,6 +1200,15 @@ public sealed class ConversationRepository(SqliteConnection connection)
                AND settled_by IN (SELECT id FROM exchanges WHERE conversation_id = @Conversation);
             """).ConfigureAwait(false);
 
+        // What agents read of these exchanges (SPEC.md §5.8) goes with them: destroying is the person's erase control, and a tally of
+        // who read an exchange that is gone is a trace of it. It holds no text, so it is not reported as removed text.
+        await ExecuteAsync(
+            """
+            DELETE FROM history_reads
+             WHERE kind = 'exchange'
+               AND exchange_id IN (SELECT id FROM exchanges WHERE conversation_id = @Conversation);
+            """).ConfigureAwait(false);
+
         await RazeAsync("exchanges", "DELETE FROM exchanges WHERE conversation_id = @Conversation;")
             .ConfigureAwait(false);
 

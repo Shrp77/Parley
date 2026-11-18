@@ -145,7 +145,7 @@ public sealed class WhoReadAnExchangeTests
 
         Assert.Equal(9, Reading.Lines(export, TimeZoneInfo.Utc).Count(l => l.Text.Contains("Searched the history:", StringComparison.Ordinal)));
         Assert.Equal(9, Transcript.Write("pricing", "acme", export).Split("Searched the history:").Length - 1);
-        Assert.Contains("and 4 more agents searched", Transcript.Write("pricing", "acme", export), StringComparison.Ordinal);
+        Assert.Contains("4 more agents searched", Transcript.Write("pricing", "acme", export), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -157,6 +157,6 @@ public sealed class WhoReadAnExchangeTests
         var lines = Reading.SearchLines(reads);
 
         Assert.Equal(HistoryLimits.SearchersShown + 1, lines.Count);
-        Assert.Equal("and 5 more agents searched", lines[^1]);
+        Assert.Equal("5 more agents searched", lines[^1]);
     }
 }

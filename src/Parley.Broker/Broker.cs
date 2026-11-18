@@ -796,7 +796,7 @@ public sealed class Broker
 
         if (said.Any(HistoryText.Unprintable))
         {
-            return Refused("A word has a character that is not ordinary text, such as a control, invisible or malformed character. Use ordinary words.");
+            return Refused("A word has a character that is not ordinary text, such as a control, an invisible one (an emoji's variation selector or a zero-width joiner are among them) or a malformed one. Use ordinary words, or search a part of the word.");
         }
 
         if (_historyRate.WaitFor(reader, nowUtc) is > 0 and var wait)

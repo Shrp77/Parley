@@ -358,7 +358,7 @@ public static class Reading
 
         if (searchers.Count > HistoryLimits.SearchersShown)
         {
-            lines.Add($"and {searchers.Count - HistoryLimits.SearchersShown} more agents searched");
+            lines.Add($"{searchers.Count - HistoryLimits.SearchersShown} more agents searched");
         }
 
         return lines;
