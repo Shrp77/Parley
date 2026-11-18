@@ -4316,7 +4316,8 @@ its rules, and for the same reason:
   collection is, a search page holds 20 matches of at most 240 characters, a search term 200, and a caller may make 30 history calls
   and take 400,000 characters in a minute, a search being charged by the time it took, never less than 20,000, because it scans the store while it holds the
   broker's gate and what that costs depends on what the store holds, after which a call is refused with how long to wait. A search
-  that runs longer than a second and a half is interrupted, charged for the time it took, and refused with advice to narrow it. The rate is held for
+  that runs longer than a second and a half is interrupted, charged for the time it took, and refused with advice to narrow it; one the
+  caller stops itself is charged the same. The rate is held for
   the store, in memory, whichever session of whichever agent asks, so attaching again does not reset it; a restart does. It exists so the
   tool cannot copy a store in one sitting, and it is not accounting. A snippet is the one text that reaches a model with no envelope: it is cut to 240 characters, every control, invisible or line-separating
   character in it becomes a space, and the opening of an envelope in it is spelled so it cannot be mistaken for one. Every read is

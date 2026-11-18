@@ -459,4 +459,42 @@ public sealed class AgentHistoryBoundsTests : IDisposable
         var left = Assert.Single(await Repository.ReadsByAsync(Inventory, Ct));
         Assert.Null(left.ExchangeId);
     }
+
+    [Fact]
+    public async Task A_search_the_caller_cancels_is_charged_too_so_a_deadline_of_its_own_does_not_get_it_free_searching()
+    {
+        for (var i = 0; i < 5; i++)
+        {
+            await OpenAsync("filler " + i, 1 + i);
+        }
+
+        CancellationTokenSource? current = null;
+        var cancelled = false;
+
+        // The caller gives up as soon as the scan begins, as a client with a deadline shorter than the limit does.
+        _connection.CreateFunction<string?, string?>("lower", text =>
+        {
+            if (!cancelled)
+            {
+                cancelled = true;
+                current!.Cancel();
+            }
+
+            return text?.ToLowerInvariant();
+        });
+
+        for (var i = 0; i < HistoryLimits.CharactersPerMinute / HistoryLimits.SearchCharge; i++)
+        {
+            using var caller = new CancellationTokenSource();
+            current = caller;
+            cancelled = false;
+
+            await Assert.ThrowsAnyAsync<Exception>(() =>
+                _broker.SearchHistoryAsync(Inventory, "absent", new HistoryFilter(), 0, T0.AddSeconds(10), caller.Token));
+        }
+
+        var next = await _broker.SearchHistoryAsync(Inventory, "absent", new HistoryFilter(), 0, T0.AddSeconds(11), Ct);
+
+        Assert.Contains("Too many", next.Refusal, StringComparison.Ordinal);
+    }
 }

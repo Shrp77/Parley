@@ -818,10 +818,16 @@ public sealed class Broker
                 .SearchAsync(reader, distinct, string.Join(' ', said), filter, Math.Max(0, continueAfter), nowUtc, limit.Token)
                 .ConfigureAwait(false);
         }
-        catch (Exception exception) when (!cancellationToken.IsCancellationRequested
-            && (exception is OperationCanceledException || exception is SqliteException { SqliteErrorCode: 9 }))
+        catch (Exception exception) when (exception is OperationCanceledException || exception is SqliteException { SqliteErrorCode: 9 })
         {
+            // Charged for the time it held the gate whoever stopped it: a caller that sets a deadline of its own, shorter than the limit,
+            // would otherwise search again and again for nothing.
             _historyRate.Took(reader, nowUtc, HistoryLimits.SearchCost(clock.ElapsedMilliseconds, 0));
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
 
             return Refused("That search took too long and was stopped. Narrow it to one conversation, one participant or a span of time, or use fewer words, and try again.");
         }
