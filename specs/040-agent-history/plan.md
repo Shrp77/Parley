@@ -109,7 +109,7 @@ SPEC.md                                     §2.2, §5 (history), §10.1, §13, 
 src/Parley.Core/TrustEnvelope.cs            WrapHistory
 src/Parley.Core/HistoryLimits.cs            the numbers, once
 src/Parley.Store/Migrations/009_history_reads.sql
-src/Parley.Store/HistoryRepository.cs       ReadExchangeAsync, SearchAsync, RecordReadAsync, ReadsOfAsync
+src/Parley.Store/HistoryRepository.cs       ReadExchangeAsync, SearchAsync, RecordAsync (a tally upsert), ReadsInConversationAsync
 src/Parley.Broker/Broker.cs                 ReadExchangeAsync, SearchHistoryAsync (agent operations); rate window
 src/Parley.Broker/HistoryRate.cs
 src/Parley.Server/AgentsService.cs          the two rpcs

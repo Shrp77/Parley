@@ -10,6 +10,7 @@ namespace Parley.Broker;
 /// <param name="ResumeGate">Asked before any agent is woken for outstanding work (§14).</param>
 /// <param name="Retention">What the log is pruned to (§9.4).</param>
 /// <param name="RetentionInterval">How often retention runs.</param>
+/// <param name="SearchTimeLimit">The longest a search of the history may run (§10.1), or <see langword="null"/> for the default.</param>
 /// <remarks>
 /// Operator configuration, resolved before any agent-facing path is reached. Nothing here is a parameter
 /// an agent can supply.
@@ -19,7 +20,8 @@ public sealed record BrokerOptions(
     ResumePolicy ResumePolicy,
     IResumeGate ResumeGate,
     RetentionPolicy Retention,
-    TimeSpan RetentionInterval)
+    TimeSpan RetentionInterval,
+    TimeSpan? SearchTimeLimit = null)
 {
     /// <summary>The retention interval when none is configured.</summary>
     /// <remarks>

@@ -58,7 +58,7 @@
 
 ## Phase 7: The person sees each read (FR-016)
 
-- [x] T026 `HistoryRepository.ReadsOfAsync` and the operator conversation read in `src/Parley.Broker/OperatorConsole.cs` and `OperatorsService.cs` return `reads`; `Parley.Client` view models carry them.
+- [x] T026 `HistoryRepository.ReadsInConversationAsync` and the operator conversation read in `src/Parley.Broker/OperatorConsole.cs` and `OperatorsService.cs` return `reads`; `Parley.Client` view models carry them.
 - [x] T027 [P] Web: `src/Parley.Web/Pages/Conversations/Detail.cshtml` (a line under the exchange: "read by x at t"), the agent's page (its searches with words and match counts); `tests/Parley.Web.Tests/HistoryReadsAreShownTests.cs`.
 - [x] T028 [P] Terminal: the exchange view shows the lines; `tests/Parley.Terminal.Tests` drawn-screen test.
 - [x] T029 Purge: `AgentRepository` purge removes the agent's `history_reads`; test in `AgentPurgeTests`; retiring keeps them.
@@ -74,6 +74,12 @@
 - [x] T033 `pwsh scripts/test.ps1 -Category Smoke -Build`; fix; the full run `-Category All` before the PR.
 - [ ] T034 Review gate (`review/README.md` and the three lens files): three clean runs of each lens on the shipped code. Fix findings and repeat.
 - [ ] T035 Commit in meaningful commits; do not push or open a PR until the review is clean and the owner has seen the result.
+
+Task to test class: T007 `HistoryReadsSchemaTests`; T008 and T019 `HistoryEnvelopeTests` and `HistoryLimitsAndTextTests`; T010, T012, T013, T017,
+T021 and T022 `AgentHistoryBrokerTests` and `AgentHistoryBoundsTests`; T014 to T016 and T023 to T024 `ReadingHistoryTests` and
+`HistoryToolTests`; T020 `AgentsNeverSeeWhoReadTests` (and `AgentsCannotSeeTurnsTests`, which walks the new replies unchanged); T026 to
+T028 `WhoReadAnExchangeTests` and `HistoryReadsAreShownTests`; T029 `HistoryReadsSchemaTests` and `AgentHistoryBoundsTests`; T030
+`HistoryReadsAgreeTests` and `SurfaceBoundaryTests`. T009's `WrapHistory` also takes the recipient.
 
 Notes on what was built differently: the tests are named for what they hold and not as planned (`AgentHistoryBrokerTests`,
 `AgentHistoryBoundsTests`, `ReadingHistoryTests`, `AgentsNeverSeeWhoReadTests`, `HistoryToolTests`, `HistoryReadsSchemaTests`,

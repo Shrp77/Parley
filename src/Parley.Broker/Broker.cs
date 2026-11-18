@@ -805,14 +805,30 @@ public sealed class Broker
         }
 
         var clock = System.Diagnostics.Stopwatch.StartNew();
-        var slice = await new HistoryRepository(_connection)
-            .SearchAsync(reader, distinct, string.Join(' ', said), filter, Math.Max(0, continueAfter), nowUtc, cancellationToken)
-            .ConfigureAwait(false);
+        SearchSlice slice;
+
+        // No search runs without end: it holds the gate while it scans, and how long that takes depends on what the store holds. One
+        // that overruns is stopped, charged for the time it took, and refused with what to do about it.
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        limit.CancelAfter(_options.SearchTimeLimit ?? TimeSpan.FromMilliseconds(HistoryLimits.SearchTimeLimitMilliseconds));
+
+        try
+        {
+            slice = await new HistoryRepository(_connection)
+                .SearchAsync(reader, distinct, string.Join(' ', said), filter, Math.Max(0, continueAfter), nowUtc, limit.Token)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested
+            && (exception is OperationCanceledException || exception is SqliteException { SqliteErrorCode: 9 }))
+        {
+            _historyRate.Took(reader, nowUtc, HistoryLimits.SearchCost(clock.ElapsedMilliseconds, 0));
+
+            return Refused("That search took too long and was stopped. Narrow it to one conversation, one participant or a span of time, or use fewer words, and try again.");
+        }
 
         // A search scans the store while it holds the gate, and what that costs depends on what the store holds, so it is charged by
         // the time it took, never less than a fixed amount, besides what it returns.
-        var cost = Math.Max(HistoryLimits.SearchCharge, (int)Math.Min(int.MaxValue / 2, clock.ElapsedMilliseconds * HistoryLimits.CharactersPerMillisecond));
-        _historyRate.Took(reader, nowUtc, cost + slice.Matches.Sum(m => m.Snippet.Length + 120));
+        _historyRate.Took(reader, nowUtc, HistoryLimits.SearchCost(clock.ElapsedMilliseconds, slice.Matches.Sum(m => m.Snippet.Length + 120)));
 
         return new HistorySearchPage(
             null,

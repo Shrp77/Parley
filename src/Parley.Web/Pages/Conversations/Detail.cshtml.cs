@@ -104,8 +104,11 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// <summary>Says who read an exchange, for the line under its first message.</summary>
     /// <param name="exchangeId">The exchange.</param>
     /// <returns>For example <c>Read by billing@acme at 09:30</c>, or empty when nobody read it.</returns>
-    /// <remarks>The one wording the terminal and the text export use (<see cref="Reading.ReadLine"/>).</remarks>
-    public string ReadsOf(long exchangeId) => Reading.ReadLine(Reads, exchangeId, null) ?? string.Empty;
+    /// <remarks>The one wording the terminal and the text export use (<c>Reading.ReadLine</c>).</remarks>
+    public string ReadsOf(long exchangeId) =>
+        Reading.ReadLine((_readsBy ??= Reads.Where(r => r.ExchangeId is not null).ToLookup(r => r.ExchangeId!.Value))[exchangeId].ToList(), null) ?? string.Empty;
+
+    private ILookup<long, HistoryRead>? _readsBy;
 
     /// <summary>What is waiting on the person in this project's other conversations, oldest first.</summary>
     public IReadOnlyList<Delivered> Elsewhere { get; private set; } = [];

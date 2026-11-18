@@ -115,4 +115,34 @@ public sealed class HistoryReadsSchemaTests : IDisposable
         Assert.Equal(1, connection.ExecuteScalar<long>("SELECT COUNT(*) FROM conversations WHERE id = 'kept';"));
         Assert.Empty(StoreShape.Problems(connection));
     }
+
+    [Fact]
+    public async Task An_upsert_counts_up_keeps_the_first_time_and_takes_the_newest_words()
+    {
+        var reader = Parley.Core.AgentName.Create("billing@acme");
+        var repository = new HistoryRepository(_connection);
+        _connection.Execute("INSERT INTO conversations (id, state, opened_utc) VALUES ('c', 'OPEN', '2026-11-17T09:00:00Z');");
+
+        await repository.SearchAsync(reader, ["one"], "one", new Parley.Core.HistoryFilter(), 0, new DateTimeOffset(2026, 11, 17, 9, 30, 0, TimeSpan.Zero), TestContext.Current.CancellationToken);
+        await repository.SearchAsync(reader, ["two"], "two", new Parley.Core.HistoryFilter(), 0, new DateTimeOffset(2026, 11, 17, 9, 45, 0, TimeSpan.Zero), TestContext.Current.CancellationToken);
+
+        var (total, first, last, words) = _connection.QuerySingle<(long, string, string, string)>("SELECT total, first_utc, last_utc, words FROM history_reads;");
+
+        Assert.Equal(2, total);
+        Assert.StartsWith("2026-11-17T09:30:00", first, StringComparison.Ordinal);
+        Assert.StartsWith("2026-11-17T09:45:00", last, StringComparison.Ordinal);
+        Assert.Equal("two", words);
+    }
+
+    [Fact]
+    public async Task Retention_removes_a_row_by_when_it_was_last_added_to_and_not_when_it_began()
+    {
+        _connection.Execute("INSERT INTO agents (name, adapter, tier, status) VALUES ('old@acme', 'claude-code', 'full', 'active');");
+        _connection.Execute("INSERT INTO history_reads (reader, kind, exchange_id, total, first_utc, last_utc) VALUES ('billing@acme', 'exchange', 5, 9, '2026-01-01T00:00:00Z', '2026-11-16T00:00:00Z');");
+        _connection.Execute("INSERT INTO history_reads (reader, kind, exchange_id, total, first_utc, last_utc) VALUES ('old@acme', 'exchange', 5, 9, '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z');");
+
+        await new Pruner(_connection).PruneAsync(Parley.Core.RetentionPolicy.Default, new DateTimeOffset(2026, 11, 17, 0, 0, 0, TimeSpan.Zero), TestContext.Current.CancellationToken);
+
+        Assert.Equal("billing@acme", _connection.ExecuteScalar<string>("SELECT reader FROM history_reads;"));
+    }
 }

@@ -57,6 +57,7 @@ public static class Transcript
         ArgumentNullException.ThrowIfNull(export);
 
         var messages = export.Messages;
+        var readsBy = (export.Reads ?? []).Where(r => r.ExchangeId is not null).ToLookup(r => r.ExchangeId!.Value);
         var exchanges = export.Exchanges;
         // Both can come from a web page's query string, so they are flattened like a payload.
         var heading = new StringBuilder()
@@ -171,7 +172,7 @@ public static class Transcript
                 written.Append("  ").AppendLine(role);
             }
 
-            if (message.Type == MessageType.Request && Reading.ReadLine(export.Reads, message.ExchangeId, TimeZoneInfo.Utc) is { } read)
+            if (message.Type == MessageType.Request && Reading.ReadLine(readsBy[message.ExchangeId].ToList(), TimeZoneInfo.Utc) is { } read)
             {
                 written.Append("  ").AppendLine(read);
             }
@@ -186,7 +187,7 @@ public static class Transcript
             written.AppendLine();
         }
 
-        foreach (var search in Reading.SearchLines(export.Reads).Take(HistoryLimits.SearchersShown))
+        foreach (var search in Reading.SearchLines(export.Reads))
         {
             written.Append("Searched the history: ").AppendLine(HistoryText.Neutralised(search));
         }

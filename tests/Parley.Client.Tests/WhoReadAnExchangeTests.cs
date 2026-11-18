@@ -18,8 +18,8 @@ public sealed class WhoReadAnExchangeTests
     private static readonly AgentName Billing = AgentName.Create("billing@acme");
     private static readonly DateTimeOffset At = new(2026, 11, 17, 9, 30, 0, TimeSpan.Zero);
 
-    private static HistoryRead Read(string reader, long? exchange, int minute) =>
-        new(AgentName.Create(reader), exchange, exchange is null ? "invoice" : null, exchange is null ? 2 : null, At.AddMinutes(minute));
+    private static HistoryRead Read(string reader, long? exchange, int minute, int count = 1) =>
+        new(AgentName.Create(reader), exchange, exchange is null ? "invoice" : null, exchange is null ? 2 : null, At.AddMinutes(minute), count);
 
     private static Message Request(long exchange) =>
         new(1, exchange, MessageType.Request, Orders, Billing, "claude-opus-5", """{"ask":"is it gross?"}""", "pricing", At, null);
@@ -60,12 +60,13 @@ public sealed class WhoReadAnExchangeTests
     [Fact]
     public void One_reader_reading_many_times_is_one_reader_with_a_count_and_cannot_crowd_out_another()
     {
-        var reads = Enumerable.Range(0, 9).Select(i => Read("mal@acme", 5, i)).Append(Read("spy@acme", 5, 20)).ToList();
+        var reads = new[] { Read("mal@acme", 5, 8, count: 9), Read("spy@acme", 5, 20) };
 
         var line = Reading.ReadLine(reads, 5, TimeZoneInfo.Utc);
 
         Assert.Contains("mal@acme at 17 Nov 09:38 (9 times)", line, StringComparison.Ordinal);
         Assert.Contains("spy@acme at 17 Nov 09:50", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("spy@acme at 17 Nov 09:50 (", line, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -73,7 +74,6 @@ public sealed class WhoReadAnExchangeTests
     {
         var searches = new[]
         {
-            new HistoryRead(AgentName.Create("mal@acme"), null, "first", 1, At, 9),
             new HistoryRead(AgentName.Create("mal@acme"), null, "junk8", 0, At.AddMinutes(8), 9),
             new HistoryRead(AgentName.Create("spy@acme"), null, "secret", 2, At.AddMinutes(3)),
         };
@@ -143,7 +143,20 @@ public sealed class WhoReadAnExchangeTests
             .ToList();
         var export = new ConversationExport([Request(5)], [], Reads: reads);
 
-        Assert.Equal(8, Reading.Lines(export, TimeZoneInfo.Utc).Count(l => l.Text.Contains("Searched the history:", StringComparison.Ordinal)));
-        Assert.Equal(8, Transcript.Write("pricing", "acme", export).Split("Searched the history:").Length - 1);
+        Assert.Equal(9, Reading.Lines(export, TimeZoneInfo.Utc).Count(l => l.Text.Contains("Searched the history:", StringComparison.Ordinal)));
+        Assert.Equal(9, Transcript.Write("pricing", "acme", export).Split("Searched the history:").Length - 1);
+        Assert.Contains("and 4 more agents searched", Transcript.Write("pricing", "acme", export), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_agent_cannot_hide_another_searcher_past_the_eighth_without_the_person_being_told_how_many_more()
+    {
+        var reads = new List<HistoryRead> { new(AgentName.Create("spy@acme"), null, "secret", 1, At) };
+        reads.AddRange(Enumerable.Range(0, 12).Select(i => new HistoryRead(AgentName.Create($"f{i}@acme"), null, "junk", 0, At.AddMinutes(i + 1))));
+
+        var lines = Reading.SearchLines(reads);
+
+        Assert.Equal(HistoryLimits.SearchersShown + 1, lines.Count);
+        Assert.Equal("and 5 more agents searched", lines[^1]);
     }
 }

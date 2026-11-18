@@ -166,6 +166,7 @@ public static class Reading
 
         // Looked up by id once each, not searched for at every header: that was quadratic in the messages (lens 1 round 17).
         var byId = export.Messages.GroupBy(m => m.Id).ToDictionary(g => g.Key, g => g.First());
+        var readsBy = (export.Reads ?? []).Where(r => r.ExchangeId is not null).ToLookup(r => r.ExchangeId!.Value);
 
         // A move's note sits where the entries are, or were, by its earliest message's place in the broker's order (SPEC.md §5.0).
         var moves = new Queue<MoveRecord>(
@@ -214,7 +215,7 @@ public static class Reading
                 lines.Add(new TranscriptLine(Pad(role), LineKind.Annotation, null, id));
             }
 
-            if (message.Type == MessageType.Request && ReadLine(export.Reads, message.ExchangeId, zone) is { } read)
+            if (message.Type == MessageType.Request && readsBy[message.ExchangeId].ToList() is { Count: > 0 } ofExchange && ReadLine(ofExchange, zone) is { } read)
             {
                 lines.Add(new TranscriptLine(Pad(read), LineKind.Annotation, null, id));
             }
@@ -226,7 +227,7 @@ public static class Reading
         }
 
         // What the project's agents searched the history for, for the person only (SPEC.md §5.8).
-        foreach (var search in SearchLines(export.Reads).Take(HistoryLimits.SearchersShown))
+        foreach (var search in SearchLines(export.Reads))
         {
             lines.Add(new TranscriptLine(Pad("Searched the history: " + HistoryText.Neutralised(search)), LineKind.Annotation, null));
         }
@@ -302,25 +303,33 @@ public static class Reading
     /// <remarks>
     /// Said to the person only: no agent can read who read what. At most five readers are named and the rest counted.
     /// </remarks>
-    public static string? ReadLine(IReadOnlyList<HistoryRead>? reads, long exchangeId, TimeZoneInfo? zone)
+    public static string? ReadLine(IReadOnlyList<HistoryRead>? reads, long exchangeId, TimeZoneInfo? zone) =>
+        ReadLine((reads ?? []).Where(r => r.ExchangeId == exchangeId).ToList(), zone);
+
+    /// <summary>The same line from the reads of one exchange already picked out.</summary>
+    /// <param name="ofExchange">The tally rows of one exchange: one for each agent that read it.</param>
+    /// <param name="zone">The zone the times are shown in, or <see langword="null"/> for this machine's.</param>
+    /// <returns>The line, or <see langword="null"/> when nobody read it.</returns>
+    /// <remarks>
+    /// The store keeps one row for each agent and exchange with how often, so an agent reading a great deal is one entry and
+    /// cannot push another out of the line. Callers drawing a long conversation pick the rows out once, by exchange, and
+    /// call this for each request, so the cost does not grow with requests times rows.
+    /// </remarks>
+    public static string? ReadLine(IReadOnlyList<HistoryRead> ofExchange, TimeZoneInfo? zone)
     {
-        zone ??= TimeZoneInfo.Local;
+        ArgumentNullException.ThrowIfNull(ofExchange);
 
-        // By reader, so one agent reading a great deal cannot push another out of the line.
-        var readers = (reads ?? [])
-            .Where(r => r.ExchangeId == exchangeId)
-            .GroupBy(r => r.Reader.Value, StringComparer.Ordinal)
-            .Select(g => (Name: g.Key, At: g.Max(r => r.CreatedUtc), Count: g.Sum(r => r.Count)))
-            .OrderBy(r => r.At)
-            .ToList();
-
-        if (readers.Count == 0)
+        if (ofExchange.Count == 0)
         {
             return null;
         }
 
+        zone ??= TimeZoneInfo.Local;
+
+        var readers = ofExchange.OrderBy(r => r.CreatedUtc).ToList();
+
         var named = readers.Take(HistoryLimits.ReadersNamed).Select(r =>
-            $"{r.Name} at {TimeZoneInfo.ConvertTime(r.At, zone).ToString("d MMM HH:mm", CultureInfo.InvariantCulture)}"
+            $"{r.Reader.Value} at {TimeZoneInfo.ConvertTime(r.CreatedUtc, zone).ToString("d MMM HH:mm", CultureInfo.InvariantCulture)}"
             + (r.Count > 1 ? $" ({r.Count} times)" : string.Empty));
 
         return "Read by " + string.Join(", ", named) + (readers.Count > HistoryLimits.ReadersNamed ? $" and {readers.Count - HistoryLimits.ReadersNamed} more" : string.Empty);
@@ -328,19 +337,32 @@ public static class Reading
 
     /// <summary>What each agent searched the history for lately, one line for each (SPEC.md §5.8).</summary>
     /// <param name="reads">What the export carries of what agents read.</param>
-    /// <returns>One line for each reader that searched: how many searches in all, and the newest with its matches.</returns>
+    /// <returns>
+    /// One line for each of the newest agents that searched, how many searches in all and the newest with its matches, and a last
+    /// line counting the rest.
+    /// </returns>
     /// <remarks>
-    /// For the person only. A line for each reader rather than a list of searches, so an agent cannot make its searches
-    /// vanish by making many; the words are the agent's own and are neutralised by whoever draws the line.
+    /// For the person only. The store keeps one row for each agent's searches, so an agent cannot make its searches vanish by
+    /// making many; and the agents past those shown are counted, so none is dropped without a word. The words are the agent's own
+    /// and are neutralised by whoever draws the line.
     /// </remarks>
-    public static IReadOnlyList<string> SearchLines(IReadOnlyList<HistoryRead>? reads) =>
-        [.. (reads ?? [])
-            .Where(r => r.ExchangeId is null)
-            .GroupBy(r => r.Reader.Value, StringComparer.Ordinal)
-            .Select(g => (Latest: g.OrderByDescending(r => r.CreatedUtc).First(), Count: g.Max(r => r.Count)))
-            .OrderByDescending(r => r.Latest.CreatedUtc)
-            .Select(r => $"{r.Latest.Reader.Value}: {r.Count} {(r.Count == 1 ? "search" : "searches")}, newest “{Unquoted(r.Latest.Words)}”"
-                + $" ({r.Latest.Matches ?? 0} {(r.Latest.Matches == 1 ? "match" : "matches")})")];
+    public static IReadOnlyList<string> SearchLines(IReadOnlyList<HistoryRead>? reads)
+    {
+        var searchers = (reads ?? []).Where(r => r.ExchangeId is null).OrderByDescending(r => r.CreatedUtc).ToList();
+
+        var lines = searchers
+            .Take(HistoryLimits.SearchersShown)
+            .Select(r => $"{r.Reader.Value}: {r.Count} {(r.Count == 1 ? "search" : "searches")}, newest “{Unquoted(r.Words)}”"
+                + $" ({r.Matches ?? 0} {(r.Matches == 1 ? "match" : "matches")})")
+            .ToList();
+
+        if (searchers.Count > HistoryLimits.SearchersShown)
+        {
+            lines.Add($"and {searchers.Count - HistoryLimits.SearchersShown} more agents searched");
+        }
+
+        return lines;
+    }
 
     /// <summary>An agent's words with the curly quotes that frame them in <see cref="SearchLines"/> made plain.</summary>
     /// <remarks>Otherwise words could close the frame and read as a second entry of the console's own.</remarks>

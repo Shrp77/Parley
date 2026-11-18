@@ -119,8 +119,7 @@ An agent has thirteen tools. There is no tool for saying who it is.
 The inbox is **pull**, not push. An agent collects its mail when it calls `parley_inbox`. An agent that has restarted and
 is told "carry on from exchange 555" reads that exchange with `parley_read_exchange`, or finds it by words it remembers with
 `parley_search_history`. Anything it reads this way is a record, framed as another participant's inert words, and **you see
-each read**: beneath the exchange's first message in the console and the terminal, and the project's newest searches beside
-each conversation. For
+each read**: beneath the exchange's first message in the console and the terminal, and one line beside each conversation for each agent that searched. For
 Claude Code, [a channel](claude-code.md#mail-that-arrives-while-a-session-is-open) can nudge an
 open session so that nobody has to type.
 

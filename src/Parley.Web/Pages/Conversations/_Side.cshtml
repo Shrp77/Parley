@@ -73,7 +73,7 @@
         <section class="history-searches" aria-label="Searches of the history">
             <h2>Searched the history</h2>
             <ul>
-                @foreach (var line in Model.SearchLines.Take(Parley.Core.HistoryLimits.SearchersShown))
+                @foreach (var line in Model.SearchLines)
                 {
                     <li>@line</li>
                 }

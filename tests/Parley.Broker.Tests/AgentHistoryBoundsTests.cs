@@ -358,4 +358,62 @@ public sealed class AgentHistoryBoundsTests : IDisposable
 
         Assert.Equal(131, seen);
     }
+
+    [Fact]
+    public async Task Reading_numbers_that_name_nothing_still_counts_against_the_rate()
+    {
+        for (var i = 0; i < HistoryLimits.CallsPerMinute; i++)
+        {
+            Assert.False((await _broker.ReadExchangeAsync(Inventory, 90_000 + i, 0, T0.AddSeconds(10), Ct)).Found);
+        }
+
+        Assert.True((await _broker.ReadExchangeAsync(Inventory, 99_999, 0, T0.AddSeconds(11), Ct)).RateLimited);
+    }
+
+    [Fact]
+    public async Task A_page_counts_what_the_envelopes_add_and_not_only_the_payloads()
+    {
+        var id = await OpenAsync("start");
+
+        for (var i = 0; i < 120; i++)
+        {
+            await _broker.ClarifyAsync(id, i % 2 == 0 ? Billing : Orders, Requests.Model, Requests.Clarify(new string('x', 500)), T0.AddMinutes(2 + i), Ct);
+        }
+
+        var first = await _broker.ReadExchangeAsync(Inventory, id, 0, T0.AddDays(1), Ct);
+
+        // The payloads alone, 121 of about 500 characters, would fit one page of 64,000; with each envelope counted they do not.
+        Assert.True(first.MessagesRemaining > 0, "the envelopes were not counted");
+        Assert.True(first.Messages.Sum(m => m.Envelope.Length) <= HistoryLimits.ReplyCharacters + 2_000);
+    }
+
+    [Fact]
+    public async Task A_snippet_that_would_begin_inside_a_surrogate_pair_is_cut_whole()
+    {
+        await OpenAsync(string.Concat(Enumerable.Repeat(Chars(0x1F680), 200)) + " needle " + string.Concat(Enumerable.Repeat(Chars(0x1F680), 200)));
+
+        var snippet = Assert.Single((await _broker.SearchHistoryAsync(Inventory, "needle", new HistoryFilter(), 0, T0.AddMinutes(5), Ct)).Matches).Snippet;
+
+        Assert.Contains("needle", snippet, StringComparison.Ordinal);
+        Assert.DoesNotContain(Lone(0xFFFD), snippet, StringComparison.Ordinal);
+        Assert.All(snippet.EnumerateRunes(), rune => Assert.NotEqual(System.Text.Rune.ReplacementChar, rune));
+    }
+
+    [Fact]
+    public async Task A_search_that_overruns_its_time_is_stopped_refused_charged_and_leaves_no_record()
+    {
+        var slow = new Broker(_connection, BrokerOptions.Default with { SearchTimeLimit = TimeSpan.FromMilliseconds(1) });
+        await slow.StartAsync(Inventory, T0, Ct);
+
+        for (var i = 0; i < 300; i++)
+        {
+            await OpenAsync(string.Concat(Enumerable.Repeat("filler words with no match ", 400)) + i, 1 + i);
+        }
+
+        var page = await slow.SearchHistoryAsync(Inventory, "absent", new HistoryFilter(), 0, T0.AddDays(2), Ct);
+
+        Assert.Contains("took too long", page.Refusal, StringComparison.Ordinal);
+        Assert.Empty(page.Matches);
+        Assert.Empty(await Repository.ReadsByAsync(Inventory, Ct));
+    }
 }

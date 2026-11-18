@@ -2,6 +2,7 @@ using System.Globalization;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Parley.Core;
+using SQLitePCL;
 
 namespace Parley.Store;
 
@@ -47,7 +48,7 @@ public sealed class HistoryRepository(SqliteConnection connection)
         "SELECT reader AS Reader, exchange_id AS ExchangeId, words AS Words, matches AS Matches, last_utc AS CreatedUtc, total AS Total";
 
     /// <summary>What an envelope adds to a payload, counted against a reply's bound.</summary>
-    private const int EnvelopeAllowance = 700;
+    private const int EnvelopeAllowance = 1_000;
 
     private const string Columns =
         """
@@ -190,6 +191,10 @@ public sealed class HistoryRepository(SqliteConnection connection)
             Limit = HistoryLimits.PageMatches,
         };
 
+        // Cancelling stops the scan itself and not only the next statement: SQLite is told to interrupt the one running. Nothing is
+        // running when it is told after the search finished, and then it does nothing.
+        using var interrupt = cancellationToken.Register(Interrupt);
+
         using var transaction = (SqliteTransaction)await _connection
             .BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
@@ -262,7 +267,8 @@ public sealed class HistoryRepository(SqliteConnection connection)
     /// <returns>One entry for each agent and exchange it read, and one for each agent that searched.</returns>
     /// <remarks>
     /// The store holds a tally, so this is bounded by the agents and the exchanges however much one agent reads, and a count is
-    /// the count: nothing is capped, so no agent can push its own reads out of what the person is shown.
+    /// the count: nothing is capped, so no agent can push its own reads out of what the person is shown. At most the newest 20,000 rows
+    /// are returned, which is far more than any conversation has readers of exchanges.
     /// </remarks>
     public async Task<IReadOnlyList<HistoryRead>> ReadsInConversationAsync(string conversationId, CancellationToken cancellationToken = default)
     {
@@ -273,7 +279,8 @@ public sealed class HistoryRepository(SqliteConnection connection)
                 FROM history_reads
                 WHERE (kind = 'exchange' AND exchange_id IN (SELECT id FROM exchanges WHERE conversation_id = @Conversation))
                    OR kind = 'search'
-                ORDER BY last_utc DESC;
+                ORDER BY last_utc DESC
+                LIMIT 20000;
                 """,
                 new { Conversation = conversationId },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -315,6 +322,18 @@ public sealed class HistoryRepository(SqliteConnection connection)
         AND (@Since IS NULL OR unixepoch(created_utc, 'subsec') >= unixepoch(@Since, 'subsec'))
         AND (@Until IS NULL OR unixepoch(created_utc, 'subsec') <= unixepoch(@Until, 'subsec'))
         """;
+
+    private void Interrupt()
+    {
+        try
+        {
+            raw.sqlite3_interrupt(_connection.Handle);
+        }
+        catch (Exception exception) when (exception is ObjectDisposedException or InvalidOperationException)
+        {
+            // The connection is closed: there is nothing running to stop.
+        }
+    }
 
     private async Task RecordAsync(
         SqliteTransaction transaction,

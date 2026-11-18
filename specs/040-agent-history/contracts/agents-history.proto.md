@@ -27,7 +27,7 @@ message HistoryMatch { int64 exchange_id = 1; int64 message_id = 2; string conve
 Replies carry no turn information and no field that addresses the caller, and none reaches `HistoryReadRow`, which lives only on the
 operator's `ExportReply.reads` (`AgentsNeverSeeWhoReadTests`). Bounds: a reply about 64,000 characters and never fewer than one
 message; a page of at most 20 matches; a snippet at most 240 characters after neutralising; words at most 200 characters and eight
-different words; a rate of 30 calls and 400,000 characters a minute, a search charged 20,000.
+different words; a rate of 30 calls and 400,000 characters a minute, a search charged by its time (100 characters a millisecond, never less than 20,000) and stopped after 1.5 seconds.
 
 Operators gain no rpc. The existing conversation read returns, for the person only, `repeated HistoryReadRow reads = 11`: for each
 reader of each exchange in the conversation, its reader, the exchange, when it last read and how often (`count`); and for each agent's

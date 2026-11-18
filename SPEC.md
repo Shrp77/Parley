@@ -4304,9 +4304,9 @@ its rules, and for the same reason:
   the correct behaviour for a deduplicator and not a volume control.
 - **Payloads are data about work, never interpolated into a position where they read as the agent's own
   instructions.** Held: the envelope, and `json_valid` on the column.
-- **Per-sender rate limits.** *Not held by anything.* No such limit exists, here or in the reference
+- **Per-sender rate limits on messages.** *Not held by anything.* No such limit exists on sending, here or in the reference
   implementation. Listing it among the controls would make the set look closed when the one control
-  against volume is the one that is absent. See §17 question 1.
+  against volume of messages is the one that is absent. See §17 question 1. (What an agent may read of the past has a rate, below.)
 - **What crosses about a file is bounded.** Held: a name by the schema (§9.3); a list, a batch of gone
   notices, an ambiguity refusal and a removal by the broker's own ceilings, whatever a caller asks for
   (§9.5).
@@ -4314,7 +4314,8 @@ its rules, and for the same reason:
   carries a delimiter token chosen for that delivery and says it is a record and asks nothing; a reply is bounded as an inbox
   collection is, a search page holds 20 matches of at most 240 characters, a search term 200, and a caller may make 30 history calls
   and take 400,000 characters in a minute, a search being charged by the time it took, never less than 20,000, because it scans the store while it holds the
-  broker's gate and what that costs depends on what the store holds, after which a call is refused with how long to wait. The rate is held for
+  broker's gate and what that costs depends on what the store holds, after which a call is refused with how long to wait. A search
+  that runs longer than a second and a half is interrupted, charged for the time it took, and refused with advice to narrow it. The rate is held for
   the store, in memory, whichever session of whichever agent asks, so attaching again does not reset it; a restart does. It exists so the
   tool cannot copy a store in one sitting, and it is not accounting. A snippet is the one text that reaches a model with no envelope: it is cut to 240 characters, every control, invisible or line-separating
   character in it becomes a space, and the opening of an envelope in it is spelled so it cannot be mistaken for one. Every read is
@@ -4808,8 +4809,8 @@ decided is removed and its number is not reused, so the list has gaps.
    Request identical to one still open, and wake coalescing (§5.4), which bounds the *turns* a burst causes to one per
    recipient until it collects, but not the volume collected in that turn. §13.1's deduplication is no
    volume control: it stops a retried move being stored twice, keyed on the exchange's version within its
-   window, and an identical Clarify or Result sent later in the exchange is a new message. Per-sender rate limits do
-   not exist, and §13 says so.
+   window, and an identical Clarify or Result sent later in the exchange is a new message. Per-sender rate limits on
+   messages do not exist, and §13 says so.
 
    **Terseness is a security control (principle 2.2), and there is no volume control at all.**
    That is a decision rather than an oversight, recorded here so the evidence against it has
