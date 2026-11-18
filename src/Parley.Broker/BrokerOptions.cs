@@ -31,8 +31,8 @@ public sealed record BrokerOptions(
 
     /// <summary>The options when a deployment configures none.</summary>
     /// <remarks>
-    /// <see cref="ResumePolicy.Never"/>, as SPEC.md §14 says a restart behaves: the surprising outcome is work resuming
-    /// that somebody stopped on purpose. Nothing configures another.
+    /// <see cref="ResumePolicy.Never"/>, which is what a broker built in a test or by a host gets. The broker the
+    /// <c>serve</c> command runs sets <see cref="ResumePolicy.Always"/> (SPEC.md §14), by the owner's decision.
     /// </remarks>
     public static BrokerOptions Default { get; } = new(
         Core.ExchangePolicy.Default,

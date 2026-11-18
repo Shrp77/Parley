@@ -21,8 +21,8 @@ public enum ResumePolicy
 {
     /// <summary>Nobody is woken for outstanding work. It stays open and is flagged on the ordinary schedule.</summary>
     /// <remarks>
-    /// The safe default for interactive use, because the surprising outcome is work resuming that
-    /// somebody stopped on purpose. The durable way to stop work is to close its conversation.
+    /// The default of a broker object, not of the <c>serve</c> command, which uses <see cref="Always"/>.
+    /// The durable way to stop work is to close its conversation.
     /// </remarks>
     Never = 0,
 

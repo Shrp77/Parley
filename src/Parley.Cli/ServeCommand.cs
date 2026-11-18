@@ -155,7 +155,7 @@ public static class ServeCommand
 
             try
             {
-                runtime = BrokerRuntime.Open(project.Name, project.Store, BrokerOptions.Default, TimeProvider.System);
+                runtime = BrokerRuntime.Open(project.Name, project.Store, BrokerOptions.Default with { ResumePolicy = Core.ResumePolicy.Always }, TimeProvider.System);
             }
             catch (StoreHeldException held)
             {

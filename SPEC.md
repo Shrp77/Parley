@@ -4494,22 +4494,15 @@ agent and the reason — an expired credential, a command that will not run — 
 is where a person looks for why an agent could not be started; the broker is not told, and
 `agents()` does not show it. Work waiting on the agent is flagged like any other.
 
-**What a restart wakes is the person's decision, not a protocol rule.** Two restarts that are
-byte-identical to the broker carry opposite intent, and the broker cannot tell them apart:
-
-- An operator watching two agents burn through a quota kills the process *specifically to stop
-  them*. Waking every agent with work outstanding on restart overrides the one control they reached
-  for.
-- An unattended machine takes a forced update at the weekend. The operator expects to return to
-  work that continued, and leaving it untouched wastes the whole window.
-
-Nothing in the restart itself distinguishes these, so the broker MUST NOT infer, and **a restart
-wakes nobody for work that was outstanding when the broker stopped**. That decides only whether
-agents are woken, never whether the work survives: it stays open and is flagged on the ordinary
-schedule (§6), and the person wakes agents or closes conversations. Of the two readings above, this
-is the one that cannot spend what the person reached to stop. The durable way to stop work is to
-close its conversation, and a person who killed a process to stop two agents should be pointed at
-that.
+**A restart wakes the agents that owe work.** Two restarts that are byte-identical to the broker carry opposite
+intent: an operator killing the process to stop agents burning through a quota, and an unattended machine taking a
+forced update at the weekend. The broker cannot tell them apart and does not try. **The owner decided on 2026-11-18
+that the second reading wins**: when a node joins a broker that has just started, every active agent on that
+machine that owes an open exchange is asked to start (once each, however many exchanges it owes), subject to the
+resume gate and never for an agent open outside Parley (§11.7). Work stays open under every policy; the policy decides
+only whether anybody is started to do it. The way to stop work is to close its conversation, or to stop the agent
+from a surface (§11.1); killing the broker stops nothing for long. The resume policy is `always` in the broker the
+`serve` command runs, and `never` in a broker object built without options.
 
 **Re-delivery is not re-sending.** Delivering outstanding work again marks the existing message
 undelivered rather than writing a new one. The log then records what was said, not how many times
