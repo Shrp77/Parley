@@ -248,7 +248,13 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             w.Message, w.AfterMessage, AgentName.Create(w.From), AgentName.Create(w.To), w.ConversationId));
 
         return new ConversationExport(
-            [.. messages], [.. exchanges], destroyed, ItemOf(reply.Item), links, [.. moves], [.. settled], [.. wrote]);
+            [.. messages], [.. exchanges], destroyed, ItemOf(reply.Item), links, [.. moves], [.. settled], [.. wrote],
+            [.. reply.Reads.Select(r => new HistoryRead(
+                AgentName.Create(r.Reader),
+                r.ExchangeId == 0 ? null : r.ExchangeId,
+                r.Words.Length == 0 ? null : r.Words,
+                r.ExchangeId == 0 ? r.Matches : null,
+                DateTimeOffset.Parse(r.CreatedUtc, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)))]);
     }
 
     /// <inheritdoc/>

@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.61.1, protocol 0.18, schema 8. Nothing has been released, but **live stores hold work
+- Version 0.62.0, protocol 0.19, schema 9. Nothing has been released, but **live stores hold work
   in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
   `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
   upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
@@ -21,7 +21,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 - Feature 035, Material 3 across the web console, is in progress: `specs/035-material-3-web-ui/`, with its audit
   of every page and control in `audit.md`.
   Feature 027, session-owned delivery, is not committed yet; its plan predates the rule above and must move its schema
-  change into migration 009 (003 holds file problems, 004 when an agent was first asked what it owns and first refreshed,
+  change into migration 010 (003 holds file problems, 004 when an agent was first asked what it owns and first refreshed,
   005 a message's limit and the record of its length, 006 conversation links, moves and move notices, 007 image file names,
   008 where a move falls among the messages).
 - Feature 037, images in the conversation, a Media view and recipient chips, is built on the 035 branch:
@@ -31,6 +31,11 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
   references), is built on the 035 branch: `specs/036-inbox-follows-exchanges/`.
 - Feature 038, a person stopping or restarting an agent its node started (SPEC.md §11.1's fourth way an agent ends), is
   built on the 035 branch: `specs/038-stop-and-restart-agents/`. The node waits for the turn; it ends a process, never work.
+- Feature 040, agents reading the exchange history (`read_exchange`, `search_history`, each read shown to the person), is
+  planned on the 035 branch: `specs/040-agent-history/`. It takes migration 009; feature 027's moves to 010.
+<!-- SPECKIT START -->
+Current plan: `specs/040-agent-history/plan.md`
+<!-- SPECKIT END -->
 - A person speaks to an agent only with a Request. An agent's row menu in the terminal has one
   ownership entry, *What this agent is responsible for* (`Alt+n`).
 - Design work runs through Spec Kit: `/speckit-specify`, `/speckit-plan`, `/speckit-tasks`

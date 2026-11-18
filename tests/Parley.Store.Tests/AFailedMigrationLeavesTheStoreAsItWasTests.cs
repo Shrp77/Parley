@@ -93,6 +93,7 @@ public sealed class AFailedMigrationLeavesTheStoreAsItWasTests : IDisposable
 
         // Back to schema 7, with a name 008's last statement wants already taken, so 008 fails at its end.
         Exec(connection, """
+            DROP TABLE history_reads;
             DROP INDEX ix_conversation_move_exchanges_exchange;
             ALTER TABLE conversation_moves DROP COLUMN last_message;
             CREATE INDEX ix_conversation_move_exchanges_exchange ON conversation_moves(moved_utc);
@@ -107,7 +108,7 @@ public sealed class AFailedMigrationLeavesTheStoreAsItWasTests : IDisposable
         // Free the name, and the same connection upgrades.
         Exec(connection, "DROP INDEX ix_conversation_move_exchanges_exchange;");
 
-        Assert.Equal(1, SchemaMigrator.Migrate(connection));
+        Assert.Equal(2, SchemaMigrator.Migrate(connection));
         Assert.Equal(SchemaMigrator.LatestVersion, SchemaMigrator.GetUserVersion(connection));
         Assert.Empty(StoreShape.Problems(connection));
     }

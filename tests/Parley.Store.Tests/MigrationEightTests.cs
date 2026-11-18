@@ -31,7 +31,7 @@ public sealed class MigrationEightTests : IDisposable
 
         SchemaMigrator.Migrate(_connection);
 
-        Assert.Equal(8, _connection.ExecuteScalar<long>("PRAGMA user_version;"));
+        Assert.Equal(SchemaMigrator.LatestVersion, (int)_connection.ExecuteScalar<long>("PRAGMA user_version;"));
         Assert.Equal(moves, _connection.ExecuteScalar<long>("SELECT COUNT(*) FROM conversation_moves;"));
 
         // No messages yet: none came before the move, so it records none.

@@ -817,6 +817,15 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             ConversationId = w.Conversation,
         }));
 
+        reply.Reads.AddRange((exported.Reads ?? []).Select(r => new Wire.HistoryReadRow
+        {
+            Reader = r.Reader.Value,
+            ExchangeId = r.ExchangeId ?? 0,
+            Words = r.Words ?? string.Empty,
+            Matches = r.Matches ?? 0,
+            CreatedUtc = r.CreatedUtc.ToString("O", CultureInfo.InvariantCulture),
+        }));
+
         reply.Messages.AddRange(exported.Messages.Select(Conversions.Out));
 
         reply.Exchanges.AddRange(exported.Exchanges.Select(e => new Wire.ExchangeSnapshot

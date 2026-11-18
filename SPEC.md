@@ -1,6 +1,6 @@
 ﻿# Parley Protocol Specification
 
-**Version:** 0.18
+**Version:** 0.19
 **Status:** Unstable. Breaking changes expected before 1.0.
 **License:** Apache-2.0
 
@@ -53,7 +53,9 @@ language they are written in.
    do its part — the contract, the interface, the package and version, the result — and not
    everything the sender knows. A file is not an exception: its bytes go to disk in the
    fetching agent's repository and never into a model's context, and what crosses about a file
-   — its name, size and content hash, in lists and notices — is bounded like any other text.
+   — its name, size and content hash, in lists and notices — is bounded like any other text. So is what an
+   agent reads of the project's past, an exchange by number or the matches of a search (§10.1): it is bounded, framed as a
+   record and never as mail, and shown to the person who runs the deployment.
 3. **The protocol is the product; the transport is an implementation detail.** Today's
    gRPC over a loopback socket may be replaced by HTTP, pipes, or a vendor-native mechanism. The message
    discipline, exchange state machine, and rules of engagement are what carry value.
@@ -1106,6 +1108,18 @@ deliberate act.
 reaches the proposer as a notice with its own title, cut to 200 characters (§10.1), in its inbox beside gone
 notices (§9.5). It
 opens nothing, is owed nothing and wakes nobody.
+
+### 5.8 Reading the past
+
+An agent that has restarted, or that is told "carry on from exchange 555", reads the exchange by its number (`read_exchange`), or
+finds it by words it remembers (`search_history`), both in §10.1. This is reading and nothing else: it is not a Request, opens no
+exchange, and an exchange read is not an exchange taken part in.
+
+**The person sees every read.** One record is kept for each call, in the transaction of the read: who read, an exchange by its
+number or a search by its words and how many matches it found, and when (`history_reads`, §9.2). It holds no message text. The
+console and the terminal show it where the person already reads the exchange, as "read by `x` at t", and show an agent's searches on
+the agent's page. No agent can read these records, and a record is not a message, a participant or a debt, so it moves nothing.
+Retiring an agent keeps its records; purging it removes them with the rest (§14).
 
 ## 6. Exchange state machine
 
@@ -2900,6 +2914,29 @@ CREATE TABLE move_notices (
 
 CREATE INDEX ix_move_notices_collection ON move_notices(agent, delivered_utc);
 
+-- What the person sees of an agent reading the past (§5.8, §10.1). Never read by an agent. One row for a read of an
+-- exchange or a search. Written in the transaction of the read. It holds no message text. `words` is bounded and has none
+-- of the characters that break, hide or reorder a line, as a conversation's name has none.
+CREATE TABLE history_reads (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  reader       TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
+  kind         TEXT    NOT NULL CHECK (kind IN ('exchange', 'search')),
+  exchange_id  INTEGER,
+  words        TEXT    CHECK (words IS NULL OR (length(words) BETWEEN 1 AND 200
+                         AND words NOT GLOB '*[' ||
+                         char(1) || '-' || char(31) || char(127) || '-' || char(159) || char(173) || '-' || char(173) ||
+                         char(8203) || '-' || char(8207) || char(8232) || '-' || char(8238) ||
+                         char(8288) || '-' || char(8292) || char(8294) || '-' || char(8303) ||
+                         char(65279) || '-' || char(65279) || ']*')),
+  matches      INTEGER CHECK (matches IS NULL OR matches >= 0),
+  created_utc  TEXT    NOT NULL CHECK (unixepoch(created_utc) IS NOT NULL),
+  CHECK ((kind = 'exchange' AND exchange_id IS NOT NULL AND words IS NULL AND matches IS NULL)
+      OR (kind = 'search'   AND exchange_id IS NULL     AND words IS NOT NULL AND matches IS NOT NULL))
+) STRICT;
+
+CREATE INDEX ix_history_reads_exchange ON history_reads(exchange_id);
+CREATE INDEX ix_history_reads_reader ON history_reads(reader, id);
+
 -- Held here so a code path cannot route around it (§9.3). The broker refuses these first, with a sentence.
 CREATE TRIGGER tr_a_moved_exchange_may_go_there
 BEFORE UPDATE OF conversation_id ON exchanges
@@ -3343,6 +3380,8 @@ else's. §10.2 is what the person running the deployment may do, which is everyt
 | `clarify(exchange_id, text, settles?)` | Hand the turn on an open exchange to the other participant: ask what was meant, or answer what you were asked (§5.2). On a Request the person opened, `settles` names exchanges the person's words settled (§5.6). |
 | `result(exchange_id, outcome, text, blocker?, sources?, settles?)` | Close an exchange you received, with one outcome for its ask (§5.3): `text` is what was done, the answer, or exactly what blocks it; `blocker` is given only with `blocked`; `sources` names the agents whose Results it relied on. `settles` as for `clarify`; the whole call is refused if any exchange named cannot be settled. |
 | `inbox()` | Drain pending messages, debts first (§7.3). One collection carries about 64,000 characters of messages and never fewer than one, or fewer messages when the caller asks for fewer (§7.3); the rest wait for the next and are counted, because a collection too large to arrive would never be delivered (principle 2.2). Delivered only when acknowledged (§6): a collection whose call ends first is handed over again by the next. Results arrive here, carrying the identifier `request` returned and the Request they close (§4.2, §13). Also surfaces the closure polls outstanding for the caller (§5.0), at most 200, oldest first, with a count of the rest, which stay outstanding until answered, and gone and tampered notices about files the caller fetched or placed, at most 200 at once with a count of the rest (§9.5), any open exchanges of the caller's the person moved to another conversation (§5.0), at most 50 with a count of the rest, and what became of the caller's own roadmap proposals, at most 50 at once with a count of the rest — confirmed, declined or superseded, each with the caller's own title cut to 200 characters as a heading is, never waking anybody (§5.7). A Request from the person arrives with the caller's own open questions to the person in that conversation, at most 20 with a count of the rest (§5.6). A Result answering one member of the caller's Request to a role carries how many that Request reached and how many have answered (§5.5). |
+| `read_exchange(exchange_id, after?)` | Read one exchange of this project by number, as a record of the past: its messages in order, each in its own history envelope (§13), its conversation and how it stands. The exchange need not be one the caller took part in; a store is one project, so no read reaches another. One reply carries about 64,000 characters and never fewer than one message; the rest are counted and `after` continues. Changes nothing a participant can observe: nothing is marked delivered, nobody is woken or given a turn, the caller does not become a participant, and no debt or state moves. Refused, with how long to wait, past the rate in §13. A number that names nothing here reads the same whether it never existed, belongs to another project, or was destroyed or pruned, and returns no text. Recorded for the person (§5.8). |
+| `search_history(words, participant?, conversation?, type?, since?, until?, continue_after?)` | Find messages of this project by words, optionally only those from or to one `participant`: every word must occur, whatever its case, in the message's text. Words are plain text and no operator is read. Returns at most 20 matches, newest first, each with its exchange, message, conversation, sender, recipient, kind, time and a snippet of at most 240 characters, never a whole message, and how many more there are; `continue_after` pages. The caller then reads the exchange it needs with `read_exchange`. Changes nothing, as `read_exchange` changes nothing. Recorded for the person with the words and the number of matches (§5.8). |
 | `conclude(conversation_id, finished)` | Say whether you are finished with a discussion. The first call opens a poll; later calls answer one. Saying finished in a roadmap item's conversation is refused, saying only the person closes it (§5.7). |
 | `file_place(path, name?, conversation_id?)` | Place a file from the caller's own repository (`path`; its bytes go to the broker, `name` defaults to the file's own) in a conversation's folder of the file location (§9.5). The conversation is assigned as a Request's is (§5.0), and placing makes the caller a participant. Returns the conversation, the name placed and, when characters outside the set renamed it, the name asked for, the size and the broker's content hash, and whether the file was placed or already current; or a refusal naming, where one exists, the agent that placed the name, or the file a renamed placement collides with. A name the conversation already holds with other content is refused, whoever placed it: a placed file is never changed, and a new version goes under a new name. A connection to the broker lost during the placement is said apart from any refusal, as `connectiondropped`: lost before the whole file was sent, nothing was placed; lost after, it may have been, and the caller lists the conversation's files before placing it again. |
 | `file_fetch(name, to, conversation_id?, expect_sha256?, replace?)` | Write one whole content of a file into the caller's own repository, at `to` (an existing folder keeps the file's name), never over a different file unless `replace` says so. Refused, writing nothing, when the file's hash is not the one expected, and when the destination is not a kind of file that can be placed (`.md`, `.txt`, `.png`, `.jpg`, `.jpeg`, `.gif` or `.webp`), lies under a folder an agent's client reads its configuration from (`.git`, `.claude`, `.github`, `.cursor`, `.codex`, `.gemini`, `.windsurf`, `.clinerules`, `.roo`, `.kiro`, `.amazonq`, `.junie`, `.continue`), or is named as standing instructions (`CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENT.md`, `GEMINI.md`, `CONVENTIONS.md`) at any depth (§13); when it holds a colon, which on Windows names a hidden part of another file; and when it ends in a separator naming a folder that is not there. A file that arrives at the destination while the fetch streams is never written over unless replacing was asked for. Refused as tampered, writing nothing and starting a sweep, when the bytes on disk are not the bytes placed; refused too when the file is held for writing by another program or cannot be read. The adapter verifies what it wrote and reports it, and only then is the fetch recorded, so a gone notice follows if the file later goes (§9.5). Never returns the file's contents. |
@@ -3405,19 +3444,28 @@ it no way to find out how.
 
 How these are surfaced to an agent is the adapter's concern.
 
-There is deliberately **no history and no search operation**, and none may be added. A participant
-cannot read the log because nothing exposes it: `inbox()` returns only what is pending and
-addressed to the caller, and sending returns only an identifier for the exchange it opened (§4.2).
-That is principle 2.2 applied to the log — `billing` receives what `orders` sends it, not what
-`orders` told `inventory` — and the person running the deployment, who does need the whole of a
-conversation, reads it through §10.2.
+**An agent may read the project's past, and only read it.** `read_exchange` and `search_history` are the whole of it: an
+exchange by number, and a search for words that returns snippets. They were once refused outright, because `billing`
+receiving what `orders` sends it and not what `orders` told `inventory` is principle 2.2 applied to the log. The owner
+decided on 2026-11-17 that an agent which restarts must be able to find what it was working on, and that the reading
+covers every exchange of the project, not only those the reader took part in. What stays true of the log:
 
-`conclude` does not weaken this. It reads nothing: it states the caller's own position on a
-conversation the caller is already in, and the poll it may raise says only whether the caller is
-finished — never who else participates, how many do, or how any of them answered (§5.0).
+- **Nothing is pushed.** An exchange reaches an agent only when the agent asks for it by number or by words. `inbox()` still
+  returns only what is pending and addressed to the caller.
+- **It is a record, not mail.** Each message comes in a history envelope (§13) that says it is a record of a past message, from
+  whom, when, and asks nothing of the reader; its words are inert data like any participant's.
+- **It is bounded.** A reply, a page, a snippet and a search term have ceilings, and a caller has a rate (§13), because text that
+  crosses is charged to the context of the agent that receives it (principle 2.2).
+- **It changes nothing.** A read marks nothing delivered, wakes nobody, gives no turn, makes no participant, moves no exchange.
+- **It is seen.** Every read is recorded and shown to the person on the exchange it concerns, naming the reader (§5.8). No agent
+  can read who has read what.
+- **It stops where it stopped.** A roadmap is not an exchange and neither operation returns one (principle 2.12). A file's
+  bytes never arrive this way (§9.5). Turn information is never in a reply. A store is one project, so nothing crosses a
+  project.
 
-Retention length is therefore irrelevant to that guarantee. A ninety-day log is exactly as
-unreadable to a participant as a ten-minute one, which is why §9.4 can be configured freely.
+`conclude` reads nothing: it states the caller's own position on a conversation the caller is already in, and the poll it may
+raise says only whether the caller is finished, never who else participates, how many do, or how any of them answered (§5.0).
+Retention is what bounds the history: once the retention policy has removed messages (§9.4) they are gone to a read too.
 
 **The file operations are the one place a participant sees past its own exchanges, and that is a
 disclosure made on purpose.** `file_list` names every file in the location, in every conversation, and
@@ -4244,6 +4292,14 @@ its rules, and for the same reason:
 - **What crosses about a file is bounded.** Held: a name by the schema (§9.3); a list, a batch of gone
   notices, an ambiguity refusal and a removal by the broker's own ceilings, whatever a caller asks for
   (§9.5).
+- **What an agent reads of the past is framed, bounded and recorded.** Held: the history envelope names the sender from the registry,
+  carries a delimiter token chosen for that delivery and says it is a record and asks nothing; a reply is bounded as an inbox
+  collection is, a search page holds 20 matches of at most 240 characters, a search term 200, and a caller may make 30 history calls
+  and take 400,000 characters in a minute, after which a call is refused with how long to wait. The rate is kept in the broker's
+  memory, so a restart resets it: it exists so the tool cannot copy a store in one sitting, and it is not accounting. Every read is
+  recorded in `history_reads` for the person (§5.8), in the same transaction as the read. This is a recorded reduction in the
+  control of principle 2.2: an agent may hold other agents' words it was never sent, and the bounds and the record are what stand
+  in for the old refusal.
 
 ### 13.1 Deduplication
 
@@ -4699,10 +4755,11 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
   permissions, which Parley does not change. Work reaches a repository through the agent that
   owns it (principle 2.5), which keeps every change in the hands of the agent that understands
   the code being changed.
-- **Not a shared context store.** No agent can read the log: §10.1 exposes no history or
-  search operation, so there is no shared memory to poison. A conversation groups every
+- **Not a shared context store.** An agent may read the log through `read_exchange` and `search_history`, framed as a
+  record, bounded, and shown to the person (§10.1, §13); nothing is pushed into another agent's context and there is no
+  shared memory that one agent can write for another to read. A conversation groups every
   exchange in one line of work so that the person running the deployment can read it whole
-  (principle 2.9); a participant sees its own exchanges and not the others'. Traffic is
+  (principle 2.9). Traffic is
   pruned once it is operationally spent (§9.4), and a person who wants to keep a conversation
   exports it to a file they own. Placed files do not change this: they are fetched onto disk
   and never into a context, and a list of them names files rather than reading them (§9.5).
@@ -4946,7 +5003,7 @@ decided is removed and its number is not reused, so the list has gaps.
 
 ## 18. Protocol version
 
-The protocol version is **0.18** and the storage schema version is **8**.
+The protocol version is **0.19** and the storage schema version is **9**.
 
 The version is `major.minor` and has no patch level, because a protocol change is either visible
 across the boundary or is not a protocol change at all. **While the major is zero, the minor

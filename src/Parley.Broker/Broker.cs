@@ -32,6 +32,7 @@ public sealed class Broker
     private readonly MessageRepository _messages;
     private readonly ConversationRepository _conversations;
     private readonly Pruner _pruner;
+    private readonly HistoryRate _historyRate = new();
     private readonly BrokerOptions _options;
 
     /// <summary>When this broker last applied the retention policy, or <see langword="null"/> since starting.</summary>
@@ -677,6 +678,172 @@ public sealed class Broker
         RequireStarted("listing agents");
         return await _agents.ListRoutableAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>Reads one exchange of the project, by number, as a record of the past (§10.1).</summary>
+    /// <param name="reader">The attached caller.</param>
+    /// <param name="exchangeId">The exchange.</param>
+    /// <param name="after">Only messages after this identity; zero for the start.</param>
+    /// <param name="nowUtc">The instant.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The exchange as a record, that there is none, or that the caller must wait.</returns>
+    /// <exception cref="ArgumentException">The caller is the person seat or Parley, neither of which is an agent.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>This changes nothing a participant can observe.</b> It marks nothing delivered, appends nothing, moves no exchange,
+    /// makes the reader no participant and gives nobody a turn. The one write is the record the person sees, made by
+    /// <see cref="HistoryRepository"/> in the transaction of the read. A store is one project, so a number that belongs to
+    /// another project is a number that names nothing here.
+    /// </para>
+    /// <para>
+    /// Each message comes in its own history envelope (§13) with a token chosen for it, so a payload written years ago
+    /// cannot have predicted where the real delimiter falls.
+    /// </para>
+    /// </remarks>
+    public async Task<ExchangeHistory> ReadExchangeAsync(
+        AgentName reader,
+        long exchangeId,
+        long after,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default)
+    {
+        RequireStarted("reading an exchange");
+        await RequireReaderAsync(reader, cancellationToken).ConfigureAwait(false);
+
+        if (_historyRate.WaitFor(reader, nowUtc) is > 0 and var wait)
+        {
+            return new ExchangeHistory(false, exchangeId, string.Empty, string.Empty, [], 0, 0, wait, RateLimited: true);
+        }
+
+        var slice = await new HistoryRepository(_connection)
+            .ReadExchangeAsync(reader, exchangeId, Math.Max(0, after), nowUtc, cancellationToken).ConfigureAwait(false);
+
+        if (slice is null)
+        {
+            _historyRate.Took(reader, nowUtc, 0);
+            return new ExchangeHistory(false, exchangeId, string.Empty, string.Empty, [], 0, 0);
+        }
+
+        var messages = slice.Messages
+            .Select(m => new HistoryMessage(
+                m.Id,
+                m.ExchangeId,
+                m.Type,
+                m.From,
+                m.To,
+                m.ConversationId,
+                m.CreatedUtc,
+                TrustEnvelope.WrapHistory(
+                    m.From, m.To, m.ResponderModel, m.PayloadJson, TrustEnvelope.NewToken(), m.ConversationId, m.ExchangeId, m.CreatedUtc)))
+            .ToList();
+
+        _historyRate.Took(reader, nowUtc, messages.Sum(m => m.Envelope.Length));
+
+        return new ExchangeHistory(
+            true,
+            exchangeId,
+            slice.ConversationId,
+            slice.State,
+            messages,
+            slice.Remaining > 0 && messages.Count > 0 ? messages[^1].Id : 0,
+            slice.Remaining);
+    }
+
+    /// <summary>Finds messages of the project by words, returning snippets (§10.1).</summary>
+    /// <param name="reader">The attached caller.</param>
+    /// <param name="words">What was said to look for: plain text, whitespace between words.</param>
+    /// <param name="filter">What narrows the search.</param>
+    /// <param name="continueAfter">Only messages older than this identity; zero for the first page.</param>
+    /// <param name="nowUtc">The instant.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>A page, or a sentence saying why it was refused.</returns>
+    /// <exception cref="ArgumentException">The caller is the person seat or Parley.</exception>
+    /// <remarks>
+    /// Words are never read as operators. They are split on whitespace, each lower-cased as <c>A</c> to <c>Z</c> are, and
+    /// every one must occur. A word with a character that could break, hide or reorder a line is refused, as such a
+    /// character is in a conversation's name, because the words are kept for the person to read.
+    /// </remarks>
+    public async Task<HistorySearchPage> SearchHistoryAsync(
+        AgentName reader,
+        string words,
+        HistoryFilter filter,
+        long continueAfter,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default)
+    {
+        RequireStarted("searching the history");
+        ArgumentNullException.ThrowIfNull(filter);
+        await RequireReaderAsync(reader, cancellationToken).ConfigureAwait(false);
+
+        var said = (words ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if ((words ?? string.Empty).Length > HistoryLimits.WordsCharacters)
+        {
+            return Refused($"Search for at most {HistoryLimits.WordsCharacters} characters.");
+        }
+
+        if (said.Length == 0)
+        {
+            return Refused("Say what to search for: one or more words.");
+        }
+
+        var distinct = said.Select(AsciiLower).Distinct(StringComparer.Ordinal).ToList();
+
+        if (distinct.Count > HistoryRepository.MaxWords)
+        {
+            return Refused($"Search for at most {HistoryRepository.MaxWords} different words, then read the exchanges it finds.");
+        }
+
+        if (said.Any(w => w.Any(Breaks)))
+        {
+            return Refused("A word has a character that is not text, such as a control character. Use ordinary words.");
+        }
+
+        if (_historyRate.WaitFor(reader, nowUtc) is > 0 and var wait)
+        {
+            return new HistorySearchPage($"Too many reads for now. Try again in {wait} seconds.", [], 0, 0, wait);
+        }
+
+        var slice = await new HistoryRepository(_connection)
+            .SearchAsync(reader, distinct, string.Join(' ', said), filter, Math.Max(0, continueAfter), nowUtc, cancellationToken)
+            .ConfigureAwait(false);
+
+        _historyRate.Took(reader, nowUtc, slice.Matches.Sum(m => m.Snippet.Length + 120));
+
+        return new HistorySearchPage(
+            null,
+            slice.Matches,
+            slice.NotShown,
+            slice.NotShown > 0 && slice.Matches.Count > 0 ? slice.Matches[^1].MessageId : 0);
+
+        static HistorySearchPage Refused(string sentence) => new(sentence, [], 0, 0);
+    }
+
+    private async Task RequireReaderAsync(AgentName reader, CancellationToken cancellationToken)
+    {
+        if (PersonSeat.Is(reader) || Facilitation.Is(reader))
+        {
+            throw new ArgumentException(
+                "Only an agent reads the history through this call. A person reads every conversation whole in the console.",
+                nameof(reader));
+        }
+
+        await RequireRegisteredAsync(reader, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Lower-cases the letters A to Z and nothing else, as the store's own <c>lower</c> does.</summary>
+    private static string AsciiLower(string word) =>
+        string.Create(word.Length, word, static (span, source) =>
+        {
+            for (var i = 0; i < source.Length; i++)
+            {
+                span[i] = source[i] is >= 'A' and <= 'Z' ? (char)(source[i] + 32) : source[i];
+            }
+        });
+
+    /// <summary>Whether a character could break, hide or reorder a line.</summary>
+    private static bool Breaks(char c) =>
+        c < 0x20 || (c >= 0x7f && c <= 0x9f) || c == 0xad || (c >= 0x200b && c <= 0x200f)
+        || (c >= 0x2028 && c <= 0x202e) || (c >= 0x2060 && c <= 0x206f) || c == 0xfeff;
 
     /// <summary>Puts a roadmap forward for a person to confirm (§5.7).</summary>
     /// <param name="proposer">The attached caller, which is the only way a proposer is ever named.</param>

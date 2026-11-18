@@ -37,6 +37,7 @@ public sealed class OperatorConsole
     private readonly ResultsReportRepository _results;
     private readonly FlagRepository _flags;
     private readonly RoadmapRepository _roadmaps;
+    private readonly HistoryRepository _history;
     private readonly ConversationMoveRepository _moves;
 
     /// <summary>Creates a console over an open connection.</summary>
@@ -57,6 +58,7 @@ public sealed class OperatorConsole
         _results = new ResultsReportRepository(connection);
         _flags = new FlagRepository(connection);
         _roadmaps = new RoadmapRepository(connection);
+        _history = new HistoryRepository(connection);
     }
 
     /// <summary>Closes a conversation on the person's word, regardless of its participants' votes (§5.0).</summary>
@@ -364,7 +366,8 @@ public sealed class OperatorConsole
             await _moves.GetLinksAsync(conversationId, cancellationToken).ConfigureAwait(false),
             await _moves.GetMovesAsync(conversationId, cancellationToken).ConfigureAwait(false),
             await _moves.GetSettledElsewhereAsync(conversationId, cancellationToken).ConfigureAwait(false),
-            await _moves.GetWroteElsewhereAsync(conversationId, cancellationToken).ConfigureAwait(false));
+            await _moves.GetWroteElsewhereAsync(conversationId, cancellationToken).ConfigureAwait(false),
+            await _history.ReadsInConversationAsync(conversationId, cancellationToken).ConfigureAwait(false));
     }
 
     /// <summary>Lists the project's roadmaps (§10.2's <c>roadmaps()</c>).</summary>

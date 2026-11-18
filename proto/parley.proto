@@ -49,6 +49,14 @@ service Agents {
   rpc Conclude(ConcludeRequest) returns (ConcludeReply);
   rpc ListAgents(ListAgentsRequest) returns (ListAgentsReply);
 
+  // Section 10.1. One exchange of this project, by number, as a record of the past and not as mail: every message in its
+  // own history envelope (section 13). Changes nothing a participant can observe: nothing is marked delivered, nobody is
+  // woken, the caller does not become a participant. The one write is the record the person sees (section 5.8).
+  rpc ReadExchange(ReadExchangeRequest) returns (ReadExchangeReply);
+
+  // Section 10.1. Messages of this project matching words, with a snippet each, newest first. Never a whole message.
+  rpc SearchHistory(SearchHistoryRequest) returns (SearchHistoryReply);
+
   // What is waiting, up to what one collection carries (section 10.1), each message already inside the section 13
   // envelope. The only path a participant's words travel to a model. Two-way so delivery is acknowledged (section 6):
   // the caller sends `collect`, reads the InboxReply, sends `acknowledge`, and the broker ends the call once what it
@@ -249,6 +257,78 @@ message ConcludeReply {
   bool ok = 1;
   ClosureError refusal = 2;
   bool concluded = 3;
+}
+
+message ReadExchangeRequest {
+  string asking_as = 1;
+  int64 exchange_id = 2;
+  int64 after = 3;                 // 0 for the start; else the `next_after` of an earlier reply
+}
+
+message HistoryMessage {
+  int64 id = 1;
+  int64 exchange_id = 2;
+  MessageType type = 3;
+  string from = 4;
+  string to = 5;
+  string conversation = 6;
+  string created_utc = 7;
+  string envelope = 8;             // the only form its words travel in: a record, never mail (section 13)
+}
+
+message ReadExchangeReply {
+  enum Found {
+    FOUND = 0;
+    NO_SUCH_EXCHANGE = 1;
+    RATE_LIMITED = 2;
+  }
+  Found found = 1;
+  int64 exchange_id = 2;
+  string conversation = 3;
+  string state = 4;                // open, or closed and how
+  repeated HistoryMessage messages = 5;
+  int64 next_after = 6;            // pass as `after` for the rest; 0 when there is none
+  int32 messages_remaining = 7;
+  int32 retry_after_seconds = 8;
+}
+
+message SearchHistoryRequest {
+  string asking_as = 1;
+  string words = 2;                // 1..200 characters; whitespace splits it; every word must occur
+  string agent = 3;                // optional: from or to
+  string conversation = 4;         // optional
+  MessageType type = 5;            // optional; unspecified means any
+  string since_utc = 6;            // optional
+  string until_utc = 7;            // optional
+  int64 continue_after = 8;        // 0 for the first page
+}
+
+message HistoryMatch {
+  int64 exchange_id = 1;
+  int64 message_id = 2;
+  string conversation = 3;
+  string from = 4;
+  string to = 5;
+  MessageType type = 6;
+  string created_utc = 7;
+  string snippet = 8;              // at most 240 characters
+}
+
+message SearchHistoryReply {
+  string refusal = 1;              // a sentence when refused, empty otherwise
+  int32 retry_after_seconds = 2;
+  repeated HistoryMatch matches = 3;   // at most 20
+  int32 not_shown = 4;
+  int64 continue_after = 5;        // 0 when there is no more
+}
+
+// Section 5.8. One read, for the person only: names and numbers and the words searched for, never a message's text.
+message HistoryReadRow {
+  string reader = 1;
+  int64 exchange_id = 2;           // 0 for a search
+  string words = 3;                // empty for a read of an exchange
+  int32 matches = 4;
+  string created_utc = 5;
 }
 
 message ListAgentsRequest {
@@ -1220,6 +1300,9 @@ message ExportReply {
   repeated MoveRecord moves = 8;
   repeated SettledElsewhere settled_elsewhere = 9;
   repeated WroteElsewhere wrote_elsewhere = 10;
+
+  // Section 5.8. Every read an agent made of an exchange in this conversation, newest first.
+  repeated HistoryReadRow reads = 11;
 }
 
 // Facts and no content (section 9.4). There is no field to put message text in.

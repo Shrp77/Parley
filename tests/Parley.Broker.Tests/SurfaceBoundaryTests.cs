@@ -41,6 +41,10 @@ public sealed class SurfaceBoundaryTests
         // exchanges and can do nothing RequestAsync could not do N times.
         nameof(Broker.RequestRoleAsync),
         nameof(Broker.ClarifyAsync),
+
+        // §10.1: reading the project's past, and nothing else (§5.8). Neither changes anything a participant can observe.
+        nameof(Broker.ReadExchangeAsync),
+        nameof(Broker.SearchHistoryAsync),
         nameof(Broker.ResultAsync),
         nameof(Broker.ConcludeAsync),
         nameof(Broker.CollectInboxAsync),

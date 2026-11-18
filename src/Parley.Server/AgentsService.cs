@@ -1,3 +1,4 @@
+using System.Globalization;
 using Grpc.Core;
 using Parley.Core;
 using Parley.Store;
@@ -329,6 +330,112 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         reply.Agents.AddRange(agents.Select(Conversions.Out));
 
         return reply;
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.ReadExchangeReply> ReadExchange(Wire.ReadExchangeRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var reader = Caller(request.AskingAs);
+
+        var history = await Run(
+            reader, (broker, now, ct) => broker.ReadExchangeAsync(reader, request.ExchangeId, request.After, now, ct), context)
+            .ConfigureAwait(false);
+
+        var reply = new Wire.ReadExchangeReply
+        {
+            Found = history.RateLimited
+                ? Wire.ReadExchangeReply.Types.Found.RateLimited
+                : history.Found ? Wire.ReadExchangeReply.Types.Found.Found : Wire.ReadExchangeReply.Types.Found.NoSuchExchange,
+            ExchangeId = history.ExchangeId,
+            Conversation = history.ConversationId,
+            State = history.State,
+            NextAfter = history.NextAfter,
+            MessagesRemaining = history.MessagesRemaining,
+            RetryAfterSeconds = history.RetryAfterSeconds,
+        };
+
+        reply.Messages.AddRange(history.Messages.Select(m => new Wire.HistoryMessage
+        {
+            Id = m.Id,
+            ExchangeId = m.ExchangeId,
+            Type = Conversions.Out(m.Type),
+            From = m.From.Value,
+            To = m.To.Value,
+            Conversation = m.ConversationId,
+            CreatedUtc = m.CreatedUtc.ToString("O", CultureInfo.InvariantCulture),
+            Envelope = m.Envelope,
+        }));
+
+        return reply;
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.SearchHistoryReply> SearchHistory(Wire.SearchHistoryRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var reader = Caller(request.AskingAs);
+
+        if (!TryInstant(request.SinceUtc, out var since) || !TryInstant(request.UntilUtc, out var until))
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "A time is written as 2026-11-17T09:30:00Z."));
+        }
+
+        var filter = new HistoryFilter(
+            request.Agent is { Length: > 0 } agent ? agent : null,
+            request.Conversation is { Length: > 0 } conversation ? conversation : null,
+            request.Type == Wire.MessageType.Unspecified ? null : Conversions.In(request.Type),
+            since,
+            until);
+
+        var page = await Run(
+            reader,
+            (broker, now, ct) => broker.SearchHistoryAsync(reader, request.Words, filter, request.ContinueAfter, now, ct),
+            context).ConfigureAwait(false);
+
+        var reply = new Wire.SearchHistoryReply
+        {
+            Refusal = page.Refusal ?? string.Empty,
+            RetryAfterSeconds = page.RetryAfterSeconds,
+            NotShown = page.NotShown,
+            ContinueAfter = page.ContinueAfter,
+        };
+
+        reply.Matches.AddRange(page.Matches.Select(m => new Wire.HistoryMatch
+        {
+            ExchangeId = m.ExchangeId,
+            MessageId = m.MessageId,
+            Conversation = m.ConversationId,
+            From = m.From.Value,
+            To = m.To.Value,
+            Type = Conversions.Out(m.Type),
+            CreatedUtc = m.CreatedUtc.ToString("O", CultureInfo.InvariantCulture),
+            Snippet = m.Snippet,
+        }));
+
+        return reply;
+    }
+
+    private static bool TryInstant(string text, out DateTimeOffset? instant)
+    {
+        instant = null;
+
+        if (text.Length == 0)
+        {
+            return true;
+        }
+
+        if (DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed))
+        {
+            instant = parsed;
+            return true;
+        }
+
+        return false;
     }
 
     /// <inheritdoc/>

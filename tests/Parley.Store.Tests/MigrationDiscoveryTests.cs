@@ -29,16 +29,17 @@ public sealed class MigrationDiscoveryTests
     /// and a migration that appears without anybody deciding it should is what this catches.
     /// </para>
     /// <para>
-    /// <b>There are eight migrations.</b> <c>001_initial.sql</c> holds the whole of schema 1, which live
+    /// <b>There are nine migrations.</b> <c>001_initial.sql</c> holds the whole of schema 1, which live
     /// stores hold and which is never edited (<c>SchemaOneIsFrozenTests</c>); <c>002</c> rebuilds the
     /// proposals table so an id is never used twice, and judges an item's opening by its exchanges.
     /// <c>003</c> adds file problems, <c>004</c> marks when an agent was first asked what it owns and first refreshed,
     /// <c>005</c> raises a message's limit and records every message's length, <c>006</c> adds conversation links and
-    /// moves, <c>007</c> lets images be placed, and <c>008</c> records where a move falls among the messages. **The next
-    /// change to the schema is migration 009**, and this number moving to 9 is how that is noticed.
+    /// moves, <c>007</c> lets images be placed, and <c>008</c> records where a move falls among the messages, and <c>009</c> records what an agent read of the
+    /// project's past for the person to see. **The next change to the schema is migration 010**, and this number moving to
+    /// 10 is how that is noticed.
     /// </para>
     /// </remarks>
-    private const int Expected = 8;
+    private const int Expected = 9;
 
     [Fact]
     public void Every_migration_in_the_folder_is_embedded_and_reachable()
