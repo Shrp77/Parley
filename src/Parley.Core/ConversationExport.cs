@@ -47,7 +47,7 @@ public sealed record ExchangeSnapshot(
 /// <param name="Moves">Every move in or out of it, oldest first (SPEC.md §5.0), or <see langword="null"/> for none.</param>
 /// <param name="SettledElsewhere">Settled pairs split across this and another conversation (SPEC.md §5.6), or <see langword="null"/> for none.</param>
 /// <param name="WroteElsewhere">Where an agent's next message went instead of here (SPEC.md §5.0), or <see langword="null"/> for none.</param>
-/// <param name="Reads">Every read an agent made of an exchange in this conversation, newest first (SPEC.md §5.8), or <see langword="null"/> for none.</param>
+/// <param name="Reads">Who read each exchange in this conversation and how often, and each agent's newest search of the project (SPEC.md §5.8), or <see langword="null"/> for none.</param>
 /// <remarks>
 /// <para>
 /// The two travel together rather than in two calls, so a client never holds one without the

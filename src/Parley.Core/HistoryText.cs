@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Parley.Core;
 
@@ -15,7 +17,7 @@ namespace Parley.Core;
 /// opens an envelope is spelled so it cannot be mistaken for one.
 /// </para>
 /// </remarks>
-public static class HistoryText
+public static partial class HistoryText
 {
     /// <summary>Lower-cases the letters A to Z and nothing else, as the store's own <c>lower</c> does.</summary>
     /// <param name="text">The text.</param>
@@ -40,7 +42,7 @@ public static class HistoryText
     {
         ArgumentNullException.ThrowIfNull(text);
 
-        return text.EnumerateRunes().Any(r => r == Rune.ReplacementChar || PrintableLine.Breaks(r));
+        return text.EnumerateRunes().Any(NotPlain);
     }
 
     /// <summary>Makes text another participant wrote safe to show beside a line of one's own.</summary>
@@ -54,7 +56,7 @@ public static class HistoryText
 
         foreach (var rune in text.EnumerateRunes())
         {
-            if (rune == Rune.ReplacementChar || PrintableLine.Breaks(rune))
+            if (NotPlain(rune))
             {
                 builder.Append(' ');
             }
@@ -64,6 +66,57 @@ public static class HistoryText
             }
         }
 
-        return builder.ToString().Replace("[parley:", "[parley :", StringComparison.Ordinal);
+        return EnvelopeOpening().Replace(builder.ToString(), "[parley :");
     }
+
+    /// <summary>Cuts text to a number of UTF-16 units without splitting a surrogate pair.</summary>
+    /// <param name="text">The text.</param>
+    /// <param name="units">The most units to keep.</param>
+    /// <returns>The text, or its start.</returns>
+    public static string Cut(string text, int units)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+
+        if (text.Length <= units)
+        {
+            return text;
+        }
+
+        return char.IsHighSurrogate(text[units - 1]) ? text[..(units - 1)] : text[..units];
+    }
+
+    /// <summary>Whether a character is anything but plain visible text or an ordinary space.</summary>
+    /// <remarks>
+    /// <see cref="PrintableLine"/>'s rule (control, format, line and paragraph separators) and what it leaves: the characters
+    /// Unicode marks default-ignorable, which draw nothing and are used to carry hidden text (the variation selectors, the
+    /// Hangul fillers, the Braille blank and a few marks), other spaces than the ordinary one, private-use characters and
+    /// unassigned ones.
+    /// </remarks>
+    private static bool NotPlain(Rune rune)
+    {
+        if (rune == Rune.ReplacementChar || PrintableLine.Breaks(rune))
+        {
+            return true;
+        }
+
+        var v = rune.Value;
+
+        if (v is 0x034F or 0x115F or 0x1160 or 0x17B4 or 0x17B5 or 0x2800 or 0x3164 or 0xFFA0 or 0xFFFC
+            || v is >= 0x180B and <= 0x180F
+            || v is >= 0xFE00 and <= 0xFE0F
+            || v is >= 0xE0100 and <= 0xE01EF)
+        {
+            return true;
+        }
+
+        return Rune.GetUnicodeCategory(rune) switch
+        {
+            UnicodeCategory.OtherNotAssigned or UnicodeCategory.PrivateUse => true,
+            UnicodeCategory.SpaceSeparator => v != ' ',
+            _ => false,
+        };
+    }
+
+    [GeneratedRegex(@"\[parley:", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex EnvelopeOpening();
 }

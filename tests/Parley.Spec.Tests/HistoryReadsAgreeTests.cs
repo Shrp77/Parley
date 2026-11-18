@@ -69,6 +69,10 @@ public sealed class HistoryReadsAgreeTests
     [InlineData("No agent can read the log or search it")]
     [InlineData("exposes no history or search operation")]
     [InlineData("cannot read the log because nothing exposes it")]
+    [InlineData("No agent can read the message log or search it")]
+    [InlineData("An agent sees only its own exchanges")]
+    [InlineData("gives a participant no way to read exchanges")]
+    [InlineData("Never conversation history")]
     public void No_statement_of_the_old_rule_is_left(string old)
     {
         var places = new[]
@@ -77,6 +81,10 @@ public sealed class HistoryReadsAgreeTests
             Read("README.md"),
             Read("docs", "security.md"),
             Read("docs", "concepts.md"),
+            Read("docs", "why-parley.md"),
+            Read("docs", "operating.md"),
+            Read("CLAUDE.md"),
+            Read(".specify", "memory", "constitution.md"),
             Read("src", "Parley.Mcp", "ParleyTools.cs"),
             Read("src", "Parley.Client", "Rendering", "RoomRoster.cs"),
         };

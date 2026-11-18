@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text.Json;
 using Parley.Core;
 
@@ -339,8 +339,13 @@ public static class Reading
             .GroupBy(r => r.Reader.Value, StringComparer.Ordinal)
             .Select(g => (Latest: g.OrderByDescending(r => r.CreatedUtc).First(), Count: g.Max(r => r.Count)))
             .OrderByDescending(r => r.Latest.CreatedUtc)
-            .Select(r => $"{r.Latest.Reader.Value}: {r.Count} {(r.Count == 1 ? "search" : "searches")}, newest “{r.Latest.Words}”"
+            .Select(r => $"{r.Latest.Reader.Value}: {r.Count} {(r.Count == 1 ? "search" : "searches")}, newest “{Unquoted(r.Latest.Words)}”"
                 + $" ({r.Latest.Matches ?? 0} {(r.Latest.Matches == 1 ? "match" : "matches")})")];
+
+    /// <summary>An agent's words with the curly quotes that frame them in <see cref="SearchLines"/> made plain.</summary>
+    /// <remarks>Otherwise words could close the frame and read as a second entry of the console's own.</remarks>
+    private static string Unquoted(string? words) =>
+        (words ?? string.Empty).Replace('“', '"').Replace('”', '"');
 
     /// <summary>What a reply settled, as one sentence beneath it.</summary>
     /// <param name="settled">The start of each question settled.</param>

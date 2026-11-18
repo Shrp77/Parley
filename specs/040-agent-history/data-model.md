@@ -19,7 +19,7 @@ when `kind = 'search'`; `length(words) <= 200`; `words` has none of the line-bre
 Indexes: `(exchange_id)` for the exchange page, `(reader, id)` for an agent's page.
 
 It is written in the same transaction as the read. A read that cannot record is refused, so a read never goes unseen.
-It has no trigger. Destroying a conversation or pruning does not touch it; purging an agent removes its rows by the cascade.
+It has no trigger. Destroying a conversation does not touch it. It is removed by retention at the age cap, by the reader's cascade on a purge, and an agent keeps only its newest 2,000 rows. The person's view groups it: one entry for each reader of each exchange with a count, and one line for each agent that searched.
 
 ## Values returned (not stored)
 

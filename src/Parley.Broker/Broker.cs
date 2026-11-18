@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Parley.Store;
 
@@ -807,7 +807,8 @@ public sealed class Broker
             .SearchAsync(reader, distinct, string.Join(' ', said), filter, Math.Max(0, continueAfter), nowUtc, cancellationToken)
             .ConfigureAwait(false);
 
-        _historyRate.Took(reader, nowUtc, slice.Matches.Sum(m => m.Snippet.Length + 120));
+        // A search scans the store whatever it finds, so it is charged a fixed cost besides what it returns.
+        _historyRate.Took(reader, nowUtc, HistoryLimits.SearchCharge + slice.Matches.Sum(m => m.Snippet.Length + 120));
 
         return new HistorySearchPage(
             null,

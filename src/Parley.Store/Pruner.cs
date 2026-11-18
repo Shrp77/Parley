@@ -189,7 +189,7 @@ public sealed class Pruner(SqliteConnection connection)
          WHERE state <> 'waiting'
            AND unixepoch(decided_utc) <= @NowSeconds - @MaximumAgeSeconds;
 
-        -- What agents read of the past, for the person (section 5.8): kept as long as the messages it was about.
+        -- What agents read of the past, for the person (section 5.8): kept up to the age cap, whether or not the messages are.
         DELETE FROM history_reads
          WHERE unixepoch(created_utc) <= @NowSeconds - @MaximumAgeSeconds;
         """;

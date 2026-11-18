@@ -39,8 +39,11 @@ public sealed class HistoryRepository(SqliteConnection connection)
     /// <summary>The most words one search takes: the statement has this many slots.</summary>
     public const int MaxWords = 8;
 
-    /// <summary>How many of each reader's newest searches the person is shown beside a conversation.</summary>
-    public const int RecentSearchesPerReader = 5;
+    /// <summary>How many of each reader's newest searches the person is shown beside a conversation, with how many it made in all.</summary>
+    public const int RecentSearchesPerReader = 1;
+
+    /// <summary>The most messages one read of an exchange loads before it applies the reply's character bound.</summary>
+    private const int ReadRun = 100;
 
     private const string Columns =
         """
@@ -87,17 +90,27 @@ public sealed class HistoryRepository(SqliteConnection connection)
 
         if (exchange is { } found)
         {
+            // At most a bounded run is loaded however long the exchange is, and what is left is counted, so paging through a
+            // very long exchange costs about the same at every step.
             var rows = (await _connection.QueryAsync<MessageRow>(
                 new CommandDefinition(
                     $"""
                     {Columns}
                     FROM messages
                     WHERE exchange_id = @Exchange AND id > @After
-                    ORDER BY id;
+                    ORDER BY id
+                    LIMIT @Run;
                     """,
-                    new { Exchange = exchangeId, After = after },
+                    new { Exchange = exchangeId, After = after, Run = ReadRun },
                     transaction,
                     cancellationToken: cancellationToken)).ConfigureAwait(false)).ToList();
+
+            var beyond = await _connection.QuerySingleAsync<int>(
+                new CommandDefinition(
+                    "SELECT COUNT(*) FROM messages WHERE exchange_id = @Exchange AND id > @After;",
+                    new { Exchange = exchangeId, After = after },
+                    transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
 
             var taken = new List<Message>();
             var characters = 0;
@@ -118,7 +131,7 @@ public sealed class HistoryRepository(SqliteConnection connection)
                 ? "open"
                 : "closed" + (found.Outcome is { Length: > 0 } outcome ? ", " + outcome.ToLowerInvariant() : string.Empty);
 
-            slice = new ExchangeSlice(found.Conversation, state, taken, rows.Count - taken.Count);
+            slice = new ExchangeSlice(found.Conversation, state, taken, beyond - taken.Count);
         }
 
         // A number that names nothing leaves no record: ids are never reused, so a row written for one that does not yet exist
@@ -325,7 +338,8 @@ public sealed class HistoryRepository(SqliteConnection connection)
         string? words,
         int? matches,
         DateTimeOffset nowUtc,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken)
+    {
         await _connection.ExecuteAsync(
             new CommandDefinition(
                 """
@@ -343,6 +357,20 @@ public sealed class HistoryRepository(SqliteConnection connection)
                 },
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        // One agent cannot fill the store with its own record: only its newest rows are kept (SPEC.md §9.4), and the person's
+        // view is by reader, so what is lost is old detail and not who read.
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                DELETE FROM history_reads
+                 WHERE reader = @Reader
+                   AND id <= (SELECT id FROM history_reads WHERE reader = @Reader ORDER BY id DESC LIMIT 1 OFFSET @Keep);
+                """,
+                new { Reader = reader.Value, Keep = HistoryLimits.RecordsPerReader },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+    }
 
     private static HistoryMatch ToMatch(MessageRow row, IReadOnlyList<string> words)
     {
@@ -388,7 +416,8 @@ public sealed class HistoryRepository(SqliteConnection connection)
             end--;
         }
 
-        return HistoryText.Neutralised(text[start..end]);
+        // Cut after neutralising, which can lengthen the text (an envelope's opening is respelled).
+        return HistoryText.Cut(HistoryText.Neutralised(text[start..end]), HistoryLimits.SnippetCharacters);
     }
 
     private sealed class ReadRow

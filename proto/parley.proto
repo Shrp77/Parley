@@ -1302,7 +1302,8 @@ message ExportReply {
   repeated SettledElsewhere settled_elsewhere = 9;
   repeated WroteElsewhere wrote_elsewhere = 10;
 
-  // Section 5.8. Every read an agent made of an exchange in this conversation, newest first.
+  // Section 5.8. For the person only: one row for each agent that read each exchange in this conversation, with how often
+  // (`count`), and one row for each agent's newest search among the project's, with how many it made in all.
   repeated HistoryReadRow reads = 11;
 }
 

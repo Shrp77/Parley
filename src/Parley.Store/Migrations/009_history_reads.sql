@@ -4,7 +4,8 @@
 -- number or search the history for words; each call leaves one row here, written in the transaction of the read, and the
 -- person reads them where they already read the exchange. Never read by an agent. It holds no message text.
 --
--- `words` is bounded and has none of the characters that break, hide or reorder a line, as a conversation's name has none.
+-- `words` is bounded and has none of the control or line-separating characters. This check is a floor: the broker refuses a
+-- wider set (every control, format, invisible, line-separating and malformed character) before anything is stored.
 
 CREATE TABLE history_reads (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,

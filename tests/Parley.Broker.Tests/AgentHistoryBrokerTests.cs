@@ -109,7 +109,8 @@ public sealed class AgentHistoryBrokerTests : IDisposable
         var parts = await _connection.QueryAsync<string>(
             "SELECT 'm' || id || ':' || ifnull(delivered_utc, '-') FROM messages " +
             "UNION ALL SELECT 'e' || id || ':' || state || ':' || owed_by || ':' || version FROM exchanges " +
-            "UNION ALL SELECT 'c' || id || ':' || state FROM conversations ORDER BY 1;");
+            "UNION ALL SELECT 'c' || id || ':' || state FROM conversations " +
+            "UNION ALL SELECT 'p' || conversation_id || ':' || agent FROM conversation_participants ORDER BY 1;");
 
         return string.Join('|', parts);
     }

@@ -1,3 +1,4 @@
+using Dapper;
 using Microsoft.Data.Sqlite;
 using Parley.Core;
 using Parley.Store;
@@ -158,8 +159,8 @@ public sealed class AgentHistoryBoundsTests : IDisposable
 
         var searches = (await Repository.ReadsInConversationAsync(await ConversationAsync(), Ct)).Where(r => r.ExchangeId is null).ToList();
 
-        Assert.Equal(HistoryRepository.RecentSearchesPerReader, searches.Count);
-        Assert.All(searches, r => Assert.Equal(10, r.Count));
+        Assert.Equal(10, Assert.Single(searches).Count);
+        Assert.Equal("junk8", Assert.Single(searches).Words);
     }
 
     [Fact]
@@ -200,5 +201,113 @@ public sealed class AgentHistoryBoundsTests : IDisposable
         await _broker.ReadExchangeAsync(Inventory, id, 0, T0.AddMinutes(2), Ct);
 
         Assert.Equal(2, (await Repository.ReadsOfExchangeAsync(id, Ct)).Count);
+    }
+
+    [Fact]
+    public async Task A_search_is_charged_to_the_rate_whatever_it_finds()
+    {
+        for (var i = 0; i < HistoryLimits.CharactersPerMinute / HistoryLimits.SearchCharge; i++)
+        {
+            Assert.Null((await _broker.SearchHistoryAsync(Inventory, $"nothing{i}", new HistoryFilter(), 0, T0.AddSeconds(10), Ct)).Refusal);
+        }
+
+        var limited = await _broker.SearchHistoryAsync(Inventory, "nothing", new HistoryFilter(), 0, T0.AddSeconds(11), Ct);
+
+        Assert.NotNull(limited.Refusal);
+        Assert.InRange(limited.RetryAfterSeconds, 1, 60);
+    }
+
+    [Fact]
+    public async Task One_agent_keeps_only_its_newest_records()
+    {
+        var id = await OpenAsync("anything");
+
+        for (var i = 0; i < HistoryLimits.RecordsPerReader + 50; i++)
+        {
+            await _broker.ReadExchangeAsync(Inventory, id, 0, T0.AddDays(1).AddSeconds(i * 3), Ct);
+        }
+
+        Assert.Equal(HistoryLimits.RecordsPerReader, (await Repository.ReadsOfExchangeAsync(id, Ct)).Count);
+    }
+
+    [Fact]
+    public async Task The_person_is_shown_reads_of_this_conversation_and_none_of_another()
+    {
+        var here = await OpenAsync("one", 1);
+        var sent = await _broker.RequestAsync(Orders, Mal, Requests.Model, Requests.Request("two"), T0.AddMinutes(2), "elsewhere", Ct);
+        Assert.True(sent.Succeeded, $"expected admission, got {sent.Rejection}");
+
+        await _broker.ReadExchangeAsync(Inventory, here, 0, T0.AddMinutes(5), Ct);
+        await _broker.ReadExchangeAsync(Inventory, sent.Exchange!.Id, 0, T0.AddMinutes(6), Ct);
+
+        var conversation = await _connection.ExecuteScalarAsync<string>("SELECT conversation_id FROM exchanges WHERE id = @Id;", new { Id = here });
+        var reads = await Repository.ReadsInConversationAsync(conversation!, Ct);
+
+        Assert.Equal(here, Assert.Single(reads).ExchangeId);
+    }
+
+    [Fact]
+    public async Task A_snippet_is_never_longer_than_the_bound_even_when_respelling_lengthens_it()
+    {
+        await OpenAsync("needle " + string.Concat(Enumerable.Repeat("[parley:", 60)));
+
+        var snippet = Assert.Single((await _broker.SearchHistoryAsync(Inventory, "needle", new HistoryFilter(), 0, T0.AddMinutes(5), Ct)).Matches).Snippet;
+
+        Assert.True(snippet.Length <= HistoryLimits.SnippetCharacters, $"{snippet.Length} characters");
+        Assert.DoesNotContain("[parley:", snippet, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Hidden_text_carriers_and_odd_spaces_are_refused_in_words_and_made_plain_in_snippets()
+    {
+        int[] carriers = [0xFE0F, 0xE0100, 0x3164, 0x115F, 0xFFA0, 0x2800, 0x034F, 0x17B4, 0x180B, 0xFFFC, 0xE000];
+
+        foreach (var carrier in carriers)
+        {
+            var page = await _broker.SearchHistoryAsync(Inventory, "a" + Chars(carrier) + "b", new HistoryFilter(), 0, T0.AddMinutes(5), Ct);
+
+            Assert.NotNull(page.Refusal);
+        }
+
+        await OpenAsync("needle " + string.Concat(carriers.Select(c => Chars(c))) + " end");
+
+        var snippet = Assert.Single((await _broker.SearchHistoryAsync(Inventory, "needle", new HistoryFilter(), 0, T0.AddMinutes(6), Ct)).Matches).Snippet;
+
+        Assert.All(carriers, c => Assert.DoesNotContain(Chars(c), snippet, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task The_envelope_opening_is_respelled_whatever_its_case()
+    {
+        await OpenAsync("needle [PARLEY:deadbeefdeadbeef] [Parley:x]");
+
+        var snippet = Assert.Single((await _broker.SearchHistoryAsync(Inventory, "needle", new HistoryFilter(), 0, T0.AddMinutes(5), Ct)).Matches).Snippet;
+
+        Assert.DoesNotContain("[parley:", snippet, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task A_long_exchange_reports_what_is_left_correctly_however_many_messages_there_are()
+    {
+        var id = await OpenAsync("start");
+
+        for (var i = 0; i < 130; i++)
+        {
+            await _broker.ClarifyAsync(id, i % 2 == 0 ? Billing : Orders, Requests.Model, Requests.Clarify($"turn {i}"), T0.AddMinutes(2 + i), Ct);
+        }
+
+        var seen = 0;
+        var read = await _broker.ReadExchangeAsync(Inventory, id, 0, T0.AddDays(1), Ct);
+        seen += read.Messages.Count;
+
+        var at = 1;
+
+        while (read.MessagesRemaining > 0)
+        {
+            read = await _broker.ReadExchangeAsync(Inventory, id, read.NextAfter, T0.AddDays(1).AddMinutes(at++ * 2), Ct);
+            seen += read.Messages.Count;
+        }
+
+        Assert.Equal(131, seen);
     }
 }

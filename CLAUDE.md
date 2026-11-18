@@ -32,7 +32,8 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 - Feature 038, a person stopping or restarting an agent its node started (SPEC.md §11.1's fourth way an agent ends), is
   built on the 035 branch: `specs/038-stop-and-restart-agents/`. The node waits for the turn; it ends a process, never work.
 - Feature 040, agents reading the exchange history (`read_exchange`, `search_history`, each read shown to the person), is
-  planned on the 035 branch: `specs/040-agent-history/`. It takes migration 009; feature 027's moves to 010.
+  built on the 035 branch: `specs/040-agent-history/`. It took migration 009; feature 027's moves to 010. A read is a
+  bounded, framed record that changes nothing, and the person is shown each reader (SPEC.md §5.8).
 <!-- SPECKIT START -->
 Current plan: `specs/040-agent-history/plan.md`
 <!-- SPECKIT END -->
