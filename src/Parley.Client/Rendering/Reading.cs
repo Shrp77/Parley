@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Parley.Core;
 
@@ -212,6 +213,11 @@ public static class Reading
             {
                 lines.Add(new TranscriptLine(Pad(role), LineKind.Annotation, null, id));
             }
+
+            if (message.Type == MessageType.Request && ReadLine(export.Reads, message.ExchangeId, zone) is { } read)
+            {
+                lines.Add(new TranscriptLine(Pad(read), LineKind.Annotation, null, id));
+            }
         }
 
         foreach (var file in placed)
@@ -281,6 +287,31 @@ public static class Reading
     /// <returns>The sentence.</returns>
     public static string RoleRequestLine(string role, int asked, int answered) =>
         $"Sent to every agent in role {role} ({asked}): {answered} of {asked} answered.";
+
+    /// <summary>Who read an exchange, as one sentence beneath its first message (SPEC.md §5.8).</summary>
+    /// <param name="reads">What the export carries of what agents read.</param>
+    /// <param name="exchangeId">The exchange.</param>
+    /// <param name="zone">The zone the times are shown in, or <see langword="null"/> for this machine's.</param>
+    /// <returns>For example <c>Read by billing@acme at 09:30</c>, or <see langword="null"/> when nobody read it.</returns>
+    /// <remarks>
+    /// Said to the person only: no agent can read who read what. At most five readers are named and the rest counted.
+    /// </remarks>
+    public static string? ReadLine(IReadOnlyList<HistoryRead>? reads, long exchangeId, TimeZoneInfo? zone)
+    {
+        zone ??= TimeZoneInfo.Local;
+
+        var of = (reads ?? []).Where(r => r.ExchangeId == exchangeId).OrderBy(r => r.CreatedUtc).ToList();
+
+        if (of.Count == 0)
+        {
+            return null;
+        }
+
+        var named = of.Take(5).Select(r =>
+            $"{r.Reader.Value} at {TimeZoneInfo.ConvertTime(r.CreatedUtc, zone).ToString("d MMM HH:mm", CultureInfo.InvariantCulture)}");
+
+        return "Read by " + string.Join(", ", named) + (of.Count > 5 ? $" and {of.Count - 5} more" : string.Empty);
+    }
 
     /// <summary>What a reply settled, as one sentence beneath it.</summary>
     /// <param name="settled">The start of each question settled.</param>

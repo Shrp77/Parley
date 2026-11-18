@@ -171,6 +171,11 @@ public static class Transcript
                 written.Append("  ").AppendLine(role);
             }
 
+            if (message.Type == MessageType.Request && Reading.ReadLine(export.Reads, message.ExchangeId, TimeZoneInfo.Utc) is { } read)
+            {
+                written.Append("  ").AppendLine(read);
+            }
+
             var absent = Visibility.Describe(message, participants);
 
             if (absent.Length > 0)

@@ -89,6 +89,9 @@ public sealed class ScriptedExport : HttpMessageHandler
     /// <summary>What every export says an agent wrote in another conversation.</summary>
     public List<Wire.WroteElsewhere> WroteElsewhere { get; } = [];
 
+    /// <summary>What agents read of the past, which the export carries for the person (SPEC.md §5.8).</summary>
+    public List<Wire.HistoryReadRow> Reads { get; } = [];
+
     /// <summary>Every listing of conversations asked for.</summary>
     public List<Wire.ListConversationsRequest> Listings { get; } = [];
 
@@ -302,6 +305,7 @@ public sealed class ScriptedExport : HttpMessageHandler
         reply.Moves.AddRange(Moves);
         reply.SettledElsewhere.AddRange(SettledElsewhere);
         reply.WroteElsewhere.AddRange(WroteElsewhere);
+        reply.Reads.AddRange(Reads);
         reply.Parent = Parent;
         reply.ParentByMove = ParentByMove;
         reply.Children.AddRange(Children);

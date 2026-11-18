@@ -1117,8 +1117,9 @@ exchange, and an exchange read is not an exchange taken part in.
 
 **The person sees every read.** One record is kept for each call, in the transaction of the read: who read, an exchange by its
 number or a search by its words and how many matches it found, and when (`history_reads`, §9.2). It holds no message text. The
-console and the terminal show it where the person already reads the exchange, as "read by `x` at t", and show an agent's searches on
-the agent's page. No agent can read these records, and a record is not a message, a participant or a debt, so it moves nothing.
+console and the terminal show it where the person already reads the exchange, as "read by `x` at t" beneath its first message, and
+show the project's newest searches (the reader, the words and the number of matches) beside each conversation, because a search
+belongs to no one exchange. No agent can read these records, and a record is not a message, a participant or a debt, so it moves nothing.
 Retiring an agent keeps its records; purging it removes them with the rest (§14).
 
 ## 6. Exchange state machine

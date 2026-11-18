@@ -40,6 +40,9 @@ public sealed class HistoryRepository(SqliteConnection connection)
     /// <summary>The most words one search takes: the statement has this many slots.</summary>
     public const int MaxWords = 8;
 
+    /// <summary>How many of the project's newest searches the person is shown beside a conversation.</summary>
+    public const int RecentSearches = 30;
+
     private const string Columns =
         """
         SELECT id              AS Id,
@@ -217,13 +220,13 @@ public sealed class HistoryRepository(SqliteConnection connection)
         return [.. rows.Select(r => r.ToDomain())];
     }
 
-    /// <summary>The reads of every exchange in one conversation, newest first, for the person.</summary>
+    /// <summary>The reads of every exchange in one conversation, and the project's newest searches, newest first, for the person.</summary>
     /// <param name="conversationId">The conversation.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>Every read of an exchange that is in it now.</returns>
     public async Task<IReadOnlyList<HistoryRead>> ReadsInConversationAsync(string conversationId, CancellationToken cancellationToken = default)
     {
-        var rows = await _connection.QueryAsync<ReadRow>(
+        var exchanges = await _connection.QueryAsync<ReadRow>(
             new CommandDefinition(
                 """
                 SELECT r.reader AS Reader, r.exchange_id AS ExchangeId, r.words AS Words, r.matches AS Matches, r.created_utc AS CreatedUtc
@@ -234,7 +237,17 @@ public sealed class HistoryRepository(SqliteConnection connection)
                 new { Conversation = conversationId },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        return [.. rows.Select(r => r.ToDomain())];
+        // A search belongs to no exchange, so the person sees the newest searches of the project beside every conversation.
+        var searches = await _connection.QueryAsync<ReadRow>(
+            new CommandDefinition(
+                """
+                SELECT reader AS Reader, exchange_id AS ExchangeId, words AS Words, matches AS Matches, created_utc AS CreatedUtc
+                FROM history_reads WHERE kind = 'search' ORDER BY id DESC LIMIT @Limit;
+                """,
+                new { Limit = RecentSearches },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return [.. exchanges.Concat(searches).Select(r => r.ToDomain()).OrderByDescending(r => r.CreatedUtc)];
     }
 
     /// <summary>The reads one agent made, newest first, for the person.</summary>

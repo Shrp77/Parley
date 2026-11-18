@@ -18,8 +18,8 @@ namespace Parley.Mcp;
 /// conversation over its participants, or reads another participant's traffic.
 /// </para>
 /// <para>
-/// There is no history and no search, and none may be added (§10.1). A participant cannot read the log
-/// because nothing exposes it.
+/// History is read through two tools and nothing else (§10.1): an exchange by its number, and a search for words.
+/// Neither changes anything, both are bounded, and what they return is framed as a record (§13).
 /// </para>
 /// <para>
 /// <b>The descriptions carry the rules of §8, and those rules exist to get work done.</b> A model reads a

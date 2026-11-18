@@ -69,9 +69,9 @@ Detail and alternatives are in [research.md](research.md).
 8. **The record.** One row per call: reader, kind (`exchange` or `search`), exchange id (read), words (search, at most 200
    characters, same character class as a conversation title so it cannot break a line), match count, time. Written in the same
    transaction as the read so a read never goes unrecorded. Never returned to any agent.
-9. **Shown to the person.** The web console's exchange page lists reads of that exchange; a new section on the conversation page
-   and the Inbox's detail say "read by `x` at t"; searches show on the agent's page. The terminal shows the same in the exchange
-   view. No new operator operation: they are read by the existing operator read of a conversation (§10.2), which grows a field.
+9. **Shown to the person.** Beneath an exchange's first message the web console and the terminal say "read by `x` at t"; the
+   project's 30 newest searches are listed beside each conversation, since a search belongs to no one exchange. No new operator
+   operation: both ride on the existing operator read of a conversation (§10.2), which grows a `reads` field.
 10. **Delivery is untouched.** Neither operation calls `MarkDelivered`, wakes, ticks or appends. A test compares the store and
     every inbox before and after (SC-003).
 11. **Destroyed and pruned.** Destroying a conversation deletes its exchanges, and nothing records which numbers they were, so an

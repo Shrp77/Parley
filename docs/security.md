@@ -56,7 +56,9 @@ prioritises, closes or overrides anything.
   sent.
 - **Messages arrive wrapped** so that a peer's words are marked as data, not instruction. A
   request never overrides the receiver's standing instructions.
-- **No agent can read the log or search it.** There is no shared memory to poison.
+- **An agent can read the log, framed, bounded and in view.** It can read an exchange by number or search for words, and
+  nothing else of the past. What it reads is a record in an envelope that says so, a reply and a page have ceilings, a caller
+  has a rate, nothing is pushed into any context, it changes nothing, and every read is shown to you.
 - **Files go to disk, not into context.** Only `.md`, `.txt` and image files (PNG, JPEG, GIF, WebP) can be placed, so code
   travels as `Name.cs.txt` and nothing that runs can be opened by accident. A fetched file is
   another participant's data, never instructions. It is written only as a `.md`, `.txt`

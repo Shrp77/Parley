@@ -11,8 +11,8 @@ namespace Parley.Client.Rendering;
 /// replying in one conversation should be able to bring somebody else in without leaving it, so the room lists the
 /// whole project; ticking an agent who has not taken part and sending addresses them, which is what addressing
 /// them already does — it opens a request and pulls them in. Being listed is not being able to read the
-/// conversation: §10.1 gives an agent no history operation, so one brought in later knows only what its own request
-/// says.
+/// conversation: one brought in later knows only what its own request says, until it asks for an exchange by number or
+/// searches the history (§10.1), which you can see.
 /// </para>
 /// <para>
 /// <b>One rule for both surfaces</b>, so the terminal and the web console cannot disagree about who is offered.

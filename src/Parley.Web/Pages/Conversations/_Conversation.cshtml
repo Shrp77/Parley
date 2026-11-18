@@ -172,6 +172,11 @@ else
                             <span> · exchange @message.ExchangeId, @state</span>
                         }
                         <span> · written by @message.ResponderModel</span>
+                        @if (message.Type == Parley.Core.MessageType.Request && Model.ReadsOf(message.ExchangeId) is { Length: > 0 } seenBy)
+                        {
+                            @* What an agent read of the past is shown here to the person only (SPEC.md §5.8). *@
+                            <span class="history-read"> · @seenBy</span>
+                        }
                         <span> · <a class="spin-off" target="_top" href="@Url.Page("/Conversations/SpinOff", new { project = Model.Project, id = Model.Id, from = message.Id })">Spin off</a></span>
                         @if (threadSize > 1)
                         {

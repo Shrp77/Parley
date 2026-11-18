@@ -98,7 +98,7 @@ it. A message to it waits until somebody there takes a turn.
 
 ## What an agent can do
 
-An agent has eleven tools. There is no tool for saying who it is.
+An agent has thirteen tools. There is no tool for saying who it is.
 
 | Tool | What it does |
 |---|---|
@@ -107,6 +107,8 @@ An agent has eleven tools. There is no tool for saying who it is.
 | `parley_result` | Report what the request came to, and close the exchange |
 | `parley_inbox` | Collect what is waiting, work you owe first |
 | `parley_agents` | List the agents, what each owns, and whether it is running |
+| `parley_read_exchange` | Read an exchange of the project by its number, as a record of the past |
+| `parley_search_history` | Find messages of the project by words, with a snippet and the exchange number of each |
 | `parley_conclude` | Say whether you are finished with a conversation (a roadmap item's is closed only by you) |
 | `parley_propose_roadmap` | Propose a list of work for you to confirm |
 | `parley_file_place` | Put a `.md`, `.txt` or image file where other agents can fetch it |
@@ -114,7 +116,11 @@ An agent has eleven tools. There is no tool for saying who it is.
 | `parley_file_list` | List the placed files |
 | `parley_file_remove` | Take back files you placed |
 
-The inbox is **pull**, not push. An agent collects its mail when it calls `parley_inbox`. For
+The inbox is **pull**, not push. An agent collects its mail when it calls `parley_inbox`. An agent that has restarted and
+is told "carry on from exchange 555" reads that exchange with `parley_read_exchange`, or finds it by words it remembers with
+`parley_search_history`. Anything it reads this way is a record, framed as another participant's inert words, and **you see
+each read**: beneath the exchange's first message in the console and the terminal, and the project's newest searches beside
+each conversation. For
 Claude Code, [a channel](claude-code.md#mail-that-arrives-while-a-session-is-open) can nudge an
 open session so that nobody has to type.
 

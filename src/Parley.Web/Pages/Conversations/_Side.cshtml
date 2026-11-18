@@ -67,6 +67,20 @@
         </section>
     }
 
+    @if (Model.Searches.Any())
+    {
+        @* What the project's agents searched the history for lately, for the person only (SPEC.md §5.8). *@
+        <section class="history-searches" aria-label="Searches of the history">
+            <h2>Searched the history</h2>
+            <ul>
+                @foreach (var search in Model.Searches.Take(8))
+                {
+                    <li>@search.Reader.Value: <q>@search.Words</q>, @search.Matches @(search.Matches == 1 ? "match" : "matches")</li>
+                }
+            </ul>
+        </section>
+    }
+
     @* What is waiting in the project's other conversations is read far less often than this region, so the page's script
        keeps it and puts it back here each time this region is replaced. *@
     <div id="elsewhere"></div>
