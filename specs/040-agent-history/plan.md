@@ -61,16 +61,17 @@ Detail and alternatives are in [research.md](research.md).
    message's readable text, which is the string values in its payload read with `json_tree`. Each word is matched with `instr`,
    never as `LIKE` or `MATCH` syntax, so a term made of operators is plain text. No stemming, ranking or fuzzy.
 5. **Filters** on a search: `agent` (sender or recipient), `conversation`, `type`, `since`, `until`.
-6. **Rate and size.** Per caller, in memory (not stored): at most 30 history calls and 400,000 characters returned per rolling minute;
-   a call over either is refused with how long to wait. This bounds copying the store without a table.
+6. **Rate and size.** Per agent name, held for the store in memory (not stored, and not reset by attaching again): at most 30 history
+   calls and 400,000 characters per rolling minute, a reply counted by its envelopes and a search by the time it took (100 characters a
+   millisecond, never less than 20,000); a call over either is refused with how long to wait. This bounds copying the store without a table.
 7. **Schema.** Migration **009** `history_reads`; schema version 9. The unbuilt feature 027 had been told to use 009; it moves to
    010 (CLAUDE.md is changed). A store already at 9 would otherwise skip 027's migration, because a migration at or below the
    recorded version is skipped.
-8. **The record.** One row per search and per read of an exchange that exists (a number that names nothing leaves none, since
-   ids are never reused and the row would later be shown against another exchange): reader, kind (`exchange` or `search`),
-   exchange id (read), words (search, at most 200 characters, with no control, invisible or line-separating character), match
-   count over the whole search, time. Written in the same transaction as the read. Never returned to any agent. Removed by
-   retention with the messages, and by the reader's cascade.
+8. **The record, a tally.** One row for each agent and each exchange it read and one for each agent's searches: total, first and last
+   time, and for searches the newest words and matches. Upserted in the transaction of the read, only for a search that ran and an
+   exchange that exists (ids are never reused, so a row for one that does not exist would later be shown against another exchange).
+   Bounded by agents and exchanges, so there is no cap to evict evidence or understate a count. Never returned to any agent. Removed
+   by retention when an agent has not added to it for the age cap, and by the reader's cascade.
 9. **Shown to the person.** Beneath an exchange's first message the web console, the terminal and the text export say "Read by `x`
    at t (n times)", one entry for each reader so none can crowd another out; one line for each reader that searched (how many
    searches, the newest words) is shown beside each conversation, since a search belongs to no one exchange. No new operator

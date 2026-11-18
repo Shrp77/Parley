@@ -9,7 +9,7 @@ rpc SearchHistory(SearchHistoryRequest) returns (SearchHistoryReply);
 
 message ReadExchangeRequest { string asking_as = 1; int64 exchange_id = 2; int64 after = 3; }
 message ReadExchangeReply {
-  enum Found { FOUND = 0; NO_SUCH_EXCHANGE = 1; RATE_LIMITED = 2; }
+  enum Found { FOUND_UNSET = 0; FOUND = 1; NO_SUCH_EXCHANGE = 2; RATE_LIMITED = 3; }
   Found found = 1; int64 exchange_id = 2; string conversation = 3; string state = 4;
   repeated HistoryMessage messages = 5; int64 next_after = 6; int32 messages_remaining = 7; int32 retry_after_seconds = 8;
 }

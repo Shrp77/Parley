@@ -307,7 +307,7 @@ public sealed class AgentHistoryBrokerTests : IDisposable
 
         // A minute on it reads again, and a limited call left no record.
         Assert.True((await _broker.ReadExchangeAsync(Inventory, id, 0, T0.AddSeconds(75), Ct)).Found);
-        Assert.Equal(HistoryLimits.CallsPerMinute + 1, (await new HistoryRepository(_connection).ReadsByAsync(Inventory, Ct)).Count);
+        Assert.Equal(HistoryLimits.CallsPerMinute + 1, Assert.Single(await new HistoryRepository(_connection).ReadsByAsync(Inventory, Ct)).Count);
     }
 
     [Fact]

@@ -39,11 +39,15 @@ public sealed class HistoryRepository(SqliteConnection connection)
     /// <summary>The most words one search takes: the statement has this many slots.</summary>
     public const int MaxWords = 8;
 
-    /// <summary>How many of each reader's newest searches the person is shown beside a conversation, with how many it made in all.</summary>
-    public const int RecentSearchesPerReader = 1;
 
     /// <summary>The most messages one read of an exchange loads before it applies the reply's character bound.</summary>
     private const int ReadRun = 100;
+
+    private const string TallyColumns =
+        "SELECT reader AS Reader, exchange_id AS ExchangeId, words AS Words, matches AS Matches, last_utc AS CreatedUtc, total AS Total";
+
+    /// <summary>What an envelope adds to a payload, counted against a reply's bound.</summary>
+    private const int EnvelopeAllowance = 700;
 
     private const string Columns =
         """
@@ -118,12 +122,12 @@ public sealed class HistoryRepository(SqliteConnection connection)
             foreach (var row in rows)
             {
                 // Never fewer than one, so a message larger than the bound still arrives; then as many as fit.
-                if (taken.Count > 0 && characters + row.PayloadJson.Length > HistoryLimits.ReplyCharacters)
+                if (taken.Count > 0 && characters + row.PayloadJson.Length + EnvelopeAllowance > HistoryLimits.ReplyCharacters)
                 {
                     break;
                 }
 
-                characters += row.PayloadJson.Length;
+                characters += row.PayloadJson.Length + EnvelopeAllowance;
                 taken.Add(row.ToDomain());
             }
 
@@ -236,75 +240,57 @@ public sealed class HistoryRepository(SqliteConnection connection)
         return new SearchSlice(matches, notShown);
     }
 
-    /// <summary>The reads of one exchange, newest first, for the person.</summary>
+    /// <summary>Who read one exchange and how often, newest first, for the person.</summary>
     /// <param name="exchangeId">The exchange.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>Every read of it that was made.</returns>
+    /// <returns>One entry for each agent that read it.</returns>
+    /// <remarks>Read by the tests; the person's own view is <see cref="ReadsInConversationAsync"/>.</remarks>
     public async Task<IReadOnlyList<HistoryRead>> ReadsOfExchangeAsync(long exchangeId, CancellationToken cancellationToken = default)
     {
         var rows = await _connection.QueryAsync<ReadRow>(
             new CommandDefinition(
-                """
-                SELECT reader AS Reader, exchange_id AS ExchangeId, words AS Words, matches AS Matches, created_utc AS CreatedUtc
-                FROM history_reads WHERE kind = 'exchange' AND exchange_id = @Exchange ORDER BY id DESC;
-                """,
+                $"{TallyColumns} FROM history_reads WHERE kind = 'exchange' AND exchange_id = @Exchange ORDER BY last_utc DESC;",
                 new { Exchange = exchangeId },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         return [.. rows.Select(r => r.ToDomain())];
     }
 
-    /// <summary>Who read the exchanges of one conversation, and each reader's newest searches, for the person.</summary>
+    /// <summary>Who read the exchanges of one conversation and how often, and each agent's newest search, for the person.</summary>
     /// <param name="conversationId">The conversation.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>Every read of an exchange that is in it now.</returns>
+    /// <returns>One entry for each agent and exchange it read, and one for each agent that searched.</returns>
+    /// <remarks>
+    /// The store holds a tally, so this is bounded by the agents and the exchanges however much one agent reads, and a count is
+    /// the count: nothing is capped, so no agent can push its own reads out of what the person is shown.
+    /// </remarks>
     public async Task<IReadOnlyList<HistoryRead>> ReadsInConversationAsync(string conversationId, CancellationToken cancellationToken = default)
     {
-        // One row for each reader of each exchange, with how often and when last: bounded by exchanges and agents however
-        // much one agent reads, so a reader cannot push another out of what the person is shown.
-        var exchanges = await _connection.QueryAsync<ReadRow>(
+        var rows = await _connection.QueryAsync<ReadRow>(
             new CommandDefinition(
-                """
-                SELECT r.reader AS Reader, r.exchange_id AS ExchangeId, NULL AS Words, NULL AS Matches,
-                       MAX(r.created_utc) AS CreatedUtc, COUNT(*) AS Total
-                FROM history_reads AS r
-                WHERE r.kind = 'exchange' AND r.exchange_id IN (SELECT id FROM exchanges WHERE conversation_id = @Conversation)
-                GROUP BY r.exchange_id, r.reader;
+                $"""
+                {TallyColumns}
+                FROM history_reads
+                WHERE (kind = 'exchange' AND exchange_id IN (SELECT id FROM exchanges WHERE conversation_id = @Conversation))
+                   OR kind = 'search'
+                ORDER BY last_utc DESC;
                 """,
                 new { Conversation = conversationId },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        // A search belongs to no exchange, so beside every conversation the person is shown each reader's newest searches and
-        // how many it has made in all.
-        var searches = await _connection.QueryAsync<ReadRow>(
-            new CommandDefinition(
-                """
-                SELECT s.reader AS Reader, s.exchange_id AS ExchangeId, s.words AS Words, s.matches AS Matches,
-                       s.created_utc AS CreatedUtc,
-                       (SELECT COUNT(*) FROM history_reads AS c WHERE c.kind = 'search' AND c.reader = s.reader) AS Total
-                FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY reader ORDER BY id DESC) AS rn
-                        FROM history_reads WHERE kind = 'search') AS s
-                WHERE s.rn <= @PerReader
-                ORDER BY s.id DESC;
-                """,
-                new { PerReader = RecentSearchesPerReader },
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
-
-        return [.. exchanges.Concat(searches).Select(r => r.ToDomain()).OrderByDescending(r => r.CreatedUtc)];
+        return [.. rows.Select(r => r.ToDomain())];
     }
 
-    /// <summary>The reads one agent made, newest first, for the person.</summary>
+    /// <summary>What one agent read and searched for, newest first, for the person.</summary>
     /// <param name="reader">The agent.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>Its reads and searches.</returns>
+    /// <returns>Its tally.</returns>
+    /// <remarks>Used by the tests as a seam.</remarks>
     public async Task<IReadOnlyList<HistoryRead>> ReadsByAsync(AgentName reader, CancellationToken cancellationToken = default)
     {
         var rows = await _connection.QueryAsync<ReadRow>(
             new CommandDefinition(
-                """
-                SELECT reader AS Reader, exchange_id AS ExchangeId, words AS Words, matches AS Matches, created_utc AS CreatedUtc
-                FROM history_reads WHERE reader = @Reader ORDER BY id DESC LIMIT 200;
-                """,
+                $"{TallyColumns} FROM history_reads WHERE reader = @Reader ORDER BY last_utc DESC;",
                 new { Reader = reader.Value },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
@@ -340,34 +326,19 @@ public sealed class HistoryRepository(SqliteConnection connection)
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken)
     {
-        await _connection.ExecuteAsync(
-            new CommandDefinition(
-                """
-                INSERT INTO history_reads (reader, kind, exchange_id, words, matches, created_utc)
-                VALUES (@Reader, @Kind, @Exchange, @Words, @Matches, @Created);
-                """,
-                new
-                {
-                    Reader = reader.Value,
-                    Kind = kind,
-                    Exchange = exchangeId,
-                    Words = words,
-                    Matches = matches,
-                    Created = nowUtc.ToString("O", CultureInfo.InvariantCulture),
-                },
-                transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
+        // A tally: one row for an agent and an exchange, or for an agent's searches, counted up. Never a row for each call, so what
+        // one agent reads cannot grow the table, push another's reads out of it, or make a count understate.
+        var at = nowUtc.ToString("O", CultureInfo.InvariantCulture);
 
-        // One agent cannot fill the store with its own record: only its newest rows are kept (SPEC.md §9.4), and the person's
-        // view is by reader, so what is lost is old detail and not who read.
         await _connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                DELETE FROM history_reads
-                 WHERE reader = @Reader
-                   AND id <= (SELECT id FROM history_reads WHERE reader = @Reader ORDER BY id DESC LIMIT 1 OFFSET @Keep);
+                INSERT INTO history_reads (reader, kind, exchange_id, words, matches, total, first_utc, last_utc)
+                VALUES (@Reader, @Kind, @Exchange, @Words, @Matches, 1, @At, @At)
+                ON CONFLICT (reader, kind, exchange_id) DO UPDATE
+                   SET total = total + 1, last_utc = excluded.last_utc, words = excluded.words, matches = excluded.matches;
                 """,
-                new { Reader = reader.Value, Keep = HistoryLimits.RecordsPerReader },
+                new { Reader = reader.Value, Kind = kind, Exchange = exchangeId ?? 0L, Words = words, Matches = matches, At = at },
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
@@ -424,7 +395,7 @@ public sealed class HistoryRepository(SqliteConnection connection)
     {
         public string Reader { get; init; } = "";
 
-        public long? ExchangeId { get; init; }
+        public long ExchangeId { get; init; }
 
         public string? Words { get; init; }
 
@@ -436,7 +407,7 @@ public sealed class HistoryRepository(SqliteConnection connection)
 
         public HistoryRead ToDomain() => new(
             AgentName.Create(Reader),
-            ExchangeId,
+            ExchangeId == 0 ? null : ExchangeId,
             Words,
             Matches is { } m ? (int)m : null,
             ExchangeRow.ParseTimestamp(CreatedUtc),

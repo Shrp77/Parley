@@ -15,10 +15,21 @@ namespace Parley.Broker;
 /// </remarks>
 internal sealed class HistoryRate
 {
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, HistoryRate> Held = [];
+
     private static readonly TimeSpan Window = TimeSpan.FromMinutes(1);
 
     private readonly object _lock = new();
     private readonly Dictionary<AgentName, Queue<(DateTimeOffset At, int Characters)>> _taken = [];
+
+    /// <summary>The rate for one store, the same whichever session of whichever agent asks.</summary>
+    /// <param name="store">The connection to the store, which every session of one project shares.</param>
+    /// <returns>The store's rate.</returns>
+    /// <remarks>
+    /// Held by the store and not by a <c>Broker</c>, because every attach makes a new one: a rate kept there was reset by an agent
+    /// that attached again.
+    /// </remarks>
+    public static HistoryRate For(object store) => Held.GetValue(store, static _ => new HistoryRate());
 
     /// <summary>Says whether a caller may read now, and if not for how long to wait.</summary>
     /// <param name="agent">The reader.</param>

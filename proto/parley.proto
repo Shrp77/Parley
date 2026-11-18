@@ -277,10 +277,12 @@ message HistoryMessage {
 }
 
 message ReadExchangeReply {
+  // An unset value is never read as found.
   enum Found {
-    FOUND = 0;
-    NO_SUCH_EXCHANGE = 1;
-    RATE_LIMITED = 2;
+    FOUND_UNSET = 0;
+    FOUND = 1;
+    NO_SUCH_EXCHANGE = 2;
+    RATE_LIMITED = 3;
   }
   Found found = 1;
   int64 exchange_id = 2;

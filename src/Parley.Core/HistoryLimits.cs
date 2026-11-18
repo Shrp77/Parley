@@ -20,12 +20,18 @@ public static class HistoryLimits
     /// <summary>The most characters of the words searched for.</summary>
     public const int WordsCharacters = 200;
 
-    /// <summary>What a search is charged against <see cref="CharactersPerMinute"/>, whatever it returns.</summary>
-    /// <remarks>A search scans the whole store, so it costs the same whether it finds nothing or a page; without a charge only the call count would limit it.</remarks>
+    /// <summary>What a search is charged against <see cref="CharactersPerMinute"/> for each millisecond it takes.</summary>
+    /// <remarks>A search scans the store while it holds the broker's gate, and what it costs depends on what the store holds, so it is charged by the time it took.</remarks>
+    public const int CharactersPerMillisecond = 100;
+
+    /// <summary>The least a search is charged against <see cref="CharactersPerMinute"/>, however quick it was.</summary>
     public const int SearchCharge = 20_000;
 
-    /// <summary>The most rows of its own reads and searches the store keeps for one agent, for the person to see.</summary>
-    public const int RecordsPerReader = 2_000;
+    /// <summary>The most readers of one exchange the person is told of by name; the rest are counted.</summary>
+    public const int ReadersNamed = 5;
+
+    /// <summary>The most agents whose searches the person is shown beside a conversation.</summary>
+    public const int SearchersShown = 8;
 
     /// <summary>The most calls one agent makes in a minute.</summary>
     public const int CallsPerMinute = 30;

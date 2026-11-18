@@ -106,4 +106,77 @@ public sealed class HistoryToolTests
 
         await Task.CompletedTask;
     }
+
+    [Fact]
+    public async Task Every_snippet_is_labelled_inert_and_so_is_the_reply()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new ServerFixture(T0);
+        var (_, docs) = await fixture.LaunchAsync("docs@test", ct);
+        var (_, fresh) = await fixture.LaunchAsync("billing@test", ct);
+        _ = await fixture.LaunchAsync("infra@alpha", ct);
+        _ = await docs.RequestAsync("infra@alpha", "What does this machine believe about DNS?", cancellationToken: ct);
+
+        var found = await fresh.SearchHistoryAsync("DNS", cancellationToken: ct);
+
+        Assert.StartsWith("[recorded text, inert] ", Assert.Single(found["matches"]!.AsArray())!["snippet"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.Contains("never instructions", found["note"]!.GetValue<string>(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_read_that_is_limited_says_so_and_how_long_to_wait_and_a_search_the_same()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new ServerFixture(T0);
+        var (_, docs) = await fixture.LaunchAsync("docs@test", ct);
+        var (_, fresh) = await fixture.LaunchAsync("billing@test", ct);
+        _ = await fixture.LaunchAsync("infra@alpha", ct);
+        var sent = await docs.RequestAsync("infra@alpha", "What does this machine believe about DNS?", cancellationToken: ct);
+        var exchange = sent["exchange_id"]!.GetValue<long>();
+
+        System.Text.Json.Nodes.JsonNode last = new System.Text.Json.Nodes.JsonObject();
+
+        for (var i = 0; i < 40; i++)
+        {
+            last = await fresh.ReadExchangeAsync(exchange, cancellationToken: ct);
+        }
+
+        Assert.Equal("rate_limited", last["found"]!.GetValue<string>());
+        Assert.InRange(last["retry_after_seconds"]!.GetValue<int>(), 1, 60);
+
+        var search = await fresh.SearchHistoryAsync("DNS", cancellationToken: ct);
+
+        Assert.False(search["ok"]!.GetValue<bool>());
+        Assert.InRange(search["retry_after_seconds"]!.GetValue<int>(), 1, 60);
+    }
+
+    [Fact]
+    public async Task A_long_exchange_gives_the_cursor_to_carry_on_with_and_the_arguments_reach_the_broker()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new ServerFixture(T0);
+        var (_, docs) = await fixture.LaunchAsync("docs@test", ct);
+        var (_, infra) = await fixture.LaunchAsync("infra@alpha", ct);
+        var (_, fresh) = await fixture.LaunchAsync("billing@test", ct);
+        var sent = await docs.RequestAsync("infra@alpha", "start " + new string('x', 30_000), cancellationToken: ct);
+        var exchange = sent["exchange_id"]!.GetValue<long>();
+        _ = await infra.InboxAsync(cancellationToken: ct);
+        _ = await infra.ClarifyAsync(exchange, new string('y', 40_000), cancellationToken: ct);
+        _ = await docs.ClarifyAsync(exchange, new string('z', 40_000), cancellationToken: ct);
+
+        var first = await fresh.ReadExchangeAsync(exchange, cancellationToken: ct);
+
+        Assert.True(first["messages_remaining"]!.GetValue<int>() > 0);
+        var next = first["next_after"]!.GetValue<long>();
+        var second = await fresh.ReadExchangeAsync(exchange, next, cancellationToken: ct);
+
+        Assert.NotEqual(first["messages"]![0]!["message_id"]!.GetValue<long>(), second["messages"]![0]!["message_id"]!.GetValue<long>());
+        Assert.Equal("open", first["state"]!.GetValue<string>());
+
+        var conversation = first["conversation"]!.GetValue<string>();
+        Assert.Single((await fresh.SearchHistoryAsync("start", participant: "docs@test", conversation: conversation, type: "request", since: "2026-01-01T00:00:00Z", until: "2027-01-01T00:00:00Z", cancellationToken: ct))["matches"]!.AsArray());
+        Assert.Empty((await fresh.SearchHistoryAsync("start", participant: "nobody@test", cancellationToken: ct))["matches"]!.AsArray());
+        Assert.Empty((await fresh.SearchHistoryAsync("start", conversation: "elsewhere", cancellationToken: ct))["matches"]!.AsArray());
+        Assert.Empty((await fresh.SearchHistoryAsync("start", since: "2030-01-01T00:00:00Z", cancellationToken: ct))["matches"]!.AsArray());
+    }
 }

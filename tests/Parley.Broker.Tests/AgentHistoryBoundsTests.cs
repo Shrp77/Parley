@@ -83,10 +83,10 @@ public sealed class AgentHistoryBoundsTests : IDisposable
         var first = await _broker.SearchHistoryAsync(Inventory, "needle", new HistoryFilter(), 0, T0.AddMinutes(60), Ct);
         await _broker.SearchHistoryAsync(Inventory, "needle", new HistoryFilter(), first.ContinueAfter, T0.AddMinutes(61), Ct);
 
-        var reads = await Repository.ReadsByAsync(Inventory, Ct);
+        var read = Assert.Single(await Repository.ReadsByAsync(Inventory, Ct));
 
-        Assert.Equal(2, reads.Count);
-        Assert.All(reads, r => Assert.Equal(25, r.Matches));
+        Assert.Equal(25, read.Matches);
+        Assert.Equal(2, read.Count);
     }
 
     [Fact]
@@ -200,7 +200,7 @@ public sealed class AgentHistoryBoundsTests : IDisposable
         await _broker.ReadExchangeAsync(Inventory, id, 0, T0.AddMinutes(1), Ct);
         await _broker.ReadExchangeAsync(Inventory, id, 0, T0.AddMinutes(2), Ct);
 
-        Assert.Equal(2, (await Repository.ReadsOfExchangeAsync(id, Ct)).Count);
+        Assert.Equal(2, Assert.Single(await Repository.ReadsOfExchangeAsync(id, Ct)).Count);
     }
 
     [Fact]
@@ -218,16 +218,64 @@ public sealed class AgentHistoryBoundsTests : IDisposable
     }
 
     [Fact]
-    public async Task One_agent_keeps_only_its_newest_records()
+    public async Task Reading_a_great_deal_cannot_erase_an_earlier_read_or_make_a_count_understate()
     {
-        var id = await OpenAsync("anything");
+        var first = await OpenAsync("one", 1);
+        var second = await OpenAsync("two", 2);
 
-        for (var i = 0; i < HistoryLimits.RecordsPerReader + 50; i++)
+        await _broker.ReadExchangeAsync(Inventory, first, 0, T0.AddMinutes(5), Ct);
+
+        for (var i = 0; i < 2_500; i++)
         {
-            await _broker.ReadExchangeAsync(Inventory, id, 0, T0.AddDays(1).AddSeconds(i * 3), Ct);
+            await _broker.ReadExchangeAsync(Inventory, second, 0, T0.AddDays(1).AddSeconds(i * 3), Ct);
         }
 
-        Assert.Equal(HistoryLimits.RecordsPerReader, (await Repository.ReadsOfExchangeAsync(id, Ct)).Count);
+        Assert.Equal(1, Assert.Single(await Repository.ReadsOfExchangeAsync(first, Ct)).Count);
+        Assert.Equal(2_500, Assert.Single(await Repository.ReadsOfExchangeAsync(second, Ct)).Count);
+        Assert.Equal(2, (await Repository.ReadsByAsync(Inventory, Ct)).Count);
+    }
+
+    [Fact]
+    public async Task The_rate_is_the_stores_and_not_a_sessions_so_attaching_again_does_not_reset_it()
+    {
+        var id = await OpenAsync("anything");
+        var again = new Broker(_connection, BrokerOptions.Default);
+        await again.StartAsync(Inventory, T0, Ct);
+
+        for (var i = 0; i < HistoryLimits.CallsPerMinute; i++)
+        {
+            Assert.True((await _broker.ReadExchangeAsync(Inventory, id, 0, T0.AddSeconds(10), Ct)).Found);
+        }
+
+        Assert.True((await again.ReadExchangeAsync(Inventory, id, 0, T0.AddSeconds(11), Ct)).RateLimited);
+    }
+
+    [Fact]
+    public async Task Words_repeated_count_once_and_more_than_eight_different_are_refused()
+    {
+        await OpenAsync("needle");
+
+        var repeated = await _broker.SearchHistoryAsync(Inventory, "needle needle NEEDLE needle needle needle needle needle needle", new HistoryFilter(), 0, T0.AddMinutes(5), Ct);
+        var many = await _broker.SearchHistoryAsync(Inventory, "a b c d e f g h i", new HistoryFilter(), 0, T0.AddMinutes(5), Ct);
+
+        Assert.Null(repeated.Refusal);
+        Assert.Single(repeated.Matches);
+        Assert.NotNull(many.Refusal);
+    }
+
+    [Fact]
+    public async Task A_search_can_be_narrowed_to_one_conversation()
+    {
+        await OpenAsync("needle here", 1);
+        var other = await _broker.RequestAsync(Orders, Mal, Requests.Model, Requests.Request("needle there"), T0.AddMinutes(2), "elsewhere", Ct);
+        Assert.True(other.Succeeded, $"expected admission, got {other.Rejection}");
+        var elsewhere = await _connection.ExecuteScalarAsync<string>("SELECT conversation_id FROM exchanges WHERE id = @Id;", new { Id = other.Exchange!.Id });
+
+        var everywhere = await _broker.SearchHistoryAsync(Inventory, "needle", new HistoryFilter(), 0, T0.AddMinutes(5), Ct);
+        var only = await _broker.SearchHistoryAsync(Inventory, "needle", new HistoryFilter(Conversation: elsewhere), 0, T0.AddMinutes(6), Ct);
+
+        Assert.Equal(2, everywhere.Matches.Count);
+        Assert.Equal(other.Exchange!.Id, Assert.Single(only.Matches).ExchangeId);
     }
 
     [Fact]

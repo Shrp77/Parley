@@ -26,36 +26,50 @@ public sealed class HistoryReadsSchemaTests : IDisposable
 
     public void Dispose() => _connection.Dispose();
 
-    private int Insert(string kind, string? exchange, string? words, string? matches, string reader = "billing@acme") =>
+    private int Insert(string kind, string exchange, string? words, string? matches, string total = "1", string reader = "billing@acme") =>
         _connection.Execute(
-            $"INSERT INTO history_reads (reader, kind, exchange_id, words, matches, created_utc) VALUES (@Reader, @Kind, {exchange ?? "NULL"}, @Words, {matches ?? "NULL"}, '2026-11-17T09:30:00Z');",
+            $"INSERT INTO history_reads (reader, kind, exchange_id, words, matches, total, first_utc, last_utc) VALUES (@Reader, @Kind, {exchange}, @Words, {matches ?? "NULL"}, {total}, '2026-11-17T09:30:00Z', '2026-11-17T09:30:00Z');",
             new { Reader = reader, Kind = kind, Words = words });
 
     [Fact]
-    public void A_read_of_an_exchange_and_a_search_are_the_two_good_shapes()
+    public void A_tally_of_an_exchange_and_of_searches_are_the_two_good_shapes()
     {
         Assert.Equal(1, Insert("exchange", "5", null, null));
-        Assert.Equal(1, Insert("search", null, "invoice total", "3"));
+        Assert.Equal(1, Insert("search", "0", "invoice total", "3", total: "4"));
     }
 
     [Theory]
-    [InlineData("other", "5", null, null)]
-    [InlineData("exchange", null, null, null)]
-    [InlineData("exchange", "5", "words", null)]
-    [InlineData("exchange", "5", null, "1")]
-    [InlineData("search", "5", "words", "1")]
-    [InlineData("search", null, null, "1")]
-    [InlineData("search", null, "words", null)]
-    [InlineData("search", null, "words", "-1")]
-    public void A_record_of_any_other_shape_is_refused(string kind, string? exchange, string? words, string? matches) =>
-        Assert.Throws<SqliteException>(() => Insert(kind, exchange, words, matches));
+    [InlineData("other", "5", null, null, "1")]
+    [InlineData("exchange", "0", null, null, "1")]
+    [InlineData("exchange", "-1", null, null, "1")]
+    [InlineData("exchange", "5", "words", null, "1")]
+    [InlineData("exchange", "5", null, "1", "1")]
+    [InlineData("search", "5", "words", "1", "1")]
+    [InlineData("search", "0", null, "1", "1")]
+    [InlineData("search", "0", "words", null, "1")]
+    [InlineData("search", "0", "words", "-1", "1")]
+    [InlineData("exchange", "5", null, null, "0")]
+    public void A_tally_of_any_other_shape_is_refused(string kind, string exchange, string? words, string? matches, string total) =>
+        Assert.Throws<SqliteException>(() => Insert(kind, exchange, words, matches, total));
+
+    [Fact]
+    public void One_row_for_an_agent_and_an_exchange_and_one_for_its_searches()
+    {
+        Insert("exchange", "5", null, null);
+        Insert("search", "0", "words", "1");
+
+        Assert.Throws<SqliteException>(() => Insert("exchange", "5", null, null));
+        Assert.Throws<SqliteException>(() => Insert("search", "0", "more", "2"));
+        Assert.Equal(1, Insert("exchange", "6", null, null));
+    }
 
     [Fact]
     public void Words_are_bounded_at_two_hundred_characters()
     {
-        Assert.Equal(1, Insert("search", null, new string('a', 200), "0"));
-        Assert.Throws<SqliteException>(() => Insert("search", null, new string('a', 201), "0"));
-        Assert.Throws<SqliteException>(() => Insert("search", null, string.Empty, "0"));
+        Assert.Equal(1, Insert("search", "0", new string('a', 200), "0"));
+        _connection.Execute("DELETE FROM history_reads;");
+        Assert.Throws<SqliteException>(() => Insert("search", "0", new string('a', 201), "0"));
+        Assert.Throws<SqliteException>(() => Insert("search", "0", string.Empty, "0"));
     }
 
     [Theory]
@@ -67,7 +81,7 @@ public sealed class HistoryReadsSchemaTests : IDisposable
     [InlineData(0x2028)]
     [InlineData(0x200b)]
     public void Words_cannot_break_hide_or_reorder_a_line(int character) =>
-        Assert.Throws<SqliteException>(() => Insert("search", null, "before" + char.ConvertFromUtf32(character) + "after", "1"));
+        Assert.Throws<SqliteException>(() => Insert("search", "0", "before" + char.ConvertFromUtf32(character) + "after", "1"));
 
     [Fact]
     public void A_reader_must_be_registered()

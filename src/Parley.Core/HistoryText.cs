@@ -76,6 +76,7 @@ public static partial class HistoryText
     public static string Cut(string text, int units)
     {
         ArgumentNullException.ThrowIfNull(text);
+        ArgumentOutOfRangeException.ThrowIfLessThan(units, 2);
 
         if (text.Length <= units)
         {

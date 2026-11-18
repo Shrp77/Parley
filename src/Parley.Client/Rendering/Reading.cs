@@ -226,7 +226,7 @@ public static class Reading
         }
 
         // What the project's agents searched the history for, for the person only (SPEC.md §5.8).
-        foreach (var search in SearchLines(export.Reads).Take(8))
+        foreach (var search in SearchLines(export.Reads).Take(HistoryLimits.SearchersShown))
         {
             lines.Add(new TranscriptLine(Pad("Searched the history: " + HistoryText.Neutralised(search)), LineKind.Annotation, null));
         }
@@ -319,11 +319,11 @@ public static class Reading
             return null;
         }
 
-        var named = readers.Take(5).Select(r =>
+        var named = readers.Take(HistoryLimits.ReadersNamed).Select(r =>
             $"{r.Name} at {TimeZoneInfo.ConvertTime(r.At, zone).ToString("d MMM HH:mm", CultureInfo.InvariantCulture)}"
             + (r.Count > 1 ? $" ({r.Count} times)" : string.Empty));
 
-        return "Read by " + string.Join(", ", named) + (readers.Count > 5 ? $" and {readers.Count - 5} more" : string.Empty);
+        return "Read by " + string.Join(", ", named) + (readers.Count > HistoryLimits.ReadersNamed ? $" and {readers.Count - HistoryLimits.ReadersNamed} more" : string.Empty);
     }
 
     /// <summary>What each agent searched the history for lately, one line for each (SPEC.md §5.8).</summary>

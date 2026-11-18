@@ -4,22 +4,24 @@ One table. Nothing else in the store changes; a message, an exchange and a conve
 
 ## `history_reads` (migration 009)
 
+A tally and not a log: one row for each agent and each exchange it read, and one row for each agent's searches.
+
 | Column | Type | Rule |
 |---|---|---|
-| `id` | INTEGER PRIMARY KEY | in the order reads happened |
-| `reader` | TEXT NOT NULL | an agent's full name, `role@machine`, a foreign key to `agents(name)` with `ON DELETE CASCADE`; never the person seat or the facilitator |
+| `reader` | TEXT NOT NULL | an agent's full name, a foreign key to `agents(name)` with `ON DELETE CASCADE`; never the person seat or the facilitator |
 | `kind` | TEXT NOT NULL | `exchange` or `search` |
-| `exchange_id` | INTEGER | set for `exchange`, NULL for `search`; not a foreign key, so an exchange destroyed later keeps its line |
-| `words` | TEXT | set for `search`, NULL for `exchange`; at most 200 characters, no line-breaking characters (the character class of a conversation title) |
-| `matches` | INTEGER | set for `search` (the total, not the page), NULL for `exchange` |
-| `created_utc` | TEXT NOT NULL | round-trip, as every timestamp |
+| `exchange_id` | INTEGER NOT NULL | the exchange for `exchange` (greater than 0); 0 for `search`; not a foreign key |
+| `words` | TEXT | the newest search's words, for `search` only; 1 to 200 characters with no control or line-separating character (a floor: the broker refuses a wider set first) |
+| `matches` | INTEGER | the newest search's total matches, for `search` only |
+| `total` | INTEGER NOT NULL | how many times, at least 1 |
+| `first_utc`, `last_utc` | TEXT NOT NULL | when the first and the newest was, round-trip |
 
-Checks: `kind` is one of the two; `exchange_id` is not null exactly when `kind = 'exchange'`; `words` and `matches` are not null exactly
-when `kind = 'search'`; `length(words) <= 200`; `words` has none of the line-breaking characters the conversation-name class forbids.
-Indexes: `(exchange_id)` for the exchange page, `(reader, id)` for an agent's page.
+Primary key `(reader, kind, exchange_id)`. Indexes `(exchange_id)` and `(last_utc)`.
 
-It is written in the same transaction as the read. A read that cannot record is refused, so a read never goes unseen.
-It has no trigger. Destroying a conversation does not touch it. It is removed by retention at the age cap, by the reader's cascade on a purge, and an agent keeps only its newest 2,000 rows. The person's view groups it: one entry for each reader of each exchange with a count, and one line for each agent that searched.
+Written by an upsert in the same transaction as the read, only for an exchange that exists and a search that was run, so a number that
+names nothing is counted nowhere. Its size is bounded by the agents and the exchanges however much one agent reads, so nothing is capped,
+a count is the count, and the first read cannot be pushed out. It has no trigger. Destroying a conversation does not touch it. A row is
+removed by retention when the agent has not added to it for the age cap, and by the reader's cascade on a purge.
 
 ## Values returned (not stored)
 

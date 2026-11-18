@@ -186,7 +186,7 @@ public static class Transcript
             written.AppendLine();
         }
 
-        foreach (var search in Reading.SearchLines(export.Reads).Take(8))
+        foreach (var search in Reading.SearchLines(export.Reads).Take(HistoryLimits.SearchersShown))
         {
             written.Append("Searched the history: ").AppendLine(HistoryText.Neutralised(search));
         }

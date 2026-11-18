@@ -39,16 +39,19 @@ No NEEDS CLARIFICATION remained after the spec. These are the choices the plan r
 
 ## 5. A record the person sees
 
-- **Decision**: table `history_reads`, one row per call, written with the read, shown to the person only.
-- **Rationale**: the owner chose each read shown on the exchange. The row holds the reader, the kind, the exchange id or the words,
-  the match count and the time, never a message's text, so the record is not a second copy of anything.
-- **Alternatives**: a counter per agent; nothing. Both were offered and not chosen.
+- **Decision**: table `history_reads`, a tally with one row for each agent and each exchange it read and one for each agent's searches,
+  upserted with the read, shown to the person only.
+- **Rationale**: the owner chose each read shown on the exchange. A row for each call let an agent evict its own earlier reads by making
+  many, grew with every call and made counts understate once capped, so review replaced it with a tally: the reader, the kind, the exchange
+  (or the newest words and matches), how many times and the first and newest times, never a message's text.
+- **Alternatives**: a log with a cap (rejected in review); a counter per agent; nothing. The first two were offered and not chosen.
 
 ## 6. Rate limit
 
-- **Decision**: in memory, per caller, 30 calls and 400,000 characters returned per rolling minute.
-- **Rationale**: the aim is that the tool cannot copy a store in one sitting, not accounting. A restart resets it, which is
-  harmless. Numbers are the owner's to change and live once in `HistoryLimits`.
+- **Decision**: in memory, held for the store and keyed by agent name, 30 calls and 400,000 characters per rolling minute; a search is
+  charged by the time it took (100 characters a millisecond, never less than 20,000) because it scans the store under the broker's gate.
+- **Rationale**: the aim is that the tool cannot copy a store in one sitting, not accounting. Held for the store because every attach
+  makes a new broker object, and a rate kept there was reset by attaching again. A restart resets it, which is harmless. Numbers are the owner's to change and live once in `HistoryLimits`.
 
 ## 7. Migration number
 

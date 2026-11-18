@@ -32,7 +32,7 @@ public sealed class Broker
     private readonly MessageRepository _messages;
     private readonly ConversationRepository _conversations;
     private readonly Pruner _pruner;
-    private readonly HistoryRate _historyRate = new();
+    private readonly HistoryRate _historyRate;
     private readonly BrokerOptions _options;
 
     /// <summary>When this broker last applied the retention policy, or <see langword="null"/> since starting.</summary>
@@ -62,6 +62,7 @@ public sealed class Broker
         _messages = new MessageRepository(connection);
         _conversations = new ConversationRepository(connection);
         _pruner = new Pruner(connection);
+        _historyRate = HistoryRate.For(connection);
     }
 
     /// <summary>Gets when this broker started, or <see langword="null"/> before it has.</summary>
@@ -803,12 +804,15 @@ public sealed class Broker
             return new HistorySearchPage($"Too many reads for now. Try again in {wait} seconds.", [], 0, 0, wait);
         }
 
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         var slice = await new HistoryRepository(_connection)
             .SearchAsync(reader, distinct, string.Join(' ', said), filter, Math.Max(0, continueAfter), nowUtc, cancellationToken)
             .ConfigureAwait(false);
 
-        // A search scans the store whatever it finds, so it is charged a fixed cost besides what it returns.
-        _historyRate.Took(reader, nowUtc, HistoryLimits.SearchCharge + slice.Matches.Sum(m => m.Snippet.Length + 120));
+        // A search scans the store while it holds the gate, and what that costs depends on what the store holds, so it is charged by
+        // the time it took, never less than a fixed amount, besides what it returns.
+        var cost = Math.Max(HistoryLimits.SearchCharge, (int)Math.Min(int.MaxValue / 2, clock.ElapsedMilliseconds * HistoryLimits.CharactersPerMillisecond));
+        _historyRate.Took(reader, nowUtc, cost + slice.Matches.Sum(m => m.Snippet.Length + 120));
 
         return new HistorySearchPage(
             null,

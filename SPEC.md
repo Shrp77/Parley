@@ -1116,16 +1116,18 @@ An agent that has restarted, or that is told "carry on from exchange 555", reads
 finds it by words it remembers (`search_history`), both in §10.1. This is reading and nothing else: it is not a Request, opens no
 exchange, and an exchange read is not an exchange taken part in.
 
-**The person sees every read.** One record is kept for each search and for each read of an exchange that exists, in the transaction of the read, so a number that
-names nothing leaves none and cannot later be shown against an exchange that did not exist at the time: who read, an exchange by its
-number or a search by its words and how many matches it found, and when (`history_reads`, §9.2). It holds no message text. The
+**The person sees every read.** A tally is kept, in the transaction of the read: for each agent and each exchange it read, how many
+times and when the first and the newest was; and for each agent's searches, how many, when, and the newest words and how many matches
+they found (`history_reads`, §9.2). It holds no message text. A number that names nothing is counted nowhere, so it cannot later be
+shown against an exchange that did not exist at the time. It is a tally and not a log: its size is bounded by the agents and the
+exchanges whatever one agent reads, and a count is the count. The
 console, the terminal and the text export show it where the person already reads the exchange, as "Read by `x` at t" beneath its
 first message, with one entry for each reader and how often, at most five readers named and the rest counted. Beside each conversation
 they show one line for each agent that searched: how many searches it has made and its newest words and matches, at most eight lines.
 A search belongs to no one exchange, and a reader is shown once however much it reads, so no agent can push its own reads out of
 view. No agent can read these records, and a record is not a message, a participant or a debt, so it moves nothing.
-Retiring an agent keeps its records. Purging it removes them, and so does retention: a record older than the age cap is removed
-(§9.4), and an agent keeps only its newest 2,000, so the table cannot outgrow what the store keeps.
+Retiring an agent keeps its tally. Purging it removes it, and so does retention: a row an agent has not added to for longer than the
+age cap is removed (§9.4).
 
 ## 6. Exchange state machine
 
@@ -2920,15 +2922,15 @@ CREATE TABLE move_notices (
 
 CREATE INDEX ix_move_notices_collection ON move_notices(agent, delivered_utc);
 
--- What the person sees of an agent reading the past (§5.8, §10.1). Never read by an agent. One row for a read of an
--- exchange or a search. Written in the transaction of the read. It holds no message text. `words` is bounded and has none
--- of the control and line-separating characters. This check is a floor: the broker refuses a wider set (every control, format,
--- invisible, line-separating and malformed character, §13) before anything is stored.
+-- What the person sees of an agent reading the past (§5.8, §10.1). Never read by an agent. A tally and not a log: one row for each
+-- agent and each exchange it read, and one for each agent's searches, with how many times and when the first and the newest was.
+-- Written in the transaction of the read. It holds no message text. Its size is bounded by the agents and the exchanges whatever
+-- one agent reads. `words` is the newest search's words, bounded and with none of the control or line-separating characters;
+-- this check is a floor, and the broker refuses a wider set (§13) before anything is stored.
 CREATE TABLE history_reads (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
   reader       TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
   kind         TEXT    NOT NULL CHECK (kind IN ('exchange', 'search')),
-  exchange_id  INTEGER,
+  exchange_id  INTEGER NOT NULL CHECK (exchange_id >= 0),
   words        TEXT    CHECK (words IS NULL OR (length(words) BETWEEN 1 AND 200
                          AND words NOT GLOB '*[' ||
                          char(1) || '-' || char(31) || char(127) || '-' || char(159) || char(173) || '-' || char(173) ||
@@ -2936,13 +2938,16 @@ CREATE TABLE history_reads (
                          char(8288) || '-' || char(8292) || char(8294) || '-' || char(8303) ||
                          char(65279) || '-' || char(65279) || ']*')),
   matches      INTEGER CHECK (matches IS NULL OR matches >= 0),
-  created_utc  TEXT    NOT NULL CHECK (unixepoch(created_utc) IS NOT NULL),
-  CHECK ((kind = 'exchange' AND exchange_id IS NOT NULL AND words IS NULL AND matches IS NULL)
-      OR (kind = 'search'   AND exchange_id IS NULL     AND words IS NOT NULL AND matches IS NOT NULL))
+  total        INTEGER NOT NULL CHECK (total >= 1),
+  first_utc    TEXT    NOT NULL CHECK (unixepoch(first_utc) IS NOT NULL),
+  last_utc     TEXT    NOT NULL CHECK (unixepoch(last_utc) IS NOT NULL),
+  PRIMARY KEY (reader, kind, exchange_id),
+  CHECK ((kind = 'exchange' AND exchange_id > 0 AND words IS NULL AND matches IS NULL)
+      OR (kind = 'search'   AND exchange_id = 0 AND words IS NOT NULL AND matches IS NOT NULL))
 ) STRICT;
 
 CREATE INDEX ix_history_reads_exchange ON history_reads(exchange_id);
-CREATE INDEX ix_history_reads_reader ON history_reads(reader, id);
+CREATE INDEX ix_history_reads_last ON history_reads(last_utc);
 
 -- Held here so a code path cannot route around it (§9.3). The broker refuses these first, with a sentence.
 CREATE TRIGGER tr_a_moved_exchange_may_go_there
@@ -3140,10 +3145,11 @@ rather than an oversight: nothing ends a piece of work but its participants or i
 conversation it sits in, at which point the floor stops applying and the ordinary rules resume. A
 deployment that never closes flagged work keeps its text, and is shown that it has not.
 
-**Records of reads** (§5.8) are not messages and none of the floors means anything for them. A record older than the age cap is
-removed in the same pass that removes decided notices, whether or not the messages it was about are still held (work still owed is
-kept without limit; its records are not); and an agent keeps only its newest 2,000, so the table is bounded however much one agent
-reads. One for an exchange that is gone stays until then, holding only a reader's name and a number.
+**Records of reads** (§5.8) are not messages and none of the floors means anything for them. A row of the tally an
+agent has not added to for longer than the age cap is removed in the same pass that removes decided notices, whether or not the
+messages it was about are still held (work still owed is kept without limit; its tally is not). The table is bounded by the agents
+and the exchanges however much one agent reads. A row for an exchange that is gone stays until then, holding only a reader's name
+and numbers.
 
 **The idle rule.** Once every exchange in a conversation is closed and nothing has been added to it
 for the configured idle period, the line of work is over and its messages are prunable.
@@ -4307,10 +4313,12 @@ its rules, and for the same reason:
 - **What an agent reads of the past is framed, bounded and recorded.** Held: the history envelope names the sender from the registry,
   carries a delimiter token chosen for that delivery and says it is a record and asks nothing; a reply is bounded as an inbox
   collection is, a search page holds 20 matches of at most 240 characters, a search term 200, and a caller may make 30 history calls
-  and take 400,000 characters in a minute, a search being charged 20,000 whatever it finds because it scans the store, after which a call is refused with how long to wait. The rate is kept in the broker's
-  memory, so a restart resets it: it exists so the tool cannot copy a store in one sitting, and it is not accounting. A snippet is the one text that reaches a model with no envelope: it is cut to 240 characters, every control, invisible or line-separating
+  and take 400,000 characters in a minute, a search being charged by the time it took, never less than 20,000, because it scans the store while it holds the
+  broker's gate and what that costs depends on what the store holds, after which a call is refused with how long to wait. The rate is held for
+  the store, in memory, whichever session of whichever agent asks, so attaching again does not reset it; a restart does. It exists so the
+  tool cannot copy a store in one sitting, and it is not accounting. A snippet is the one text that reaches a model with no envelope: it is cut to 240 characters, every control, invisible or line-separating
   character in it becomes a space, and the opening of an envelope in it is spelled so it cannot be mistaken for one. Every read is
-  recorded in `history_reads` for the person (§5.8), in the same transaction as the read. This is a recorded reduction in the
+  counted in `history_reads` for the person (§5.8), in the same transaction as the read. This is a recorded reduction in the
   control of principle 2.2: an agent may hold other agents' words it was never sent, and the bounds and the record are what stand
   in for the old refusal.
 

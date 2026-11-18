@@ -39,7 +39,7 @@
 ## Phase 4: US3 Reading never changes the work (P1)
 
 - [x] T017 [US3] `tests/Parley.Server.Tests/ReadingHistoryChangesNothingTests.cs`: with open, owed, delivered and closed exchanges, read and search everything, then compare every agent's inbox, debts, delivered flags, participants, exchange state and turn data before and after (SC-003). Watch it fail with a `MarkDelivered` in the read path.
-- [ ] T018 [US3] Add the mutation checks: confirm the test fails when the read path marks delivered, adds a participant, or wakes.
+- [x] T018 [US3] Add the mutation checks: confirm the test fails when the read path marks delivered, adds a participant, or wakes.
 
 ## Phase 5: US4 What is read is data (P1)
 
@@ -75,7 +75,12 @@
 - [ ] T034 Review gate (`review/README.md` and the three lens files): three clean runs of each lens on the shipped code. Fix findings and repeat.
 - [ ] T035 Commit in meaningful commits; do not push or open a PR until the review is clean and the owner has seen the result.
 
-Not done: T018 (the mutation checks were run by hand: a read marking delivered, and the rate check removed, each failed a test), T025 (the 100,000-message size test; a probe of 20,000 messages searched in about 0.2 s), T034 (the review gate runs in rounds) and T035.
+Notes on what was built differently: the tests are named for what they hold and not as planned (`AgentHistoryBrokerTests`,
+`AgentHistoryBoundsTests`, `ReadingHistoryTests`, `AgentsNeverSeeWhoReadTests`, `HistoryToolTests`, `HistoryReadsSchemaTests`,
+`HistoryEnvelopeTests`, `WhoReadAnExchangeTests`, `HistoryReadsAreShownTests`, `HistoryReadsAgreeTests`); the terminal draws the lines from
+the shared `Reading`, so its screen is held in the Client tests; the read record became a tally (one row for each agent and exchange)
+after review. Not done: T025 (a 100,000-message size test; a 20,000-message probe searched in about 0.2 s), T034 (the review gate
+runs in rounds, see the pull request) and T035.
 
 ## Dependencies
 

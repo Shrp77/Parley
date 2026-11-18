@@ -6,9 +6,10 @@
    with `exchange_id: N` and reads the exchange, each message in its own envelope marked as history.
 3. Ask it to "find where we talked about <phrase>". It calls `parley_search_history`, gets snippets with exchange numbers, and reads
    the one it needs.
-4. In the web console, open the conversation. Under the exchange the agent read, a line says which agent read it and when. The
-   agent's page lists the searches it made with the words and how many matches.
+4. In the web console, open the conversation. Under the exchange the agent read, a line says which agent read it, when and how often. Beside
+   the conversation a line for each agent that searched says how many searches it made and its newest words.
 5. Check nothing moved: the agents' inboxes, debts and turns are as they were.
 
-Tests: `pwsh scripts/test.ps1 -Category Smoke -Build`. The new classes are `AgentHistoryTests` (Store and Broker),
-`ReadingHistoryChangesNothingTests` (Server, SC-003), `HistoryEnvelopeTests` (Core, SC-004), `HistoryIsOneOperationTests` (Spec).
+Tests: `pwsh scripts/test.ps1 -Category Smoke -Build`. The new classes are `AgentHistoryBrokerTests` and `AgentHistoryBoundsTests` (Broker), `ReadingHistoryTests` and
+`AgentsNeverSeeWhoReadTests` (Server), `HistoryToolTests` (Mcp), `HistoryReadsSchemaTests` (Store), `HistoryEnvelopeTests` (Core),
+`WhoReadAnExchangeTests` (Client), `HistoryReadsAreShownTests` (Web) and `HistoryReadsAgreeTests` (Spec).

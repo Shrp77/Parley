@@ -134,4 +134,16 @@ public sealed class WhoReadAnExchangeTests
 
     private const char Q1 = (char)0x201c;
     private const char Q2 = (char)0x201d;
+
+    [Fact]
+    public void At_most_eight_agents_searches_are_shown_on_the_screen_and_in_the_text_export()
+    {
+        var reads = Enumerable.Range(0, 12)
+            .Select(i => new HistoryRead(AgentName.Create($"agent{i}@acme"), null, "needle", 1, At.AddMinutes(i)))
+            .ToList();
+        var export = new ConversationExport([Request(5)], [], Reads: reads);
+
+        Assert.Equal(8, Reading.Lines(export, TimeZoneInfo.Utc).Count(l => l.Text.Contains("Searched the history:", StringComparison.Ordinal)));
+        Assert.Equal(8, Transcript.Write("pricing", "acme", export).Split("Searched the history:").Length - 1);
+    }
 }
