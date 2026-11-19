@@ -32,6 +32,10 @@ public sealed class MessageLookupsAreIndexedTests : IDisposable
             " | ",
             _connection.Query($"EXPLAIN QUERY PLAN {sql}").Select(r => (string)((IDictionary<string, object>)r)["detail"]));
 
-        Assert.Contains(index, plan, StringComparison.Ordinal);
+        // Whole-word, so ix_messages_conversation is not satisfied by ix_messages_conversation_time, which contains its name.
+        Assert.True(
+            System.Text.RegularExpressions.Regex.IsMatch(
+                plan, System.Text.RegularExpressions.Regex.Escape(index) + "(?![_a-z])", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromSeconds(1)),
+            plan);
     }
 }
