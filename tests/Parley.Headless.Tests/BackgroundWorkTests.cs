@@ -30,6 +30,8 @@ public sealed class BackgroundWorkTests : IDisposable
 
     private const string Done = """{"type":"result","subtype":"success","is_error":false,"result":"DONE","num_turns":1,"total_cost_usd":2,"permission_denials":[],"origin":{"kind":"task-notification","producer":"session-task"}}""";
 
+    private const string DoneAgain = """{"type":"result","subtype":"success","is_error":false,"result":"AGAIN","num_turns":1,"total_cost_usd":3,"permission_denials":[],"origin":{"kind":"task-notification","producer":"session-task"}}""";
+
     private const string Second = """{"type":"result","subtype":"success","is_error":false,"result":"SECOND","num_turns":1,"total_cost_usd":3,"permission_denials":[]}""";
 
     private readonly string _workspace =
@@ -99,6 +101,48 @@ public sealed class BackgroundWorkTests : IDisposable
         Assert.True(second.Succeeded, second.Describe());
         Assert.Equal("SECOND", second.Reply);
         Assert.Equal(["background 1", "background 0", "began", "ended"], told.ToArray());
+    }
+
+    [Fact]
+    public async Task Own_turns_that_follow_each_other_closely_are_each_told()
+    {
+        // Review, quality lens run 2 (0.62.4): the result ends an own turn on the pump and the turn lets go of the agent a
+        // moment later on another thread, so an init read in between found the agent held and its turn was dropped: 37 of 60
+        // rounds told only the first. Three own turns, each beginning the instant the last one's result is read.
+        var template = StubRunner.Scripted(
+            _workspace,
+            [OneTask, Started, StubRunner.Pause(1), Finished, NoTasks, Init, Done, Init, DoneAgain, Init, DoneAgain],
+            [Second]);
+
+        var told = new ConcurrentQueue<string>();
+        var allEnded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await using var agent = ResidentAgent.Start(
+            AgentName.Create("billing@test"), InvocationCommand.Parse(template), _workspace, TimeProvider.System);
+
+        agent.Watch(new OwnWork(
+            _ =>
+            {
+                told.Enqueue("began");
+                return Task.CompletedTask;
+            },
+            (_, _) =>
+            {
+                told.Enqueue("ended");
+
+                if (told.Count(t => t == "ended") == 3)
+                {
+                    allEnded.TrySetResult();
+                }
+
+                return Task.CompletedTask;
+            },
+            _ => Task.CompletedTask));
+
+        _ = await agent.TakeTurnAsync("1", Patience, Ct);
+        await allEnded.Task.WaitAsync(Patience, Ct);
+
+        Assert.Equal(["began", "ended", "began", "ended", "began", "ended"], told.ToArray());
     }
 
     [Fact]

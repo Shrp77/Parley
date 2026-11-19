@@ -8,4 +8,9 @@ CREATE INDEX IF NOT EXISTS ix_messages_conversation ON messages(conversation_id,
 CREATE INDEX IF NOT EXISTS ix_messages_conversation_time ON messages(conversation_id, created_utc);
 CREATE INDEX IF NOT EXISTS ix_messages_from         ON messages(from_agent, id);
 CREATE INDEX IF NOT EXISTS ix_messages_to           ON messages(to_agent, id);
+-- The newest turn of an agent (the flags read three of these for every open exchange, and the Inbox reads the flags on every
+-- render): ORDER BY id with only (agent, started_utc) to use sorted every turn the agent ever took, 20 s for 2,000 open
+-- exchanges. And the exchanges an agent owes (the wake after a start asked once per agent with a scan of the table each).
+CREATE INDEX IF NOT EXISTS ix_invocations_agent_id ON invocations(agent, id);
+CREATE INDEX IF NOT EXISTS ix_exchanges_owed_by ON exchanges(owed_by);
 -- IF NOT EXISTS so a store taken back a version by hand, as the migration tests do, upgrades again.

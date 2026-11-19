@@ -684,11 +684,32 @@ public sealed class ResidentAgent : IAsyncDisposable
     }
 
     /// <summary>Starts accounting for a turn the agent began on its own, unless a given turn holds the agent.</summary>
+    /// <remarks>
+    /// <b>An own turn that starts as the last one ends queues behind it.</b> The result completes the turn on the pump, and
+    /// the turn lets go of the agent a moment later on another thread, so an <c>init</c> read in between found the agent held
+    /// and was dropped: that turn was never reported, and the agent read as idle while it worked. A turn is told apart from
+    /// a given one's own <c>init</c> by the held turn already being over, and the new one waits for it.
+    /// </remarks>
     private void BeginOwnTurn()
     {
-        if (_stopping || !_turnLock.Wait(0))
+        if (_stopping)
         {
             return;
+        }
+
+        Task? after = null;
+
+        if (!_turnLock.Wait(0))
+        {
+            lock (_ownLock)
+            {
+                if (_ownTurn is not { Task.IsCompleted: true })
+                {
+                    return;
+                }
+
+                after = Volatile.Read(ref _ownTurnTask);
+            }
         }
 
         var ending = new TaskCompletionSource<RunnerEvent?>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -698,16 +719,34 @@ public sealed class ResidentAgent : IAsyncDisposable
             _ownTurn = ending;
         }
 
-        Volatile.Write(ref _ownTurnTask, RunOwnTurnAsync(ending, _clock.GetTimestamp(), _clock.GetUtcNow()));
+        Volatile.Write(ref _ownTurnTask, RunOwnTurnAsync(ending, _clock.GetTimestamp(), _clock.GetUtcNow(), after));
     }
 
     /// <summary>Holds the agent for a turn of its own until its result, its process's end, or the patience runs out.</summary>
     /// <param name="ending">Completed by the pump with the turn's result, or null when the process ended.</param>
     /// <param name="started">When it began, on the clock turns are measured against.</param>
     /// <param name="began">When it began, as a time to report.</param>
+    /// <param name="after">The turn before it that has ended but may not have let go of the agent yet, or <see langword="null"/>
+    /// when this one already holds the agent.</param>
     /// <returns>A task that completes when the agent is released.</returns>
-    private async Task RunOwnTurnAsync(TaskCompletionSource<RunnerEvent?> ending, long started, DateTimeOffset began)
+    private async Task RunOwnTurnAsync(
+        TaskCompletionSource<RunnerEvent?> ending, long started, DateTimeOffset began, Task? after)
     {
+        if (after is not null)
+        {
+            await Quietly(after).ConfigureAwait(false);
+
+            try
+            {
+                await _turnLock.WaitAsync().ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
+                // Disposed while it waited: the agent is gone, and there is no turn to report.
+                return;
+            }
+        }
+
         try
         {
             Notify(w => w.TurnBegan(began));
