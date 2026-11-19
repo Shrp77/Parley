@@ -20,7 +20,8 @@ CREATE INDEX IF NOT EXISTS ix_invocations_agent_id ON invocations(agent, id);
 CREATE INDEX IF NOT EXISTS ix_exchanges_owed_by ON exchanges(owed_by);
 -- The exchanges of a conversation, and whether any is open (the conversation listing asks this for every row of every page the
 -- Inbox reads, and a conversation's snapshot read every exchange in the store to find its own): nothing indexed exchanges by
--- conversation, so a store of 20,000 conversations took 48 s to list and 3.4 s a page.
-CREATE INDEX IF NOT EXISTS ix_exchanges_conversation ON exchanges(conversation_id, state);
+-- conversation, so a store of 20,000 conversations took 48 s to list and 3.4 s a page. closed_utc is in it so the newest close
+-- of each conversation is read from the index and not from the table.
+CREATE INDEX IF NOT EXISTS ix_exchanges_conversation ON exchanges(conversation_id, state, closed_utc);
 
 -- IF NOT EXISTS so a store taken back a version by hand, as the migration tests do, upgrades again.
