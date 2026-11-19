@@ -1403,7 +1403,7 @@ in part.
    name of isolation is how a request for work turns into a round of questions.
 4. **A soft limit and a hard limit.** A message of more than 16,000 characters is long: it is delivered
    whole, and its sender is told. A message of more than 512,000 characters is refused, enforced by the
-   broker. Truncation is a protocol error, not a warning. Both count the message as stored.
+   broker. Truncation is a protocol error, not a warning. Both count the message as stored, in UTF-16 units (§9.3).
 
    **The numbers are the owner's decision, and a recorded reduction in this rule's protection.** What
    the hard limit defends is how much of one agent's context can be poured into another's in a single
@@ -3050,7 +3050,7 @@ that needed it; an enumeration written as prose has already decayed.
 - **Message size limit.** Terseness is the context-poisoning defence (rule 8.4), so 512,000
   characters is a constraint rather than a guideline. A refusal is counted and every message's
   length recorded (§10.2), because a limit nobody measures cannot be judged. **A character is a
-  UTF-16 unit** (the owner, 2026-11-19), which is what every surface and the broker count, so text
+  UTF-16 unit**, which is what every surface and the broker count, so text
   of astral characters (most emoji) counts two each. The broker refuses a longer message before the
   store is asked, in one place every writer shares. The schema holds the same limit as a second
   wall but counts Unicode code points, which SQLite can do and a UTF-16 count it cannot, so its

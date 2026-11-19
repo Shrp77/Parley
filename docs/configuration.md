@@ -336,7 +336,7 @@ need. The terminal's health view reports how deep exchanges actually go.
 ## Message size
 
 A message past 16,000 characters is delivered whole, and its sender is told it was long. A message
-past 512,000 characters is refused. That limit lives in the database, so no code path can route
+past 512,000 characters is refused. The broker refuses it before the store is asked, and the database holds a second wall, so no code path can route
 around it. It is a context-poisoning defence, not a buffer size: what one agent sends lands in
 another's working memory. Both count the message as stored, so line breaks and quotes count twice.
 

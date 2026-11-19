@@ -319,8 +319,8 @@ implementation detail, and needs to be argued.
 - **The protocol is the product; the transport is disposable.** If a platform ships native
   cross-session messaging, Parley should run over it. Keep the transport behind an interface.
 - **Terseness is a security control.** A message's hard limit (512,000 characters) is a
-  context-poisoning defence and lives in the schema so no code path can route around it;
-  changing it is a table rebuild. Past the soft limit (16,000) a message is delivered and its
+  context-poisoning defence, held by the broker in UTF-16 units and again in the schema (in code points) so no
+  code path can route around it; changing the schema's bound is a table rebuild. Past the soft limit (16,000) a message is delivered and its
   sender told. The numbers are the owner's decision and a recorded reduction in the control;
   every message's length is recorded so they can be judged (SPEC.md §17 question 16).
   - **Exception: `agents.owns` has no bound by default**. The constraint

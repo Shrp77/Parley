@@ -48,7 +48,7 @@ prioritises, closes or overrides anything.
 
 **Context poisoning.** What one agent sends lands in another's working memory, so:
 
-- **Messages are limited** to 512,000 characters, enforced in the database. That is a large share of
+- **Messages are limited** to 512,000 characters (UTF-16 units), enforced by the broker and again by the database. That is a large share of
   an agent's context, on the owner's decision that being able to say what is needed matters more.
   Every message's length is recorded, so the limit can be judged from what happens.
 - **Message text is inert data.** A payload is never parsed for an address or a command. An

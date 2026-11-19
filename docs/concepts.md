@@ -67,7 +67,7 @@ request instead of telling it to try again later. A model told to "retry in a wh
 tokens in a loop or quietly gives up.
 
 **Messages are meant to be short.** A message past 16,000 characters still goes, and its sender is
-told it was long. Past 512,000 it is refused, and that limit is enforced in the database. The limit
+told it was long. Past 512,000 it is refused, and that limit is enforced by the broker, and the database holds a looser second wall. The limit
 is a defence against context poisoning. An unbounded channel between agents would rebuild the
 shared-documentation problem in a new place.
 
