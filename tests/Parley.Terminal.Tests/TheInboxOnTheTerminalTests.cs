@@ -11,6 +11,7 @@ namespace Parley.Terminal.Tests;
 /// (<c>Inbox</c>); these hold that the keys open them with the right rows.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class TheInboxOnTheTerminalTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

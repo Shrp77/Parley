@@ -555,8 +555,10 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         // is here so the switch never says "not reported" about a fact the broker did report.
         Wire.WakeOutcome.WithThePerson => $"{to.Value} is the person, and has it.",
         Wire.WakeOutcome.OpenOutside =>
-            $"{to.Value}{OpenOutsideParley} — somebody started it in an editor — so Parley cannot give it a turn; it " +
-            "reads this when somebody prompts it there.",
+            // The broker answers the same for a session somebody opened in an editor and for a process a node that is gone
+            // left running (SPEC.md §11.7), so this says only what is true of both.
+            $"{to.Value}{OpenOutsideParley}, so Parley cannot give it a turn; it reads this when somebody prompts it where " +
+            "it is open.",
         _ => $"What became of {to.Value} was not reported.",
     };
 

@@ -48,6 +48,7 @@ public sealed class MentionsInEveryMessageBoxTests
         var keys = Mentions[Mentions.IndexOf("document.addEventListener(\"keydown\"", StringComparison.Ordinal)..];
         var choosing = keys[keys.IndexOf("e.key === \"Enter\"", StringComparison.Ordinal)..keys.IndexOf("choose(shown[at])", StringComparison.Ordinal)];
 
+        Assert.Contains("e.isComposing || e.keyCode === 229", keys[..keys.IndexOf("e.key === \"Enter\"", StringComparison.Ordinal)], StringComparison.Ordinal);
         Assert.Contains("var now = word(box);", choosing, StringComparison.Ordinal);
         Assert.Contains("now.from !== start", choosing, StringComparison.Ordinal);
         Assert.Contains("close(); return;", choosing, StringComparison.Ordinal);

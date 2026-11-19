@@ -134,4 +134,32 @@ public sealed class ParleySettingsFileTests : IDisposable
         Assert.NotNull(ParleySettings.WriteClosedDays(_root, 30));
         Assert.True(Directory.Exists(File));
     }
+
+    [Fact]
+    public void A_file_written_with_line_feeds_comes_back_with_line_feeds_only()
+    {
+        // Review, quality lens (0.63.0): the serializer indents with the platform's newline, so on Windows an LF file came back
+        // with a CRLF body and one bare LF at the end, against what CLAUDE.md says of project files.
+        System.IO.File.WriteAllText(File, "{\n  \"other\": 1\n}\n");
+
+        Assert.Null(ParleySettings.WriteClosedDays(_root, 30));
+
+        var text = System.IO.File.ReadAllText(File);
+
+        Assert.DoesNotContain('\r', text);
+        Assert.Contains("\"other\": 1", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_file_written_with_carriage_returns_comes_back_with_them_throughout()
+    {
+        System.IO.File.WriteAllText(File, "{\r\n  \"other\": 1\r\n}\r\n");
+
+        Assert.Null(ParleySettings.WriteClosedDays(_root, 30));
+
+        var text = System.IO.File.ReadAllText(File);
+
+        Assert.Contains("\r\n", text, StringComparison.Ordinal);
+        Assert.DoesNotContain('\n', text.Replace("\r\n", string.Empty, StringComparison.Ordinal));
+    }
 }

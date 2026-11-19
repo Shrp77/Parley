@@ -13,6 +13,7 @@ namespace Parley.Terminal.Tests;
 /// asked with where each stands, and does not ask twice.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class AskingWhichAreStillOpenOnTheTerminalTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
