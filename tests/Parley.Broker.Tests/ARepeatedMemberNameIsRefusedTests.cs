@@ -50,11 +50,16 @@ public sealed class ARepeatedMemberNameIsRefusedTests : IDisposable
         """{"outcomes":[{"id":"request","outcome":"done","text":"a","text":"b"}]}""",
         """{"outcomes":[{"id":"request","outcome":"done","text":"t"}],"outcomes":[{"id":"request","outcome":"blocked","text":"t"}]}""",
         """{"outcomes":[{"id":"request","outcome":"done","text":"t","sources":["billing@test"],"sources":["orders@test"]}]}""",
+        // A NUL ending a name is the same member to SQLite and a different one to System.Text.Json: a decoy (security run 4).
+        """{"outcomes":[{"id":"request","outcome\u0000":"answered","outcome":"blocked","text":"t"}]}""",
+        """{"outcomes\u0000":[{"id":"request","outcome":"answered","text":"t"}],"outcomes":[{"id":"request","outcome":"blocked","text":"t"}]}""",
+        """{"outcomes":[{"id":"request","outcome":"blocked","text":"t","blocker\u0000":"conflict"}]}""",
+        """{"outcomes":[{"id":"request","outcome":"answered","outcome\ud800":"x","text":"t"}]}""",
     ];
 
     [Theory]
     [MemberData(nameof(RepeatedInAResult))]
-    public async Task A_result_naming_a_member_twice_is_refused_whole_in_either_order(string payload)
+    public async Task A_result_naming_a_member_ambiguously_is_refused_whole(string payload)
     {
         var exchange = await OpenAsync();
         var before = Messages();
@@ -65,6 +70,20 @@ public sealed class ARepeatedMemberNameIsRefusedTests : IDisposable
         Assert.Contains("names each member of its JSON once", refused.Message, StringComparison.Ordinal);
         Assert.Equal(before, Messages());
         Assert.Equal("OPEN", _connection.ExecuteScalar<string>("SELECT state FROM exchanges WHERE id = @exchange;", new { exchange }));
+    }
+
+    [Fact]
+    public async Task A_name_ending_in_a_nul_is_refused_on_a_request_and_a_clarify_too()
+    {
+        var exchange = await OpenAsync();
+        var before = Messages();
+
+        _ = await Assert.ThrowsAsync<ArgumentException>(
+            () => _broker.RequestAsync(Orders, Billing, Requests.Model, """{"ask\u0000":"real","ask":" "}""", T0.AddMinutes(1), "pricing", Ct));
+        _ = await Assert.ThrowsAsync<ArgumentException>(
+            () => _broker.ClarifyAsync(exchange, Billing, Requests.Model, """{"text\u0000":"real","text":" "}""", T0.AddMinutes(1), Ct));
+
+        Assert.Equal(before, Messages());
     }
 
     [Fact]
@@ -107,6 +126,11 @@ public sealed class ARepeatedMemberNameIsRefusedTests : IDisposable
     [InlineData("""[{"a":1,"a":2}]""", true)]
     [InlineData("not json at all", false)]
     [InlineData("{\"a\":1,\"A\":2}", false)]
-    public void The_check_reads_what_the_broker_reads(string json, bool repeated) =>
-        Assert.Equal(repeated, PayloadShape.HasRepeatedName(json));
+    [InlineData("""{"a\u0000":1}""", true)]
+    [InlineData("""{"a":{"b":[{"c\u0000":1}]}}""", true)]
+    [InlineData("""{"a\ud800":1}""", true)]
+    [InlineData("""{"a":"value ending in a nul\u0000"}""", false)]
+    [InlineData("""{"a":"x\ud800"}""", false)]
+    public void The_check_reads_what_the_broker_reads(string json, bool ambiguous) =>
+        Assert.Equal(ambiguous, PayloadShape.HasAmbiguousName(json));
 }

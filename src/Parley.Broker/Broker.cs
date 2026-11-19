@@ -237,7 +237,7 @@ public sealed class Broker
         RequireStarted("sending a request");
         RequireAdapterResponder(responderModel);
         ArgumentException.ThrowIfNullOrEmpty(payloadJson);
-        RequireEachNameOnce(payloadJson);
+        RequireUnambiguousNames(payloadJson);
         await RequireRegisteredAsync(from, cancellationToken).ConfigureAwait(false);
 
         using var scope = WriteScope.Begin(_connection, ambient: null);
@@ -297,7 +297,7 @@ public sealed class Broker
         RequireAdapterResponder(responderModel);
         ArgumentException.ThrowIfNullOrEmpty(role);
         ArgumentException.ThrowIfNullOrEmpty(payloadJson);
-        RequireEachNameOnce(payloadJson);
+        RequireUnambiguousNames(payloadJson);
         await RequireRegisteredAsync(from, cancellationToken).ConfigureAwait(false);
 
         var members = (await _agents.ListRoleAsync(role, cancellationToken).ConfigureAwait(false))
@@ -459,14 +459,14 @@ public sealed class Broker
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>Refuses a payload that writes a member name twice in one object (SPEC.md §13).</summary>
+    /// <summary>Refuses a payload that names a member twice or with a NUL (SPEC.md §13).</summary>
     /// <param name="payloadJson">The payload.</param>
-    /// <exception cref="ArgumentException">Some object in the payload names a member more than once.</exception>
-    private static void RequireEachNameOnce(string payloadJson)
+    /// <exception cref="ArgumentException">Some object in the payload names a member more than once, or with a NUL.</exception>
+    private static void RequireUnambiguousNames(string payloadJson)
     {
-        if (PayloadShape.HasRepeatedName(payloadJson))
+        if (PayloadShape.HasAmbiguousName(payloadJson))
         {
-            throw new ArgumentException(PayloadShape.RepeatedNameRefusal, nameof(payloadJson));
+            throw new ArgumentException(PayloadShape.AmbiguousNameRefusal, nameof(payloadJson));
         }
     }
 
@@ -512,7 +512,7 @@ public sealed class Broker
         RequireStarted(type == MessageType.Result ? "sending a result" : "clarifying");
         RequireAdapterResponder(responderModel);
         ArgumentException.ThrowIfNullOrEmpty(payloadJson);
-        RequireEachNameOnce(payloadJson);
+        RequireUnambiguousNames(payloadJson);
 
         using var scope = WriteScope.Begin(_connection, ambient: null);
 

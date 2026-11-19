@@ -14,29 +14,53 @@ namespace Parley.Core;
 /// </remarks>
 public static class PayloadShape
 {
-    /// <summary>Whether a payload writes one member name twice in one object.</summary>
+    /// <summary>Whether a payload names a member in a way the store and the broker would read differently.</summary>
     /// <param name="payloadJson">A Request, Clarify or Result payload.</param>
     /// <returns>
-    /// <see langword="true"/> when the payload is well formed JSON and some object in it names a member more than once; a
-    /// document that is not JSON at all is <see langword="false"/>, left to the store's own check.
+    /// <see langword="true"/> when the payload is well formed JSON and some object in it writes one member name twice, or
+    /// holds a name with a NUL character in it, or a name that cannot be decoded; a document that is not JSON at all is
+    /// <see langword="false"/>, left to the store's own check.
     /// </returns>
     /// <remarks>
+    /// <para>
     /// <b>The store and the broker read a repeated name differently.</b> SQLite's <c>json_extract</c> and <c>json_each</c>
     /// take the first, and <see cref="JsonDocument"/> takes the last, so a Result writing <c>outcome</c> twice passed the
     /// schema's checks on one reading and closed the exchange on the other: answered in the store, blocked with no blocker in
     /// the broker's roll-up. A payload is data (§13) and is never given two meanings: it is refused whole.
+    /// </para>
+    /// <para>
+    /// <b>A NUL in a name is a repeat in disguise.</b> SQLite matches a path against a name as a C string, so
+    /// <c>outcome\u0000</c> is the member <c>outcome</c> to it and a different name to <see cref="JsonDocument"/>; the strict
+    /// parse sees no repeat and the split was open again with a decoy (found by review, security lens run 4, 0.63.0: 200,000
+    /// random payloads showed no other disagreement). No honest payload names a member with a NUL, so any is refused. A name
+    /// holding a lone surrogate escape cannot be decoded at all and is refused the same way, instead of throwing.
+    /// </para>
     /// </remarks>
-    public static bool HasRepeatedName(string payloadJson)
+    public static bool HasAmbiguousName(string payloadJson)
     {
         ArgumentNullException.ThrowIfNull(payloadJson);
 
         try
         {
             using var lenient = JsonDocument.Parse(payloadJson);
+
+            if (NamesAMemberWithANul(lenient.RootElement))
+            {
+                return true;
+            }
         }
-        catch (Exception e) when (e is JsonException or ArgumentException or InvalidOperationException)
+        catch (JsonException)
         {
             return false;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            // A name that is a lone surrogate escape: it parsed, and reading it as text is what throws.
+            return true;
         }
 
         try
@@ -49,12 +73,47 @@ public static class PayloadShape
         {
             return true;
         }
+        catch (InvalidOperationException)
+        {
+            return true;
+        }
     }
 
-    /// <summary>The words an agent is told when its payload repeats a member name.</summary>
-    public const string RepeatedNameRefusal =
-        "A message names each member of its JSON once: a name written twice in one object is read one way by the store and " +
-        "another by the broker, so the payload is refused whole. Send it again with each name once (SPEC.md §13).";
+    // Every object at every depth: the parse allows 64 levels, so the walk is bounded.
+    private static bool NamesAMemberWithANul(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (var member in element.EnumerateObject())
+                {
+                    if (member.Name.Contains('\0', StringComparison.Ordinal) || NamesAMemberWithANul(member.Value))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    if (NamesAMemberWithANul(item))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>The words an agent is told when its payload names a member ambiguously.</summary>
+    public const string AmbiguousNameRefusal =
+        "A message names each member of its JSON once, and no member name holds a NUL character: a name written twice in one " +
+        "object, or ending in a NUL, is read one way by the store and another by the broker, so the payload is refused whole. " +
+        "Send it again with each name once (SPEC.md §13).";
 
     /// <summary>The one item a Result names: the Request, answered as a whole (SPEC.md §5.1).</summary>
     /// <remarks>A Request declares no identifiers, and a Result must carry at least one outcome.</remarks>
