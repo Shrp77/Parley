@@ -14,6 +14,7 @@ namespace Parley.Terminal.Tests;
 /// whether the action is offered where the person is, which is what the status line and the menus read.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ReadingNeedsNoSeatTests
 {
     private static BrokerDirectory Directory() =>

@@ -20,7 +20,8 @@ Primary key `(reader, kind, exchange_id)`. Indexes `(exchange_id)` and `(last_ut
 
 Written by an upsert in the same transaction as the read, only for an exchange that exists and a search that was run, so a number that
 names nothing is counted nowhere. Its size is bounded by the agents and the exchanges however much one agent reads, so nothing is capped,
-a count is the count, and the first read cannot be pushed out. It has no trigger. Destroying a conversation does not touch it. A row is
+a count is the count, and the first read cannot be pushed out. It has no trigger. Destroying a conversation removes the rows of its exchanges in the same act (the person's erase: a record of what
+was read of an exchange that is gone would outlive it). A row is
 removed by retention when the agent has not added to it for the age cap, and by the reader's cascade on a purge.
 
 ## Values returned (not stored)

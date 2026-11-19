@@ -2950,6 +2950,19 @@ CREATE TABLE history_reads (
 CREATE INDEX ix_history_reads_exchange ON history_reads(exchange_id);
 CREATE INDEX ix_history_reads_last ON history_reads(last_utc);
 
+-- How the messages, invocations and exchanges are read (migration 010). Each is a lookup a person's page or an agent's read makes
+-- on every use, which without it walked every row of the project: one exchange's messages, one conversation's first and last,
+-- one agent's, the newest turn of an agent, the exchanges an agent owes, and the exchanges of a conversation. None changes a row.
+CREATE INDEX ix_messages_exchange                ON messages(exchange_id, id);
+CREATE INDEX ix_messages_conversation            ON messages(conversation_id, id);
+CREATE INDEX ix_messages_conversation_time       ON messages(conversation_id, created_utc);
+CREATE INDEX ix_messages_conversation_from_time  ON messages(conversation_id, from_agent, created_utc);
+CREATE INDEX ix_messages_from                    ON messages(from_agent, id);
+CREATE INDEX ix_messages_to                      ON messages(to_agent, id);
+CREATE INDEX ix_invocations_agent_id             ON invocations(agent, id);
+CREATE INDEX ix_exchanges_owed_by                ON exchanges(owed_by);
+CREATE INDEX ix_exchanges_conversation           ON exchanges(conversation_id, state, closed_utc);
+
 -- Held here so a code path cannot route around it (§9.3). The broker refuses these first, with a sentence.
 CREATE TRIGGER tr_a_moved_exchange_may_go_there
 BEFORE UPDATE OF conversation_id ON exchanges
@@ -3149,8 +3162,10 @@ deployment that never closes flagged work keeps its text, and is shown that it h
 **Records of reads** (§5.8) are not messages and none of the floors means anything for them. A row of the tally an
 agent has not added to for longer than the age cap is removed in the same pass that removes decided notices, whether or not the
 messages it was about are still held (work still owed is kept without limit; its tally is not). The table is bounded by the agents
-and the exchanges however much one agent reads. A row for an exchange that is gone stays until then, holding only a reader's name
-and numbers.
+and the exchanges however much one agent reads. A row for an exchange that retention removed stays until then, holding only a reader's name
+and numbers. **A destroy removes the rows of the exchanges it deletes, in the same act**: destroy is the person's erase, and a
+record of what was read of an exchange that is gone would outlive the thing it described. A purge removes an agent's own rows
+by the agent's cascade.
 
 **The idle rule.** Once every exchange in a conversation is closed and nothing has been added to it
 for the configured idle period, the line of work is over and its messages are prunable.
@@ -3253,7 +3268,7 @@ which records nothing; it checks that the leading bytes are the signature of the
 WebP) and serves nothing when they are not, so a file named `.png` that holds a page or a script never reaches a
 browser; it names the type from the extension, turns content sniffing off, and serves under a policy that lets nothing in
 the file load, run or frame anything, whether it is shown in a page or opened on its own; and an image larger than 20 MiB
-is shown only when the person asks for it. That check is the one place Parley looks inside a placed file, and it is a
+is shown only when the person asks for it, up to 256 MiB (`large=true`), the most a surface shows or copies to open. That check is the one place Parley looks inside a placed file, and it is a
 surface's, never the broker's. What remains: a flaw in the browser's own image decoder, including one an image crafted to
 expand to an enormous size could reach under that bound.
 
@@ -3546,7 +3561,7 @@ other could.
 | `force_conclude(conversation, reason?)` | Close a conversation now, regardless of its participants' votes. Every exchange still open in it ends `closed`, and every participant holding one is told, with the reason when one is given. |
 | `archive(conversation)` | Put a conversation out of the way. It stops appearing in `conversations()` unless the caller asks for archived ones, and nothing else about it changes: messages are still delivered, exchanges still open and close, and no agent is told. A view decision, made durable so every operator and every client sees the same one. |
 | `unarchive(conversation)` | Reverse it. |
-| `destroy(conversation)` | Delete a conversation and every message, exchange and file belonging to it, for every participant. Destroys its peers' side too and cannot be undone. Leaves the record of §14, which holds facts and no content. Named apart from `purge`, which takes an agent: two operations on different subjects sharing one name is how the wrong one gets bound. |
+| `destroy(conversation)` | Delete a conversation and every message, exchange and file belonging to it, and the record of who read those exchanges (§5.8), for every participant. Destroys its peers' side too and cannot be undone. Leaves the record of §14, which holds facts and no content. Named apart from `purge`, which takes an agent: two operations on different subjects sharing one name is how the wrong one gets bound. |
 | `start(agent)` | Ask a node that can resolve this agent's name to a catalogued checkout (§12) to launch it now, rather than waiting for a question to arrive. Returns whether a node accepted the request. The agent registers itself on attaching, exactly as §12.3 permits — this operation causes a launch and never a registration. Refused for the person seat: nothing starts a person. Refused for an agent open outside Parley (§11.7): a second process in one checkout is two models editing it. |
 | `stop(agent)` | Ask the node that started this agent to stop it once its current turn is over (§11.1). Returns whether a node was asked: false when nothing is running under the name. It ends a process and never work: what the agent owes stays owed, and the next work for it starts it again, because only retirement gates routing (§14). Refused for the person seat and the facilitator, for an agent open outside Parley (§11.7), which belongs to whoever opened it, and for one whose machine has no node joined that can start it. |
 | `restart(agent)` | As `stop`, then started again with its launch configuration read afresh. False, and nothing started, when it is not running: that is `start`'s. Refused where `stop` is. |
@@ -3956,7 +3971,7 @@ from a shell that inherited the token before the node launched the agent again p
 cannot tell processes apart, only launches. Any other
 attachment — no token, one from an earlier launch, another agent's — is **open outside Parley**, which no node can give
 a turn; one that presents a token is **left running** by a node that is gone (§11.1), which the broker can tell from one
-somebody opened because an editor presents none. A launch the
+somebody opened because an editor presents none. The registry's `open_outside` is true for both, and `unsupervised` marks only the left-running one (§10.2). A launch the
 broker was never told of, because the report did not arrive, reads the same way; a failed report never stops the
 launch.
 
@@ -3966,7 +3981,8 @@ What follows from it:
   Parley and reads the message when somebody prompts it (§5); no node is asked for a start or a turn, and the
   wake is not marked as coming, because nothing is.
 - **`start` refuses an agent open outside Parley** (§10.2): a second process in one checkout is two models
-  editing it.
+  editing it. The refusal says which it is: an editor's session to close, or a process left by a node that is gone, to
+  end with `kill`.
 - **The registry says which** (§10.2), and a surface says it in words: open outside Parley, so Parley cannot
   give it turns.
 - **Turns are reported only for an agent started by Parley** (§11.6).
@@ -4497,11 +4513,12 @@ is where a person looks for why an agent could not be started; the broker is not
 **A restart wakes the agents that owe work.** Two restarts that are byte-identical to the broker carry opposite
 intent: an operator killing the process to stop agents burning through a quota, and an unattended machine taking a
 forced update at the weekend. The broker cannot tell them apart and does not try. **The owner decided on 2026-11-18
-that the second reading wins**: when a node joins a broker that has just started, every active agent on that
+that the second reading wins**: when a machine's node first joins a broker (the first join since the broker started; one that threw is asked again at the next), every active agent on that
 machine that owes an open exchange is asked to start (once each, however many exchanges it owes), subject to the
 resume gate and never for an agent open outside Parley (§11.7). Work stays open under every policy; the policy decides
-only whether anybody is started to do it. The way to stop work is to close its conversation, or to stop the agent
-from a surface (§11.1); killing the broker stops nothing for long. The resume policy is `always` in the broker the
+only whether anybody is started to do it. The way to stop work is to close its conversation. Stopping an agent
+from a surface (§11.1) ends its process and not its work: the work stays open, and under `always` the agent is started again at
+the next restart or by the next work for it, as any agent is. Killing the broker stops nothing for long. The resume policy is `always` in the broker the
 `serve` command runs, and `never` in a broker object built without options.
 
 **Re-delivery is not re-sending.** Delivering outstanding work again marks the existing message

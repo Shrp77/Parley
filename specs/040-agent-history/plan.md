@@ -64,8 +64,8 @@ Detail and alternatives are in [research.md](research.md).
 6. **Rate and size.** Per agent name, held for the store in memory (not stored, and not reset by attaching again): at most 30 history
    calls and 400,000 characters per rolling minute, a reply counted by its envelopes and a search by the time it took (100 characters a
    millisecond, never less than 20,000); a call over either is refused with how long to wait. This bounds copying the store without a table.
-7. **Schema.** Migration **009** `history_reads`; schema version 9. The unbuilt feature 027 had been told to use 009; it moves to
-   010 (CLAUDE.md is changed). A store already at 9 would otherwise skip 027's migration, because a migration at or below the
+7. **Schema.** Migration **009** `history_reads`; schema version 9. The unbuilt feature 027 had been told to use 009; it moved to
+   010 and then to 011, because 010 became the message indexes (CLAUDE.md is changed). A store already at 9 would otherwise skip 027's migration, because a migration at or below the
    recorded version is skipped.
 8. **The record, a tally.** One row for each agent and each exchange it read and one for each agent's searches: total, first and last
    time, and for searches the newest words and matches. Upserted in the transaction of the read, only for a search that ran and an

@@ -14,7 +14,7 @@ namespace Parley.Web.Tests;
 /// and its whitespace folded (<see cref="ScriptSource"/>), and each guard is held to the whole statement it is.
 /// </para>
 /// </remarks>
-[Unit]
+[Integration]
 public sealed class MessageDraftsAreKeptTests
 {
     private static string Drafts =>

@@ -8,7 +8,7 @@ namespace Parley.Mcp.Tests;
 /// A label and never authority: what is held is that it is a real process that is not the adapter itself, and that an adapter
 /// that cannot be told says nothing rather than something wrong. Which process it is, is the operating system's answer.
 /// </remarks>
-[Unit]
+[Integration]
 public sealed class TheAdapterSaysWhichProcessHostsItTests
 {
     [Fact]

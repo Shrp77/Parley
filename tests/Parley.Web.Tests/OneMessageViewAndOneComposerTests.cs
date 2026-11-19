@@ -143,7 +143,8 @@ public sealed class OneMessageViewAndOneComposerTests
     public void Enter_is_left_alone_with_shift_while_composing_and_when_taken_first()
     {
         // Without e.shiftKey Shift+Enter sends instead of making a line break; without e.isComposing the Enter that
-        // confirms an input method's text sends the half-written message. No test runs the frame's script, so the
+        // confirms an input method's text sends the half-written message, and Safari reports that Enter with isComposing
+        // false and keyCode 229 (review, quality lens 0.62.9). No test runs the frame's script, so the
         // handler's early return is read from source and each key it must leave alone is named (review, lens 3 round 33).
         // Read as code, comments out, so a guard commented out behind a weaker line no longer counts as there.
         var frame = ComposerKeys();
@@ -160,7 +161,8 @@ public sealed class OneMessageViewAndOneComposerTests
         Assert.Equal(
             new HashSet<string>(StringComparer.Ordinal)
             {
-                "e.key !== \"Enter\"", "e.isComposing", "e.altKey", "e.metaKey", "e.shiftKey", "e.defaultPrevented",
+                "e.key !== \"Enter\"", "e.isComposing", "e.keyCode === 229", "e.altKey", "e.metaKey", "e.shiftKey",
+                "e.defaultPrevented",
             },
             leftAlone);
     }

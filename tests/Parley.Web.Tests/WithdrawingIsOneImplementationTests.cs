@@ -11,7 +11,7 @@ namespace Parley.Web.Tests;
 /// is how they drifted before: one withdrew the files and asked for the name, the other did neither. So the broker's three
 /// operations may be called only from <c>Parley.Setup</c>'s <c>AgentWithdrawal</c>, and each surface must call it.
 /// </remarks>
-[Unit]
+[Integration]
 public sealed class WithdrawingIsOneImplementationTests
 {
     [Theory]

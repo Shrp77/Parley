@@ -2716,7 +2716,7 @@
                 var box = e.target;
 
                 if (!(box instanceof HTMLTextAreaElement) || !box.hasAttribute("data-composer")) { return; }
-                if (e.key !== "Enter" || e.isComposing || e.altKey || e.metaKey || e.shiftKey || e.defaultPrevented) { return; }
+                if (e.key !== "Enter" || e.isComposing || e.keyCode === 229 || e.altKey || e.metaKey || e.shiftKey || e.defaultPrevented) { return; }
 
                 e.preventDefault();
 
@@ -3064,6 +3064,12 @@
                     at = (at + (e.key === "ArrowDown" ? 1 : shown.length - 1)) % shown.length;
                     draw();
                 } else if (e.key === "Enter" || e.key === "Tab") {
+                    // The caret may have moved with the arrow keys or Home, which fire no input event: the word read now
+                    // must still be the one the list was drawn for, or the text after the caret is written twice.
+                    var now = word(box);
+
+                    if (!now || now.from !== start) { close(); return; }
+
                     e.preventDefault();
                     e.stopPropagation();
                     choose(shown[at]);

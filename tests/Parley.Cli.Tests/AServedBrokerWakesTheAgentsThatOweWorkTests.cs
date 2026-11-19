@@ -10,7 +10,7 @@ namespace Parley.Cli.Tests;
 /// command passes the policy, since a broker built without options is <c>never</c> and a lost argument would
 /// leave in-flight work idle after every restart with every other test green.
 /// </remarks>
-[Unit]
+[Integration]
 public sealed class AServedBrokerWakesTheAgentsThatOweWorkTests
 {
     private static readonly string Root =

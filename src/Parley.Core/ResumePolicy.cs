@@ -14,7 +14,9 @@ namespace Parley.Core;
 /// operator watching two agents burn through a quota kills the process to stop them, and waking every
 /// agent on restart overrides the control they reached for. An unattended machine takes a forced
 /// update at the weekend, and leaving its work untouched wastes the window. Nothing in the restart
-/// distinguishes those, so the broker must not infer.
+/// distinguishes those, so the broker does not try: the owner decided on 2026-11-18 that the second reading wins in the
+/// broker the <c>serve</c> command runs (<see cref="Always"/>, on a node joining), and a broker object built without
+/// options is <see cref="Never"/> (SPEC.md §14).
 /// </para>
 /// </remarks>
 public enum ResumePolicy

@@ -9,7 +9,7 @@ namespace Parley.Web.Tests;
 /// wraps starts a second column when it is full, so a long conversation drew its ticks in two columns. The rail's own
 /// rule must say it does not wrap; the narrow layout's horizontal rail says it does, later and on purpose.
 /// </remarks>
-[Unit]
+[Integration]
 public sealed class TimelineIsOneColumnTests
 {
     [Fact]

@@ -40,6 +40,23 @@ public sealed class MentionsInEveryMessageBoxTests
     }
 
     [Fact]
+    public void Enter_or_Tab_in_the_list_chooses_only_while_the_caret_is_still_in_the_word_it_was_drawn_for()
+    {
+        // Review, quality lens (0.62.9): the arrow keys and Home move the caret and fire no input event, so the list stayed
+        // open with a stale start and Enter wrote the mention over the wrong span: 'hi @bi' with the caret moved to 1 became
+        // 'hi @billing i @bi'. The key handler reads the word again and lets the key act when it is not the same one.
+        var keys = Mentions[Mentions.IndexOf("document.addEventListener(\"keydown\"", StringComparison.Ordinal)..];
+        var choosing = keys[keys.IndexOf("e.key === \"Enter\"", StringComparison.Ordinal)..keys.IndexOf("choose(shown[at])", StringComparison.Ordinal)];
+
+        Assert.Contains("var now = word(box);", choosing, StringComparison.Ordinal);
+        Assert.Contains("now.from !== start", choosing, StringComparison.Ordinal);
+        Assert.Contains("close(); return;", choosing, StringComparison.Ordinal);
+        Assert.True(
+            choosing.IndexOf("now.from !== start", StringComparison.Ordinal) < choosing.IndexOf("e.preventDefault()", StringComparison.Ordinal),
+            "the key must be left alone, with no preventDefault, when the word is not the one the list was drawn for");
+    }
+
+    [Fact]
     public void Only_the_frame_runs_the_list()
     {
         var running = Directory.GetFiles(ScriptSource.RepositoryPath("src/Parley.Web/Pages"), "*.cshtml", SearchOption.AllDirectories)
@@ -57,7 +74,7 @@ public sealed class MentionsInEveryMessageBoxTests
         Assert.EndsWith("}, true); })();", Mentions.TrimEnd(), StringComparison.Ordinal);
         ScriptSource.Once(
             Mentions,
-            "} else if (e.key === \"Enter\" || e.key === \"Tab\") { e.preventDefault(); e.stopPropagation(); choose(shown[at]);",
+            "} else if (e.key === \"Enter\" || e.key === \"Tab\") { var now = word(box); if (!now || now.from !== start) { close(); return; } e.preventDefault(); e.stopPropagation(); choose(shown[at]);",
             "Enter or Tab no longer chooses, and the frame sends instead");
     }
 

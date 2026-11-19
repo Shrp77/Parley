@@ -13,7 +13,7 @@ namespace Parley.Web.Tests;
 /// its whitespace folded (<see cref="ScriptSource"/>), and held to the whole statement or the exact set of conditions it
 /// is, so taking the guard out, or keeping a fragment of it, fails here.
 /// </remarks>
-[Unit]
+[Integration]
 public sealed class TheConversationScriptsKeepTheirGuardsTests
 {
     private static string Detail => ScriptSource.Page("src/Parley.Web/Pages/Conversations/Detail.cshtml");

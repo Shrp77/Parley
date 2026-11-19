@@ -17,6 +17,7 @@ namespace Parley.Cli.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class LinkRaceTests : IDisposable
 {
     private static readonly TimeSpan Flipping = TimeSpan.FromSeconds(8);

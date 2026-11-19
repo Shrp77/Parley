@@ -57,7 +57,7 @@ No NEEDS CLARIFICATION remained after the spec. These are the choices the plan r
 
 - **Decision**: 009.
 - **Rationale**: the migrator skips any migration at or below the recorded version. Feature 027 had reserved 009 but is not
-  built; if this took 010 and a store reached 10, 027 at 009 would never run. So this takes 009 and 027 moves to 010.
+  built; if this took 010 and a store reached 10, 027 at 009 would never run. So this takes 009 and 027 moves on (to 010, then to 011 when 010 became the message indexes).
 
 ## 8. What stays unreadable
 

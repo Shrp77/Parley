@@ -14,6 +14,48 @@ namespace Parley.Core;
 /// </remarks>
 public static class PayloadShape
 {
+    /// <summary>Whether a payload writes one member name twice in one object.</summary>
+    /// <param name="payloadJson">A Request, Clarify or Result payload.</param>
+    /// <returns>
+    /// <see langword="true"/> when the payload is well formed JSON and some object in it names a member more than once; a
+    /// document that is not JSON at all is <see langword="false"/>, left to the store's own check.
+    /// </returns>
+    /// <remarks>
+    /// <b>The store and the broker read a repeated name differently.</b> SQLite's <c>json_extract</c> and <c>json_each</c>
+    /// take the first, and <see cref="JsonDocument"/> takes the last, so a Result writing <c>outcome</c> twice passed the
+    /// schema's checks on one reading and closed the exchange on the other: answered in the store, blocked with no blocker in
+    /// the broker's roll-up. A payload is data (§13) and is never given two meanings: it is refused whole.
+    /// </remarks>
+    public static bool HasRepeatedName(string payloadJson)
+    {
+        ArgumentNullException.ThrowIfNull(payloadJson);
+
+        try
+        {
+            using var lenient = JsonDocument.Parse(payloadJson);
+        }
+        catch (Exception e) when (e is JsonException or ArgumentException or InvalidOperationException)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var strict = JsonDocument.Parse(payloadJson, new JsonDocumentOptions { AllowDuplicateProperties = false });
+
+            return false;
+        }
+        catch (JsonException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>The words an agent is told when its payload repeats a member name.</summary>
+    public const string RepeatedNameRefusal =
+        "A message names each member of its JSON once: a name written twice in one object is read one way by the store and " +
+        "another by the broker, so the payload is refused whole. Send it again with each name once (SPEC.md §13).";
+
     /// <summary>The one item a Result names: the Request, answered as a whole (SPEC.md §5.1).</summary>
     /// <remarks>A Request declares no identifiers, and a Result must carry at least one outcome.</remarks>
     public const string WholeRequest = "request";

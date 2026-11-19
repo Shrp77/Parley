@@ -11,7 +11,7 @@ namespace Parley.Web.Tests;
 /// with comments taken out and whitespace folded, and held to the exact condition the guard is, so taking the guard out,
 /// or commenting it out behind a weaker line, fails here.
 /// </remarks>
-[Unit]
+[Integration]
 public sealed class TheFramesScriptsKeepTheirGuardsTests
 {
     private static string Layout =>

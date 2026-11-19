@@ -278,8 +278,11 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         {
             throw new RpcException(new Status(
                 StatusCode.FailedPrecondition,
-                $"'{agent.Value}' is already open outside Parley — somebody started it in an editor — so starting another " +
-                "would put two models in one checkout. Close that session first, or prompt it there."));
+                _runtime.Unsupervised(agent)
+                    ? $"'{agent.Value}' is already running, left by a node that is gone, so starting another would put two " +
+                      "models in one checkout. End that process with kill first, and the next work for it starts it again."
+                    : $"'{agent.Value}' is already open outside Parley — somebody started it in an editor — so starting " +
+                      "another would put two models in one checkout. Close that session first, or prompt it there."));
         }
 
         var registry = await Console((console, _, ct) => console.DescribeRegistryAsync(ct), context)
@@ -326,8 +329,13 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             StopOutcome.NotRunning => Task.FromResult(new Wire.DidItReply { Changed = false }),
             StopOutcome.OpenOutside => throw new RpcException(new Status(
                 StatusCode.FailedPrecondition,
-                $"'{agent.Value}' is open outside Parley — somebody started it in an editor — so Parley holds no process "
-                + "of it to stop. Close it where it was opened.")),
+                // SPEC.md §11.7: a process a node started and a node that is gone still owns is not somebody's editor, and
+                // blaming one who never opened it was the defect; the way to end it is kill.
+                _runtime.Unsupervised(agent)
+                    ? $"'{agent.Value}' is running, left by a node that is gone, so no node holds a process of it to stop. End "
+                      + "it with kill, which ends only a process a node started."
+                    : $"'{agent.Value}' is open outside Parley — somebody started it in an editor — so Parley holds no process "
+                      + "of it to stop. Close it where it was opened.")),
             _ => throw new RpcException(new Status(
                 StatusCode.FailedPrecondition,
                 $"No node on '{agent.Machine}' can stop '{agent.Value}': its node is not connected, or does not list it "

@@ -8,7 +8,7 @@ namespace Parley.Web.Tests;
 /// The console's colours, type and fonts come from one set of Material 3 tokens (specs/035-material-3-web-ui), so a rule
 /// that names a colour of its own is the console drifting back to looking like several products.
 /// </summary>
-[Unit]
+[Integration]
 public sealed partial class MaterialTokensTests
 {
     private const string OlderNames = "/* The console's older names,";
