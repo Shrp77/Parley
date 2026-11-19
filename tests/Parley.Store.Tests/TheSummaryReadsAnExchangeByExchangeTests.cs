@@ -20,6 +20,8 @@ public sealed class TheSummaryReadsAnExchangeByExchangeTests : IDisposable
 
     public void Dispose() => _connection.Dispose();
 
+    // The plain test is the one the planner got wrong: written without the plus, NewestPerSender takes the by-conversation index.
+    // NewestResult takes the exchange index either way, and carries the plus so the two read alike.
     [Theory]
     [InlineData(MessageRepository.NewestPerSender)]
     [InlineData(MessageRepository.NewestResult)]

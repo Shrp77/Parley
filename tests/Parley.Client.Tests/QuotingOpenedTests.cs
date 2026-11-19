@@ -37,4 +37,14 @@ public sealed class QuotingOpenedTests
             Entry + "\n\norders@test said in shared:\n> full",
             Quoting.Opened("disk-cleanup", "shared", "\norders@test said in shared:\n> full"));
     }
+
+    [Fact]
+    public void A_box_that_starts_with_a_carriage_return_and_line_feed_leaves_no_gap_either()
+    {
+        // Review, quality lens (0.62.9): a mutation trimming only the line feed survived, though a box written with CRLF
+        // endings is the case the trim of the carriage return exists for.
+        Assert.Equal(
+            Entry + "\n\norders@test said in shared:\r\n> full",
+            Quoting.Opened("disk-cleanup", "shared", "\r\norders@test said in shared:\r\n> full"));
+    }
 }

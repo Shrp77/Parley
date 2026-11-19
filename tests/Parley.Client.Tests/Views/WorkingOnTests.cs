@@ -61,6 +61,22 @@ public sealed class WorkingOnTests
     }
 
     [Fact]
+    public void An_agent_is_not_working_on_a_conversation_it_has_already_answered_or_one_the_export_does_not_hold()
+    {
+        // Review, quality lens (0.62.9): the rule that owing an open exchange here is required survived a mutation that
+        // dropped it, because every case held only open exchanges and only edges that named them.
+        var closed = new ConversationExport(
+            [],
+            [new ExchangeSnapshot(1, ExchangeState.Closed, Noon, Noon.AddMinutes(1))],
+            null);
+
+        var working = new Dictionary<AgentName, Activity> { [Billing] = new(Doing.Working, Noon) };
+
+        Assert.Empty(Activities.WorkingOn(closed, [new WaitingEdge(Person, Billing, 1)], working));
+        Assert.Empty(Activities.WorkingOn(OneOpen, [new WaitingEdge(Person, Billing, 99)], working));
+    }
+
+    [Fact]
     public void An_agent_the_registry_does_not_name_has_no_entry()
     {
         Assert.Empty(Activities.WorkingOn(OneOpen, [new WaitingEdge(Person, Billing, 1)], new Dictionary<AgentName, Activity>()));
