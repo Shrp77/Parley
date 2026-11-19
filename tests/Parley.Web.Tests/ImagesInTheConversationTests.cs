@@ -131,6 +131,31 @@ public sealed class ImagesInTheConversationTests : IDisposable
     }
 
     [Fact]
+    public async Task An_image_of_exactly_the_inline_limit_is_still_served_without_being_asked_for()
+    {
+        // Review, quality lens (0.62.9): the limit is "no larger than", and refusing at exactly the limit survived.
+        var exact = new byte[Png.Length];
+        Png.CopyTo(exact, 0);
+        _console.Broker.Files.Add(View("exact.png", exact, "2026-09-14T12:00:00Z", size: Parley.Client.Files.Placements.InlineLimitBytes));
+        _console.Broker.Contents["exact.png"] = exact;
+
+        using var client = _console.CreateClient();
+
+        using var served = await client.GetAsync(Image("exact.png", ContentHash.Of(exact).Value), Ct);
+
+        Assert.Equal(HttpStatusCode.OK, served.StatusCode);
+
+        // And the page draws its thumbnail, so the card and the route agree about where the limit is.
+        var body = await client.GetStringAsync(
+            new Uri($"/Conversations/Media?project={FilesConsole.Project}&id={Conversation}", UriKind.Relative), Ct);
+        var card = Assert.Single(
+            Regex.Matches(body, "<figure class=\"placed-card\">.*?</figure>", RegexOptions.Singleline, TimeSpan.FromSeconds(5)).Select(m => m.Value),
+            c => c.Contains("exact.png", StringComparison.Ordinal));
+
+        Assert.Contains("<img", card, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task An_image_over_the_inline_limit_has_no_thumbnail_and_offers_to_show_it_anyway()
     {
         // Without the guard an image over the inline limit was drawn as a thumbnail the console refuses to serve, a broken
@@ -291,7 +316,7 @@ public sealed class PlacementsInTheTranscriptTests
         // which day headings show, after the statement that hides what follows a hidden turn. What text cannot hold is a
         // branch that never runs around it; that was checked in the browser.
         var page = File.ReadAllText(Path.Combine(Root(), "src", "Parley.Web", "Pages", "Conversations", "Detail.cshtml"));
-        var code = Regex.Replace(page, @"/\*[\s\S]*?\*/|(?<![:""'])//[^
+        var code = Regex.Replace(page, @"/\*[\s\S]*?\*/|(?<![:""'])//[^
 ]*", string.Empty, RegexOptions.None, TimeSpan.FromSeconds(2));
         var start = code.IndexOf("function run()", StringComparison.Ordinal);
         var loop = code.IndexOf("items.forEach(function (li) {", start, StringComparison.Ordinal);

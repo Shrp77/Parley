@@ -151,6 +151,33 @@ public sealed class HistoryToolTests
     }
 
     [Fact]
+    public async Task One_message_left_over_is_still_offered_with_its_cursor()
+    {
+        // Review, quality lens (0.62.9): reading only when more than one remained survived, which hides the last message of a
+        // two-page exchange from the agent with nothing to ask for it. Two messages of 40,000 characters do not both fit in a
+        // reply of 64,000, so exactly one is left.
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new ServerFixture(T0);
+        var (_, docs) = await fixture.LaunchAsync("docs@test", ct);
+        var (_, infra) = await fixture.LaunchAsync("infra@alpha", ct);
+        var (_, fresh) = await fixture.LaunchAsync("billing@test", ct);
+        var sent = await docs.RequestAsync("infra@alpha", "start " + new string('x', 40_000), cancellationToken: ct);
+        var exchange = sent["exchange_id"]!.GetValue<long>();
+        _ = await infra.InboxAsync(cancellationToken: ct);
+        _ = await infra.ClarifyAsync(exchange, new string('y', 40_000), cancellationToken: ct);
+
+        var first = await fresh.ReadExchangeAsync(exchange, cancellationToken: ct);
+
+        Assert.Single(first["messages"]!.AsArray());
+        Assert.Equal(1, first["messages_remaining"]!.GetValue<int>());
+
+        var second = await fresh.ReadExchangeAsync(exchange, first["next_after"]!.GetValue<long>(), cancellationToken: ct);
+
+        Assert.Single(second["messages"]!.AsArray());
+        Assert.Null(second["messages_remaining"]);
+    }
+
+    [Fact]
     public async Task A_long_exchange_gives_the_cursor_to_carry_on_with_and_the_arguments_reach_the_broker()
     {
         var ct = TestContext.Current.CancellationToken;

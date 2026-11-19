@@ -80,6 +80,11 @@ public sealed class HistoryReadsSchemaTests : IDisposable
     [InlineData(0x202e)]
     [InlineData(0x2028)]
     [InlineData(0x200b)]
+    [InlineData(0x2066)]
+    [InlineData(0x2069)]
+    [InlineData(0x2060)]
+    [InlineData(0xFEFF)]
+    [InlineData(0xAD)]
     public void Words_cannot_break_hide_or_reorder_a_line(int character) =>
         Assert.Throws<SqliteException>(() => Insert("search", "0", "before" + char.ConvertFromUtf32(character) + "after", "1"));
 
