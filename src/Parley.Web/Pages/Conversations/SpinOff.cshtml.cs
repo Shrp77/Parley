@@ -209,25 +209,21 @@ public sealed class SpinOffModel(BrokerDirectory directory, SeatBook seats, Parl
             return;
         }
 
-        var placing = await ComposerFiles
-            .PlaceAsync(new BrokerClient(directory.ClientFor(project)), name, Attachments, Attached, token)
+        var named = await ComposerFiles
+            .PlaceAndNameAsync(
+                new BrokerClient(directory.ClientFor(project)), voice, name, Attachments, Attached,
+                ComposerFiles.AgentsNamed(reached), token)
             .ConfigureAwait(false);
 
-        if (placing.Problem is { } problem || placing.ConversationNotStarted)
+        if (named.Problem is { } problem)
         {
-            notices.Add(project.Name.Value, name, "Files",
-                $"Your words went, and the files did not. {placing.Problem ?? "The conversation could not be found."}", false);
+            notices.Add(project.Name.Value, name, "Files", $"Your words went, and the files did not. {problem}", false);
             return;
         }
 
-        foreach (var target in reached)
+        foreach (var (agent, said, sent) in named.Told)
         {
-            if (AgentName.TryCreate(target, out var agent))
-            {
-                var said = await voice.RequestAsync(agent, Attaching.Message(null, Attached), name, token).ConfigureAwait(false);
-
-                notices.Add(project.Name.Value, name, target, said, said.StartsWith("Sent.", StringComparison.Ordinal));
-            }
+            notices.Add(project.Name.Value, name, agent.Value, said, sent);
         }
     }
 

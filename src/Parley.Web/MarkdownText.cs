@@ -45,6 +45,14 @@ public static class MarkdownText
         .DisableHtml()
         .Build();
 
+    /// <summary>The most characters that are formatted; a longer message is shown as the words it was written as.</summary>
+    /// <remarks>
+    /// Twice the soft limit on a message (16,000), so no ordinary message reaches it. Markdown parsing is worse than linear on
+    /// some input (a run of unclosed links took 0.7 s at 64,000 characters and 11 s at 256,000), a message may be 512,000
+    /// long, and a followed conversation draws every message again every few seconds, so one such message would stall its page.
+    /// </remarks>
+    public const int MaxFormatted = 32_768;
+
     /// <summary>Formats one message's words.</summary>
     /// <param name="text">The words as written.</param>
     /// <returns>Markup safe to write to the page.</returns>
@@ -57,6 +65,11 @@ public static class MarkdownText
         if (string.IsNullOrEmpty(text))
         {
             return HtmlString.Empty;
+        }
+
+        if (text.Length > MaxFormatted)
+        {
+            return new HtmlContentBuilder().AppendHtml("<pre>").Append(text).AppendHtml("</pre>");
         }
 
         try

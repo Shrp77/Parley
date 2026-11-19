@@ -47,14 +47,10 @@ public static class ParleySettings
 
         try
         {
-            if (!File.Exists(path))
-            {
-                return DefaultClosedDays;
-            }
-
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-
-            return StrictJson.Parse(StrictJson.Read(stream)) is JsonObject document
+            // Through LocalOpen, as every file in the root is: a settings file somebody made a link to a share must not
+            // make this lookup dial the host.
+            return LocalOpen.ReadText(path, json: true).Text is { } text
+                && StrictJson.Parse(text) is JsonObject document
                 && document[Inbox] is JsonObject inbox
                 && inbox[ClosedDays] is JsonValue value
                 && value.GetValueKind() == JsonValueKind.Number
@@ -91,11 +87,16 @@ public static class ParleySettings
         {
             JsonObject document;
 
-            if (File.Exists(path))
-            {
-                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            var (status, text) = LocalOpen.ReadText(path, json: true);
 
-                if (StrictJson.Parse(StrictJson.Read(stream)) is not JsonObject read)
+            if (status is LocalOpenStatus.OffThisMachine or LocalOpenStatus.Changed)
+            {
+                return $"{path} leads off this machine, so it was left as it is.";
+            }
+
+            if (text is not null)
+            {
+                if (StrictJson.Parse(text) is not JsonObject read)
                 {
                     return $"{path} does not hold a JSON object, so it was left as it is.";
                 }

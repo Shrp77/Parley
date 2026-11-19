@@ -803,25 +803,19 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     private async Task SendFilesAfterTheFirstWordsAsync(
         BrokerClient broker, SeatVoice voice, List<string> reached, bool everybody, CancellationToken token)
     {
-        var placing = await PlaceAttachmentsAsync(broker, Id!, token).ConfigureAwait(false);
+        var named = await ComposerFiles
+            .PlaceAndNameAsync(
+                broker, voice, Id!, Attachments, Attached,
+                ComposerFiles.AgentsNamed(reached), token)
+            .ConfigureAwait(false);
 
-        if (placing.Problem is { } problem || placing.ConversationNotStarted)
+        if (named.Problem is { } problem)
         {
-            SendProblem = $"Your words went, and the files did not. {placing.Problem ?? "The conversation could not be found."}";
+            SendProblem = $"Your words went, and the files did not. {problem}";
             return;
         }
 
-        var refused = false;
-
-        foreach (var target in reached)
-        {
-            if (AgentName.TryCreate(target, out var agent))
-            {
-                var said = await voice.RequestAsync(agent, Attaching.Message(null, Attached), Id, token).ConfigureAwait(false);
-
-                refused |= !said.StartsWith("Sent.", StringComparison.Ordinal);
-            }
-        }
+        var refused = named.Told.Any(t => !t.Sent);
 
         if (refused)
         {

@@ -151,4 +151,24 @@ public sealed class MarkdownTextTests
         Assert.DoesNotContain("exchange-ref", html, StringComparison.Ordinal);
         Assert.Contains("<em>exchange #351</em></a>", html, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void A_message_past_the_formatting_bound_is_shown_as_written_and_drawn_at_once()
+    {
+        // Review, performance lens run 2: a run of unclosed links took 11 s to parse at 256,000 characters, and a followed
+        // conversation draws every message again every few seconds.
+        var text = string.Concat(Enumerable.Repeat("[a](", (MarkdownText.MaxFormatted / 4) + 1));
+        var watch = Stopwatch.StartNew();
+
+        var html = Html(text);
+
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(1), $"drawing took {watch.Elapsed}");
+        Assert.StartsWith("<pre>[a](", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_message_within_the_bound_is_still_formatted()
+    {
+        Assert.Contains("<strong>x</strong>", Html("**x**" + new string(' ', 100)), StringComparison.Ordinal);
+    }
 }

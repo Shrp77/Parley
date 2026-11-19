@@ -213,21 +213,33 @@ public sealed class HistoryRepository(SqliteConnection connection)
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false)).ToList();
 
-        // One pass counts both: every match, which is what the person is shown whichever page this is, and the matches from the
-        // cursor on, which is what is left to page through. Two statements would each scan the whole store.
-        var counts = await _connection.QuerySingleAsync<(int Total, int Remaining)>(
-            new CommandDefinition(
-                $"""
-                SELECT COUNT(*) AS Total,
-                       COALESCE(SUM(CASE WHEN @Cursor = 0 OR id < @Cursor THEN 1 ELSE 0 END), 0) AS Remaining
-                FROM messages WHERE {Where};
-                """,
-                parameters,
-                transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
+        // A first page that did not fill has found every match there is, so there is nothing to count and a search that finds
+        // little or nothing, the common case, is one scan of the store and not two.
+        int total;
+        int remaining;
 
-        var remaining = counts.Remaining;
-        var total = counts.Total;
+        if (continueAfter == 0 && rows.Count < HistoryLimits.PageMatches)
+        {
+            total = remaining = rows.Count;
+        }
+        else
+        {
+            // One pass counts both: every match, which is what the person is shown whichever page this is, and the matches from
+            // the cursor on, which is what is left to page through. Two statements would each scan the whole store.
+            var counts = await _connection.QuerySingleAsync<(int Total, int Remaining)>(
+                new CommandDefinition(
+                    $"""
+                    SELECT COUNT(*) AS Total,
+                           COALESCE(SUM(CASE WHEN @Cursor = 0 OR id < @Cursor THEN 1 ELSE 0 END), 0) AS Remaining
+                    FROM messages WHERE {Where};
+                    """,
+                    parameters,
+                    transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+            remaining = counts.Remaining;
+            total = counts.Total;
+        }
 
         var matches = rows.Select(r => ToMatch(r, words)).ToList();
         var notShown = Math.Max(0, remaining - matches.Count);

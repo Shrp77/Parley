@@ -108,21 +108,89 @@ public static class ComposerFiles
             return;
         }
 
+        var named = await PlaceAndNameAsync(broker, voice, conversation, attachments, attached, reached, token).ConfigureAwait(false);
+
+        if (named.Problem is not null)
+        {
+            notices.Add(project, conversation, "Files", $"Your words went, and the files did not. {named.Problem}", false);
+            return;
+        }
+
+        foreach (var (agent, said, sent) in named.Told)
+        {
+            notices.Add(project, conversation, agent.Value, said, sent);
+        }
+    }
+
+    /// <summary>What placing a message's files and naming them to the people who took the words came to.</summary>
+    /// <param name="Problem">Why the files were not placed, or <see langword="null"/> when they were and each was told.</param>
+    /// <param name="Told">What each of those the words reached was told, in order, and whether it was sent.</param>
+    public sealed record FilesNamed(string? Problem, IReadOnlyList<(AgentName Agent, string Said, bool Sent)> Told);
+
+    /// <summary>Places the files after the words went, then names them to everybody who took the words.</summary>
+    /// <param name="broker">The project's broker.</param>
+    /// <param name="voice">The person's voice.</param>
+    /// <param name="conversation">The conversation the words started.</param>
+    /// <param name="attachments">What the browser sent.</param>
+    /// <param name="attached">Files placed, as entries.</param>
+    /// <param name="reached">Who took the words.</param>
+    /// <param name="token">Cancels the work.</param>
+    /// <returns>What came of it; a page says it in its own place.</returns>
+    /// <remarks>
+    /// <b>The one rule for a send that started its conversation</b> (SPEC.md §9.5): the words go first because a
+    /// conversation that does not exist has nowhere to hold a file, then the files are placed and named. Callers differ only
+    /// in where they say what went wrong: the bell for a page that moves on, a line on the page for one that stays.
+    /// </remarks>
+    public static async Task<FilesNamed> PlaceAndNameAsync(
+        BrokerClient broker,
+        Parley.Client.Seating.SeatVoice voice,
+        string conversation,
+        IList<IFormFile> attachments,
+        IList<string> attached,
+        IReadOnlyList<AgentName> reached,
+        CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(voice);
+        ArgumentNullException.ThrowIfNull(attachments);
+        ArgumentNullException.ThrowIfNull(attached);
+        ArgumentNullException.ThrowIfNull(reached);
+
         var placing = await PlaceAsync(broker, conversation, attachments, attached, token).ConfigureAwait(false);
 
         if (placing.Problem is not null || placing.ConversationNotStarted)
         {
-            notices.Add(project, conversation, "Files",
-                $"Your words went, and the files did not. {placing.Problem ?? "The conversation could not be found."}", false);
-
-            return;
+            return new FilesNamed(placing.Problem ?? "The conversation could not be found.", []);
         }
+
+        var told = new List<(AgentName, string, bool)>();
 
         foreach (var agent in reached)
         {
             var said = await voice.RequestAsync(agent, Attaching.Message(null, attached), conversation, token).ConfigureAwait(false);
 
-            notices.Add(project, conversation, agent.Value, said, said.StartsWith("Sent.", StringComparison.Ordinal));
+            told.Add((agent, said, said.StartsWith("Sent.", StringComparison.Ordinal)));
         }
+
+        return new FilesNamed(null, told);
+    }
+
+    /// <summary>The agents among a page's list of names; a name that is not one is left out.</summary>
+    /// <param name="names">Names a form or a send reported.</param>
+    /// <returns>The agents.</returns>
+    public static IReadOnlyList<AgentName> AgentsNamed(IEnumerable<string> names)
+    {
+        ArgumentNullException.ThrowIfNull(names);
+
+        var agents = new List<AgentName>();
+
+        foreach (var name in names)
+        {
+            if (AgentName.TryCreate(name, out var agent))
+            {
+                agents.Add(agent);
+            }
+        }
+
+        return agents;
     }
 }

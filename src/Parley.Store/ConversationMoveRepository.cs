@@ -530,17 +530,11 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
                       FROM conversation_moves m
                       JOIN conversation_move_exchanges e ON e.move_id = m.id
                      WHERE m.source = @Id OR m.destination = @Id
-                ), here AS (
-                    -- Only these agents can have a message before another one in this conversation. Any other agent's
-                    -- messages never change an answer, and on a large store they are nearly all of them.
-                    SELECT from_agent AS agent FROM messages WHERE exchange_id IN (SELECT exchange_id FROM exchanges_here)
-                    UNION
-                    SELECT to_agent FROM messages WHERE exchange_id IN (SELECT exchange_id FROM exchanges_here)
                 ), written AS (
                     -- Where each message was written: a move rewrites conversation_id, so a message on an exchange
                     -- moved after it was written is placed by that move's source, the first such move's. "After" is by
                     -- message id, which follows the broker's order exactly; a timestamp can tie with a move.
-                    SELECT msg.id, msg.exchange_id, msg.type, msg.from_agent, msg.to_agent,
+                    SELECT msg.id, msg.from_agent, msg.to_agent,
                            COALESCE(
                                (SELECT m.source
                                   FROM conversation_move_exchanges e
@@ -551,32 +545,40 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
                                  LIMIT 1),
                                msg.conversation_id) AS conversation_id
                       FROM messages msg
-                     WHERE msg.id >= (SELECT MIN(id) FROM messages WHERE conversation_id = @Id)
-                       AND (msg.from_agent IN (SELECT agent FROM here) OR msg.to_agent IN (SELECT agent FROM here))
-                ), seen AS (
-                    SELECT id, exchange_id, conversation_id, type, from_agent AS agent, to_agent AS other, 1 AS wrote
-                      FROM written
-                     WHERE from_agent IN (SELECT agent FROM here)
+                     WHERE msg.exchange_id IN (SELECT exchange_id FROM exchanges_here)
+                       AND msg.id >= (SELECT MIN(id) FROM messages WHERE conversation_id = @Id)
+                ), before AS (
+                    -- Each agent's messages written in this conversation, sent or received: the "last thing it saw here".
+                    SELECT id, from_agent AS agent FROM written WHERE conversation_id = @Id
                     UNION ALL
-                    SELECT id, exchange_id, conversation_id, type, to_agent, from_agent, 0
-                      FROM written
-                     WHERE to_agent IN (SELECT agent FROM here)
-                ), ordered AS (
-                    SELECT id, exchange_id, conversation_id, type, agent, other, wrote,
-                           LAG(conversation_id) OVER (PARTITION BY agent ORDER BY id) AS before_conversation,
-                           LAG(id) OVER (PARTITION BY agent ORDER BY id) AS before_id
-                      FROM seen
+                    SELECT id, to_agent FROM written WHERE conversation_id = @Id
+                ), following AS (
+                    -- The very next message that agent sent or received anywhere, by the by-agent indexes, so the cost
+                    -- follows what was written in this conversation and not how much the store holds after it.
+                    SELECT b.id AS before_id, b.agent,
+                           (SELECT MIN(x) FROM (
+                               SELECT MIN(id) AS x FROM messages WHERE from_agent = b.agent AND id > b.id
+                               UNION ALL
+                               SELECT MIN(id) FROM messages WHERE to_agent = b.agent AND id > b.id)) AS next_id
+                      FROM before b
                 )
-                SELECT id AS Message, before_id AS AfterMessage, agent AS Author, other AS Recipient,
-                       conversation_id AS Conversation
-                  FROM ordered
-                 WHERE wrote = 1
-                   AND before_conversation = @Id
-                   AND conversation_id <> @Id
-                   AND type IN ('request', 'clarify')
-                   AND agent NOT LIKE @Person AND other NOT LIKE @Person
-                   AND agent NOT LIKE @Facilitator AND other NOT LIKE @Facilitator
-                 ORDER BY id;
+                SELECT n.id AS Message, f.before_id AS AfterMessage, n.from_agent AS Author, n.to_agent AS Recipient,
+                       COALESCE(
+                           (SELECT m.source
+                              FROM conversation_move_exchanges e
+                              JOIN conversation_moves m ON m.id = e.move_id
+                             WHERE e.exchange_id = n.exchange_id
+                               AND COALESCE(m.last_message, 0) >= n.id
+                             ORDER BY m.id
+                             LIMIT 1),
+                           n.conversation_id) AS Conversation
+                  FROM following f
+                  JOIN messages n ON n.id = f.next_id AND n.from_agent = f.agent
+                 WHERE n.type IN ('request', 'clarify')
+                   AND n.from_agent NOT LIKE @Person AND n.to_agent NOT LIKE @Person
+                   AND n.from_agent NOT LIKE @Facilitator AND n.to_agent NOT LIKE @Facilitator
+                   AND Conversation <> @Id
+                 ORDER BY n.id;
                 """,
                 new
                 {
