@@ -2952,13 +2952,15 @@ CREATE INDEX ix_history_reads_last ON history_reads(last_utc);
 
 -- How the messages, invocations and exchanges are read (migration 010). Each is a lookup a person's page or an agent's read makes
 -- on every use, which without it walked every row of the project: one exchange's messages, one conversation's first and last,
--- one agent's, the newest turn of an agent, the exchanges an agent owes, and the exchanges of a conversation. None changes a row.
+-- one agent's, what is waiting for an agent, the newest turn of an agent, the exchanges an agent owes, and the exchanges of a
+-- conversation. None changes a row.
 CREATE INDEX ix_messages_exchange                ON messages(exchange_id, id);
 CREATE INDEX ix_messages_conversation            ON messages(conversation_id, id);
 CREATE INDEX ix_messages_conversation_time       ON messages(conversation_id, created_utc);
 CREATE INDEX ix_messages_conversation_from_time  ON messages(conversation_id, from_agent, created_utc);
 CREATE INDEX ix_messages_from                    ON messages(from_agent, id);
 CREATE INDEX ix_messages_to                      ON messages(to_agent, id);
+CREATE INDEX ix_messages_undelivered             ON messages(to_agent, id) WHERE delivered_utc IS NULL;
 CREATE INDEX ix_invocations_agent_id             ON invocations(agent, id);
 CREATE INDEX ix_exchanges_owed_by                ON exchanges(owed_by);
 CREATE INDEX ix_exchanges_conversation           ON exchanges(conversation_id, state, closed_utc);

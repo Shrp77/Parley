@@ -29,6 +29,7 @@ public sealed class MessageLookupsAreIndexedTests : IDisposable
     [InlineData("SELECT 1 FROM exchanges e WHERE e.conversation_id = 'c' AND e.state = 'OPEN';", "ix_exchanges_conversation")]
     [InlineData("SELECT max(created_utc) FROM messages WHERE conversation_id = 'c' AND from_agent = 'a@b';", "ix_messages_conversation_from_time")]
     [InlineData("SELECT 1 FROM messages m WHERE m.exchange_id = 5 AND +m.to_agent = 'a@b';", "ix_messages_exchange")]
+    [InlineData("SELECT count(*) FROM messages WHERE to_agent = 'a@b' AND delivered_utc IS NULL AND id NOT IN (0);", "ix_messages_undelivered")]
     [InlineData("SELECT id FROM messages WHERE from_agent = 'a@b' AND id >= 3;", "ix_messages_from")]
     [InlineData("SELECT id FROM messages WHERE to_agent = 'a@b' AND id >= 3;", "ix_messages_to")]
     public void A_read_by_exchange_conversation_or_agent_uses_its_index(string sql, string index)

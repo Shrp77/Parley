@@ -24,4 +24,10 @@ CREATE INDEX IF NOT EXISTS ix_exchanges_owed_by ON exchanges(owed_by);
 -- of each conversation is read from the index and not from the table.
 CREATE INDEX IF NOT EXISTS ix_exchanges_conversation ON exchanges(conversation_id, state, closed_utc);
 
+-- What is waiting for an agent: every inbox collection, every Waiting call and every send's nudge asks which messages to an
+-- agent are undelivered, and with only (to_agent, id) to use that read the agent's whole received history to find the few that
+-- are not: 1.7 microseconds a message ever received, 10 ms at 6,000 and a send-and-collect round trip going from 3.7 to 43 ms. Only
+-- undelivered rows are in this one, so it stays small however much has been received.
+CREATE INDEX IF NOT EXISTS ix_messages_undelivered ON messages(to_agent, id) WHERE delivered_utc IS NULL;
+
 -- IF NOT EXISTS so a store taken back a version by hand, as the migration tests do, upgrades again.
