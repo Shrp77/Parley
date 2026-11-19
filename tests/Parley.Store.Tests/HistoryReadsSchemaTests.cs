@@ -110,8 +110,8 @@ public sealed class HistoryReadsSchemaTests : IDisposable
         connection.Execute("DROP TABLE history_reads; PRAGMA user_version = 8;");
         connection.Execute("INSERT INTO conversations (id, state, opened_utc) VALUES ('kept', 'OPEN', '2026-11-05T09:00:00Z');");
 
-        Assert.Equal(1, SchemaMigrator.Migrate(connection));
-        Assert.Equal(9, SchemaMigrator.GetUserVersion(connection));
+        Assert.Equal(SchemaMigrator.LatestVersion - 8, SchemaMigrator.Migrate(connection));
+        Assert.Equal(SchemaMigrator.LatestVersion, SchemaMigrator.GetUserVersion(connection));
         Assert.Equal(1, connection.ExecuteScalar<long>("SELECT COUNT(*) FROM conversations WHERE id = 'kept';"));
         Assert.Empty(StoreShape.Problems(connection));
     }

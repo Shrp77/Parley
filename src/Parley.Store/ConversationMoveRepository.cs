@@ -521,7 +521,22 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
         var rows = await _connection.QueryAsync<WroteElsewhereRow>(
             new CommandDefinition(
                 """
-                WITH written AS (
+                WITH exchanges_here AS (
+                    -- The exchanges any message written in this conversation can be on: one now here, or one a move took
+                    -- out of it. A message's written place is its conversation or a move's source, so none lies outside.
+                    SELECT DISTINCT exchange_id FROM messages WHERE conversation_id = @Id
+                    UNION
+                    SELECT e.exchange_id
+                      FROM conversation_moves m
+                      JOIN conversation_move_exchanges e ON e.move_id = m.id
+                     WHERE m.source = @Id OR m.destination = @Id
+                ), here AS (
+                    -- Only these agents can have a message before another one in this conversation. Any other agent's
+                    -- messages never change an answer, and on a large store they are nearly all of them.
+                    SELECT from_agent AS agent FROM messages WHERE exchange_id IN (SELECT exchange_id FROM exchanges_here)
+                    UNION
+                    SELECT to_agent FROM messages WHERE exchange_id IN (SELECT exchange_id FROM exchanges_here)
+                ), written AS (
                     -- Where each message was written: a move rewrites conversation_id, so a message on an exchange
                     -- moved after it was written is placed by that move's source, the first such move's. "After" is by
                     -- message id, which follows the broker's order exactly; a timestamp can tie with a move.
@@ -537,12 +552,15 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
                                msg.conversation_id) AS conversation_id
                       FROM messages msg
                      WHERE msg.id >= (SELECT MIN(id) FROM messages WHERE conversation_id = @Id)
+                       AND (msg.from_agent IN (SELECT agent FROM here) OR msg.to_agent IN (SELECT agent FROM here))
                 ), seen AS (
                     SELECT id, exchange_id, conversation_id, type, from_agent AS agent, to_agent AS other, 1 AS wrote
                       FROM written
+                     WHERE from_agent IN (SELECT agent FROM here)
                     UNION ALL
                     SELECT id, exchange_id, conversation_id, type, to_agent, from_agent, 0
                       FROM written
+                     WHERE to_agent IN (SELECT agent FROM here)
                 ), ordered AS (
                     SELECT id, exchange_id, conversation_id, type, agent, other, wrote,
                            LAG(conversation_id) OVER (PARTITION BY agent ORDER BY id) AS before_conversation,

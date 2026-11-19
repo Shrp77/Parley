@@ -205,7 +205,7 @@ public sealed class HistoryRepository(SqliteConnection connection)
                        (SELECT t.atom FROM json_tree(payload_json) AS t
                          WHERE t.type = 'text' AND instr(lower(t.atom), @W1) > 0 LIMIT 1) AS MatchedText
                 FROM messages
-                WHERE {Where}
+                WHERE (@Cursor = 0 OR id < @Cursor) AND {Where}
                 ORDER BY id DESC
                 LIMIT @Limit;
                 """,
@@ -213,28 +213,21 @@ public sealed class HistoryRepository(SqliteConnection connection)
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false)).ToList();
 
-        var remaining = await _connection.QuerySingleAsync<int>(
+        // One pass counts both: every match, which is what the person is shown whichever page this is, and the matches from the
+        // cursor on, which is what is left to page through. Two statements would each scan the whole store.
+        var counts = await _connection.QuerySingleAsync<(int Total, int Remaining)>(
             new CommandDefinition(
-                $"SELECT COUNT(*) FROM messages WHERE {Where};",
+                $"""
+                SELECT COUNT(*) AS Total,
+                       COALESCE(SUM(CASE WHEN @Cursor = 0 OR id < @Cursor THEN 1 ELSE 0 END), 0) AS Remaining
+                FROM messages WHERE {Where};
+                """,
                 parameters,
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        // What the person is shown is how many messages matched, whichever page this is, so a later page counts from the start.
-        var total = continueAfter == 0
-            ? remaining
-            : await _connection.QuerySingleAsync<int>(
-                new CommandDefinition(
-                    $"SELECT COUNT(*) FROM messages WHERE {Where};",
-                    new
-                    {
-                        parameters.W1, parameters.W2, parameters.W3, parameters.W4, parameters.W5, parameters.W6, parameters.W7, parameters.W8,
-                        parameters.Agent, parameters.Conversation, parameters.Type, parameters.Since, parameters.Until,
-                        Cursor = 0L,
-                        parameters.Limit,
-                    },
-                    transaction,
-                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+        var remaining = counts.Remaining;
+        var total = counts.Total;
 
         var matches = rows.Select(r => ToMatch(r, words)).ToList();
         var notShown = Math.Max(0, remaining - matches.Count);
@@ -307,8 +300,7 @@ public sealed class HistoryRepository(SqliteConnection connection)
     /// <summary>The condition a search applies. A constant, with a fixed number of word slots.</summary>
     private const string Where =
         """
-        (@Cursor = 0 OR id < @Cursor)
-        AND (@W1 IS NULL OR EXISTS (SELECT 1 FROM json_tree(payload_json) AS t WHERE t.type = 'text' AND instr(lower(t.atom), @W1) > 0))
+        (@W1 IS NULL OR EXISTS (SELECT 1 FROM json_tree(payload_json) AS t WHERE t.type = 'text' AND instr(lower(t.atom), @W1) > 0))
         AND (@W2 IS NULL OR EXISTS (SELECT 1 FROM json_tree(payload_json) AS t WHERE t.type = 'text' AND instr(lower(t.atom), @W2) > 0))
         AND (@W3 IS NULL OR EXISTS (SELECT 1 FROM json_tree(payload_json) AS t WHERE t.type = 'text' AND instr(lower(t.atom), @W3) > 0))
         AND (@W4 IS NULL OR EXISTS (SELECT 1 FROM json_tree(payload_json) AS t WHERE t.type = 'text' AND instr(lower(t.atom), @W4) > 0))

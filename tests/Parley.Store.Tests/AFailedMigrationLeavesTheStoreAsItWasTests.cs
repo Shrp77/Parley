@@ -108,7 +108,7 @@ public sealed class AFailedMigrationLeavesTheStoreAsItWasTests : IDisposable
         // Free the name, and the same connection upgrades.
         Exec(connection, "DROP INDEX ix_conversation_move_exchanges_exchange;");
 
-        Assert.Equal(2, SchemaMigrator.Migrate(connection));
+        Assert.Equal(SchemaMigrator.LatestVersion - 7, SchemaMigrator.Migrate(connection));
         Assert.Equal(SchemaMigrator.LatestVersion, SchemaMigrator.GetUserVersion(connection));
         Assert.Empty(StoreShape.Problems(connection));
     }

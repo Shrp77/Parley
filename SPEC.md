@@ -5020,7 +5020,7 @@ decided is removed and its number is not reused, so the list has gaps.
 
 ## 18. Protocol version
 
-The protocol version is **0.19** and the storage schema version is **9**.
+The protocol version is **0.19** and the storage schema version is **10**.
 
 The version is `major.minor` and has no patch level, because a protocol change is either visible
 across the boundary or is not a protocol change at all. **While the major is zero, the minor

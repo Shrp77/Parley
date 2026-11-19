@@ -39,7 +39,7 @@ public sealed class MigrationDiscoveryTests
     /// 10 is how that is noticed.
     /// </para>
     /// </remarks>
-    private const int Expected = 9;
+    private const int Expected = 10;
 
     [Fact]
     public void Every_migration_in_the_folder_is_embedded_and_reachable()

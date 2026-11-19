@@ -924,7 +924,18 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         if (_options.ResumePolicy == ResumePolicy.Always && _resumedMachines.TryAdd(node.Machine, true))
         {
-            await WakeForOutstandingWorkAsync(node.Machine, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await WakeForOutstandingWorkAsync(node.Machine, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // The join has succeeded: the node is recorded and connected, and failing it here would leave it
+                // connected with nothing to remove it, so every retry would be refused as a second node. The wake is
+                // an extra, so it is forgotten and asked for again at the machine's next join. The work stays open
+                // and is flagged on the ordinary schedule meanwhile.
+                _ = _resumedMachines.TryRemove(node.Machine, out _);
+            }
         }
 
         return joined;

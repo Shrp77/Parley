@@ -953,7 +953,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         }
         catch (RpcException failure)
         {
-            return Unreachable(failure);
+            return Unreachable(failure, sends: false);
         }
     }
 
@@ -1062,7 +1062,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         }
         catch (RpcException failure)
         {
-            return Unreachable(failure);
+            return Unreachable(failure, sends: false);
         }
     }
 
@@ -1928,6 +1928,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 
     /// <summary>Reports that the broker could not be reached, or passes on what it said.</summary>
     /// <param name="failure">What the transport said.</param>
+    /// <param name="sends">Whether the call sends something; a read says nothing was sent only when it is true.</param>
     /// <returns>The refusal.</returns>
     /// <remarks>
     /// <para>
@@ -1941,7 +1942,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     /// handshake resolves to Internal, and what the client has to say about a socket is not for an agent.
     /// </para>
     /// </remarks>
-    private static JsonNode Unreachable(RpcException failure) =>
+    private static JsonNode Unreachable(RpcException failure, bool sends = true) =>
         failure.StatusCode is StatusCode.Unavailable or StatusCode.Internal || string.IsNullOrWhiteSpace(failure.Status.Detail)
             ? new JsonObject
             {
@@ -1956,7 +1957,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
             {
                 ["ok"] = false,
                 ["refused"] = "brokerrefused",
-                ["why"] = $"Nothing was sent. {failure.Status.Detail}"
+                ["why"] = sends ? $"Nothing was sent. {failure.Status.Detail}" : failure.Status.Detail
             };
 
     private static JsonObject FileRefused(string code, string why) => new()
