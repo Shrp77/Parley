@@ -1949,7 +1949,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 ["ok"] = false,
                 ["refused"] = "brokerunreachable",
                 ["why"] =
-                    "Parley's broker is not answering, so nothing was sent and nothing was collected. This is " +
+                    "Parley's broker is not answering, so " + (sends ? "nothing was sent and nothing was collected" : "nothing was read") + ". This is " +
                     "not something you did: the process that carries messages between repositories is down. " +
                     "Tell the person you work for it needs starting, and carry on with what you can do alone."
             }

@@ -385,6 +385,11 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
             throw new RpcException(new Status(StatusCode.InvalidArgument, "A time is written as 2026-11-17T09:30:00Z."));
         }
 
+        if (request.Type != Wire.MessageType.Unspecified && !Enum.IsDefined(request.Type))
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "A type is request, clarify or result."));
+        }
+
         var filter = new HistoryFilter(
             request.Agent is { Length: > 0 } agent ? agent : null,
             request.Conversation is { Length: > 0 } conversation ? conversation : null,

@@ -461,6 +461,31 @@ public sealed class AgentHistoryBoundsTests : IDisposable
     }
 
     [Fact]
+    public async Task Purging_an_agent_removes_the_tally_of_who_read_the_exchanges_it_takes_with_it()
+    {
+        var id = await OpenAsync("anything");
+        await _broker.ReadExchangeAsync(Inventory, id, 0, T0.AddMinutes(5), Ct);
+        Assert.Single(await Repository.ReadsOfExchangeAsync(id, Ct));
+
+        _ = await new AgentRepository(_connection).PurgeAsync(Orders, T0.AddDays(1), cancellationToken: Ct);
+
+        Assert.Equal(0, _connection.ExecuteScalar<long>("SELECT COUNT(*) FROM exchanges;"));
+        Assert.Equal(0, _connection.ExecuteScalar<long>("SELECT COUNT(*) FROM history_reads WHERE kind = 'exchange';"));
+    }
+
+    [Fact]
+    public async Task An_exchange_whose_messages_were_pruned_reads_like_a_number_that_never_existed_and_records_nothing()
+    {
+        var id = await OpenAsync("anything");
+        _connection.Execute("DELETE FROM messages WHERE exchange_id = @id;", new { id });
+
+        var slice = await Repository.ReadExchangeAsync(Inventory, id, 0, T0.AddMinutes(5), Ct);
+
+        Assert.Null(slice);
+        Assert.Empty(await Repository.ReadsOfExchangeAsync(id, Ct));
+    }
+
+    [Fact]
     public async Task A_search_the_caller_cancels_is_charged_too_so_a_deadline_of_its_own_does_not_get_it_free_searching()
     {
         for (var i = 0; i < 5; i++)

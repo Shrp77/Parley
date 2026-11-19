@@ -93,7 +93,15 @@ public sealed class HistoryRepository(SqliteConnection connection)
 
         ExchangeSlice? slice = null;
 
-        if (exchange is { } found)
+        // An exchange whose messages are all gone (pruned) reads like a number that never existed and records nothing (SPEC.md 10.1).
+        var anyText = exchange is not null && await _connection.ExecuteScalarAsync<bool>(
+            new CommandDefinition(
+                "SELECT EXISTS (SELECT 1 FROM messages WHERE exchange_id = @Id);",
+                new { Id = exchangeId },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        if (exchange is { } found && anyText)
         {
             // At most a bounded run is loaded however long the exchange is, and what is left is counted, so paging through a
             // very long exchange costs about the same at every step.

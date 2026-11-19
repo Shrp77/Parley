@@ -1277,6 +1277,11 @@ public sealed class AgentRepository(SqliteConnection connection)
             "DELETE FROM move_notices WHERE exchange_id IN (SELECT id FROM doomed_exchanges);")
             .ConfigureAwait(false);
 
+        // Who read an exchange goes with it (SPEC.md 10.2: destroy removes the record of readers, and a purge destroys).
+        await RazeAsync("history_reads",
+            "DELETE FROM history_reads WHERE kind = 'exchange' AND exchange_id IN (SELECT id FROM doomed_exchanges);")
+            .ConfigureAwait(false);
+
         // A move can leave what was settled in a conversation that stays (SPEC.md 5.0). Nothing can name what is gone, so it
         // stays closed and says only that, and a purge is not held up by somebody else's pair.
         await ExecuteAsync(
