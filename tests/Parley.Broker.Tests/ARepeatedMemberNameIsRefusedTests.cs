@@ -169,10 +169,21 @@ public sealed class ARepeatedMemberNameIsRefusedTests : IDisposable
     [InlineData("""{"a\u0000":1}""", true)]
     [InlineData("""{"a":{"b":[{"c\u0000":1}]}}""", true)]
     [InlineData("""{"a\ud800":1}""", true)]
-    [InlineData("""{"a":"value ending in a nul\u0000"}""", false)]
+    [InlineData("""{"a":"value ending in a nul\u0000"}""", true)]
     [InlineData("""{"a":"x\ud800"}""", true)]
     [InlineData("""{"a":["fine","cut \ud83d"]}""", true)]
     [InlineData("""{"a":"a whole emoji \ud83d\ude00"}""", false)]
     public void The_check_reads_what_the_broker_reads(string json, bool ambiguous) =>
         Assert.Equal(ambiguous, PayloadShape.HasAmbiguousName(json));
+
+    [Fact]
+    public void A_lone_surrogate_in_the_string_itself_is_refused()
+    {
+        // Not a JSON escape: the .NET string holds half an emoji, which JsonDocument.Parse throws ArgumentException on. An attribute
+        // argument cannot carry one (metadata is UTF-8, so the compiler turns it into U+FFFD), which is why this is not a Theory row.
+        var half = ((char)0xD83D).ToString();
+
+        Assert.True(PayloadShape.HasAmbiguousName("{\"a\":\"cut " + half + "\"}"));
+        Assert.True(PayloadShape.HasAmbiguousName("{\"a" + half + "\":1}"));
+    }
 }

@@ -311,9 +311,11 @@ public sealed class AgentVerbTests : IDisposable
         // the Result, so the requester learned its work was settled with no way to discover how.
         var sent = await Send();
 
-        var tooLong = $$"""{"outcomes":[{"id":"request","outcome":"answered","text":"{{new string('x', MessageLimits.MaxPayloadCharacters)}}"}]}""";
+        // The broker refuses a message over the limit before the store is asked, so the schema's own refusal is reached with a
+        // source nobody registered, which a trigger refuses once the exchange has been closed in the same act.
+        var unregisteredSource = """{"outcomes":[{"id":"request","outcome":"answered","text":"t","sources":["nobody@elsewhere"]}]}""";
 
-        await Assert.ThrowsAsync<SqliteException>(() => Result(sent.Exchange!.Id, tooLong));
+        await Assert.ThrowsAsync<SqliteException>(() => Result(sent.Exchange!.Id, unregisteredSource));
 
         var loaded = await _exchanges.GetAsync(sent.Exchange!.Id, cancellationToken: Ct);
         Assert.Equal(ExchangeState.Open, loaded!.State);

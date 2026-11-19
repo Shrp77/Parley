@@ -17,8 +17,8 @@ public static class PayloadShape
     /// <summary>Whether a payload could be read two ways by the store and by the broker.</summary>
     /// <param name="payloadJson">A Request, Clarify or Result payload.</param>
     /// <returns>
-    /// <see langword="true"/> when the payload holds a NUL character, or text that cannot be decoded (a lone surrogate, in a
-    /// name or in a value), or writes one member name twice in one object, or has a member name with a NUL in it; a document
+    /// <see langword="true"/> when the payload holds a NUL character (raw, or escaped in a name or a value), or text that cannot
+    /// be decoded (a lone surrogate, in a name or in a value), or writes one member name twice in one object; a document
     /// that is not JSON at all is <see langword="false"/>, left to the store's own check.
     /// </returns>
     /// <remarks>
@@ -118,9 +118,9 @@ public static class PayloadShape
 
                 return false;
             case JsonValueKind.String:
-                _ = element.GetString();
-
-                return false;
+                // Reading it is what throws for text that cannot be decoded; and a NUL in a value is cut at by SQLite's string
+                // functions (an item id of one letter, a NUL and seventy more passed the length check), which no honest text holds.
+                return element.GetString()!.Contains('\0', StringComparison.Ordinal);
             default:
                 return false;
         }

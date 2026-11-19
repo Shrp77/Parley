@@ -3049,7 +3049,19 @@ that needed it; an enumeration written as prose has already decayed.
   otherwise see two unrelated pairs as one.
 - **Message size limit.** Terseness is the context-poisoning defence (rule 8.4), so 512,000
   characters is a constraint rather than a guideline. A refusal is counted and every message's
-  length recorded (§10.2), because a limit nobody measures cannot be judged.
+  length recorded (§10.2), because a limit nobody measures cannot be judged. **A character is a
+  UTF-16 unit** (the owner, 2026-11-19), which is what every surface and the broker count, so text
+  of astral characters (most emoji) counts two each. The broker refuses a longer message before the
+  store is asked, in one place every writer shares. The schema holds the same limit as a second
+  wall but counts Unicode code points, which SQLite can do and a UTF-16 count it cannot, so its
+  bound is never tighter than the broker's; the recorded lengths (`message_lengths`) are
+  therefore in code points, and differ from the units counted for text with astral characters.
+- **A conversation's identifier is held by the broker as well as the schema.** The schema's check
+  reads a text as a C string, so an identifier of a letter, a NUL and anything after it passed it
+  whole; the identifier is written into the header of every envelope its messages arrive in (§13),
+  so the broker refuses any that is not 1 to 64 letters, digits, dots, underscores or hyphens with
+  no two dots together, and the envelope writes a placeholder for one that is not (a row from
+  before this held). The same holds for a payload: it is read one way (§13).
 - **Every message names its responder.** §11.3 is a MUST on every message, and the envelope in
   §13 renders responder identity on every delivery, so a nullable column would leave the envelope
   with a hole the schema permitted. The one message the broker writes itself, a `closed` Result,

@@ -703,10 +703,12 @@ public sealed class BrokerRuntime : IAsyncDisposable
                     .ConfigureAwait(false) is { Length: > 0 } held
                 && !WorkspacePath.SameRepository(here, held))
             {
+                // The registered path is not said: the roster withholds every agent's workspace, and a refusal an
+                // agent can provoke with its own .mcp.json must not hand it another's.
                 throw new InvalidOperationException(
-                    $"'{registration.Name.Value}' is already registered to '{held}', and this " +
+                    $"'{registration.Name.Value}' is already registered to another repository, and this " +
                     $"one is attaching from '{here}'. An agent name belongs to one repository: " +
-                    "give this one a different role, or retire the other.");
+                    "give this one a different role, or retire the other (the registry on this machine says where it is).");
             }
 
             await ReconcileIdentityAsync(agents, registration, cancellationToken).ConfigureAwait(false);
@@ -813,10 +815,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
             || !WorkspacePath.SameRepository(here, held))
         {
             throw new InvalidOperationException(
-                $"This repository's identity is already registered here as '{holder.Name.Value}', from " +
-                $"'{holder.Workspace ?? "no recorded workspace"}', and '{registration.Name.Value}' is attaching from " +
-                $"'{registration.Workspace ?? "no workspace"}'. An identity belongs to one repository on a machine: " +
-                "give this checkout its own, or retire the other.");
+                $"This repository's identity is already registered here as '{holder.Name.Value}', from another folder, " +
+                $"and '{registration.Name.Value}' is attaching from '{registration.Workspace ?? "no workspace"}'. An identity " +
+                "belongs to one repository on a machine: give this checkout its own, or retire the other (the registry on this " +
+                "machine says where it is).");
         }
 
         if (_attached.TryGetValue(holder.Name.Value, out var running) && !running.IsEmpty)

@@ -238,6 +238,7 @@ public sealed class Broker
         RequireAdapterResponder(responderModel);
         ArgumentException.ThrowIfNullOrEmpty(payloadJson);
         RequireUnambiguousNames(payloadJson);
+        RequireAValidConversation(conversationId);
         await RequireRegisteredAsync(from, cancellationToken).ConfigureAwait(false);
 
         using var scope = WriteScope.Begin(_connection, ambient: null);
@@ -298,6 +299,7 @@ public sealed class Broker
         ArgumentException.ThrowIfNullOrEmpty(role);
         ArgumentException.ThrowIfNullOrEmpty(payloadJson);
         RequireUnambiguousNames(payloadJson);
+        RequireAValidConversation(conversationId);
         await RequireRegisteredAsync(from, cancellationToken).ConfigureAwait(false);
 
         var members = (await _agents.ListRoleAsync(role, cancellationToken).ConfigureAwait(false))
@@ -441,12 +443,20 @@ public sealed class Broker
         IReadOnlyList<long>? settles = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(payloadJson);
+        RequireUnambiguousNames(payloadJson);
 
         if (!PayloadShape.TryReadOutcomes(payloadJson, out var outcomes))
         {
             throw new ArgumentException(
                 "A Result carries an 'outcomes' array, and every entry names an item id and one of done, " +
                 "answered, acknowledged or blocked. See SPEC.md §5.3.",
+                nameof(payloadJson));
+        }
+
+        if (outcomes.Any(o => o.Id.Length > MessageLimits.LongestItemId || o.Id.Any(char.IsControl)))
+        {
+            throw new ArgumentException(
+                $"An item id is at most {MessageLimits.LongestItemId} characters and holds no control character. See SPEC.md §5.3.",
                 nameof(payloadJson));
         }
 
@@ -464,9 +474,34 @@ public sealed class Broker
     /// <exception cref="ArgumentException">The payload repeats a member name, holds a NUL, or has text that cannot be decoded.</exception>
     private static void RequireUnambiguousNames(string payloadJson)
     {
+        // The size in UTF-16 units, which is what every surface counts and the owner chose as 'a character' (2026-11-19). The
+        // schema holds a looser bound, in code points, as a second wall: SQLite cannot count UTF-16 units in a CHECK.
+        if (payloadJson.Length > MessageLimits.MaxPayloadCharacters)
+        {
+            throw new ArgumentException(
+                $"A message is at most {MessageLimits.MaxPayloadCharacters:N0} characters (UTF-16 units, as a JavaScript or .NET " +
+                "string counts them); this one is longer, so it is refused whole. Send what the other side needs, or place a file. " +
+                "See SPEC.md §9.3.",
+                nameof(payloadJson));
+        }
+
         if (PayloadShape.HasAmbiguousName(payloadJson))
         {
             throw new ArgumentException(PayloadShape.AmbiguousNameRefusal, nameof(payloadJson));
+        }
+    }
+
+    /// <summary>Refuses a conversation identifier the grammar does not allow, before the store is asked (SPEC.md §9.3).</summary>
+    /// <param name="conversationId">The identifier an agent named, or null or empty for none.</param>
+    /// <exception cref="ArgumentException">The identifier is not one a conversation may have.</exception>
+    private static void RequireAValidConversation(string? conversationId)
+    {
+        if (!string.IsNullOrEmpty(conversationId) && !ConversationId.IsValid(conversationId))
+        {
+            throw new ArgumentException(
+                $"A conversation is named with 1 to {ConversationId.Longest} letters, digits, dots, underscores or hyphens, " +
+                "with no two dots together. Name it so, or leave it out and Parley names it.",
+                nameof(conversationId));
         }
     }
 
