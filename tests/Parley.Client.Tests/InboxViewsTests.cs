@@ -288,4 +288,48 @@ public sealed class InboxViewsTests
             Assert.DoesNotContain("your", standing.Chip + " " + standing.Detail, StringComparison.OrdinalIgnoreCase);
         }
     }
+
+    [Fact]
+    public void The_inbox_reads_the_same_rows_from_a_summary_as_from_the_whole_conversation()
+    {
+        // Review, performance lens (0.62.6): the Inbox now asks for the newest message and newest Result of each exchange only.
+        // Everything Build reads of an exchange must therefore be in those two.
+        var result = """{"outcomes":[{"id":"request","outcome":"answered","text":"yes"}]}""";
+
+        Message[] whole =
+        [
+            Said(1, 10, MessageType.Request, Orders, Me),
+            Said(2, 11, MessageType.Request, Me, Billing),
+            Said(3, 11, MessageType.Clarify, Billing, Me),
+            Said(4, 11, MessageType.Clarify, Me, Billing),
+            Said(5, 12, MessageType.Request, Me, Orders, hoursAgo: 30),
+            Said(6, 12, MessageType.Clarify, Orders, Me, hoursAgo: 29),
+            Said(7, 12, MessageType.Clarify, Me, Orders, hoursAgo: 28),
+            Said(8, 12, MessageType.Result, Orders, Me, result, hoursAgo: 27),
+            Said(9, 13, MessageType.Request, Billing, Me, hoursAgo: 50),
+            Said(10, 13, MessageType.Result, Me, Billing, result, hoursAgo: 49),
+        ];
+
+        // The newest message of each exchange and the newest Result of each, as the broker's summary returns them.
+        var summary = whole
+            .GroupBy(m => m.ExchangeId)
+            .SelectMany(g => new[] { g.Max(m => m.Id), g.Where(m => m.Type == MessageType.Result).Select(m => m.Id).DefaultIfEmpty(0).Max() })
+            .Where(id => id > 0)
+            .Distinct()
+            .Select(id => whole.Single(m => m.Id == id))
+            .ToList();
+
+        ExchangeSnapshot[] exchanges = [Open(10), Open(11), Closed(12, 1), Closed(13, 2)];
+        WaitingEdge[] edges = [new(Orders, Me, 10), new(Me, Billing, 11)];
+
+        static object[] Shape(InboxReading reading) =>
+            [.. reading.Rows.OrderBy(r => r.Exchange).Select(r => (object)(r.Exchange, r.Conversation, r.Agent, r.View, r.OpenedUtc, r.Last?.Id, r.Ended?.How, r.Ended?.By, r.Ended?.ClosedUtc))];
+
+        var fromWhole = Shape(Read(edges, whole, exchanges));
+        var fromSummary = Shape(Read(edges, summary, exchanges));
+
+        Assert.True(whole.Length > summary.Count, "the summary has to be smaller than the whole");
+        Assert.NotEmpty(fromWhole);
+        Assert.Equal(fromWhole, fromSummary);
+    }
 }

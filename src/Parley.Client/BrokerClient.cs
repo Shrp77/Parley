@@ -186,10 +186,11 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     }
 
     /// <inheritdoc/>
-    public async Task<ConversationExport> ExportAsync(string conversationId, CancellationToken cancellationToken = default)
+    public async Task<ConversationExport> ExportAsync(
+        string conversationId, CancellationToken cancellationToken = default, bool latestOnly = false)
     {
         var reply = await _operators.ExportAsync(
-            new Wire.ExportRequest { ConversationId = conversationId }, cancellationToken: cancellationToken);
+            new Wire.ExportRequest { ConversationId = conversationId, LatestOnly = latestOnly }, cancellationToken: cancellationToken);
 
         var destroyed = reply.Destroyed is { } gone
             ? new DestroyedConversation(

@@ -753,7 +753,8 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var exported = await Console((console, _, ct) => console.ExportAsync(Identified(request.ConversationId), ct), context)
+        var exported = await Console(
+            (console, _, ct) => console.ExportAsync(Identified(request.ConversationId), ct, request.LatestOnly), context)
             .ConfigureAwait(false);
 
         var reply = new Wire.ExportReply();

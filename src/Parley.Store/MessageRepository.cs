@@ -339,6 +339,51 @@ public sealed class MessageRepository(SqliteConnection connection)
         return [.. rows.Select(r => r.ToDomain())];
     }
 
+    /// <summary>Reads the newest message of each exchange and the newest Result of each, in this conversation.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="exchangeIds">The exchanges to read.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Those messages, oldest first, each once.</returns>
+    /// <remarks>
+    /// For a surface that summarises a conversation: the newest message says who the parties are and what was last said,
+    /// and the newest Result says how an exchange ended. Two seeks an exchange through the by-exchange index, so the cost
+    /// follows the exchanges and not the messages in the conversation.
+    /// </remarks>
+    public async Task<IReadOnlyList<Message>> GetLatestOfExchangesAsync(
+        string conversationId,
+        IEnumerable<long> exchangeIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(conversationId);
+        ArgumentNullException.ThrowIfNull(exchangeIds);
+
+        var found = new Dictionary<long, Message>();
+
+        foreach (var exchange in exchangeIds.Distinct())
+        {
+            foreach (var filter in new[] { "", "AND type = 'result'" })
+            {
+                var row = await _connection.QueryFirstOrDefaultAsync<MessageRow>(
+                    new CommandDefinition(
+                        $"""
+                        {SelectColumns}
+                        WHERE exchange_id = @Exchange AND conversation_id = @Conversation {filter}
+                        ORDER BY id DESC
+                        LIMIT 1;
+                        """,
+                        new { Exchange = exchange, Conversation = conversationId },
+                        cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+                if (row is not null)
+                {
+                    found[row.Id] = row.ToDomain();
+                }
+            }
+        }
+
+        return [.. found.Values.OrderBy(m => m.Id)];
+    }
+
     /// <summary>Loads the Request an exchange was opened with.</summary>
     /// <param name="exchangeId">The exchange.</param>
     /// <param name="transaction">The transaction to read within, or <see langword="null"/>.</param>

@@ -74,9 +74,11 @@ public interface IParleyBrokerClient
     /// <summary>Every message in a conversation, and the state of every exchange they belong to.</summary>
     /// <param name="conversationId">The conversation.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
+    /// <param name="latestOnly">Only the newest message of each exchange and its newest Result, and the exchange states, for a
+    /// surface that summarises a conversation and would otherwise hold the broker for every payload in it.</param>
     /// <returns>The messages and the exchange states, read at one instant.</returns>
     Task<ConversationExport> ExportAsync(
-        string conversationId, CancellationToken cancellationToken = default);
+        string conversationId, CancellationToken cancellationToken = default, bool latestOnly = false);
 
     /// <summary>Who is waiting on whom.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>

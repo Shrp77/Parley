@@ -104,45 +104,50 @@ public sealed class BackgroundWorkTests : IDisposable
     }
 
     [Fact]
-    public async Task Own_turns_that_follow_each_other_closely_are_each_told()
+    public async Task Own_turns_that_follow_each_other_closely_are_each_told_in_order()
     {
-        // Review, quality lens run 2 (0.62.4): the result ends an own turn on the pump and the turn lets go of the agent a
+        // Review, quality lens (0.62.4 to 0.62.6): the result ends an own turn on the pump and the turn lets go of the agent a
         // moment later on another thread, so an init read in between found the agent held and its turn was dropped: 37 of 60
-        // rounds told only the first. Three own turns, each beginning the instant the last one's result is read.
-        var template = StubRunner.Scripted(
-            _workspace,
-            [OneTask, Started, StubRunner.Pause(1), Finished, NoTasks, Init, Done, Init, DoneAgain, Init, DoneAgain],
-            [Second]);
+        // rounds told only the first. A later version still lost one turn of eight in 80 rounds, between a queued turn taking
+        // the lock and saying so. Eight own turns, each beginning the instant the last one's result is read, ten times over.
+        const int Turns = 8;
+        const int Rounds = 10;
 
-        var told = new ConcurrentQueue<string>();
-        var allEnded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        string[] script = [OneTask, Started, StubRunner.Pause(1), Finished, NoTasks, Init, Done, .. Enumerable.Repeat(new[] { Init, DoneAgain }, Turns - 1).SelectMany(pair => pair)];
 
-        await using var agent = ResidentAgent.Start(
-            AgentName.Create("billing@test"), InvocationCommand.Parse(template), _workspace, TimeProvider.System);
+        for (var round = 0; round < Rounds; round++)
+        {
+            var template = StubRunner.Scripted(_workspace, script, [Second]);
+            var told = new ConcurrentQueue<string>();
+            var allEnded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        agent.Watch(new OwnWork(
-            _ =>
-            {
-                told.Enqueue("began");
-                return Task.CompletedTask;
-            },
-            (_, _) =>
-            {
-                told.Enqueue("ended");
+            await using var agent = ResidentAgent.Start(
+                AgentName.Create("billing@test"), InvocationCommand.Parse(template), _workspace, TimeProvider.System);
 
-                if (told.Count(t => t == "ended") == 3)
+            agent.Watch(new OwnWork(
+                _ =>
                 {
-                    allEnded.TrySetResult();
-                }
+                    told.Enqueue("began");
+                    return Task.CompletedTask;
+                },
+                (_, _) =>
+                {
+                    told.Enqueue("ended");
 
-                return Task.CompletedTask;
-            },
-            _ => Task.CompletedTask));
+                    if (told.Count(t => t == "ended") == Turns)
+                    {
+                        allEnded.TrySetResult();
+                    }
 
-        _ = await agent.TakeTurnAsync("1", Patience, Ct);
-        await allEnded.Task.WaitAsync(Patience, Ct);
+                    return Task.CompletedTask;
+                },
+                _ => Task.CompletedTask));
 
-        Assert.Equal(["began", "ended", "began", "ended", "began", "ended"], told.ToArray());
+            _ = await agent.TakeTurnAsync("1", Patience, Ct);
+            await allEnded.Task.WaitAsync(Patience, Ct);
+
+            Assert.Equal(Enumerable.Repeat(new[] { "began", "ended" }, Turns).SelectMany(pair => pair), told.ToArray());
+        }
     }
 
     [Fact]

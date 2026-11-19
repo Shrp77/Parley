@@ -74,9 +74,12 @@ public sealed class ResidentAgent : IAsyncDisposable
     private TaskCompletionSource<RunnerEvent?>? _ownTurn;
     private Task _ownTurnTask = Task.CompletedTask;
 
-    // Whether an own turn holds the agent's turn lock right now, under _ownLock. A turn that has ended and a turn that holds the
-    // lock are different things: one queued behind another, or behind a given turn, has its result and does not hold it.
+    // Whether an own turn holds the agent's turn lock right now, and the own turns waiting to be handed it, both under
+    // _ownLock. A turn that has ended and a turn that holds the lock are different things: one queued behind another has its
+    // result and does not hold it. A turn that ends with another waiting hands the lock over without releasing it, so the
+    // lock is never free between two own turns for a given turn or an init to mistake.
     private bool _ownHolds;
+    private readonly Queue<TaskCompletionSource> _ownQueue = new();
 
     private ResidentAgent(
         AgentName name, string workspace, Process process, TimeProvider clock)
@@ -696,19 +699,18 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// </remarks>
     private void BeginOwnTurn()
     {
-        if (_stopping)
-        {
-            return;
-        }
-
         TaskCompletionSource<RunnerEvent?> ending;
-        Task? after = null;
+        TaskCompletionSource? handOver = null;
 
-        // Taking the lock and reading who holds it are one act under _ownLock, as letting it go and saying so are in
-        // RunOwnTurnAsync: between a turn clearing its hold and releasing the lock, an init would find the agent held by
-        // nobody and be dropped.
+        // Taking the lock, reading who holds it and queuing behind that holder are one act under _ownLock, as letting go or
+        // handing over is in RunOwnTurnAsync: in any gap between them an init finds the agent held by nobody and is dropped.
         lock (_ownLock)
         {
+            if (_stopping)
+            {
+                return;
+            }
+
             var holds = _turnLock.Wait(0);
 
             if (!holds)
@@ -720,7 +722,8 @@ public sealed class ResidentAgent : IAsyncDisposable
                     return;
                 }
 
-                after = Volatile.Read(ref _ownTurnTask);
+                handOver = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _ownQueue.Enqueue(handOver);
             }
 
             ending = new TaskCompletionSource<RunnerEvent?>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -728,40 +731,22 @@ public sealed class ResidentAgent : IAsyncDisposable
             _ownHolds |= holds;
         }
 
-        Volatile.Write(ref _ownTurnTask, RunOwnTurnAsync(ending, _clock.GetTimestamp(), _clock.GetUtcNow(), after));
+        Volatile.Write(ref _ownTurnTask, RunOwnTurnAsync(ending, _clock.GetTimestamp(), _clock.GetUtcNow(), handOver?.Task));
     }
 
     /// <summary>Holds the agent for a turn of its own until its result, its process's end, or the patience runs out.</summary>
     /// <param name="ending">Completed by the pump with the turn's result, or null when the process ended.</param>
     /// <param name="started">When it began, on the clock turns are measured against.</param>
     /// <param name="began">When it began, as a time to report.</param>
-    /// <param name="after">The turn before it that has ended but may not have let go of the agent yet, or <see langword="null"/>
-    /// when this one already holds the agent.</param>
+    /// <param name="handedOver">Completed when the turn before it passes it the agent, or <see langword="null"/> when it already
+    /// holds the agent.</param>
     /// <returns>A task that completes when the agent is released.</returns>
     private async Task RunOwnTurnAsync(
-        TaskCompletionSource<RunnerEvent?> ending, long started, DateTimeOffset began, Task? after)
+        TaskCompletionSource<RunnerEvent?> ending, long started, DateTimeOffset began, Task? handedOver)
     {
-        if (after is not null)
+        if (handedOver is not null)
         {
-            await Quietly(after).ConfigureAwait(false);
-
-            try
-            {
-                await _turnLock.WaitAsync().ConfigureAwait(false);
-            }
-            catch (ObjectDisposedException)
-            {
-                // Disposed while it waited: the agent is gone, and there is no turn to report.
-                return;
-            }
-        }
-
-        if (after is not null)
-        {
-            lock (_ownLock)
-            {
-                _ownHolds = true;
-            }
+            await handedOver.ConfigureAwait(false);
         }
 
         try
@@ -790,20 +775,28 @@ public sealed class ResidentAgent : IAsyncDisposable
         {
             lock (_ownLock)
             {
-                _ownHolds = false;
-
-                if (ReferenceEquals(_ownTurn, ending))
+                if (_ownQueue.Count > 0)
                 {
-                    _ownTurn = null;
+                    // The next own turn already has its result: it is handed the agent as it stands, still held.
+                    _ = _ownQueue.Dequeue().TrySetResult();
                 }
+                else
+                {
+                    _ownHolds = false;
 
-                try
-                {
-                    _turnLock.Release();
-                }
-                catch (ObjectDisposedException)
-                {
-                    // Disposed while it was held: the agent is gone, and nothing waits on it.
+                    if (ReferenceEquals(_ownTurn, ending))
+                    {
+                        _ownTurn = null;
+                    }
+
+                    try
+                    {
+                        _turnLock.Release();
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // Disposed while it was held: the agent is gone, and nothing waits on it.
+                    }
                 }
             }
         }

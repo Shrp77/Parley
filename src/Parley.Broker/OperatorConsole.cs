@@ -332,6 +332,7 @@ public sealed class OperatorConsole
     /// <summary>Emits every message in a conversation and the state of its exchanges (§10.2's <c>export()</c>).</summary>
     /// <param name="conversationId">The conversation.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
+    /// <param name="latestOnly">Only the newest message and newest Result of each exchange and the exchange states.</param>
     /// <returns>The messages, the exchange states, or the record of a destroyed conversation.</returns>
     /// <exception cref="ArgumentException"><paramref name="conversationId"/> is null or empty.</exception>
     /// <remarks>
@@ -344,8 +345,20 @@ public sealed class OperatorConsole
     /// another agent's context, and a person reading their own deployment's log is not being asked to obey it.
     /// </para>
     /// </remarks>
-    public async Task<ConversationExport> ExportAsync(string conversationId, CancellationToken cancellationToken = default)
+    public async Task<ConversationExport> ExportAsync(
+        string conversationId, CancellationToken cancellationToken = default, bool latestOnly = false)
     {
+        if (latestOnly)
+        {
+            // A summary: what the Inbox reads of a conversation, and nothing it does not (SPEC.md 10.2).
+            var snapshots = await _exchanges.GetSnapshotsAsync(conversationId, cancellationToken).ConfigureAwait(false);
+            var latest = await _messages
+                .GetLatestOfExchangesAsync(conversationId, snapshots.Select(e => e.ExchangeId), cancellationToken)
+                .ConfigureAwait(false);
+
+            return new ConversationExport(latest, snapshots);
+        }
+
         var messages = await _messages.GetConversationAsync(conversationId, cancellationToken).ConfigureAwait(false);
         var exchanges = await _exchanges.GetSnapshotsAsync(conversationId, cancellationToken).ConfigureAwait(false);
 

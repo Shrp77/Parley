@@ -1281,6 +1281,11 @@ message CycleView {
 
 message ExportRequest {
   string conversation_id = 1;
+
+  // Only the newest message of each exchange and the newest Result of each, and the exchanges' states: what a surface that
+  // summarises a conversation reads, without every payload in it. The Inbox reads every active conversation on each render,
+  // and a whole export of each held the broker's gate for all agents and put the history of every conversation on the wire.
+  bool latest_only = 2;
 }
 
 message ExportReply {
