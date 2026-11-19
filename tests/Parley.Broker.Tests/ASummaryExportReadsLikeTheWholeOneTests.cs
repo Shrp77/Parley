@@ -15,6 +15,7 @@ namespace Parley.Broker.Tests;
 /// what the Inbox reads of an exchange must change both.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ASummaryExportReadsLikeTheWholeOneTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

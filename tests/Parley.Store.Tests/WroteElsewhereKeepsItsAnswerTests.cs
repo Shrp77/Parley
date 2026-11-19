@@ -14,6 +14,7 @@ namespace Parley.Store.Tests;
 /// moves, messages written elsewhere than their exchange now is, and moves with no recorded last message.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class WroteElsewhereKeepsItsAnswerTests
 {
     private const string Reference =

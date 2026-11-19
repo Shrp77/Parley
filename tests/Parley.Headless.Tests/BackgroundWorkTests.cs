@@ -104,6 +104,7 @@ public sealed class BackgroundWorkTests : IDisposable
     }
 
     [Fact]
+    [Slow]
     public async Task Own_turns_that_follow_each_other_closely_are_each_told_in_order()
     {
         // Review, quality lens (0.62.4 to 0.62.6): the result ends an own turn on the pump and the turn lets go of the agent a

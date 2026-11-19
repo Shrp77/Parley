@@ -32,18 +32,18 @@
 - [x] T013 [P] [US1] `tests/Parley.Broker.Tests/AgentHistoryBrokerTests.cs`: reads by a non-participant, reader not added as participant, rate refusal with retry seconds.
 - [x] T014 [US1] `src/Parley.Server/AgentsService.cs` and `Wire.cs`: `ReadExchange`; map `Found`.
 - [x] T015 [US1] `src/Parley.Mcp/ParleyTools.cs`: `parley_read_exchange` with the description in `contracts/tools.md`; the adapter's unknown-argument refusal covers it; `BrokerLink` call.
-- [x] T016 [P] [US1] `tests/Parley.Mcp.Tests/ReadExchangeToolTests.cs` and `tests/Parley.Server.Tests/ReadingAnExchangeTests.cs`: whole path over the loopback socket.
+- [x] T016 [P] [US1] `tests/Parley.Mcp.Tests/HistoryToolTests.cs` and `tests/Parley.Server.Tests/ReadingHistoryTests.cs`: whole path over the loopback socket.
 
 **Checkpoint**: the reported bug is fixed end to end.
 
 ## Phase 4: US3 Reading never changes the work (P1)
 
-- [x] T017 [US3] `tests/Parley.Server.Tests/ReadingHistoryChangesNothingTests.cs`: with open, owed, delivered and closed exchanges, read and search everything, then compare every agent's inbox, debts, delivered flags, participants, exchange state and turn data before and after (SC-003). Watch it fail with a `MarkDelivered` in the read path.
+- [x] T017 [US3] `tests/Parley.Server.Tests/ReadingHistoryTests.cs`: with open, owed, delivered and closed exchanges, read and search everything, then compare every agent's inbox, debts, delivered flags, participants, exchange state and turn data before and after (SC-003). Watch it fail with a `MarkDelivered` in the read path.
 - [x] T018 [US3] Add the mutation checks: confirm the test fails when the read path marks delivered, adds a participant, or wakes.
 
 ## Phase 5: US4 What is read is data (P1)
 
-- [x] T019 [US4] `tests/Parley.Core.Tests/HistoryInjectionTests.cs`: a payload imitating the envelope, a header, a fake token and an instruction arrives inside the real delimiters; no field addresses the caller; control characters in a snippet neutralised.
+- [x] T019 [US4] `tests/Parley.Core.Tests/HistoryEnvelopeTests.cs`: a payload imitating the envelope, a header, a fake token and an instruction arrives inside the real delimiters; no field addresses the caller; control characters in a snippet neutralised.
 - [x] T020 [US4] `tests/Parley.Server.Tests/AgentsCannotSeeTurnsTests.cs`: extend the walk to the two replies; they carry no turn information.
 
 ## Phase 6: US2 Search (P2)
@@ -53,7 +53,7 @@
 - [x] T021 [P] [US2] Tests in `AgentHistoryTests.cs`: all-words match, case-insensitive, text in escaped characters found, operators as plain text (`"` `%` `_` `*` `NEAR`), empty and over-long refused, filters by agent, conversation, type, time, paging with `not_shown`, a snippet's bounds.
 - [x] T022 [US2] `HistoryRepository.SearchAsync` with `json_tree` and `instr`, newest first, cursor `continue_after`; snippet cut in C# at word-safe bounds.
 - [x] T023 [US2] `Broker.SearchHistoryAsync`, `AgentsService.SearchHistory`, `BrokerLink`, `parley_search_history`.
-- [x] T024 [P] [US2] `tests/Parley.Mcp.Tests/SearchHistoryToolTests.cs`, `tests/Parley.Server.Tests/SearchingTheHistoryTests.cs`.
+- [x] T024 [P] [US2] `tests/Parley.Mcp.Tests/HistoryToolTests.cs`, `tests/Parley.Server.Tests/ReadingHistoryTests.cs`.
 - [ ] T025 [US2] A size check: a store of 100,000 messages searches within the goal; recorded in the test as a skipped-on-CI `[Slow]` test.
 
 ## Phase 7: The person sees each read (FR-016)

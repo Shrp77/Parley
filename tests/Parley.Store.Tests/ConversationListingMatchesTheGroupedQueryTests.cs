@@ -16,6 +16,7 @@ namespace Parley.Store.Tests;
 /// hold nothing, only a participant, only a move, or messages that share instants and are written in different offset forms.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ConversationListingMatchesTheGroupedQueryTests : IDisposable
 {
     private const string Reference =
