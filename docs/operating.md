@@ -221,10 +221,16 @@ and its conversations are untouched; only what the running session had learned i
 started again by the next work for it. To keep it from being started, retire it. Neither is offered for an
 agent somebody opened in an editor, because Parley did not start that process and cannot stop it.
 
+**A restart starts the agents that owe work.** When a machine's node joins a broker that has just started (after an
+install, a reboot, or `parley serve` run again), every active agent on that machine that owes an open exchange is asked to
+start, once each. An unattended machine that takes a forced update therefore gets its work going again with nobody there.
+Work stays open whatever happens; this only decides whether anybody is started to do it. It does not wake an agent open
+outside Parley, and the resume gate can decline an agent. To stop work, close its conversation: stopping an agent, or ending
+the broker, stops nothing for long.
+
 **An agent left running by a node that is gone.** Installing a new build ends the broker and its node, but not the
-agents the node started: those keep running, with nothing holding them. Parley used to call such an agent *open outside
-Parley*, as if somebody had opened it in an editor. It now reads *left running by a node that is gone*, and an agent
-somebody did open still reads *open outside Parley*. Nothing can stop a left process at the end of its turn, give it a
+agents the node started: those keep running, with nothing holding them. Such an agent reads *left running by a node
+that is gone*, and an agent somebody opened in an editor reads *open outside Parley*. Nothing can stop a left process at the end of its turn, give it a
 turn, or report its status, and it ends by itself only once its work does. To end it now, press Enter on its row in the
 terminal, or open its page in the web console, and choose *Kill process*. The page says what is lost first: whatever it is
 part-way through, and what the session had learned. What it owes stays owed, and the next work for it starts it again.

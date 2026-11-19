@@ -26,7 +26,7 @@
 
 - [x] T008 [P] [US1] `tests/Parley.Core.Tests/HistoryEnvelopeTests.cs`: `WrapHistory` names the sender as `Wrap` does for each of participant, broker notice, facilitator, person's reply; says history and not mail; fresh token; payload inert (also covers US4).
 - [x] T009 [US1] `src/Parley.Core/TrustEnvelope.cs`: `WrapHistory(from, responderModel, payloadJson, token, conversationId, exchangeId, createdUtc)`.
-- [x] T010 [P] [US1] `tests/Parley.Store.Tests/AgentHistoryTests.cs`: read in order, `after` continuation, 64,000 bound with at least one message, unknown number, destroyed conversation reads gone, exchange moved reads under its new conversation.
+- [x] T010 [P] [US1] `tests/Parley.Broker.Tests/AgentHistoryBrokerTests.cs` and `AgentHistoryBoundsTests.cs`: read in order, `after` continuation, 64,000 bound with at least one message, unknown number, destroyed conversation reads gone, exchange moved reads under its new conversation.
 - [x] T011 [US1] `src/Parley.Store/HistoryRepository.cs`: `ReadExchangeAsync`, using `MessageRepository` row types; records the read in the same transaction (`RecordAsync`, a tally upsert).
 - [x] T012 [US1] `src/Parley.Broker/Broker.cs` and `src/Parley.Broker/HistoryRate.cs`: `ReadExchangeAsync(caller, id, after)`; the rate window; envelope each message; no delivery, wake or tick.
 - [x] T013 [P] [US1] `tests/Parley.Broker.Tests/AgentHistoryBrokerTests.cs`: reads by a non-participant, reader not added as participant, rate refusal with retry seconds.
@@ -50,7 +50,7 @@
 
 **Independent test**: after a restart an agent finds an old exchange by a phrase.
 
-- [x] T021 [P] [US2] Tests in `AgentHistoryTests.cs`: all-words match, case-insensitive, text in escaped characters found, operators as plain text (`"` `%` `_` `*` `NEAR`), empty and over-long refused, filters by agent, conversation, type, time, paging with `not_shown`, a snippet's bounds.
+- [x] T021 [P] [US2] Tests in `AgentHistoryBrokerTests.cs` and `SearchFiltersMatchTheOneConditionTests.cs`: all-words match, case-insensitive, text in escaped characters found, operators as plain text (`"` `%` `_` `*` `NEAR`), empty and over-long refused, filters by agent, conversation, type, time, paging with `not_shown`, a snippet's bounds.
 - [x] T022 [US2] `HistoryRepository.SearchAsync` with `json_tree` and `instr`, newest first, cursor `continue_after`; snippet cut in C# at word-safe bounds.
 - [x] T023 [US2] `Broker.SearchHistoryAsync`, `AgentsService.SearchHistory`, `BrokerLink`, `parley_search_history`.
 - [x] T024 [P] [US2] `tests/Parley.Mcp.Tests/HistoryToolTests.cs`, `tests/Parley.Server.Tests/ReadingHistoryTests.cs`.
@@ -61,11 +61,11 @@
 - [x] T026 `HistoryRepository.ReadsInConversationAsync` and the operator conversation read in `src/Parley.Broker/OperatorConsole.cs` and `OperatorsService.cs` return `reads`; `Parley.Client` view models carry them.
 - [x] T027 [P] Web: `src/Parley.Web/Pages/Conversations/Detail.cshtml` (a line under the exchange: "read by x at t"), the searches beside the conversation (one line for each agent, with a count); `tests/Parley.Web.Tests/HistoryReadsAreShownTests.cs`.
 - [x] T028 [P] Terminal: the exchange view shows the lines; `tests/Parley.Terminal.Tests` drawn-screen test.
-- [x] T029 Purge: `AgentRepository` purge removes the agent's `history_reads`; test in `AgentPurgeTests`; retiring keeps them.
+- [x] T029 Purge: `AgentRepository` purge removes the agent's `history_reads`; test `AgentHistoryBrokerTests.Purging_an_agent_removes_what_it_read_and_retiring_keeps_it`.
 
 ## Phase 8: US5 Spec, tools and tests agree (P3)
 
-- [x] T030 Rewrite `SurfaceBoundaryTests` to list the two new agent operations and still fail when the surface grows; `AgentsCannotSetTheirOwnLineTests` and the word-match tests stay green; add `tests/Parley.Spec.Tests/HistoryIsOneOperationTests.cs` (the spec's §10.1 rows exist, no sentence saying there is no history operation).
+- [x] T030 Rewrite `SurfaceBoundaryTests` to list the two new agent operations and still fail when the surface grows; `AgentsCannotSetTheirOwnLineTests` and the word-match tests stay green; add `tests/Parley.Spec.Tests/HistoryReadsAgreeTests.cs` (the spec's §10.1 rows exist, no sentence saying there is no history operation).
 - [x] T031 Sweep every doc so the new rule is the only statement: `README.md`, `docs/*.md`, `plugins/parley/**` prose and skills (how an agent resumes from a number), the `parley_inbox` description's remark about history, `SPEC.md` leftovers (`git grep -n -i "no history"`). Delete superseded wording; no history in the docs.
 - [x] T032 Hygiene `git grep` against sibling repository names, tracked and untracked files.
 
