@@ -55,6 +55,9 @@ public sealed class ARepeatedMemberNameIsRefusedTests : IDisposable
         """{"outcomes\u0000":[{"id":"request","outcome":"answered","text":"t"}],"outcomes":[{"id":"request","outcome":"blocked","text":"t"}]}""",
         """{"outcomes":[{"id":"request","outcome":"blocked","text":"t","blocker\u0000":"conflict"}]}""",
         """{"outcomes":[{"id":"request","outcome":"answered","outcome\ud800":"x","text":"t"}]}""",
+        // Text that cannot be decoded: valid to the store, a throw to the broker (security run 5): an emoji cut in half.
+        """{"outcomes":[{"id":"request","outcome":"blocked","blocker":"permission","text":"cut \ud83d"}]}""",
+        """{"outcomes":[{"id":"request","outcome":"done","text":"t","sources":["\udc00"]}]}""",
     ];
 
     [Theory]
@@ -67,7 +70,7 @@ public sealed class ARepeatedMemberNameIsRefusedTests : IDisposable
         var refused = await Assert.ThrowsAsync<ArgumentException>(
             () => _broker.ResultAsync(exchange, Billing, Requests.Model, payload, T0.AddMinutes(1), Ct));
 
-        Assert.Contains("names each member of its JSON once", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("refused whole", refused.Message, StringComparison.Ordinal);
         Assert.Equal(before, Messages());
         Assert.Equal("OPEN", _connection.ExecuteScalar<string>("SELECT state FROM exchanges WHERE id = @exchange;", new { exchange }));
     }
@@ -106,6 +109,43 @@ public sealed class ARepeatedMemberNameIsRefusedTests : IDisposable
     }
 
     [Fact]
+    public async Task A_payload_with_a_raw_nul_after_its_document_is_refused_on_a_request_and_a_clarify()
+    {
+        // Review, security lens run 5 (0.63.2): SQLite stops reading a text at a raw NUL and System.Text.Json refuses it, so a
+        // repeated name followed by a NUL and a tail was valid to the store and unreadable to the guard, which left it to the
+        // store: stored first-wins and cut where the NUL was.
+        var exchange = await OpenAsync();
+        var before = Messages();
+        var tail = "\0" + new string('A', 400);
+
+        _ = await Assert.ThrowsAsync<ArgumentException>(
+            () => _broker.RequestAsync(Orders, Billing, Requests.Model, """{"ask":"first","ask":"   "}""" + tail, T0.AddMinutes(1), "pricing", Ct));
+        _ = await Assert.ThrowsAsync<ArgumentException>(
+            () => _broker.ClarifyAsync(exchange, Billing, Requests.Model, """{"text":"a","text":"b"}""" + tail, T0.AddMinutes(1), Ct));
+        _ = await Assert.ThrowsAsync<ArgumentException>(
+            () => _broker.ResultAsync(exchange, Billing, Requests.Model, """{"outcomes":[{"id":"request","outcome":"done","text":"t"}]}""" + tail, T0.AddMinutes(1), Ct));
+
+        Assert.Equal(before, Messages());
+    }
+
+    [Fact]
+    public async Task A_result_whose_words_end_in_half_an_emoji_is_refused_and_not_closed_blocked_and_shown_done()
+    {
+        var exchange = await OpenAsync();
+        var before = Messages();
+
+        var refused = await Assert.ThrowsAsync<ArgumentException>(
+            () => _broker.ResultAsync(
+                exchange, Billing, Requests.Model,
+                """{"outcomes":[{"id":"request","outcome":"blocked","blocker":"permission","text":"cut \ud83d"}]}""",
+                T0.AddMinutes(1), Ct));
+
+        Assert.Contains("no half of an emoji", refused.Message, StringComparison.Ordinal);
+        Assert.Equal(before, Messages());
+        Assert.Equal("OPEN", _connection.ExecuteScalar<string>("SELECT state FROM exchanges WHERE id = @exchange;", new { exchange }));
+    }
+
+    [Fact]
     public async Task The_same_name_in_different_objects_is_not_a_repeat()
     {
         var exchange = await OpenAsync();
@@ -130,7 +170,9 @@ public sealed class ARepeatedMemberNameIsRefusedTests : IDisposable
     [InlineData("""{"a":{"b":[{"c\u0000":1}]}}""", true)]
     [InlineData("""{"a\ud800":1}""", true)]
     [InlineData("""{"a":"value ending in a nul\u0000"}""", false)]
-    [InlineData("""{"a":"x\ud800"}""", false)]
+    [InlineData("""{"a":"x\ud800"}""", true)]
+    [InlineData("""{"a":["fine","cut \ud83d"]}""", true)]
+    [InlineData("""{"a":"a whole emoji \ud83d\ude00"}""", false)]
     public void The_check_reads_what_the_broker_reads(string json, bool ambiguous) =>
         Assert.Equal(ambiguous, PayloadShape.HasAmbiguousName(json));
 }

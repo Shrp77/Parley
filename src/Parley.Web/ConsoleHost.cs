@@ -206,10 +206,12 @@ public static class ConsoleHost
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var site = context.Request.Headers["Sec-Fetch-Site"].ToString();
-
-        return string.Equals(site, "cross-site", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(site, "same-site", StringComparison.OrdinalIgnoreCase);
+        // Every value: a header written twice reads as one joined text ('none,cross-site'), which no comparison matched.
+        return context.Request.Headers["Sec-Fetch-Site"]
+            .SelectMany(line => (line ?? string.Empty).Split(','))
+            .Select(site => site.Trim())
+            .Any(site => string.Equals(site, "cross-site", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(site, "same-site", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>Whether a request is the console framing one of its own conversation pages.</summary>

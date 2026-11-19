@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.63.2, protocol 0.19, schema 10. Nothing has been released, but **live stores hold work
+- Version 0.63.3, protocol 0.19, schema 10. Nothing has been released, but **live stores hold work
   in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
   `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
   upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
@@ -383,7 +383,9 @@ Decided and built. The reasoning is in `SPEC.md`, the feature's `research.md` an
   `ports.json`. The serve watcher polls through `reread` and changes nothing until a read is
   clean.
 - **Project files are written atomically** (rename), preserving unknown keys, byte-order mark
-  and line endings, and refusing when anything was left out of a read. A fix that relaxes a
+  and line endings, and refusing when anything was left out of a read. That is `project.json` and
+  `settings.json`, through `ProjectFolder.Commit`; `.mcp.json`, `node.json` and `ports.json` have
+  their own writers, which keep unknown keys but write the platform's line ending. A fix that relaxes a
   reader must be checked against every writer that reads through it.
 - **Message payloads are inert data** (§13). Addressing is never parsed out of a payload: an
   `@agent` completion is a chip recorded beside the text and removed at the send. An ownership

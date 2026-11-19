@@ -4341,10 +4341,12 @@ its rules, and for the same reason:
   control of principle 2.2: an agent may hold other agents' words it was never sent, and the bounds and the record are what stand
   in for the old refusal.
 - **A payload is given one meaning.** The store reads a payload's JSON with SQLite's functions, which take the first of a member
-  name written twice and match a name as a C string, and the broker reads it with another parser, which takes the last and keeps a
-  NUL in a name. A Request, Clarify or Result that writes a member name twice in one object, or holds a NUL in a name, or a name
-  that cannot be decoded, is refused whole with a sentence before anything is stored; so the schema's checks and the broker's
-  roll-up cannot read two different documents (a Result answered in the one and blocked in the other).
+  name written twice, match a name as a C string, and stop reading a text at a raw NUL; the broker reads it with another parser,
+  which takes the last, keeps a NUL in a name, refuses a raw NUL, and throws on text it cannot decode. A Request, Clarify or Result
+  that writes a member name twice in one object, or holds a NUL anywhere (in a name or after the document), or a name or a value
+  that cannot be decoded (a lone surrogate, such as an emoji cut in half), is refused whole with a sentence before anything is
+  stored; so the schema's checks and the broker's roll-up cannot read two different documents (a Result answered in the one and
+  blocked in the other, or closed blocked while the Inbox, which could not read the words, showed it done).
 
 ### 13.1 Deduplication
 

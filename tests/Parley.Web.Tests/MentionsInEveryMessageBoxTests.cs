@@ -51,7 +51,7 @@ public sealed class MentionsInEveryMessageBoxTests
         Assert.Contains("e.isComposing || e.keyCode === 229", keys[..keys.IndexOf("e.key === \"Enter\"", StringComparison.Ordinal)], StringComparison.Ordinal);
         Assert.Contains("var now = word(box);", choosing, StringComparison.Ordinal);
         Assert.Contains("now.from !== start", choosing, StringComparison.Ordinal);
-        Assert.Contains("close(); return;", choosing, StringComparison.Ordinal);
+        Assert.Contains("close(); e.preventDefault(); e.stopPropagation(); return;", choosing, StringComparison.Ordinal);
         Assert.True(
             choosing.IndexOf("now.from !== start", StringComparison.Ordinal) < choosing.IndexOf("e.preventDefault()", StringComparison.Ordinal),
             "the key must be left alone, with no preventDefault, when the word is not the one the list was drawn for");
@@ -75,7 +75,7 @@ public sealed class MentionsInEveryMessageBoxTests
         Assert.EndsWith("}, true); })();", Mentions.TrimEnd(), StringComparison.Ordinal);
         ScriptSource.Once(
             Mentions,
-            "} else if (e.key === \"Enter\" || e.key === \"Tab\") { var now = word(box); if (!now || now.from !== start) { close(); return; } e.preventDefault(); e.stopPropagation(); choose(shown[at]);",
+            "} else if (e.key === \"Enter\" || e.key === \"Tab\") { var now = word(box); if (!now || now.from !== start) { close(); e.preventDefault(); e.stopPropagation(); return; } e.preventDefault(); e.stopPropagation(); choose(shown[at]);",
             "Enter or Tab no longer chooses, and the frame sends instead");
     }
 

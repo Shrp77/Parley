@@ -3072,7 +3072,9 @@
                     // must still be the one the list was drawn for, or the text after the caret is written twice.
                     var now = word(box);
 
-                    if (!now || now.from !== start) { close(); return; }
+                    // Closed and not chosen, and the key does nothing else: an Enter here sent a half-written message that
+                    // cannot be unsent.
+                    if (!now || now.from !== start) { close(); e.preventDefault(); e.stopPropagation(); return; }
 
                     e.preventDefault();
                     e.stopPropagation();

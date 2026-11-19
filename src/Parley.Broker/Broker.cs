@@ -459,9 +459,9 @@ public sealed class Broker
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>Refuses a payload that names a member twice or with a NUL (SPEC.md §13).</summary>
+    /// <summary>Refuses a payload the store and the broker could read two ways (SPEC.md §13).</summary>
     /// <param name="payloadJson">The payload.</param>
-    /// <exception cref="ArgumentException">Some object in the payload names a member more than once, or with a NUL.</exception>
+    /// <exception cref="ArgumentException">The payload repeats a member name, holds a NUL, or has text that cannot be decoded.</exception>
     private static void RequireUnambiguousNames(string payloadJson)
     {
         if (PayloadShape.HasAmbiguousName(payloadJson))

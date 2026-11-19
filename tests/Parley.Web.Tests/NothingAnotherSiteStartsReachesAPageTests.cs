@@ -35,6 +35,23 @@ public sealed class NothingAnotherSiteStartsReachesAPageTests
     }
 
     [Theory]
+    [InlineData("none", "cross-site")]
+    [InlineData("cross-site", "none")]
+    [InlineData("same-origin", "same-site")]
+    public async Task A_header_written_twice_is_read_as_every_value_and_not_as_one_joined_text(string first, string second)
+    {
+        // Review, security lens (0.63.2): 'none,cross-site' matched no comparison, so a second Sec-Fetch-Site line evaded the gate.
+        using var console = new DeadBrokerConsole();
+        using var client = console.CreateStubbornClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri("/Inbox", UriKind.Relative));
+        request.Headers.TryAddWithoutValidation("Sec-Fetch-Site", [first, second]);
+
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
     [InlineData("same-origin")]
     [InlineData("none")]
     [InlineData(null)]
