@@ -74,6 +74,10 @@ public sealed class ResidentAgent : IAsyncDisposable
     private TaskCompletionSource<RunnerEvent?>? _ownTurn;
     private Task _ownTurnTask = Task.CompletedTask;
 
+    // Whether an own turn holds the agent's turn lock right now, under _ownLock. A turn that has ended and a turn that holds the
+    // lock are different things: one queued behind another, or behind a given turn, has its result and does not hold it.
+    private bool _ownHolds;
+
     private ResidentAgent(
         AgentName name, string workspace, Process process, TimeProvider clock)
     {
@@ -697,26 +701,31 @@ public sealed class ResidentAgent : IAsyncDisposable
             return;
         }
 
+        TaskCompletionSource<RunnerEvent?> ending;
         Task? after = null;
 
-        if (!_turnLock.Wait(0))
+        // Taking the lock and reading who holds it are one act under _ownLock, as letting it go and saying so are in
+        // RunOwnTurnAsync: between a turn clearing its hold and releasing the lock, an init would find the agent held by
+        // nobody and be dropped.
+        lock (_ownLock)
         {
-            lock (_ownLock)
+            var holds = _turnLock.Wait(0);
+
+            if (!holds)
             {
-                if (_ownTurn is not { Task.IsCompleted: true })
+                // Held by a turn of the agent's own that is over and about to let go, and by nothing else: a given turn's
+                // own init, or a turn still running, is dropped as before.
+                if (!_ownHolds || _ownTurn is not { Task.IsCompleted: true })
                 {
                     return;
                 }
 
                 after = Volatile.Read(ref _ownTurnTask);
             }
-        }
 
-        var ending = new TaskCompletionSource<RunnerEvent?>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        lock (_ownLock)
-        {
+            ending = new TaskCompletionSource<RunnerEvent?>(TaskCreationOptions.RunContinuationsAsynchronously);
             _ownTurn = ending;
+            _ownHolds |= holds;
         }
 
         Volatile.Write(ref _ownTurnTask, RunOwnTurnAsync(ending, _clock.GetTimestamp(), _clock.GetUtcNow(), after));
@@ -747,6 +756,14 @@ public sealed class ResidentAgent : IAsyncDisposable
             }
         }
 
+        if (after is not null)
+        {
+            lock (_ownLock)
+            {
+                _ownHolds = true;
+            }
+        }
+
         try
         {
             Notify(w => w.TurnBegan(began));
@@ -773,19 +790,21 @@ public sealed class ResidentAgent : IAsyncDisposable
         {
             lock (_ownLock)
             {
+                _ownHolds = false;
+
                 if (ReferenceEquals(_ownTurn, ending))
                 {
                     _ownTurn = null;
                 }
-            }
 
-            try
-            {
-                _turnLock.Release();
-            }
-            catch (ObjectDisposedException)
-            {
-                // Disposed while it was held: the agent is gone, and nothing waits on it.
+                try
+                {
+                    _turnLock.Release();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Disposed while it was held: the agent is gone, and nothing waits on it.
+                }
             }
         }
     }

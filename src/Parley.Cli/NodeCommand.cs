@@ -1486,8 +1486,8 @@ public static class NodeCommand
                 process.Kill(entireProcessTree: true);
 
                 return process.WaitForExit(TimeSpan.FromSeconds(5))
-                    ? $"ended process {id} ({asked.Because})."
-                    : $"asked process {id} to end ({asked.Because}); it has not yet.";
+                    ? $"ended process {id} ({Inert.Line(asked.Because)})."
+                    : $"asked process {id} to end ({Inert.Line(asked.Because)}); it has not yet.";
             }
             catch (Exception failure) when (failure is InvalidOperationException
                 or System.ComponentModel.Win32Exception or NotSupportedException)

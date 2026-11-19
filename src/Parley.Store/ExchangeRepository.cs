@@ -170,11 +170,11 @@ public sealed class ExchangeRepository(SqliteConnection connection)
                   AND owed_by = @Agent
                   AND NOT EXISTS (SELECT 1 FROM messages m
                                    WHERE m.exchange_id = exchanges.id
-                                     AND m.to_agent = @Agent
+                                     AND +m.to_agent = @Agent
                                      AND m.delivered_utc IS NULL)
                   AND EXISTS (SELECT 1 FROM messages m
                                WHERE m.exchange_id = exchanges.id
-                                 AND m.to_agent = @Agent);
+                                 AND +m.to_agent = @Agent);
                 """,
                 new { Agent = agent.Value },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);

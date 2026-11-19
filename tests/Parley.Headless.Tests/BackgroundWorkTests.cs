@@ -146,6 +146,54 @@ public sealed class BackgroundWorkTests : IDisposable
     }
 
     [Fact]
+    public async Task A_given_turn_queued_behind_two_own_turns_is_not_mistaken_for_a_third()
+    {
+        // Review, quality lens (0.62.5): the second own turn queued behind the first had its result, and the given turn took
+        // the lock before it. The given turn's own init then read the lock held by a finished turn and started a phantom one,
+        // which held the agent until the patience ran out and reported a turn that never happened.
+        var template = StubRunner.Scripted(
+            _workspace,
+            [OneTask, Started, StubRunner.Pause(1), Finished, NoTasks, Init, StubRunner.Pause(2), Done, Init, StubRunner.Pause(1), DoneAgain],
+            [Init, Second],
+            [Second]);
+
+        var told = new ConcurrentQueue<string>();
+        var firstBegan = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await using var agent = ResidentAgent.Start(
+            AgentName.Create("billing@test"), InvocationCommand.Parse(template), _workspace, TimeProvider.System);
+
+        agent.OwnTurnPatience = TimeSpan.FromSeconds(6);
+        agent.Watch(new OwnWork(
+            _ =>
+            {
+                told.Enqueue("began");
+                firstBegan.TrySetResult();
+                return Task.CompletedTask;
+            },
+            (_, _) =>
+            {
+                told.Enqueue("ended");
+                return Task.CompletedTask;
+            },
+            _ => Task.CompletedTask));
+
+        _ = await agent.TakeTurnAsync("1", Patience, Ct);
+        await firstBegan.Task.WaitAsync(Patience, Ct);
+
+        // Given while the first own turn runs, so it queues for the lock with the second own turn.
+        var second = await agent.TakeTurnAsync("2", Patience, Ct);
+        Assert.True(second.Succeeded, second.Describe());
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var third = await agent.TakeTurnAsync("3", Patience, Ct);
+
+        Assert.True(third.Succeeded, third.Describe());
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(4), $"the third turn waited {watch.Elapsed}: a phantom own turn held the agent");
+        Assert.Equal(told.Count(t => t == "began"), told.Count(t => t == "ended"));
+    }
+
+    [Fact]
     public async Task A_turn_given_while_the_agent_works_on_its_own_waits_for_it_and_reads_its_own_reply()
     {
         // The second prompt arrives while the agent's own turn runs, as the probe sent it: the runner answers its own turn
