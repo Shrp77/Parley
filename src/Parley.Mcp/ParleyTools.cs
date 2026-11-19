@@ -2061,11 +2061,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
             return null;
         }
 
-        var usable = conversationId.Length is >= 1 and <= 64
-                     && !conversationId.Contains("..", StringComparison.Ordinal)
-                     && conversationId.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-');
-
-        return usable
+        return ConversationId.IsValid(conversationId)
             ? null
             : Malformed(
                 $"'{conversationId}' cannot be a conversation id. Use up to 64 characters of letters, digits, " +

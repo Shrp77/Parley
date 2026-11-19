@@ -397,13 +397,10 @@ internal sealed class FileWork(BrokerRuntime runtime)
     /// <param name="id">The id.</param>
     /// <returns><see langword="true"/> when the conversations table's CHECK would admit it.</returns>
     /// <remarks>
-    /// The same rule as that CHECK (SPEC.md §9.2) and as the adapter's refusal. A copy, because the broker must not trust
-    /// an adapter to have applied it and the store's own refusal arrives as an exception rather than as a sentence.
+    /// The one rule the broker holds, <see cref="ConversationId"/>: the schema's CHECK can be walked past with a NUL, and the
+    /// store's own refusal arrives as an exception rather than as a sentence.
     /// </remarks>
-    private static bool IsConversationId(string id) =>
-        id.Length is >= 1 and <= 64
-        && !id.Contains("..", StringComparison.Ordinal)
-        && id.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-');
+    private static bool IsConversationId(string id) => ConversationId.IsValid(id);
 
     /// <summary>Streams one whole content of a file, holding it for reading while it does.</summary>
     /// <param name="request">What to fetch.</param>

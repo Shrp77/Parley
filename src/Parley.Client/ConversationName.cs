@@ -1,3 +1,5 @@
+using Parley.Core;
+
 namespace Parley.Client;
 
 /// <summary>
@@ -25,8 +27,8 @@ namespace Parley.Client;
 /// </remarks>
 public static class ConversationName
 {
-    /// <summary>The most characters a name may hold, per the schema's <c>CHECK</c>.</summary>
-    public const int Longest = 64;
+    /// <summary>The most characters a name may hold: <see cref="ConversationId.Longest"/>, which the broker holds.</summary>
+    public const int Longest = ConversationId.Longest;
 
     /// <summary>What a field says when <see cref="Correct"/> changed what was typed.</summary>
     /// <remarks>
@@ -126,9 +128,7 @@ public static class ConversationName
     /// string, a message off the wire — is neutralising it for its own surface anyway.
     /// </remarks>
     public static string? Problem(string? typed) =>
-        typed is { Length: > 0 and <= Longest }
-        && !typed.Contains("..", StringComparison.Ordinal)
-        && typed.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-')
+        ConversationId.IsValid(typed)
             ? null
             : $"'{typed}' cannot name a conversation. Up to {Longest} characters of letters, "
               + "digits, '.', '_' and '-', with no '..' — the name reaches a filename when a "
