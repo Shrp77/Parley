@@ -122,4 +122,16 @@ public sealed class ParleySettingsFileTests : IDisposable
         Assert.Equal("[]", System.IO.File.ReadAllText(File));
         Assert.Equal(7, ParleySettings.ReadClosedDays(_root));
     }
+
+    [Fact]
+    public void A_directory_where_the_file_belongs_reads_as_the_default_and_is_not_written_over()
+    {
+        // Review, quality lens: the file is read through LocalOpen now, so what is there that is not a file must be answered
+        // and not thrown at a page.
+        Directory.CreateDirectory(File);
+
+        Assert.Equal(7, ParleySettings.ReadClosedDays(_root));
+        Assert.NotNull(ParleySettings.WriteClosedDays(_root, 30));
+        Assert.True(Directory.Exists(File));
+    }
 }

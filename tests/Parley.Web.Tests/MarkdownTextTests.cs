@@ -163,12 +163,23 @@ public sealed class MarkdownTextTests
         var html = Html(text);
 
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(1), $"drawing took {watch.Elapsed}");
-        Assert.StartsWith("<pre>[a](", html, StringComparison.Ordinal);
+        Assert.Contains("<pre>[a](", html, StringComparison.Ordinal);
+        Assert.Contains("Too long to format", html, StringComparison.Ordinal);
     }
 
     [Fact]
     public void A_message_within_the_bound_is_still_formatted()
     {
         Assert.Contains("<strong>x</strong>", Html("**x**" + new string(' ', 100)), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_bound_itself_is_formatted_and_one_past_it_is_not()
+    {
+        var atBound = "**x**" + new string('a', MarkdownText.MaxFormatted - 5);
+
+        Assert.Equal(MarkdownText.MaxFormatted, atBound.Length);
+        Assert.Contains("<strong>x</strong>", Html(atBound), StringComparison.Ordinal);
+        Assert.DoesNotContain("<strong>", Html(atBound + "a"), StringComparison.Ordinal);
     }
 }

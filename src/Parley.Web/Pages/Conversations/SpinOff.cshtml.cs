@@ -170,7 +170,10 @@ public sealed class SpinOffModel(BrokerDirectory directory, SeatBook seats, Parl
         // What became of anybody it did not reach is in the bell.
         if (reached.Count > 0)
         {
-            await SendFilesAfterTheFirstWordsAsync(project, voice, name, reached, token).ConfigureAwait(false);
+            // A conversation that does not exist yet has nowhere to hold a file, so its words went first (SPEC.md §9.5).
+            await ComposerFiles.SendAfterWordsAsync(
+                new BrokerClient(directory.ClientFor(project)), voice, notices, project.Name.Value, name,
+                Attachments, Attached, ComposerFiles.AgentsNamed(reached), token).ConfigureAwait(false);
 
             return RedirectToPage("/Conversations/Detail", new { project = project.Name.Value, id = name });
         }
@@ -188,43 +191,6 @@ public sealed class SpinOffModel(BrokerDirectory directory, SeatBook seats, Parl
         Sent = sent;
 
         return Page();
-    }
-
-    /// <summary>Places the attached files in the new conversation, then names them to everybody who took its first words.</summary>
-    /// <param name="project">The project.</param>
-    /// <param name="voice">The person's voice.</param>
-    /// <param name="name">The new conversation.</param>
-    /// <param name="reached">Who took the first words.</param>
-    /// <param name="token">Cancels the work.</param>
-    /// <returns>When done.</returns>
-    /// <remarks>
-    /// A conversation that does not exist yet has nowhere to hold a file, so its words go first (SPEC.md §9.5), as on the
-    /// conversation page. The page then moves to the conversation, so what went wrong here is said in the bell.
-    /// </remarks>
-    private async Task SendFilesAfterTheFirstWordsAsync(
-        ProjectSettings project, SeatVoice voice, string name, List<string> reached, CancellationToken token)
-    {
-        if (Attachments.Count == 0)
-        {
-            return;
-        }
-
-        var named = await ComposerFiles
-            .PlaceAndNameAsync(
-                new BrokerClient(directory.ClientFor(project)), voice, name, Attachments, Attached,
-                ComposerFiles.AgentsNamed(reached), token)
-            .ConfigureAwait(false);
-
-        if (named.Problem is { } problem)
-        {
-            notices.Add(project.Name.Value, name, "Files", $"Your words went, and the files did not. {problem}", false);
-            return;
-        }
-
-        foreach (var (agent, said, sent) in named.Told)
-        {
-            notices.Add(project.Name.Value, name, agent.Value, said, sent);
-        }
     }
 
     private async Task ReadAgentsAsync(ProjectSettings project)

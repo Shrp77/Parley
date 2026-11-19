@@ -89,7 +89,7 @@ public static class ParleySettings
 
             var (status, text) = LocalOpen.ReadText(path, json: true);
 
-            if (status is LocalOpenStatus.OffThisMachine or LocalOpenStatus.Changed)
+            if (status == LocalOpenStatus.OffThisMachine)
             {
                 return $"{path} leads off this machine, so it was left as it is.";
             }

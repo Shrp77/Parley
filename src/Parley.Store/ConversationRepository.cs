@@ -838,24 +838,24 @@ public sealed class ConversationRepository(SqliteConnection connection)
             new CommandDefinition(
                 """
                 WITH messaged AS (
-                    SELECT conversation_id      AS id,
-                           count(*)             AS messages,
-                           min(created_utc)     AS first_utc,
-                           max(created_utc)     AS last_utc
-                      FROM messages
-                     GROUP BY conversation_id
+                    -- The first and last message of each conversation are two ends of an index (conversation_id,
+                    -- created_utc), not a pass over every message: a GROUP BY here read the whole table for every page
+                    -- of 50, and the Inbox reads every page. The count is taken for the rows returned, below.
+                    SELECT c.id,
+                           (SELECT min(created_utc) FROM messages WHERE conversation_id = c.id) AS first_utc,
+                           (SELECT max(created_utc) FROM messages WHERE conversation_id = c.id) AS last_utc
+                      FROM conversations c
                 ),
                 -- A conversation started by placing a file has no message (SPEC.md §5.0), and is still a line of work
                 -- a person must be able to find: its activity is when it opened, until a message says otherwise. One
                 -- that was named and never used — no message, no participant, no file — still does not appear.
                 activity AS (
                     SELECT c.id                                   AS id,
-                           coalesce(m.messages, 0)                AS messages,
                            coalesce(m.first_utc, c.opened_utc)    AS first_utc,
                            coalesce(m.last_utc, c.opened_utc)     AS last_utc
                       FROM conversations c
                       LEFT JOIN messaged m ON m.id = c.id
-                     WHERE m.id IS NOT NULL
+                     WHERE m.last_utc IS NOT NULL
                         OR EXISTS (SELECT 1 FROM conversation_participants p WHERE p.conversation_id = c.id)
                         OR EXISTS (SELECT 1 FROM shared_files f WHERE f.conversation_id = c.id)
                         -- Everything moved out of it: it stays, and says what left (SPEC.md 5.0).
@@ -872,7 +872,7 @@ public sealed class ConversationRepository(SqliteConnection connection)
                      GROUP BY conversation_id
                 )
                 SELECT c.id                                       AS Id,
-                       a.messages                                 AS Messages,
+                       0                                          AS Messages,
                        a.first_utc                                AS FirstActivityUtc,
                        a.last_utc                                 AS LastActivityUtc,
                        EXISTS (SELECT 1 FROM exchanges e
@@ -926,6 +926,13 @@ public sealed class ConversationRepository(SqliteConnection connection)
                     new { row.Id },
                     cancellationToken: cancellationToken)).ConfigureAwait(false);
 
+            // Counted for the page's rows only: counting for every conversation to find the page read every message.
+            var messageCount = await _connection.ExecuteScalarAsync<int>(
+                new CommandDefinition(
+                    "SELECT count(*) FROM messages WHERE conversation_id = @Id;",
+                    new { row.Id },
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+
             // By the reservation and by nothing else: a payload or a name that merely looks like an item's marks no
             // conversation as one (SPEC.md §5.7).
             var reserved = await new RoadmapRepository(_connection)
@@ -934,7 +941,7 @@ public sealed class ConversationRepository(SqliteConnection connection)
             summaries.Add(new ConversationSummary(
                 row.Id,
                 [.. participants.Select(AgentName.Create)],
-                row.Messages,
+                messageCount,
                 ExchangeRow.ParseTimestamp(row.FirstActivityUtc),
                 ExchangeRow.ParseTimestamp(row.LastActivityUtc),
                 row.HasOpenExchange,
@@ -968,16 +975,15 @@ public sealed class ConversationRepository(SqliteConnection connection)
             new CommandDefinition(
                 """
                 WITH messaged AS (
-                    SELECT conversation_id      AS id,
-                           max(created_utc)     AS last_utc
-                      FROM messages
-                     GROUP BY conversation_id
+                    SELECT c.id,
+                           (SELECT max(created_utc) FROM messages WHERE conversation_id = c.id) AS last_utc
+                      FROM conversations c
                 ),
                 activity AS (
                     SELECT c.id AS id, coalesce(m.last_utc, c.opened_utc) AS last_utc
                       FROM conversations c
                       LEFT JOIN messaged m ON m.id = c.id
-                     WHERE m.id IS NOT NULL
+                     WHERE m.last_utc IS NOT NULL
                         OR EXISTS (SELECT 1 FROM conversation_participants p WHERE p.conversation_id = c.id)
                         OR EXISTS (SELECT 1 FROM shared_files f WHERE f.conversation_id = c.id)
                         OR EXISTS (SELECT 1 FROM conversation_moves mv WHERE mv.source = c.id)

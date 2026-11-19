@@ -191,6 +191,8 @@ public sealed class HistoryRepository(SqliteConnection connection)
             Limit = HistoryLimits.PageMatches,
         };
 
+        var where = WhereFor(filter);
+
         // Cancelling stops the scan itself and not only the next statement: SQLite is told to interrupt the one running. Nothing is
         // running when it is told after the search finished, and then it does nothing.
         using var interrupt = cancellationToken.Register(Interrupt);
@@ -205,7 +207,7 @@ public sealed class HistoryRepository(SqliteConnection connection)
                        (SELECT t.atom FROM json_tree(payload_json) AS t
                          WHERE t.type = 'text' AND instr(lower(t.atom), @W1) > 0 LIMIT 1) AS MatchedText
                 FROM messages
-                WHERE (@Cursor = 0 OR id < @Cursor) AND {Where}
+                WHERE (@Cursor = 0 OR id < @Cursor) AND {where}
                 ORDER BY id DESC
                 LIMIT @Limit;
                 """,
@@ -231,7 +233,7 @@ public sealed class HistoryRepository(SqliteConnection connection)
                     $"""
                     SELECT COUNT(*) AS Total,
                            COALESCE(SUM(CASE WHEN @Cursor = 0 OR id < @Cursor THEN 1 ELSE 0 END), 0) AS Remaining
-                    FROM messages WHERE {Where};
+                    FROM messages WHERE {where};
                     """,
                     parameters,
                     transaction,
@@ -310,7 +312,7 @@ public sealed class HistoryRepository(SqliteConnection connection)
     }
 
     /// <summary>The condition a search applies. A constant, with a fixed number of word slots.</summary>
-    private const string Where =
+    private const string WhereTemplate =
         """
         (@W1 IS NULL OR EXISTS (SELECT 1 FROM json_tree(payload_json) AS t WHERE t.type = 'text' AND instr(lower(t.atom), @W1) > 0))
         AND (@W2 IS NULL OR EXISTS (SELECT 1 FROM json_tree(payload_json) AS t WHERE t.type = 'text' AND instr(lower(t.atom), @W2) > 0))
@@ -320,12 +322,25 @@ public sealed class HistoryRepository(SqliteConnection connection)
         AND (@W6 IS NULL OR EXISTS (SELECT 1 FROM json_tree(payload_json) AS t WHERE t.type = 'text' AND instr(lower(t.atom), @W6) > 0))
         AND (@W7 IS NULL OR EXISTS (SELECT 1 FROM json_tree(payload_json) AS t WHERE t.type = 'text' AND instr(lower(t.atom), @W7) > 0))
         AND (@W8 IS NULL OR EXISTS (SELECT 1 FROM json_tree(payload_json) AS t WHERE t.type = 'text' AND instr(lower(t.atom), @W8) > 0))
-        AND (@Agent IS NULL OR from_agent = @Agent OR to_agent = @Agent)
-        AND (@Conversation IS NULL OR conversation_id = @Conversation)
+        {AgentTerm}
+        {ConversationTerm}
         AND (@Type IS NULL OR type = @Type)
         AND (@Since IS NULL OR unixepoch(created_utc, 'subsec') >= unixepoch(@Since, 'subsec'))
         AND (@Until IS NULL OR unixepoch(created_utc, 'subsec') <= unixepoch(@Until, 'subsec'))
         """;
+
+    /// <summary>The condition a search applies, written for the filters it was given.</summary>
+    /// <param name="filter">The filters.</param>
+    /// <returns>The condition, built only from this class's own text; every value is a parameter.</returns>
+    /// <remarks>
+    /// A filter that is given is written plainly (<c>conversation_id = @Conversation</c>), because a test that also allows
+    /// the filter to be absent (<c>@Conversation IS NULL OR ...</c>) cannot use an index, and a search narrowed to one
+    /// conversation or one participant read every message all the same. Written this way it reads that range only.
+    /// </remarks>
+    private static string WhereFor(HistoryFilter filter) =>
+        WhereTemplate
+            .Replace("{AgentTerm}", filter.Agent is null ? "" : "AND (from_agent = @Agent OR to_agent = @Agent)", StringComparison.Ordinal)
+            .Replace("{ConversationTerm}", filter.Conversation is null ? "" : "AND conversation_id = @Conversation", StringComparison.Ordinal);
 
     private void Interrupt()
     {
