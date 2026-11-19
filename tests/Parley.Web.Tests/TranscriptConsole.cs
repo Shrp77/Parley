@@ -92,6 +92,9 @@ public sealed class ScriptedExport : HttpMessageHandler
     /// <summary>What agents read of the past, which the export carries for the person (SPEC.md §5.8).</summary>
     public List<Wire.HistoryReadRow> Reads { get; } = [];
 
+    /// <summary>Every export asked for: the conversation, and whether only its summary was.</summary>
+    public List<(string Conversation, bool LatestOnly)> ExportsAsked { get; } = [];
+
     /// <summary>Every listing of conversations asked for.</summary>
     public List<Wire.ListConversationsRequest> Listings { get; } = [];
 
@@ -211,7 +214,8 @@ public sealed class ScriptedExport : HttpMessageHandler
         {
             reply = request.RequestUri!.AbsolutePath switch
             {
-                "/parley.v1.Operators/Export" => Export(),
+                "/parley.v1.Operators/Export" => Export(Wire.ExportRequest.Parser.ParseFrom(sent.AsSpan(5))),
+                "/parley.v1.Operators/LocateExchange" => Located(Wire.LocateExchangeRequest.Parser.ParseFrom(sent.AsSpan(5))),
                 "/parley.v1.Operators/DescribeRegistry" => Rows(),
                 "/parley.v1.Operators/DescribeWaiting" => Waiting(),
                 "/parley.v1.Operators/ListSharedFiles" => new Wire.FilesReply { Files = { Files }, TotalFiles = Files.Count },
@@ -294,9 +298,13 @@ public sealed class ScriptedExport : HttpMessageHandler
         return reply;
     }
 
-    private Wire.ExportReply Export()
+    private Wire.LocateExchangeReply Located(Wire.LocateExchangeRequest asked) =>
+        new() { ConversationId = Messages.FirstOrDefault(m => m.ExchangeId == asked.ExchangeId)?.ConversationId ?? string.Empty };
+
+    private Wire.ExportReply Export(Wire.ExportRequest asked)
     {
         Exports++;
+        ExportsAsked.Add((asked.ConversationId, asked.LatestOnly));
 
         var reply = new Wire.ExportReply();
 

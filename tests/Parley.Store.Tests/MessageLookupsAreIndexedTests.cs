@@ -26,6 +26,7 @@ public sealed class MessageLookupsAreIndexedTests : IDisposable
     [InlineData("SELECT MAX(created_utc) FROM messages WHERE conversation_id = 'c';", "ix_messages_conversation_time")]
     [InlineData("SELECT started_utc FROM invocations i WHERE i.agent = 'a@b' ORDER BY i.id DESC LIMIT 1;", "ix_invocations_agent_id")]
     [InlineData("SELECT id FROM exchanges WHERE owed_by = 'a@b';", "ix_exchanges_owed_by")]
+    [InlineData("SELECT 1 FROM exchanges e WHERE e.conversation_id = 'c' AND e.state = 'OPEN';", "ix_exchanges_conversation")]
     [InlineData("SELECT max(created_utc) FROM messages WHERE conversation_id = 'c' AND from_agent = 'a@b';", "ix_messages_conversation_from_time")]
     [InlineData("SELECT 1 FROM messages m WHERE m.exchange_id = 5 AND +m.to_agent = 'a@b';", "ix_messages_exchange")]
     [InlineData("SELECT id FROM messages WHERE from_agent = 'a@b' AND id >= 3;", "ix_messages_from")]

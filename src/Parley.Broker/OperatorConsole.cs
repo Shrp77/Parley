@@ -332,7 +332,7 @@ public sealed class OperatorConsole
     /// <summary>Emits every message in a conversation and the state of its exchanges (§10.2's <c>export()</c>).</summary>
     /// <param name="conversationId">The conversation.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <param name="latestOnly">Only the newest message and newest Result of each exchange and the exchange states.</param>
+    /// <param name="latestOnly">Only the newest message each sender wrote in each exchange, its newest Result, and the exchange states.</param>
     /// <returns>The messages, the exchange states, or the record of a destroyed conversation.</returns>
     /// <exception cref="ArgumentException"><paramref name="conversationId"/> is null or empty.</exception>
     /// <remarks>

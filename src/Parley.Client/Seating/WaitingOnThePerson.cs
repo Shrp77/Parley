@@ -50,8 +50,8 @@ public static class WaitingOnThePerson
     /// <remarks>
     /// <para>
     /// The wait-for graph says which exchanges an agent is waiting on the person for, and only the conversation says what was
-    /// asked, so the conversations the person is party to that have an open exchange are read and
-    /// <see cref="WaitingOnYou"/> picks the questions out of them, the derivation the conversation page and the room use.
+    /// asked, so the conversations those exchanges are in are read and <see cref="WaitingOnYou"/> picks the questions out of
+    /// them, the derivation the conversation page and the room use.
     /// </para>
     /// <para>
     /// Nothing is read when nothing waits on the person, which is the common case and costs one call. Nothing here
@@ -70,22 +70,16 @@ public static class WaitingOnThePerson
             return [];
         }
 
-        var open = new List<string>();
-        string? next = null;
+        // Only the conversations that hold a question waiting on the person, found by the exchange the wait-for graph names. Reading
+        // every conversation with an open exchange whole made the cost follow the person's whole history, on every Inbox open and
+        // every poll of a conversation page, as soon as one agent waited.
+        var located = await Task.WhenAll(
+            onMe.Select(edge => broker.LocateExchangeAsync(edge.ExchangeId, cancellationToken))).ConfigureAwait(false);
 
-        do
-        {
-            var page = await broker
-                .ConversationsAsync(me, pageToken: next, includeArchived: true, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-
-            open.AddRange(page.Items.Where(c => c.HasOpenExchange).Select(c => c.Id));
-            next = page.NextPageToken;
-        }
-        while (next is { Length: > 0 });
-
-        var exports = await Task.WhenAll(
-            open.Select(id => broker.ExportAsync(id, cancellationToken))).ConfigureAwait(false);
+        // The summary holds the newest message each sender wrote in each exchange, which is all WaitingOnYou reads: the
+        // agent's newest is what the person owes a reply to.
+        var exports = await SummaryExports.ReadAsync(
+            broker, [.. located.OfType<string>().Distinct(StringComparer.Ordinal)], cancellationToken).ConfigureAwait(false);
 
         return
         [

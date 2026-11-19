@@ -196,4 +196,22 @@ public sealed class WaitingOnYouOnThePageTests
 
         Assert.DoesNotContain("class=\"waiting-on-you\"", page, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task What_waits_on_the_person_is_read_from_summaries_and_never_a_whole_conversation()
+    {
+        // Review, quality lens (0.62.7): every conversation with an open exchange was exported whole as soon as one agent
+        // waited, on every Inbox open and every poll of a conversation page.
+        using var console = Asked();
+        console.Broker.AlsoListed.Add(new Wire.ConversationSummary { ConversationId = "plain-work", HasOpenExchange = true });
+        console.Broker.AlsoListed.Add(new Wire.ConversationSummary { ConversationId = "more-plain-work", HasOpenExchange = true });
+
+        using var client = console.CreateClient();
+
+        _ = await client.GetStringAsync(
+            new Uri($"/Inbox?project={TranscriptConsole.Project}", UriKind.Relative), TestContext.Current.CancellationToken);
+
+        // Never a whole conversation: a question needs only the agent's newest message in its exchange.
+        Assert.DoesNotContain(console.Broker.ExportsAsked, e => !e.LatestOnly);
+    }
 }

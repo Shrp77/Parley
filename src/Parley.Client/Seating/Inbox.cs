@@ -323,7 +323,7 @@ public static class Inbox
             .Distinct(StringComparer.Ordinal)
             .ToList();
 
-        var exports = await Task.WhenAll(wanted.Select(id => broker.ExportAsync(id, cancellationToken, latestOnly: true))).ConfigureAwait(false);
+        var exports = await SummaryExports.ReadAsync(broker, wanted, cancellationToken).ConfigureAwait(false);
 
         var inFlight = edges.Any(edge => edge.Waiter == me && edge.WaitedOn != me);
         var registry = inFlight ? await broker.RegistryAsync(cancellationToken).ConfigureAwait(false) : [];

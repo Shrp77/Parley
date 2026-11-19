@@ -27,7 +27,7 @@ public sealed class ASummaryExportKeepsWhatASummaryReadsTests : IDisposable
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task The_summary_is_the_newest_message_and_newest_result_of_each_exchange_and_the_same_states()
+    public async Task The_summary_is_the_newest_message_of_each_sender_and_newest_result_of_each_exchange_and_the_same_states()
     {
         Requests.Register(_connection, Orders, Billing);
 
@@ -50,14 +50,11 @@ public sealed class ASummaryExportKeepsWhatASummaryReadsTests : IDisposable
         var full = await console.ExportAsync("talk", Ct);
         var summary = await console.ExportAsync("talk", Ct, latestOnly: true);
 
-        long NewestOf(long exchange, Func<Message, bool> keep) =>
-            full.Messages.Where(m => m.ExchangeId == exchange).Where(keep).Max(m => m.Id);
-
-        var expected = full.Messages.Select(m => m.ExchangeId).Distinct()
-            .SelectMany(exchange => new[] { NewestOf(exchange, _ => true) }
-                .Concat(full.Messages.Any(m => m.ExchangeId == exchange && m.Type == MessageType.Result)
-                    ? [NewestOf(exchange, m => m.Type == MessageType.Result)]
-                    : []))
+        // The newest message each sender wrote in each exchange, and the newest Result of each exchange that has one.
+        var expected = full.Messages
+            .GroupBy(m => (m.ExchangeId, m.From))
+            .Select(g => g.Max(m => m.Id))
+            .Concat(full.Messages.Where(m => m.Type == MessageType.Result).GroupBy(m => m.ExchangeId).Select(g => g.Max(m => m.Id)))
             .Distinct()
             .Order()
             .ToList();

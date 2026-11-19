@@ -339,15 +339,16 @@ public sealed class MessageRepository(SqliteConnection connection)
         return [.. rows.Select(r => r.ToDomain())];
     }
 
-    /// <summary>Reads the newest message of each exchange and the newest Result of each, in this conversation.</summary>
+    /// <summary>Reads the newest message each sender wrote in each exchange and the newest Result of each, in this conversation.</summary>
     /// <param name="conversationId">The conversation.</param>
     /// <param name="exchangeIds">The exchanges to read.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>Those messages, oldest first, each once.</returns>
     /// <remarks>
-    /// For a surface that summarises a conversation: the newest message says who the parties are and what was last said,
-    /// and the newest Result says how an exchange ended. Two seeks an exchange through the by-exchange index, so the cost
-    /// follows the exchanges and not the messages in the conversation.
+    /// For a surface that summarises a conversation: the newest message of the two parties says who they are and what each
+    /// last said (what the person owes a reply to is the agent's newest), and the newest Result says how an exchange ended.
+    /// Two reads an exchange through the by-exchange index, so the cost follows the exchanges and not the messages in the
+    /// conversation.
     /// </remarks>
     public async Task<IReadOnlyList<Message>> GetLatestOfExchangesAsync(
         string conversationId,
@@ -361,20 +362,22 @@ public sealed class MessageRepository(SqliteConnection connection)
 
         foreach (var exchange in exchangeIds.Distinct())
         {
-            foreach (var filter in new[] { "", "AND type = 'result'" })
+            foreach (var where in new[]
             {
-                var row = await _connection.QueryFirstOrDefaultAsync<MessageRow>(
+                "id IN (SELECT max(id) FROM messages WHERE exchange_id = @Exchange AND conversation_id = @Conversation GROUP BY from_agent)",
+                "id = (SELECT max(id) FROM messages WHERE exchange_id = @Exchange AND conversation_id = @Conversation AND type = 'result')",
+            })
+            {
+                var rows = await _connection.QueryAsync<MessageRow>(
                     new CommandDefinition(
                         $"""
                         {SelectColumns}
-                        WHERE exchange_id = @Exchange AND conversation_id = @Conversation {filter}
-                        ORDER BY id DESC
-                        LIMIT 1;
+                        WHERE {where};
                         """,
                         new { Exchange = exchange, Conversation = conversationId },
                         cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-                if (row is not null)
+                foreach (var row in rows)
                 {
                     found[row.Id] = row.ToDomain();
                 }
