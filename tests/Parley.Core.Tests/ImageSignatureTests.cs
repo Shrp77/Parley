@@ -34,6 +34,19 @@ public sealed class ImageSignatureTests
         Assert.False(ImageSignature.Matches(name, System.Text.Encoding.Latin1.GetBytes(text)));
 
     [Theory]
+    [InlineData("a.png", new byte[] { 0x89, 0x50, 0x4E, 0x47 })]
+    [InlineData("a.png", new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A })]
+    [InlineData("a.jpg", new byte[] { 0xFF, 0xD8 })]
+    [InlineData("a.jpeg", new byte[] { 0xFF, 0xD8, 0x00 })]
+    [InlineData("a.gif", new byte[] { 0x47, 0x49, 0x46, 0x38, 0x39 })]
+    public void Only_the_start_of_the_signature_does_not_match(string name, byte[] bytes)
+    {
+        // Review, quality lens (0.62.9): shortening the PNG signature to four bytes and the JPEG's to two survived, so a file
+        // beginning only as part of the signature was served as the image its name said.
+        Assert.False(ImageSignature.Matches(name, bytes));
+    }
+
+    [Theory]
     [InlineData("notes.md")]
     [InlineData("a.svg")]
     [InlineData("png")]

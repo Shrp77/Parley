@@ -149,6 +149,41 @@ public sealed class WhoReadAnExchangeTests
     }
 
     [Fact]
+    public void The_ninth_searcher_is_counted_and_exactly_the_limit_is_not()
+    {
+        // Review, quality lens (0.62.9): moving the boundary by one survived, so exactly nine searchers showed eight lines and
+        // no count, and the ninth was dropped without a word (SPEC.md §5.8).
+        HistoryRead Searcher(int i) => new(AgentName.Create($"agent{i}@acme"), null, "needle", 1, At.AddMinutes(i));
+
+        var nine = Reading.SearchLines([.. Enumerable.Range(0, HistoryLimits.SearchersShown + 1).Select(Searcher)]);
+        var eight = Reading.SearchLines([.. Enumerable.Range(0, HistoryLimits.SearchersShown).Select(Searcher)]);
+
+        Assert.Equal("1 more agents searched", nine[^1]);
+        Assert.Equal(HistoryLimits.SearchersShown + 1, nine.Count);
+        Assert.Equal(HistoryLimits.SearchersShown, eight.Count);
+        Assert.DoesNotContain(eight, l => l.Contains("more agents searched", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Exactly_the_named_limit_of_readers_has_no_and_more_and_one_past_it_has()
+    {
+        var five = Reading.ReadLine([.. Enumerable.Range(0, HistoryLimits.ReadersNamed).Select(i => Read($"agent{i}@acme", 5, i))], 5, TimeZoneInfo.Utc);
+        var six = Reading.ReadLine([.. Enumerable.Range(0, HistoryLimits.ReadersNamed + 1).Select(i => Read($"agent{i}@acme", 5, i))], 5, TimeZoneInfo.Utc);
+
+        Assert.DoesNotContain(" more", five, StringComparison.Ordinal);
+        Assert.EndsWith(" and 1 more", six, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_agent_that_read_twice_shows_the_count_and_one_that_read_once_does_not()
+    {
+        var line = Reading.ReadLine([Read("twice@acme", 5, 1, count: 2), Read("once@acme", 5, 2)], 5, TimeZoneInfo.Utc);
+
+        Assert.Contains("twice@acme at 17 Nov 09:31 (2 times)", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("once@acme at 17 Nov 09:32 (", line, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void An_agent_cannot_hide_another_searcher_past_the_eighth_without_the_person_being_told_how_many_more()
     {
         var reads = new List<HistoryRead> { new(AgentName.Create("spy@acme"), null, "secret", 1, At) };

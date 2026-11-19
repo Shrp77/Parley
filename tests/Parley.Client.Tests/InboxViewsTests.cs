@@ -290,6 +290,23 @@ public sealed class InboxViewsTests
     }
 
     [Fact]
+    public void A_result_that_closed_the_request_names_nobody_as_having_done_it()
+    {
+        // Review, quality lens (0.62.9): giving the closing agent as the one who did it survived, so an exchange the agent only
+        // closed read as work it had finished.
+        var sent = Said(1, 30, MessageType.Request, Me, Billing);
+        var closed = Read(
+            [],
+            [sent, Said(2, 30, MessageType.Result, Billing, Me, """{"outcomes":[{"id":"request","outcome":"closed","text":"no longer needed"}]}""")],
+            [Closed(30, 0)]);
+
+        var row = Assert.Single(closed.Rows);
+
+        Assert.Equal(Ending.Closed, row.Ended!.How);
+        Assert.Null(row.Ended.By);
+    }
+
+    [Fact]
     public void The_inbox_reads_the_same_rows_from_a_summary_as_from_the_whole_conversation()
     {
         // Review, performance lens (0.62.6): the Inbox now asks for the newest message and newest Result of each exchange only.
