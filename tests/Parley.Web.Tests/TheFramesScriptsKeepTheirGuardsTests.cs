@@ -26,7 +26,7 @@ public sealed class TheFramesScriptsKeepTheirGuardsTests
 
         var waits = Regex.Match(
             script,
-            """if \(document\.querySelector\("(?<selector>[^"]*)"\)\) \{ tick\(\); \} else \{ location\.replace\(""",
+            """if \(document\.querySelector\("(?<selector>[^"]*)"\)\) \{ tick\(\); \} else \{ keep\(\); location\.replace\(""",
             RegexOptions.None,
             TimeSpan.FromSeconds(1));
 
