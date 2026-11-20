@@ -110,6 +110,29 @@ public sealed class GraphPanelTests
     }
 
     [Fact]
+    public async Task Freezing_offers_the_choice_to_keep_it_frozen_after_a_logon_and_unfreezing_does_not()
+    {
+        using var console = new DeadBrokerConsole();
+        using var client = console.CreateStubbornClient();
+
+        var one = await client.GetStringAsync(
+            new Uri($"/Projects/Act?project={DeadBrokerConsole.Project}&action=freeze&subject=orders%40test", UriKind.Relative), Ct);
+        var all = await client.GetStringAsync(
+            new Uri($"/Projects/Act?project={DeadBrokerConsole.Project}&action=freezeall&subject={DeadBrokerConsole.Project}", UriKind.Relative), Ct);
+        var unfreeze = await client.GetStringAsync(
+            new Uri($"/Projects/Act?project={DeadBrokerConsole.Project}&action=unfreeze&subject=orders%40test", UriKind.Relative), Ct);
+
+        Assert.Contains("name=\"KeepFrozen\"", one, StringComparison.Ordinal);
+        Assert.Contains("Do not unfreeze on logon", one, StringComparison.Ordinal);
+        Assert.Contains("name=\"KeepFrozen\"", all, StringComparison.Ordinal);
+        Assert.DoesNotContain("name=\"KeepFrozen\"", unfreeze, StringComparison.Ordinal);
+
+        // Unchecked by default: the person chooses to keep a freeze, never the other way round.
+        Assert.DoesNotMatch("<input[^>]*name=\"KeepFrozen\"[^>]*checked", one);
+        Assert.Contains("unfreezes it", one, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Unfreezing_an_agent_and_freezing_a_whole_project_are_each_described_too()
     {
         using var console = new DeadBrokerConsole();

@@ -103,7 +103,7 @@ public sealed class MigrationSixTests : IDisposable
             table => table,
             table => _connection.Query($"SELECT * FROM \"{table}\" ORDER BY 1, 2;")
                 // Without a column a later migration added: the rows are compared as schema 5 frozen them.
-                .Select(row => string.Join('|', ((IDictionary<string, object>)row).Where(c => c.Key != "frozen_utc").Select(c => $"{c.Key}={c.Value}")))
+                .Select(row => string.Join('|', ((IDictionary<string, object>)row).Where(c => c.Key is not ("frozen_utc" or "frozen_run" or "keep_frozen")).Select(c => $"{c.Key}={c.Value}")))
                 .ToArray());
 
     private List<string> Tables() =>

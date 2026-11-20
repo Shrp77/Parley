@@ -171,6 +171,14 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     private readonly ConcurrentDictionary<string, bool> _frozen = new(StringComparer.Ordinal);
 
+    /// <summary>A number this broker gave itself when it started, new every time (SPEC.md §11.1).</summary>
+    /// <remarks>
+    /// Kept with every freeze, so the next start can tell a freeze an earlier run made from one this run made. A start is the
+    /// evidence that the machine restarted, or that its owner logged on again and the processes were started afresh; a freeze
+    /// that is not marked to outlast one lapses with it.
+    /// </remarks>
+    public string RunId { get; } = Guid.NewGuid().ToString("D");
+
     private readonly SqliteConnection _connection;
     private readonly Parley.Broker.Broker _house;
     private readonly Parley.Broker.BrokerOptions _options;
@@ -217,6 +225,11 @@ public sealed class BrokerRuntime : IAsyncDisposable
         var now = clock.GetUtcNow();
         _ = new NodeRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
         _ = new AgentRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
+
+        // A freeze an earlier run made lapses now, unless the person asked that it outlast a start (SPEC.md §11.1). Before the set
+        // below is read, so `Ask` never sees what has just lapsed. The agents that owe work are started by the first join of
+        // their machine's node, which wakes every active agent that owes an open exchange.
+        _ = new AgentRepository(connection).UnfreezeLapsedAsync(RunId).GetAwaiter().GetResult();
 
         foreach (var frozen in new AgentRepository(connection).GetAllAsync().GetAwaiter().GetResult().Where(a => a.Frozen))
         {
@@ -967,7 +980,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         if (owes)
         {
-            _ = RequestAttentionForMail(agent, "a person unfrozen it and it owes work");
+            _ = RequestAttentionForMail(agent, "a person unfroze it and it owes work");
         }
     }
 

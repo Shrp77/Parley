@@ -975,7 +975,7 @@ service Operators {
   // A person's freeze on an agent (section 11.1): recorded in this project's store, then the agent's node is asked to stop it after
   // its current turn. While frozen nothing starts it -- not the restart wake, not new work, not a person's Start -- and its open
   // work stays open. Unfreeze clears it. A freeze is the person's alone: the Agents service carries neither.
-  rpc Freeze(AgentRequest) returns (FreezeReply);
+  rpc Freeze(FreezeRequest) returns (FreezeReply);
   rpc Unfreeze(AgentRequest) returns (DidItReply);
 
   // The file location (section 9.5). Placing as the person, removing any file and pruning them all are the person's:
@@ -1002,6 +1002,13 @@ message Empty {}
 
 message AgentRequest {
   string agent = 1;
+}
+
+// A person's freeze of an agent. `keep_frozen` asks that the freeze outlast a start of the broker: without it, a later start (what a
+// logon or a reboot brings) lets the freeze lapse and the agent is started again if it owes work (section 11.1).
+message FreezeRequest {
+  string agent = 1;
+  bool keep_frozen = 2;
 }
 
 message DidItReply {
@@ -1188,6 +1195,9 @@ message RegistryRow {
 
   // When a person frozen the agent in this project (section 11.1); empty when it is not frozen.
   string frozen_utc = 21;
+
+  // Whether the person asked that the freeze outlast a start of the broker; false when it is not frozen.
+  bool keep_frozen = 22;
 }
 
 message RefusalsReply {

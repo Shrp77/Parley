@@ -547,6 +547,7 @@ internal static class Conversions
             OpenOutside = record.OpenOutside,
             Unsupervised = record.Unsupervised,
             FrozenUtc = record.FrozenUtc is { } heldUtc ? Stamp(heldUtc) : string.Empty,
+            KeepFrozen = record.KeepFrozen,
             Identity = record.Identity.Known ? record.Identity.ToString() : string.Empty,
         };
     }

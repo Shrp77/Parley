@@ -172,6 +172,13 @@ returns them.
 
 ## Decisions (owner, 2026-11-20)
 
+- **A freeze is for a reboot, so a logon lifts it.** Every start of the broker gives it a GUID, stored with each freeze it makes.
+  A start that finds a freeze made under another GUID treats it as a new logon or reboot: the freeze lapses and the agent is started
+  if it owes work. A freeze the person marked **Do not unfreeze on logon** (`keep_frozen`) is not lifted by a start and must be
+  unfrozen by hand. Unfreezing forgets the choice. (The owner chose this over reading the Windows session ID, which Windows
+  reuses between logons, and which would have needed a Windows-only reading. The cost is that any restart of the broker, an
+  install or a crash included, lifts an unkept freeze.)
+
 - **A freeze is per agent, across every project on the machine that the agent serves.** One Freeze act records the freeze in
   each such project's store, so the process ends and stays ended whichever project's work or restart would have woken it.
   Unfreeze clears it in all of them. Freezing from project A therefore stops the agent's work for project B too, and the

@@ -36,6 +36,8 @@ public sealed class FreezingAnAgentTests
 
     private static Wire.AgentRequest Agent(string name) => new() { Agent = name };
 
+    private static Wire.FreezeRequest Freeze(string name, bool keep = false) => new() { Agent = name, KeepFrozen = keep };
+
     [Fact]
     public async Task Work_for_a_frozen_agent_does_not_start_it_and_the_sender_is_told_why()
     {
@@ -46,7 +48,7 @@ public sealed class FreezingAnAgentTests
 
         await RegisterAndCloseAsync(broker, "orders@alpha", token);
 
-        var frozen = await broker.ConnectAsOperator().FreezeAsync(Agent("orders@alpha"), cancellationToken: token);
+        var frozen = await broker.ConnectAsOperator().FreezeAsync(Freeze("orders@alpha"), cancellationToken: token);
 
         Assert.True(frozen.Changed);
         Assert.Equal("not_running", frozen.Process);
@@ -71,7 +73,7 @@ public sealed class FreezingAnAgentTests
         await RegisterAndCloseAsync(broker, "orders@alpha", token);
 
         var console = broker.ConnectAsOperator();
-        _ = await console.FreezeAsync(Agent("orders@alpha"), cancellationToken: token);
+        _ = await console.FreezeAsync(Freeze("orders@alpha"), cancellationToken: token);
 
         var refused = await Assert.ThrowsAsync<RpcException>(async () =>
             await console.StartAsync(new Wire.StartRequest { Agent = "orders@alpha" }, cancellationToken: token));
@@ -91,8 +93,8 @@ public sealed class FreezingAnAgentTests
 
         var console = broker.ConnectAsOperator();
 
-        Assert.True((await console.FreezeAsync(Agent("orders@alpha"), cancellationToken: token)).Changed);
-        Assert.False((await console.FreezeAsync(Agent("orders@alpha"), cancellationToken: token)).Changed);
+        Assert.True((await console.FreezeAsync(Freeze("orders@alpha"), cancellationToken: token)).Changed);
+        Assert.False((await console.FreezeAsync(Freeze("orders@alpha"), cancellationToken: token)).Changed);
         Assert.True((await console.UnfreezeAsync(Agent("orders@alpha"), cancellationToken: token)).Changed);
         Assert.False((await console.UnfreezeAsync(Agent("orders@alpha"), cancellationToken: token)).Changed);
     }
@@ -106,17 +108,17 @@ public sealed class FreezingAnAgentTests
         var console = broker.ConnectAsOperator();
 
         var unknown = await Assert.ThrowsAsync<RpcException>(async () =>
-            await console.FreezeAsync(Agent("ghost@alpha"), cancellationToken: token));
+            await console.FreezeAsync(Freeze("ghost@alpha"), cancellationToken: token));
 
         Assert.Equal(StatusCode.NotFound, unknown.StatusCode);
 
         var seat = await Assert.ThrowsAsync<RpcException>(async () =>
-            await console.FreezeAsync(Agent($"human-user@{DeadProject}"), cancellationToken: token));
+            await console.FreezeAsync(Freeze($"human-user@{DeadProject}"), cancellationToken: token));
 
         Assert.Equal(StatusCode.FailedPrecondition, seat.StatusCode);
 
         var facilitator = await Assert.ThrowsAsync<RpcException>(async () =>
-            await console.FreezeAsync(Agent($"parley-facilitator@{DeadProject}"), cancellationToken: token));
+            await console.FreezeAsync(Freeze($"parley-facilitator@{DeadProject}"), cancellationToken: token));
 
         Assert.True(facilitator.StatusCode is StatusCode.InvalidArgument or StatusCode.FailedPrecondition);
     }
@@ -135,7 +137,7 @@ public sealed class FreezingAnAgentTests
         await RegisterAndCloseAsync(broker, "orders@alpha", token);
 
         var console = broker.ConnectAsOperator();
-        _ = await console.FreezeAsync(Agent("orders@alpha"), cancellationToken: token);
+        _ = await console.FreezeAsync(Freeze("orders@alpha"), cancellationToken: token);
 
         await using var docs = await AttachedClient.AttachAsync(broker, "docs@alpha", cancellationToken: token);
         _ = await docs.Client.RequestAsync(
@@ -160,7 +162,7 @@ public sealed class FreezingAnAgentTests
         await RegisterAndCloseAsync(broker, "orders@alpha", token);
 
         var console = broker.ConnectAsOperator();
-        _ = await console.FreezeAsync(Agent("orders@alpha"), cancellationToken: token);
+        _ = await console.FreezeAsync(Freeze("orders@alpha"), cancellationToken: token);
         _ = await console.UnfreezeAsync(Agent("orders@alpha"), cancellationToken: token);
 
         Assert.Equal(0, await node.CountCommandsAsync(TimeSpan.FromMilliseconds(300)));
@@ -179,7 +181,7 @@ public sealed class FreezingAnAgentTests
         Assert.Empty((await console.DescribeRegistryAsync(new Wire.Empty(), cancellationToken: token)).Rows
             .Single(r => r.Name == "orders@alpha").FrozenUtc);
 
-        _ = await console.FreezeAsync(Agent("orders@alpha"), cancellationToken: token);
+        _ = await console.FreezeAsync(Freeze("orders@alpha"), cancellationToken: token);
 
         Assert.NotEmpty((await console.DescribeRegistryAsync(new Wire.Empty(), cancellationToken: token)).Rows
             .Single(r => r.Name == "orders@alpha").FrozenUtc);
@@ -203,7 +205,7 @@ public sealed class FreezingAnAgentTests
             Requests.Open("docs@alpha", "orders@alpha", "still open after", "c1"), cancellationToken: token);
 
         var console = broker.ConnectAsOperator();
-        _ = await console.FreezeAsync(Agent("orders@alpha"), cancellationToken: token);
+        _ = await console.FreezeAsync(Freeze("orders@alpha"), cancellationToken: token);
 
         var open = await console.ListConversationsAsync(new Wire.ListConversationsRequest(), cancellationToken: token);
 

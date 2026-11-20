@@ -63,6 +63,21 @@ internal sealed class LoopbackBroker : IAsyncDisposable
         return new LoopbackBroker(server, clock);
     }
 
+    /// <summary>Starts a broker over a store file, so a second one over the same file is a restart.</summary>
+    /// <param name="store">The store's path.</param>
+    /// <param name="cancellationToken">Cancels startup.</param>
+    /// <returns>The running broker.</returns>
+    public static async Task<LoopbackBroker> StartOnAsync(string store, CancellationToken cancellationToken)
+    {
+        var runtime = BrokerRuntime.Open(Parley.Core.ProjectName.Create("test"), store, BrokerOptions.Default, TimeProvider.System);
+
+        var server = await ParleyServer
+            .StartAsync(runtime, "http://127.0.0.1:0", cancellationToken, Diagnostics())
+            .ConfigureAwait(false);
+
+        return new LoopbackBroker(server, TimeProvider.System);
+    }
+
     /// <summary>
     /// A heartbeat and connection lines on the console when <c>PARLEY_HEARTBEAT</c> is <c>1</c>, as CI sets it, and
     /// otherwise nothing new.

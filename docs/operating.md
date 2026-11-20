@@ -229,13 +229,18 @@ started again by the next work for it. To keep it from being started, retire it.
 agent somebody opened in an editor, because Parley did not start that process and cannot stop it.
 
 **Freezing an agent, to keep it stopped.** Stop does not stay: the next work for the agent starts it again, and so does a
-restart. When you want an agent to stay stopped through a restart of the machine, *freeze* it. Press Enter on its row in the
+restart. When you are about to restart the machine or log off, *freeze* the agents that would otherwise start at once, and they stay
+stopped until the broker next starts, which a logon or a reboot does. Then the freeze is lifted for you and each agent that owes work
+is started. Press Enter on its row in the
 terminal, or use the *Freeze* button on its page, in the graph, or *Freeze all* for a whole project. The page says what it does first:
-the agent is stopped once its current turn ends, and then nothing starts it: not a restart of the broker or of the computer, not
-new work for it, not a Start. What it owes stays open and waits, and a message sent to it tells its sender that the agent is frozen.
-*Unfreeze* undoes it, and an agent that owes work is then started as after a restart. One agent process serves every project whose
+the agent is stopped once its current turn ends, and then nothing starts it: not new work for it, not a Start, and until the broker
+next starts, not a restart wake either. What it owes stays open and waits, and a message sent to it tells its sender that the agent is frozen.
+*Unfreeze* undoes it by hand, and an agent that owes work is then started as after a restart. To keep an agent frozen through the
+logon as well, check *Do not unfreeze on logon* when you freeze it (on the confirmation page, or the second Freeze entry in the
+terminal's row menu); it then stays frozen until you unfreeze it yourself. Anything that restarts the broker, such as installing a
+new build or a crash, lifts a freeze the same way, because the broker cannot tell that from a logon. One agent process serves every project whose
 repository is enrolled, so a freeze covers the agent in each project that lists it, and the page names them before you agree: freezing
-it for one project's sake stops its work for the others too. A project that cannot be reached is named and left unheld. An agent
+it for one project's sake stops its work for the others too. A project that cannot be reached is named and left unfrozen. An agent
 somebody opened in an editor can be frozen, so that nothing starts it again, but Parley cannot end that session.
 
 **A restart starts the agents that owe work.** When a machine's node joins a broker that has just started (after an

@@ -2450,6 +2450,9 @@ internal sealed partial class Shell : Window
     /// <summary>What the row menu offers on an agent that is not frozen, to freeze it, before the name.</summary>
     private const string FreezeThisTitle = "Freeze ";
 
+    /// <summary>What follows the name when the freeze is the one a logon does not lift.</summary>
+    private const string KeepFrozenSuffix = ", and keep it frozen after a logon";
+
     /// <summary>What the row menu offers on a frozen agent, to unfreeze it, before the name.</summary>
     private const string UnfreezeThisTitle = "Unfreeze ";
 
@@ -2518,9 +2521,15 @@ internal sealed partial class Shell : Window
             // Frozen or not, whichever it is: a freeze is the person's, kept through a restart, and cleared only by unfreezing.
             if (Agents.SelectedStanding is { Retired: false } freezable)
             {
-                var frozen = freezable.Standing is Standing.Frozen or Standing.Freezing;
+                var frozen = Standing.IsFrozen(freezable.Standing);
 
                 entries.Add(((frozen ? UnfreezeThisTitle : FreezeThisTitle) + name.Value, () => FreezeSelected(freeze: !frozen)));
+
+                // The second way to freeze: one a logon does not lift, so the person has to unfreeze it themselves.
+                if (!frozen)
+                {
+                    entries.Add((FreezeThisTitle + name.Value + KeepFrozenSuffix, () => FreezeSelected(freeze: true, keepFrozen: true)));
+                }
             }
 
             // One a node that is gone left running can be ended, not stopped: nothing holds it to wait for its turn.
@@ -2680,13 +2689,14 @@ internal sealed partial class Shell : Window
     }
     /// <summary>Freezes this agent, or unfreezes it, in every project that serves it, once the person has read what it costs.</summary>
     /// <param name="freeze">Whether to freeze it; otherwise unfreeze it.</param>
+    /// <param name="keepFrozen">For a freeze: whether it outlasts a logon, so the person has to unfreeze it themselves.</param>
     /// <returns>When the description is open.</returns>
     /// <remarks>
     /// The deliberate act is choosing the second entry of a menu that describes it, as a stop's is: nothing is destroyed
     /// and unfreezing undoes it, so a typed name would ask more than the act takes. The same implementation the web console
     /// uses (<see cref="AgentFreezing"/>, SPEC.md §10.2 <c>freeze</c>, <c>unfreeze</c>).
     /// </remarks>
-    private Task FreezeSelected(bool freeze)
+    private Task FreezeSelected(bool freeze, bool keepFrozen = false)
     {
         if (App is not { } app
             || Current is not { } project
@@ -2696,10 +2706,10 @@ internal sealed partial class Shell : Window
             return Task.CompletedTask;
         }
 
-        var act = (freeze ? FreezeThisTitle : UnfreezeThisTitle) + agent.Value;
+        var act = (freeze ? FreezeThisTitle : UnfreezeThisTitle) + agent.Value + (freeze && keepFrozen ? KeepFrozenSuffix : string.Empty);
         var menu = Prompting.Choose(
             act,
-            freeze ? FreezingWords.Freezing(agent.Value) : FreezingWords.Unfreezing(agent.Value),
+            freeze ? FreezingWords.Freezing(agent.Value, keepFrozen) : FreezingWords.Unfreezing(agent.Value),
             [KeepItRunning, act]);
         var opened = Prompting.Open(app, menu);
 
@@ -2715,7 +2725,7 @@ internal sealed partial class Shell : Window
             Queue(async token =>
             {
                 var done = freeze
-                    ? await AgentFreezing.FreezeAsync(_directory, agent, token).ConfigureAwait(false)
+                    ? await AgentFreezing.FreezeAsync(_directory, agent, keepFrozen, token).ConfigureAwait(false)
                     : await AgentFreezing.UnfreezeAsync(_directory, agent, token).ConfigureAwait(false);
 
                 Said = AgentFreezing.Describe(done);

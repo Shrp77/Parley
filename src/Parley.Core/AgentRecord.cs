@@ -87,7 +87,8 @@ namespace Parley.Core;
 /// node now holds. <paramref name="OpenOutside"/> is also true for it. Observed from the attachments the broker holds; on
 /// the operator's registry only.
 /// </param>
-/// <param name="FrozenUtc">When a person frozen it in this project, or null when it is not frozen (SPEC.md §11.1).</param>
+/// <param name="KeepFrozen">Whether the person asked that the freeze outlast a logon (SPEC.md §11.1); false when it is not frozen.</param>
+/// <param name="FrozenUtc">When a person froze it in this project, or null when it is not frozen (SPEC.md §11.1).</param>
 /// <remarks>
 /// Credentials are deliberately not a field here, and should not become one. The broker
 /// persists no credential reference or value for any agent (SPEC.md §12); a field on this
@@ -110,7 +111,8 @@ public sealed record AgentRecord(
     bool OpenOutside = false,
     AgentIdentity Identity = default,
     bool Unsupervised = false,
-    DateTimeOffset? FrozenUtc = null)
+    DateTimeOffset? FrozenUtc = null,
+    bool KeepFrozen = false)
 {
     /// <summary>Whether a person has frozen the agent in this project (SPEC.md §11.1), so nothing starts it until they unfreeze it.</summary>
     /// <remarks>Derived from <see cref="FrozenUtc"/>, which is the one fact; a flag beside it would be a second one to disagree.</remarks>

@@ -379,6 +379,10 @@ public interface IParleyBrokerClient
 
     /// <summary>Freeze an agent in this project: nothing starts it until a person unfreezes it (SPEC.md §10.2 <c>freeze</c>, §11.1).</summary>
     /// <param name="agent">The agent.</param>
+    /// <param name="keepFrozen">
+    /// Whether the freeze outlasts a start of the broker. Without it a later start, which is what a logon or a reboot brings,
+    /// lets the freeze lapse and the agent is started again if it owes work.
+    /// </param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>Whether it was newly frozen, and what became of its process.</returns>
     /// <remarks>
@@ -391,7 +395,7 @@ public interface IParleyBrokerClient
     /// surface, through <c>AgentFreezing</c>.
     /// </para>
     /// </remarks>
-    Task<FreezeResult> FreezeAsync(AgentName agent, CancellationToken cancellationToken = default);
+    Task<FreezeResult> FreezeAsync(AgentName agent, bool keepFrozen = false, CancellationToken cancellationToken = default);
 
     /// <summary>Clear an agent's freeze (SPEC.md §10.2 <c>unfreeze</c>).</summary>
     /// <param name="agent">The agent.</param>

@@ -221,6 +221,8 @@ public sealed class AgentGraphTests
         Assert.Contains("stays open", FreezingWords.Freezing("orders@pc"), StringComparison.Ordinal);
         Assert.Contains("restart", FreezingWords.Freezing("orders@pc"), StringComparison.Ordinal);
         Assert.Contains("other projects", FreezingWords.FreezingAll("alpha"), StringComparison.Ordinal);
+        Assert.Contains("unfreezes it", FreezingWords.Freezing("orders@pc"), StringComparison.Ordinal);
+        Assert.Contains("stays frozen after a logon", FreezingWords.Freezing("orders@pc", keepFrozen: true), StringComparison.Ordinal);
     }
 
     [Fact]

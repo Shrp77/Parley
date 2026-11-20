@@ -387,7 +387,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     /// Recorded before the node is asked, so a turn that ends and a message that arrives in between both find the freeze
     /// (SPEC.md §11.1). The process is ended by the existing stop, which waits for the turn and never ends one a node did not start.
     /// </remarks>
-    public override async Task<Wire.FreezeReply> Freeze(Wire.AgentRequest request, ServerCallContext context)
+    public override async Task<Wire.FreezeReply> Freeze(Wire.FreezeRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
@@ -401,11 +401,11 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
                 StatusCode.NotFound, $"Nothing has registered under '{agent.Value}', so there is nothing to freeze."));
         }
 
-        var changed = await Console((console, now, ct) => console.FreezeAgentAsync(agent, now, ct), context).ConfigureAwait(false);
+        var changed = await Console((console, now, ct) => console.FreezeAgentAsync(agent, now, _runtime.RunId, request.KeepFrozen, ct), context).ConfigureAwait(false);
 
         _runtime.MarkFrozen(agent, true);
 
-        var process = _runtime.RequestStop(agent, restart: false, "a person frozen it") switch
+        var process = _runtime.RequestStop(agent, restart: false, "a person froze it") switch
         {
             StopOutcome.Sent => "stopping",
             StopOutcome.OpenOutside => "open_outside",

@@ -94,6 +94,8 @@ public sealed class AFailedMigrationLeavesTheStoreAsItWasTests : IDisposable
         // Back to schema 7, with a name 008's last statement wants already taken, so 008 fails at its end.
         Exec(connection, """
             DROP TABLE history_reads;
+            ALTER TABLE agents DROP COLUMN keep_frozen;
+            ALTER TABLE agents DROP COLUMN frozen_run;
             ALTER TABLE agents DROP COLUMN frozen_utc;
             DROP INDEX ix_conversation_move_exchanges_exchange;
             ALTER TABLE conversation_moves DROP COLUMN last_message;

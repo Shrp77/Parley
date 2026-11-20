@@ -9,11 +9,14 @@ public static class FreezingWords
 {
     /// <summary>Says what freezing an agent does before a person agrees to it.</summary>
     /// <param name="agent">The agent's name.</param>
+    /// <param name="keepFrozen">Whether the freeze outlasts a logon.</param>
     /// <returns>The sentences.</returns>
-    public static string Freezing(string agent) =>
-        $"'{agent}' will be stopped once its current turn ends, and then nothing will start it: not a restart of the broker or of "
-        + "this computer, not new work for it, not a Start. What it owes stays open and waits. Anything it started in the "
-        + "background ends with its process. Unfreeze undoes this.";
+    public static string Freezing(string agent, bool keepFrozen = false) =>
+        $"'{agent}' will be stopped once its current turn ends, and then nothing will start it: not new work for it, not a Start. "
+        + "What it owes stays open and waits. Anything it started in the background ends with its process. Unfreeze undoes this. "
+        + (keepFrozen
+            ? "It stays frozen after a logon or a restart of the computer, until you unfreeze it."
+            : "A logon or a restart of the computer, which starts the broker again, unfreezes it, and it is started if it owes work.");
 
     /// <summary>Says what unfreezing an agent does before a person agrees to it.</summary>
     /// <param name="agent">The agent's name.</param>

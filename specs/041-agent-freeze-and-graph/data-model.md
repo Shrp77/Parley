@@ -1,6 +1,6 @@
 # Data model: feature 041
 
-- **`agents.frozen_utc`** (migration 011): `TEXT NULL`. ISO-8601 UTC when a person frozen the agent in this project; NULL when it
+- **`agents.frozen_utc`** (migration 011): `TEXT NULL`. ISO-8601 UTC when a person froze the agent in this project; NULL when it
   is not frozen. Set by Freeze, cleared by Unfreeze, kept across restart, backup and restore. A purge removes it with the row;
   retire leaves it (a reinstated agent is still frozen until unfrozen).
 - **`AgentRecord.FrozenUtc`** (`DateTimeOffset?`): the column, read by every roster read. Frozen is `FrozenUtc is not null`.

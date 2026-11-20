@@ -59,7 +59,8 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             row.OpenOutside,
             AgentIdentity.TryRead(row.Identity, out var identity) ? identity : default,
             row.Unsupervised,
-            Read(row.FrozenUtc)))];
+            Read(row.FrozenUtc),
+            row.KeepFrozen))];
     }
 
     /// <summary>Reads how an accepted line was arrived at, off a registry row.</summary>
@@ -177,10 +178,10 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     }
 
     /// <inheritdoc/>
-    public async Task<FreezeResult> FreezeAsync(AgentName agent, CancellationToken cancellationToken = default)
+    public async Task<FreezeResult> FreezeAsync(AgentName agent, bool keepFrozen = false, CancellationToken cancellationToken = default)
     {
         var reply = await _operators.FreezeAsync(
-            new Wire.AgentRequest { Agent = agent.Value }, cancellationToken: cancellationToken);
+            new Wire.FreezeRequest { Agent = agent.Value, KeepFrozen = keepFrozen }, cancellationToken: cancellationToken);
 
         return new FreezeResult(reply.Changed, reply.Process switch
         {

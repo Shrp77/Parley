@@ -75,6 +75,14 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     /// <summary>The agents typing <c>@</c> offers in a reply to a question asked back, read only for that action.</summary>
     public IReadOnlyList<string> Mentionable { get; private set; } = [];
 
+    /// <summary>Whether a freeze outlasts a logon: the box that says not to unfreeze on logon.</summary>
+    /// <remarks>
+    /// Without it, a start of the broker, which a logon or a reboot brings, lets the freeze lapse and the agent is started if it owes
+    /// work (SPEC.md §11.1). Posted with the confirmation, never read from the link, so a followed link cannot choose it.
+    /// </remarks>
+    [BindProperty, FromForm]
+    public bool KeepFrozen { get; set; }
+
     /// <summary>Why the person is closing a conversation, when they give a reason.</summary>
     /// <remarks>
     /// Told to every participant holding open work in it (§5.3). Optional, because a close with no reason
@@ -371,12 +379,12 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
     private async Task<string> FreezeOne(AgentName agent, bool freeze, CancellationToken token) =>
         AgentFreezing.Describe(freeze
-            ? await AgentFreezing.FreezeAsync(directory, agent, token).ConfigureAwait(false)
+            ? await AgentFreezing.FreezeAsync(directory, agent, KeepFrozen, token).ConfigureAwait(false)
             : await AgentFreezing.UnfreezeAsync(directory, agent, token).ConfigureAwait(false));
 
     private async Task<string> FreezeEveryone(bool freeze, CancellationToken token)
     {
-        var all = await AgentFreezing.AllAsync(directory, Project ?? string.Empty, freeze, token).ConfigureAwait(false);
+        var all = await AgentFreezing.AllAsync(directory, Project ?? string.Empty, freeze, KeepFrozen, token).ConfigureAwait(false);
 
         if (all.Count == 0)
         {

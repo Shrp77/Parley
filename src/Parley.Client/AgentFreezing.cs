@@ -77,11 +77,12 @@ public static class AgentFreezing
     /// <summary>Freezes an agent in every project that serves it.</summary>
     /// <param name="directory">The projects and their brokers.</param>
     /// <param name="agent">The agent.</param>
+    /// <param name="keepFrozen">Whether the freeze outlasts a start of the broker, so a logon does not lift it.</param>
     /// <param name="cancellationToken">Cancels the acts.</param>
     /// <returns>What happened in each project.</returns>
     public static Task<FreezeOutcome> FreezeAsync(
-        BrokerDirectory directory, AgentName agent, CancellationToken cancellationToken = default) =>
-        ActAsync(directory, agent, freeze: true, cancellationToken);
+        BrokerDirectory directory, AgentName agent, bool keepFrozen = false, CancellationToken cancellationToken = default) =>
+        ActAsync(directory, agent, freeze: true, keepFrozen, cancellationToken);
 
     /// <summary>Resumes an agent in every project where it is frozen.</summary>
     /// <param name="directory">The projects and their brokers.</param>
@@ -90,10 +91,10 @@ public static class AgentFreezing
     /// <returns>What happened in each project.</returns>
     public static Task<FreezeOutcome> UnfreezeAsync(
         BrokerDirectory directory, AgentName agent, CancellationToken cancellationToken = default) =>
-        ActAsync(directory, agent, freeze: false, cancellationToken);
+        ActAsync(directory, agent, freeze: false, keepFrozen: false, cancellationToken);
 
     private static async Task<FreezeOutcome> ActAsync(
-        BrokerDirectory directory, AgentName agent, bool freeze, CancellationToken cancellationToken)
+        BrokerDirectory directory, AgentName agent, bool freeze, bool keepFrozen, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(directory);
 
@@ -110,7 +111,7 @@ public static class AgentFreezing
             var broker = new BrokerClient(directory.ClientFor(directory.Find(name)!));
 
             var done = await BrokerDirectory.ReadAsync(async () => freeze
-                ? await broker.FreezeAsync(agent, cancellationToken).ConfigureAwait(false)
+                ? await broker.FreezeAsync(agent, keepFrozen, cancellationToken).ConfigureAwait(false)
                 : new FreezeResult(await broker.UnfreezeAsync(agent, cancellationToken).ConfigureAwait(false), FreezeProcess.NotRunning))
                 .ConfigureAwait(false);
 
@@ -126,6 +127,7 @@ public static class AgentFreezing
     /// <param name="directory">The projects and their brokers.</param>
     /// <param name="project">The project whose agents they are.</param>
     /// <param name="freeze"><see langword="true"/> to freeze them, <see langword="false"/> to unfreeze them.</param>
+    /// <param name="keepFrozen">For a freeze, whether it outlasts a start of the broker.</param>
     /// <param name="cancellationToken">Cancels the acts.</param>
     /// <returns>One outcome per agent, or none when the project is unknown or could not be read.</returns>
     /// <remarks>
@@ -133,7 +135,7 @@ public static class AgentFreezing
     /// A retired agent is left out too, since nothing wakes it.
     /// </remarks>
     public static async Task<IReadOnlyList<FreezeOutcome>> AllAsync(
-        BrokerDirectory directory, string project, bool freeze, CancellationToken cancellationToken = default)
+        BrokerDirectory directory, string project, bool freeze, bool keepFrozen = false, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(directory);
 
@@ -155,7 +157,7 @@ public static class AgentFreezing
             .Where(a => freeze ? !a.Frozen : a.Frozen)
             .Select(a => a.Name))
         {
-            outcomes.Add(await ActAsync(directory, agent, freeze, cancellationToken).ConfigureAwait(false));
+            outcomes.Add(await ActAsync(directory, agent, freeze, keepFrozen, cancellationToken).ConfigureAwait(false));
         }
 
         return outcomes;

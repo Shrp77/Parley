@@ -163,14 +163,17 @@ public sealed class OperatorConsole
     /// <summary>Freezes an agent: nothing starts it until a person unfreezes it (§10.2, §11.1).</summary>
     /// <param name="agent">The agent to freeze.</param>
     /// <param name="nowUtc">When it was frozen.</param>
+    /// <param name="run">The run of the broker freezing it, kept with the freeze so a later start can tell it is an earlier run's.</param>
+    /// <param name="keepFrozen">Whether the freeze outlasts a start of the broker.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns><see langword="true"/> if it was not frozen before.</returns>
     /// <remarks>
     /// Closes, moves and answers nothing: what the agent owes stays open. Refused for the person's seat and the
     /// facilitator by storage, so the count is zero for them. Freezing ends no process here; the runtime asks the node.
     /// </remarks>
-    public async Task<bool> FreezeAgentAsync(AgentName agent, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) =>
-        await _agents.FreezeAsync(agent, nowUtc, cancellationToken).ConfigureAwait(false) > 0;
+    public async Task<bool> FreezeAgentAsync(
+        AgentName agent, DateTimeOffset nowUtc, string run, bool keepFrozen, CancellationToken cancellationToken = default) =>
+        await _agents.FreezeAsync(agent, nowUtc, run, keepFrozen, cancellationToken).ConfigureAwait(false) > 0;
 
     /// <summary>Clears an agent's freeze (§10.2).</summary>
     /// <param name="agent">The agent to unfreeze.</param>

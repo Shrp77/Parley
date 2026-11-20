@@ -72,6 +72,14 @@ else
             </p>
         }
 
+        @if (string.Equals(Model.Action, "freeze", StringComparison.OrdinalIgnoreCase) || string.Equals(Model.Action, "freezeall", StringComparison.OrdinalIgnoreCase))
+        {
+            @* The choice that makes a freeze outlast a logon. Unchecked, the next start of the broker lifts it. *@
+            <p>
+                <label><input type="checkbox" name="KeepFrozen" value="true" /> Do not unfreeze on logon: keep @(string.Equals(Model.Action, "freezeall", StringComparison.OrdinalIgnoreCase) ? "them" : "it") frozen until I unfreeze @(string.Equals(Model.Action, "freezeall", StringComparison.OrdinalIgnoreCase) ? "them" : "it") myself.</label>
+            </p>
+        }
+
         @if (string.Equals(Model.Action, "forceconclude", StringComparison.OrdinalIgnoreCase))
         {
             <p>
