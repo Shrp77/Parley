@@ -878,6 +878,20 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
             // words on one press of Send. Ticking nobody instead would let the page's own default choose.
             With = ItemAgent is { } agent && !PersonSeat.Is(agent) ? [agent.Value] : [];
         }
+        else if (HttpMethods.IsGet(Request.Method) && With.Count == 0 && !Request.Query.ContainsKey(nameof(With)) && Says is null
+            && Problem is null && Destroyed is null && Item is null && Messages.Count > 0)
+        {
+            // **A conversation with one agent in it ticks that agent**, so an answer back does not start by finding who to
+            // pick: a spin-off, or any conversation with one other party, is a conversation with them. Only when it is
+            // unambiguous (two or more agents tick nobody) and only as a start the person can untick; nothing is addressed
+            // until Send, and a link's own `with` or what the person ticked before is left as it was.
+            var others = Participants.Where(who => !PersonSeat.Is(who)).ToList();
+
+            if (others.Count == 1)
+            {
+                With = [others[0].Value];
+            }
+        }
 
         return Page();
     }
