@@ -1541,6 +1541,11 @@
         .roadmap-grid .grid-head, .roadmap-grid .grid-row > summary { grid-template-columns: minmax(0, 1fr) 5.5rem 5.5rem; }
         .roadmap-grid .grid-head span:not(:first-child) { text-align: right; }
         .items-grid .grid-head, .items-grid .grid-row > summary { grid-template-columns: 3.5rem minmax(0, 1fr) minmax(10rem, 16rem); }
+        .select-grid .grid-head, .select-grid .grid-row > summary { grid-template-columns: 1.6rem minmax(0, 1fr) 5.5rem minmax(10rem, 14rem) 6.5rem; }
+        .select-grid .row-act { margin: 0; }
+        .select-grid input[type=checkbox] { margin: 0; align-self: center; }
+        .bulk-bar { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin: 0.5rem 0; }
+        .bulk-bar .count { color: var(--ink-faint); font-size: 0.85rem; }
         .items-grid .num { text-align: left; white-space: nowrap; }
         .grid.items-grid .name { font-weight: 400; }
         .chev { color: var(--ink-faint); font-size: 1.25rem; vertical-align: -0.3em; transition: transform 0.12s; }

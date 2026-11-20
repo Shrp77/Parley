@@ -43,6 +43,18 @@ public sealed class AgentsModel(BrokerDirectory directory) : PageModel
     [BindProperty(SupportsGet = true)]
     public string? Sort { get; set; }
 
+    /// <summary>How many conversations the last bulk act changed, shown once after it.</summary>
+    [BindProperty(SupportsGet = true)]
+    public int Filed { get; set; }
+
+    /// <summary>How many the last bulk act could not change.</summary>
+    [BindProperty(SupportsGet = true)]
+    public int Failed { get; set; }
+
+    /// <summary>What the last bulk act did, for the line that says so.</summary>
+    [BindProperty(SupportsGet = true)]
+    public string? Did { get; set; }
+
     /// <summary>The agents registered in it.</summary>
     public IReadOnlyList<AgentRecord> Agents { get; private set; } = [];
 
@@ -180,5 +192,90 @@ public sealed class AgentsModel(BrokerDirectory directory) : PageModel
             : await broker.ArchiveAsync(id, token).ConfigureAwait(false)).ConfigureAwait(false);
 
         return RedirectToPage(new { project = Project, showArchived = ShowArchived, sort = Sort });
+    }
+
+    /// <summary>The most conversations one bulk act takes, so a forged form cannot hold the broker for minutes.</summary>
+    private const int MostAtOnce = 500;
+
+    /// <summary>Files several conversations away at once, brings them back, or files every closed one.</summary>
+    /// <param name="ids">The ticked conversations. Ignored by <c>archiveclosed</c>.</param>
+    /// <param name="op"><c>archive</c>, <c>unarchive</c> or <c>archiveclosed</c>.</param>
+    /// <returns>The page again, saying how many were changed and how many were not.</returns>
+    /// <remarks>
+    /// Archiving stays unconfirmed for the reason the single act is: nothing is lost and it reverses. Each is its own
+    /// broker call, so one that fails (a conversation destroyed since the page was drawn) is counted and the rest go on.
+    /// <c>archiveclosed</c> asks the broker which are closed rather than trusting the page, so a conversation that
+    /// reopened since the page was drawn is not filed away.
+    /// </remarks>
+    public async Task<IActionResult> OnPostBulkAsync([FromForm] string[] ids, [FromForm] string op)
+    {
+        var project = directory.Find(Project);
+
+        if (project is null)
+        {
+            return RedirectToPage("/Index");
+        }
+
+        var token = HttpContext.RequestAborted;
+        var broker = new BrokerClient(directory.ClientFor(project));
+        var targets = new List<string>();
+
+        if (string.Equals(op, "archiveclosed", StringComparison.Ordinal))
+        {
+            string? next = null;
+
+            do
+            {
+                var page = await BrokerDirectory.ReadAsync(async () =>
+                    await broker.ConversationsAsync(pageToken: next, includeArchived: false, cancellationToken: token)
+                        .ConfigureAwait(false)).ConfigureAwait(false);
+
+                if (page.Value is null)
+                {
+                    break;
+                }
+
+                targets.AddRange(page.Value.Items.Where(c => c.Closed && !c.Archived && !c.HasOpenExchange).Select(c => c.Id));
+                next = page.Value.NextPageToken;
+            }
+            while (next is not null && targets.Count < MostAtOnce);
+        }
+        else if (string.Equals(op, "archive", StringComparison.Ordinal) || string.Equals(op, "unarchive", StringComparison.Ordinal))
+        {
+            targets.AddRange(ids.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal));
+        }
+        else
+        {
+            return RedirectToPage(new { project = Project, showArchived = ShowArchived, sort = Sort });
+        }
+
+        var restore = string.Equals(op, "unarchive", StringComparison.Ordinal);
+        int done = 0, failed = 0;
+
+        foreach (var id in targets.Take(MostAtOnce))
+        {
+            var changed = await BrokerDirectory.ReadAsync(async () => restore
+                ? await broker.UnarchiveAsync(id, token).ConfigureAwait(false)
+                : await broker.ArchiveAsync(id, token).ConfigureAwait(false)).ConfigureAwait(false);
+
+            if (changed.Value == true)
+            {
+                done++;
+            }
+            else
+            {
+                failed++;
+            }
+        }
+
+        return RedirectToPage(new
+        {
+            project = Project,
+            showArchived = ShowArchived,
+            sort = Sort,
+            filed = done,
+            failed,
+            did = restore ? "brought back" : "archived"
+        });
     }
 }
