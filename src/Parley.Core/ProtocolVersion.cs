@@ -37,5 +37,5 @@ namespace Parley.Core;
 public static class ProtocolVersion
 {
     /// <summary>The protocol version, as SPEC.md declares it.</summary>
-    public const string Current = "0.19";
+    public const string Current = "0.20";
 }

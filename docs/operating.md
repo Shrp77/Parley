@@ -65,6 +65,13 @@ The console opens on a grid of your projects, showing for each whether its broke
 how many agents it has and how many are running, and how many conversations. Open a row for its
 address and any warnings. Inside a project:
 
+- **The graph**: a tab at the right edge of every page opens a picture of what is being worked on. Each project is a band
+  with its agents on the left and its conversations on the right, a line from an agent to each conversation it is in, a dashed line
+  from a spin-off to the conversation it came from, and a dot beside an agent for each background task its node says it has running.
+  Each agent says in words whether it is working, idle, waiting on background work, or held; a held agent has a dashed outline.
+  *Pin* keeps it open as you move between pages; *Hide closed* thins out finished conversations. Nothing is read until you open it,
+  and it refreshes every fifteen seconds while open. Hold and Resume are on each agent, and Hold all and Resume all on each project.
+  The same facts follow the picture as a list.
 - **Agents**: who is in the project, what each owns, and whether it is running. Register,
   retire, reinstate or purge agents, review ownership lines, and ask every agent again what it owns.
 - **Conversations**: each as a transcript that says who did not see what. Read, reply, archive
@@ -220,6 +227,16 @@ it, and for a restart starts it again so it reads its launch configuration afres
 and its conversations are untouched; only what the running session had learned is lost. A stopped agent is
 started again by the next work for it. To keep it from being started, retire it. Neither is offered for an
 agent somebody opened in an editor, because Parley did not start that process and cannot stop it.
+
+**Holding an agent, to keep it stopped.** Stop does not stay: the next work for the agent starts it again, and so does a
+restart. When you want an agent to stay stopped through a restart of the machine, *hold* it. Press Enter on its row in the
+terminal, or use the *Hold* button on its page, in the graph, or *Hold all* for a whole project. The page says what it does first:
+the agent is stopped once its current turn ends, and then nothing starts it: not a restart of the broker or of the computer, not
+new work for it, not a Start. What it owes stays open and waits, and a message sent to it tells its sender that the agent is held.
+*Resume* undoes it, and an agent that owes work is then started as after a restart. One agent process serves every project whose
+repository is enrolled, so a hold covers the agent in each project that lists it, and the page names them before you agree: holding
+it for one project's sake stops its work for the others too. A project that cannot be reached is named and left unheld. An agent
+somebody opened in an editor can be held, so that nothing starts it again, but Parley cannot end that session.
 
 **A restart starts the agents that owe work.** When a machine's node joins a broker that has just started (after an
 install, a reboot, or `parley serve` run again), every active agent on that machine that owes an open exchange is asked to

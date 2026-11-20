@@ -2447,6 +2447,12 @@ internal sealed partial class Shell : Window
     /// <summary>What the row menu offers on a running agent a node that is gone left behind, to end its process, before the name.</summary>
     internal const string KillThisTitle = "Kill process of ";
 
+    /// <summary>What the row menu offers on an agent that is not held, to hold it, before the name.</summary>
+    private const string HoldThisTitle = "Hold ";
+
+    /// <summary>What the row menu offers on a held agent, to resume it, before the name.</summary>
+    private const string ResumeThisTitle = "Resume ";
+
     /// <summary>The choice that leaves a running agent alone.</summary>
     private const string KeepItRunning = "Keep it running";
 
@@ -2507,6 +2513,14 @@ internal sealed partial class Shell : Window
             if (Agents.SelectedStanding is { Running: false, Retired: false, StartableHere: true })
             {
                 entries.Add((StartThisTitle + name.Value, StartSelected));
+            }
+
+            // Held or not, whichever it is: a hold is the person's, kept through a restart, and cleared only by resuming.
+            if (Agents.SelectedStanding is { Retired: false } holdable)
+            {
+                var held = holdable.Standing is Standing.Held or Standing.Holding;
+
+                entries.Add(((held ? ResumeThisTitle : HoldThisTitle) + name.Value, () => HoldSelected(hold: !held)));
             }
 
             // One a node that is gone left running can be ended, not stopped: nothing holds it to wait for its turn.
@@ -2657,6 +2671,55 @@ internal sealed partial class Shell : Window
                     .ConfigureAwait(false);
 
                 Said = asked.Problem ?? StoppingWords.Outcome(agent.Value, restart, asked.Value);
+
+                await SelectAsync(project, token).ConfigureAwait(false);
+            });
+        };
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Holds this agent, or resumes it, in every project that serves it, once the person has read what it costs.</summary>
+    /// <param name="hold">Whether to hold it; otherwise resume it.</param>
+    /// <returns>When the description is open.</returns>
+    /// <remarks>
+    /// The deliberate act is choosing the second entry of a menu that describes it, as a stop's is: nothing is destroyed
+    /// and resuming undoes it, so a typed name would ask more than the act takes. The same implementation the web console
+    /// uses (<see cref="AgentHolding"/>, SPEC.md §10.2 <c>hold</c>, <c>resume</c>).
+    /// </remarks>
+    private Task HoldSelected(bool hold)
+    {
+        if (App is not { } app
+            || Current is not { } project
+            || Agents.Selected is not { } row
+            || !AgentName.TryCreate(row.Name, out var agent))
+        {
+            return Task.CompletedTask;
+        }
+
+        var act = (hold ? HoldThisTitle : ResumeThisTitle) + agent.Value;
+        var menu = Prompting.Choose(
+            act,
+            hold ? HoldingWords.Holding(agent.Value) : HoldingWords.Resuming(agent.Value),
+            [KeepItRunning, act]);
+        var opened = Prompting.Open(app, menu);
+
+        menu.Done += (_, chosen) =>
+        {
+            Prompting.Close(app, opened);
+
+            if (chosen != act)
+            {
+                return;
+            }
+
+            Queue(async token =>
+            {
+                var done = hold
+                    ? await AgentHolding.HoldAsync(_directory, agent, token).ConfigureAwait(false)
+                    : await AgentHolding.ResumeAsync(_directory, agent, token).ConfigureAwait(false);
+
+                Said = AgentHolding.Describe(done);
 
                 await SelectAsync(project, token).ConfigureAwait(false);
             });

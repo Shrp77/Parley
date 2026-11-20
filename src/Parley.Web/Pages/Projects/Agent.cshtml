@@ -111,6 +111,16 @@ else
         {
             <a class="button tonal" href="/Projects/Act?project=@Model.Project&amp;action=start&amp;subject=@agent.Name.Value">Start</a>
         }
+        @if (agent.Status != AgentStatus.Retired && agent.Held)
+        {
+            <a class="button tonal" href="/Projects/Act?project=@Model.Project&amp;action=resume&amp;subject=@agent.Name.Value"
+               title="Let it be started again, by work waiting for it or by you.">Resume</a>
+        }
+        else if (agent.Status != AgentStatus.Retired)
+        {
+            <a class="button tonal" href="/Projects/Act?project=@Model.Project&amp;action=hold&amp;subject=@agent.Name.Value"
+               title="Stop it once its turn ends and keep anything from starting it, through a restart of the machine, until you resume it. What it owes stays open.">Hold</a>
+        }
         @if (agent.Status == AgentStatus.Retired)
         {
             <a class="button tonal" href="/Projects/Act?project=@Model.Project&amp;action=reinstate&amp;subject=@agent.Name.Value"

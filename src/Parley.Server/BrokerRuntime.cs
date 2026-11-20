@@ -164,6 +164,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     private readonly ConcurrentDictionary<string, bool> _resumedMachines = new(StringComparer.Ordinal);
 
+    /// <summary>The agents a person has held (SPEC.md §11.1), by name: what <see cref="Ask"/> reads, because it cannot wait on the store.</summary>
+    /// <remarks>
+    /// Loaded when the broker starts and changed only by <see cref="MarkHeld"/>, which the operator operations call after the
+    /// store has been written, so it is a copy of the column and never a second fact.
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, bool> _held = new(StringComparer.Ordinal);
+
     private readonly SqliteConnection _connection;
     private readonly Parley.Broker.Broker _house;
     private readonly Parley.Broker.BrokerOptions _options;
@@ -210,6 +217,11 @@ public sealed class BrokerRuntime : IAsyncDisposable
         var now = clock.GetUtcNow();
         _ = new NodeRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
         _ = new AgentRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
+
+        foreach (var held in new AgentRepository(connection).GetAllAsync().GetAwaiter().GetResult().Where(a => a.Held))
+        {
+            _held[held.Name.Value] = true;
+        }
 
         // The two rows the broker writes itself (SPEC.md §12.3), before anything could want to send as, or to, either:
         // the facilitator, and the person seat an agent asks when no agent can help (principle 2.6). Nothing launches
@@ -943,6 +955,23 @@ public sealed class BrokerRuntime : IAsyncDisposable
         return joined;
     }
 
+    /// <summary>Asks an agent to start if it owes open work, as the restart wake does; used when a hold is cleared (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>A task that completes when it has been asked, or found to owe nothing.</returns>
+    internal async Task WakeIfOwingAsync(AgentName agent, CancellationToken cancellationToken)
+    {
+        var owes = await UseConnectionAsync(
+            async (_, _, ct) => (await _house.OutstandingToWakeForAsync(agent, ct).ConfigureAwait(false)).Count > 0,
+            cancellationToken).ConfigureAwait(false);
+
+        if (owes)
+        {
+            _ = RequestAttentionForMail(agent, "a person resumed it and it owes work");
+        }
+    }
+
+
     /// <summary>
     /// Wakes the agents on a machine that owe work outstanding from before the broker started (§14).
     /// </summary>
@@ -1551,6 +1580,26 @@ public sealed class BrokerRuntime : IAsyncDisposable
     public bool RequestAttention(AgentName agent, string because) =>
         Ask(agent, because) is WakeOutcome.Started or WakeOutcome.AlreadyRunning;
 
+    /// <summary>Whether a person has held the agent (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns><see langword="true"/> while held.</returns>
+    public bool IsHeld(AgentName agent) => _held.ContainsKey(agent.Value);
+
+    /// <summary>Records in memory that a hold was written to, or cleared from, the store.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="held">Whether it is held now.</param>
+    internal void MarkHeld(AgentName agent, bool held)
+    {
+        if (held)
+        {
+            _held[agent.Value] = true;
+        }
+        else
+        {
+            _ = _held.TryRemove(agent.Value, out _);
+        }
+    }
+
     /// <summary>Asks an agent's node to stop it, or restart it, once its turn is over (SPEC.md §11.1).</summary>
     /// <param name="agent">The agent.</param>
     /// <param name="restart">Whether to start it again once it has stopped.</param>
@@ -1642,7 +1691,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         var outcome = Ask(agent, because);
 
-        if (outcome is WakeOutcome.Unreachable)
+        if (outcome is WakeOutcome.Unreachable or WakeOutcome.Held)
         {
             // Nothing is coming after all, so the claim is given back rather than left to expire.
             // Holding it would suppress every wake for the next two minutes on the strength
@@ -1810,6 +1859,14 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     private WakeOutcome Ask(AgentName agent, string because)
     {
+        // **The one place a start or a turn is asked for, so the one place a hold is honoured** (SPEC.md §11.1): the
+        // restart wake, new work and a person's Start all come through here. Before any node is asked and before anything is
+        // marked as coming.
+        if (_held.ContainsKey(agent.Value))
+        {
+            return WakeOutcome.Held;
+        }
+
         if (!_nodes.TryGetValue(agent.Machine, out var node))
         {
             return WakeOutcome.Unreachable;

@@ -92,6 +92,9 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     /// <summary>What happened, once it has.</summary>
     public string? Outcome { get; private set; }
 
+    /// <summary>The projects a hold or a resume of the agent reaches, said before the person agrees.</summary>
+    public string? Reaches { get; private set; }
+
     /// <summary>The agent's answer to Parley, on one line, when the action is accepting it.</summary>
     /// <remarks>
     /// The one box on this page that opens holding somebody else's words, and it says whose. Leaving it unchanged records
@@ -133,6 +136,21 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
             Mentionable = [.. Parley.Client.Rendering.RoomRoster.NotInIt(roll.Value, [], PersonSeat.On(project.Name)).Select(agent => agent.Value)];
         }
 
+        // Holding ends the one process that serves every project the agent is in, so the person is told which they are before
+        // they agree (SPEC.md §11.1): holding it for one project's sake stops its work for the rest.
+        if (Action?.ToLowerInvariant() is "hold" or "resume" && AgentName.TryCreate(Subject, out var reached))
+        {
+            var (serving, unreachable) = await AgentHolding.ServedByAsync(directory, reached, HttpContext.RequestAborted)
+                .ConfigureAwait(false);
+
+            Reaches = serving.Count == 0
+                ? $"No project this console can reach lists '{reached.Value}'."
+                : $"This reaches {string.Join(", ", serving)}."
+                  + (unreachable.Count > 0
+                      ? $" It cannot be reached in {string.Join(", ", unreachable.Select(u => u.Project))}, so it is not done there."
+                      : string.Empty);
+        }
+
         // What it owes, as the terminal's dialog says it: the debt is what makes the difference between retiring and
         // purging concrete, and a purge of an agent that still owes work asks for an acceptance first.
         if (Action?.ToLowerInvariant() is "retire" or "purge" && AgentName.TryCreate(Subject, out var leaving))
@@ -162,6 +180,16 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
             "stop" => (Parley.Client.Rendering.StoppingWords.Stopping(Subject), false),
 
             "restart" => (Parley.Client.Rendering.StoppingWords.Restarting(Subject), false),
+
+            // Not destructive: nothing it owes is closed, moved or answered, and Resume undoes it. What is lost is only what its
+            // process was doing once its turn has ended, which is said.
+            "hold" => (Parley.Client.Rendering.HoldingWords.Holding(Subject) + " " + HoldReach(), false),
+
+            "resume" => (Parley.Client.Rendering.HoldingWords.Resuming(Subject) + " " + HoldReach(), false),
+
+            "holdall" => (Parley.Client.Rendering.HoldingWords.HoldingAll(Project ?? string.Empty), false),
+
+            "resumeall" => (Parley.Client.Rendering.HoldingWords.ResumingAll(Project ?? string.Empty), false),
 
             // Ends a process now: not destructive of anything the agent owes, but what it is part-way through is lost, said.
             "kill" => (Parley.Client.Rendering.StoppingWords.Killing(Subject), false),
@@ -273,6 +301,10 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                 // incidental subject was not a name.
                 "askeveryownership" => AskEveryOwnership(broker, token),
 
+                // Above the name guard, as prune is: acts on the project's agents, and its subject is only what made the link.
+                "holdall" => HoldEveryone(hold: true, token),
+                "resumeall" => HoldEveryone(hold: false, token),
+
                 // Above the name guard for the same reason: its subject is the switch's new position, not an agent.
                 "autoaccept" => DescribeAutoAccept(
                     broker.SetAutoAcceptAsync(string.Equals(Subject, "on", StringComparison.OrdinalIgnoreCase), token),
@@ -284,6 +316,10 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                 "retire" or "reinstate" or "purge" => Withdraw(project, broker, agent, token),
 
                 "start" => DescribeStart(broker.StartAsync(agent, "a person asked from the web UI", token)),
+
+                "hold" => HoldOne(agent, hold: true, token),
+
+                "resume" => HoldOne(agent, hold: false, token),
 
                 "stop" => DescribeStop(agent, restart: false, broker.StopAsync(agent, "a person stopped it from the web UI", token)),
 
@@ -330,6 +366,32 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
         await start.ConfigureAwait(false)
             ? "Its node was asked to start it."
             : "Nothing was asked: it is retired, so reinstate it first, or no node on its machine is running.";
+
+    private string HoldReach() => Reaches ?? string.Empty;
+
+    private async Task<string> HoldOne(AgentName agent, bool hold, CancellationToken token) =>
+        AgentHolding.Describe(hold
+            ? await AgentHolding.HoldAsync(directory, agent, token).ConfigureAwait(false)
+            : await AgentHolding.ResumeAsync(directory, agent, token).ConfigureAwait(false));
+
+    private async Task<string> HoldEveryone(bool hold, CancellationToken token)
+    {
+        var all = await AgentHolding.AllAsync(directory, Project ?? string.Empty, hold, token).ConfigureAwait(false);
+
+        if (all.Count == 0)
+        {
+            return hold
+                ? $"Nothing to hold: every agent in '{Project}' is already held, or none is registered."
+                : $"Nothing to resume: no agent in '{Project}' is held.";
+        }
+
+        var incomplete = all.Count(o => !o.Complete);
+
+        return $"{all.Count} {(all.Count == 1 ? "agent" : "agents")} {(hold ? "held" : "resumed")} in '{Project}'."
+            + (incomplete > 0
+                ? $" {incomplete} could not be reached in every project that serves it: " + string.Join(' ', all.Where(o => !o.Complete).Select(AgentHolding.Describe))
+                : string.Empty);
+    }
 
     private static async Task<string> DescribeKill(AgentName agent, Task<bool> asked) =>
         Parley.Client.Rendering.StoppingWords.KillOutcome(agent.Value, await asked.ConfigureAwait(false));

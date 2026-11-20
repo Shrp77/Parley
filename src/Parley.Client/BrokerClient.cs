@@ -58,7 +58,8 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
                 Math.Max(0, row.BackgroundTasks)),
             row.OpenOutside,
             AgentIdentity.TryRead(row.Identity, out var identity) ? identity : default,
-            row.Unsupervised))];
+            row.Unsupervised,
+            Read(row.HeldUtc)))];
     }
 
     /// <summary>Reads how an accepted line was arrived at, off a registry row.</summary>
@@ -171,6 +172,30 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
         var reply = await _operators.RestartAsync(
             new Wire.StopRequest { Agent = agent.Value, Because = because ?? string.Empty },
             cancellationToken: cancellationToken);
+
+        return reply.Changed;
+    }
+
+    /// <inheritdoc/>
+    public async Task<HoldResult> HoldAsync(AgentName agent, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.HoldAsync(
+            new Wire.AgentRequest { Agent = agent.Value }, cancellationToken: cancellationToken);
+
+        return new HoldResult(reply.Changed, reply.Process switch
+        {
+            "stopping" => HoldProcess.Stopping,
+            "open_outside" => HoldProcess.OpenOutside,
+            "no_node" => HoldProcess.NoNode,
+            _ => HoldProcess.NotRunning
+        });
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> ResumeAsync(AgentName agent, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.ResumeAsync(
+            new Wire.AgentRequest { Agent = agent.Value }, cancellationToken: cancellationToken);
 
         return reply.Changed;
     }

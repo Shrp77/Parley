@@ -152,6 +152,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         Wire.WakeOutcome.Unreachable => "Cannot be started now; reads it when it next runs",
         Wire.WakeOutcome.OpenOutside => "Open outside Parley; reads it when prompted there",
         Wire.WakeOutcome.WithThePerson => "With the person",
+        Wire.WakeOutcome.Held => "Held; reads it when resumed",
         _ => "Not reported",
     };
 

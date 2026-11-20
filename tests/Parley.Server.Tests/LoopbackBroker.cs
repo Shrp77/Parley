@@ -41,10 +41,12 @@ internal sealed class LoopbackBroker : IAsyncDisposable
     /// <summary>Starts a broker over an in-memory store.</summary>
     /// <param name="cancellationToken">Cancels startup.</param>
     /// <param name="clock">The clock to stamp from, or null for the system one.</param>
+    /// <param name="options">The broker's options, or null for the defaults a test broker gets (which never wake on a restart).</param>
     /// <returns>The running broker.</returns>
     public static async Task<LoopbackBroker> StartAsync(
         CancellationToken cancellationToken,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        BrokerOptions? options = null)
     {
         // **Settable for the same reason the patience above is.** The wake ceiling is two minutes,
         // and a test that waited it out would be deleted by whoever next ran the suite -- so the
@@ -52,7 +54,7 @@ internal sealed class LoopbackBroker : IAsyncDisposable
         // reach. Defaults to the system clock, so every existing test is unaffected.
         clock ??= TimeProvider.System;
 
-        var runtime = BrokerRuntime.OpenInMemory(BrokerOptions.Default, clock);
+        var runtime = BrokerRuntime.OpenInMemory(options ?? BrokerOptions.Default, clock);
 
         var server = await ParleyServer
             .StartAsync(runtime, "http://127.0.0.1:0", cancellationToken, Diagnostics())

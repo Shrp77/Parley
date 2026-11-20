@@ -71,6 +71,12 @@ public static class Standing
     /// <summary>It is retired, by a person or because its workspace was found gone.</summary>
     public const string Retired = "retired";
 
+    /// <summary>A person has held it and its process has ended (SPEC.md §11.1): nothing starts it until they resume it.</summary>
+    public const string Held = "held by you; nothing starts it until you resume it";
+
+    /// <summary>A person has held it and its process has not ended yet: its node waits for the turn (SPEC.md §11.1).</summary>
+    public const string Holding = "held by you, stopping once its turn ends";
+
     /// <summary>A turn is running for it now (SPEC.md §11.6).</summary>
     public const string Working = "working";
 
@@ -170,6 +176,7 @@ public static class Standing
                 // The person reads here or away and nothing else: whether anybody is there is the one fact a
                 // peer asking them needs.
                 seat ? (agent.Presence == AgentPresence.Here ? Here : Away)
+                    : agent.Held && !retired ? (running ? Holding : Held)
                     : agent.Unsupervised && !retired ? Left
                     : agent.OpenOutside && !retired ? Outside
                     : !retired && FromTurns(agent, running) is { } turn ? turn

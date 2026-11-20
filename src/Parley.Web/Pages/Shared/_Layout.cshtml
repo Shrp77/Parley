@@ -1542,6 +1542,31 @@
         .roadmap-grid .grid-head span:not(:first-child) { text-align: right; }
         .items-grid .grid-head, .items-grid .grid-row > summary { grid-template-columns: 3.5rem minmax(0, 1fr) minmax(10rem, 16rem); }
         .select-grid .grid-head, .select-grid .grid-row > summary { grid-template-columns: 1.6rem minmax(0, 1fr) 5.5rem minmax(10rem, 14rem) 6.5rem; }
+        /* The graph panel (spec 041): a tab at the edge of every page that is not framed, opening a panel the person can pin. */
+        .pg-tab { position: fixed; right: 0; top: 40%; z-index: 40; writing-mode: vertical-rl; padding: 0.7rem 0.35rem; border-radius: 10px 0 0 10px; border: 1px solid var(--rule); border-right: 0; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; font-size: 0.85rem; }
+        .pg-panel { position: fixed; right: 0; top: 0; bottom: 0; z-index: 41; width: min(46rem, 100vw); display: flex; flex-direction: column; background: var(--page); border-left: 1px solid var(--rule); box-shadow: var(--md-sys-elevation-3); }
+        .pg-panel[hidden] { display: none; }
+        .pg-panel.pg-pinned { box-shadow: none; }
+        body.pg-docked { padding-right: min(46rem, 100vw); }
+        .pg-bar { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; padding: 0.6rem 1rem; border-bottom: 1px solid var(--rule); }
+        .pg-bar h2 { margin: 0; font-size: 1rem; flex: 1 1 auto; }
+        .pg-body { flex: 1 1 auto; overflow: auto; padding: 0.6rem 1rem 1rem; }
+        .pg-panel.pg-hide-closed [data-closed] { display: none; }
+        .pg-svg { max-width: 100%; height: auto; }
+        .pg-band { fill: var(--quiet-wash); opacity: 0.45; }
+        .pg-node rect { fill: var(--card); stroke: var(--rule); stroke-width: 1.2; }
+        .pg-project rect { fill: var(--md-sys-color-secondary-container); }
+        .pg-agent.pg-held rect { stroke: var(--alarm); stroke-width: 2; stroke-dasharray: 5 3; }
+        .pg-muted rect { opacity: 0.55; }
+        .pg-muted text { opacity: 0.75; }
+        .pg-label { font-size: 12px; font-weight: 650; fill: var(--ink); }
+        .pg-state { font-size: 10px; fill: var(--ink-faint); }
+        .pg-link { font-size: 10px; fill: var(--accent); text-decoration: underline; cursor: pointer; }
+        .pg-task { fill: var(--accent); }
+        .pg-edge { fill: none; stroke: var(--rule); stroke-width: 1.3; }
+        .pg-spinoff { stroke-dasharray: 4 3; stroke: var(--accent); }
+        .pg-note { font-size: 0.85rem; }
+        .pg-list h3 { font-size: 0.95rem; margin: 0.8rem 0 0.2rem; }
         .select-grid .row-act { margin: 0; }
         .select-grid input[type=checkbox] { margin: 0; align-self: center; }
         .bulk-bar { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin: 0.5rem 0; }
@@ -3297,6 +3322,72 @@
             });
         })();
     </script>
+    @if (!Parley.Web.ConsoleHost.Embedded(Context))
+    {
+        @* The graph panel (spec 041). Collapsed to a tab, it reads nothing: the script below fetches the fragment only while the
+           panel is open. Whether it is open and pinned, and whether closed conversations are hidden, are kept in this browser only. *@
+        <button type="button" class="pg-tab" id="pg-tab" aria-controls="pg-panel" aria-expanded="false">Graph</button>
+        <aside class="pg-panel" id="pg-panel" aria-label="Graph of projects, agents and conversations" hidden>
+            <div class="pg-bar">
+                <h2>What is being worked on</h2>
+                <label class="toggle"><input type="checkbox" id="pg-hide-closed" /> <span>Hide closed</span></label>
+                <button type="button" id="pg-pin" class="tonal" aria-pressed="false">Pin</button>
+                <button type="button" id="pg-close" class="quiet">Close</button>
+            </div>
+            <div class="pg-body" id="pg-body" aria-live="polite"></div>
+        </aside>
+        <script>
+            (function () {
+                var tab = document.getElementById("pg-tab");
+                var panel = document.getElementById("pg-panel");
+                var body = document.getElementById("pg-body");
+                var pin = document.getElementById("pg-pin");
+                var hideClosed = document.getElementById("pg-hide-closed");
+                var key = "parley.graph";
+                var timer = null;
+                var state = { open: false, pinned: false, hideClosed: false };
+
+                function load() { try { var s = JSON.parse(localStorage.getItem(key) || "{}"); if (s && s.pinned) { state.pinned = true; state.open = !!s.open; } if (s && s.hideClosed) { state.hideClosed = true; } } catch (e) { } }
+                function save() { try { localStorage.setItem(key, JSON.stringify(state)); } catch (e) { } }
+
+                function read() {
+                    fetch("/Graph", { credentials: "same-origin", cache: "no-store", headers: { "Accept": "text/html" } })
+                        .then(function (r) { if (!r.ok) { throw new Error(String(r.status)); } return r.text(); })
+                        .then(function (html) { body.innerHTML = html; })
+                        .catch(function () { body.textContent = "The graph could not be read. Close the panel and open it again to retry."; });
+                }
+
+                function draw() {
+                    panel.hidden = !state.open;
+                    tab.hidden = state.open && state.pinned;
+                    tab.setAttribute("aria-expanded", state.open ? "true" : "false");
+                    panel.classList.toggle("pg-pinned", state.pinned);
+                    panel.classList.toggle("pg-hide-closed", state.hideClosed);
+                    document.body.classList.toggle("pg-docked", state.open && state.pinned);
+                    pin.setAttribute("aria-pressed", state.pinned ? "true" : "false");
+                    pin.textContent = state.pinned ? "Unpin" : "Pin";
+                    hideClosed.checked = state.hideClosed;
+
+                    if (timer) { clearInterval(timer); timer = null; }
+
+                    if (state.open) {
+                        read();
+                        // Only while it is open, and no faster than a person can take it in.
+                        timer = setInterval(read, 15000);
+                    }
+                }
+
+                tab.addEventListener("click", function () { state.open = true; save(); draw(); });
+                document.getElementById("pg-close").addEventListener("click", function () { state.open = false; state.pinned = false; save(); draw(); });
+                pin.addEventListener("click", function () { state.pinned = !state.pinned; save(); draw(); });
+                hideClosed.addEventListener("change", function () { state.hideClosed = hideClosed.checked; save(); draw(); });
+                document.addEventListener("keydown", function (e) { if (e.key === "Escape" && state.open && !state.pinned) { state.open = false; save(); draw(); } });
+
+                load();
+                draw();
+            })();
+        </script>
+    }
     @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>

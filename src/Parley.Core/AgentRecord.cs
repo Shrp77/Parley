@@ -87,6 +87,7 @@ namespace Parley.Core;
 /// node now holds. <paramref name="OpenOutside"/> is also true for it. Observed from the attachments the broker holds; on
 /// the operator's registry only.
 /// </param>
+/// <param name="HeldUtc">When a person held it in this project, or null when it is not held (SPEC.md §11.1).</param>
 /// <remarks>
 /// Credentials are deliberately not a field here, and should not become one. The broker
 /// persists no credential reference or value for any agent (SPEC.md §12); a field on this
@@ -108,8 +109,13 @@ public sealed record AgentRecord(
     TurnStanding? Turns = null,
     bool OpenOutside = false,
     AgentIdentity Identity = default,
-    bool Unsupervised = false)
+    bool Unsupervised = false,
+    DateTimeOffset? HeldUtc = null)
 {
+    /// <summary>Whether a person has held the agent in this project (SPEC.md §11.1), so nothing starts it until they resume it.</summary>
+    /// <remarks>Derived from <see cref="HeldUtc"/>, which is the one fact; a flag beside it would be a second one to disagree.</remarks>
+    public bool Held => HeldUtc is not null;
+
     /// <summary>Whether this row is the facilitator's (SPEC.md principle 2.11).</summary>
     /// <remarks>
     /// Derived from the adapter rather than carried as a field, because storage ties that adapter to the reserved

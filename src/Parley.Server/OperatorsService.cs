@@ -293,6 +293,14 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             return new Wire.DidItReply { Changed = false };
         }
 
+        // SPEC.md §11.1: nothing starts a held agent, a person's Start included. Said, not silently declined.
+        if (_runtime.IsHeld(agent))
+        {
+            throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"'{agent.Value}' is held, so nothing starts it. Resume it first."));
+        }
+
         var started = _runtime.RequestAttention(
             agent, string.IsNullOrWhiteSpace(request.Because) ? "the person asked for it" : request.Because);
 
@@ -372,6 +380,63 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
                 $"No node is joined for '{agent.Machine}', so nothing there can end the process of '{agent.Value}'. Run "
                 + "`parley up` on that machine, or restart the broker there.")),
         };
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Recorded before the node is asked, so a turn that ends and a message that arrives in between both find the hold
+    /// (SPEC.md §11.1). The process is ended by the existing stop, which waits for the turn and never ends one a node did not start.
+    /// </remarks>
+    public override async Task<Wire.HoldReply> Hold(Wire.AgentRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var agent = Acted(request.Agent);
+        var registry = await Console((console, _, ct) => console.DescribeRegistryAsync(ct), context).ConfigureAwait(false);
+
+        if (registry.All(row => row.Name != agent))
+        {
+            throw new RpcException(new Status(
+                StatusCode.NotFound, $"Nothing has registered under '{agent.Value}', so there is nothing to hold."));
+        }
+
+        var changed = await Console((console, now, ct) => console.HoldAgentAsync(agent, now, ct), context).ConfigureAwait(false);
+
+        _runtime.MarkHeld(agent, true);
+
+        var process = _runtime.RequestStop(agent, restart: false, "a person held it") switch
+        {
+            StopOutcome.Sent => "stopping",
+            StopOutcome.OpenOutside => "open_outside",
+            StopOutcome.NoNode => "no_node",
+            _ => "not_running"
+        };
+
+        return new Wire.HoldReply { Changed = changed, Process = process };
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Then, as after a restart, the agent is asked to start if it owes open work (SPEC.md §11.1); one that owes nothing stays
+    /// as it is until work arrives.
+    /// </remarks>
+    public override async Task<Wire.DidItReply> Resume(Wire.AgentRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var agent = Acted(request.Agent);
+        var changed = await Console((console, _, ct) => console.ResumeAgentAsync(agent, ct), context).ConfigureAwait(false);
+
+        _runtime.MarkHeld(agent, false);
+
+        if (changed)
+        {
+            await _runtime.WakeIfOwingAsync(agent, context.CancellationToken).ConfigureAwait(false);
+        }
+
+        return new Wire.DidItReply { Changed = changed };
     }
 
     /// <inheritdoc/>

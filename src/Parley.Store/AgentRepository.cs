@@ -52,7 +52,8 @@ public sealed class AgentRepository(SqliteConnection connection)
                        a.status         AS Status,
                        o.statement      AS OwnsAccepted,
                        o.source         AS OwnsSource,
-                       a.identity       AS Identity
+                       a.identity       AS Identity,
+                       a.held_utc       AS HeldUtc
                 FROM agents AS a
                 LEFT JOIN nodes AS n ON n.machine = a.machine
                 -- **Left joined, because most agents have no accepted line and that is not a
@@ -1085,6 +1086,31 @@ public sealed class AgentRepository(SqliteConnection connection)
                 new { Name = name.Value },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
+    /// <summary>Records that a person has held an agent, so nothing starts it until they resume it (SPEC.md §11.1).</summary>
+    /// <param name="name">The agent.</param>
+    /// <param name="nowUtc">When it was held.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>One if it was not held before, zero if it was held already or is not registered.</returns>
+    /// <remarks>Guarded on the current value, so the count is a truthful answer to "did this change anything".</remarks>
+    public async Task<int> HoldAsync(AgentName name, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "UPDATE agents SET held_utc = @Now WHERE name = @Name AND held_utc IS NULL "
+                + "AND adapter NOT IN ('parley-console', 'parley-facilitator');",
+                new { Now = nowUtc.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture), Name = name.Value },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+    /// <summary>Clears a hold.</summary>
+    /// <param name="name">The agent.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>One if it was held, zero otherwise.</returns>
+    public async Task<int> ResumeAsync(AgentName name, CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "UPDATE agents SET held_utc = NULL WHERE name = @Name AND held_utc IS NOT NULL;",
+                new { Name = name.Value },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
     /// <summary>
     /// Withdraws a retirement, returning the agent to service.
     /// </summary>
@@ -1488,6 +1514,9 @@ public sealed class AgentRepository(SqliteConnection connection)
         /// <summary>The repository's identifier as stored, or null when the agent presented none.</summary>
         public string? Identity { get; init; }
 
+        /// <summary>When a person held the agent, as stored, or null when it is not held.</summary>
+        public string? HeldUtc { get; init; }
+
         /// <summary>Parses a stored tier token.</summary>
         /// <param name="value">The token read from storage.</param>
         /// <returns>The corresponding tier.</returns>
@@ -1538,7 +1567,9 @@ public sealed class AgentRepository(SqliteConnection connection)
             AgentLiveness.Read(name, NodeConnected != 0, Connected != 0),
             OwnsAccepted,
             OwnsSource is null ? null : ParseSource(OwnsSource),
-            Identity: AgentIdentity.TryRead(Identity, out var identity) ? identity : default);
+            Identity: AgentIdentity.TryRead(Identity, out var identity) ? identity : default,
+            HeldUtc: DateTimeOffset.TryParse(HeldUtc, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal, out var held) ? held : null);
 
         /// <summary>Parses a stored ownership source.</summary>
         /// <param name="value">The token read from storage.</param>

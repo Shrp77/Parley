@@ -377,6 +377,28 @@ public interface IParleyBrokerClient
     Task<bool> KillAsync(
         AgentName agent, string because, CancellationToken cancellationToken = default);
 
+    /// <summary>Hold an agent in this project: nothing starts it until a person resumes it (SPEC.md §10.2 <c>hold</c>, §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether it was newly held, and what became of its process.</returns>
+    /// <remarks>
+    /// <para>
+    /// Recorded first, then the agent's node is asked to stop it once its turn is over, so a turn that ends and a message that
+    /// arrives in between both find the hold. It closes, moves and answers nothing.
+    /// </para>
+    /// <para>
+    /// This holds it in one project's store. An agent whose repository is enrolled in several projects is held in each by a
+    /// surface, through <c>AgentHolding</c>.
+    /// </para>
+    /// </remarks>
+    Task<HoldResult> HoldAsync(AgentName agent, CancellationToken cancellationToken = default);
+
+    /// <summary>Clear an agent's hold (SPEC.md §10.2 <c>resume</c>).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns><see langword="true"/> if it was held. It is then asked to start, as after a restart, if it owes work.</returns>
+    Task<bool> ResumeAsync(AgentName agent, CancellationToken cancellationToken = default);
+
     /// <summary>Place a file as the person, into a conversation that exists (SPEC.md §10.2 <c>place_persons_file</c>).</summary>
     /// <param name="conversationId">The conversation.</param>
     /// <param name="name">The name to place it under; characters outside the set become <c>_</c> (§9.5).</param>

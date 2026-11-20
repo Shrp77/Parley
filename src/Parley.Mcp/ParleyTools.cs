@@ -2158,6 +2158,8 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         // SPEC.md §11.7: somebody has that repository open in an editor, and only they can make it read.
         Wire.WakeOutcome.OpenOutside =>
             "open in a session Parley did not start; it reads your request when somebody there prompts it",
+        Wire.WakeOutcome.Held =>
+            "held by the person: it is not started, and it gets your request when they resume it. Nothing is lost",
         _ => "unknown"
     };
 
