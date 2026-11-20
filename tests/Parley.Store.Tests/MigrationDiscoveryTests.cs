@@ -35,7 +35,7 @@ public sealed class MigrationDiscoveryTests
     /// <c>003</c> adds file problems, <c>004</c> marks when an agent was first asked what it owns and first refreshed,
     /// <c>005</c> raises a message's limit and records every message's length, <c>006</c> adds conversation links and
     /// moves, <c>007</c> lets images be placed, and <c>008</c> records where a move falls among the messages, and <c>009</c> records what an agent read of the
-    /// project's past for the person to see. <c>010</c> indexes how messages are read, and <c>011</c> adds a person's hold on an agent. **The next change to the
+    /// project's past for the person to see. <c>010</c> indexes how messages are read, and <c>011</c> adds a person's freeze on an agent. **The next change to the
     /// schema is migration 012**, and this number moving to 12 is how that is noticed.
     /// </para>
     /// </remarks>

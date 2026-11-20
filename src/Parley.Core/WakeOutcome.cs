@@ -91,13 +91,13 @@ public enum WakeOutcome
     OpenOutside = 5,
 
     /// <summary>
-    /// A person has held the recipient (SPEC.md §11.1): nobody was asked to start it, and the work waits in its mail until the
-    /// person resumes it.
+    /// A person has frozen the recipient (SPEC.md §11.1): nobody was asked to start it, and the work waits in its mail until the
+    /// person unfreezes it.
     /// </summary>
     /// <remarks>
     /// Not <see cref="Unreachable"/>, which says nothing can run it now and the machine may be off: this is a decision a
     /// person made and can reverse, and the work is not lost. Not <see cref="WithThePerson"/> either, since nobody is deciding
     /// the work itself.
     /// </remarks>
-    Held = 6
+    Frozen = 6
 }

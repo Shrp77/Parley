@@ -972,11 +972,11 @@ service Operators {
   // token no node now holds; never for one open in somebody's editor, which has no token, and never for a supervised one.
   rpc Kill(StopRequest) returns (DidItReply);
 
-  // A person's hold on an agent (section 11.1): recorded in this project's store, then the agent's node is asked to stop it after
-  // its current turn. While held nothing starts it -- not the restart wake, not new work, not a person's Start -- and its open
-  // work stays open. Resume clears it. A hold is the person's alone: the Agents service carries neither.
-  rpc Hold(AgentRequest) returns (HoldReply);
-  rpc Resume(AgentRequest) returns (DidItReply);
+  // A person's freeze on an agent (section 11.1): recorded in this project's store, then the agent's node is asked to stop it after
+  // its current turn. While frozen nothing starts it -- not the restart wake, not new work, not a person's Start -- and its open
+  // work stays open. Unfreeze clears it. A freeze is the person's alone: the Agents service carries neither.
+  rpc Freeze(AgentRequest) returns (FreezeReply);
+  rpc Unfreeze(AgentRequest) returns (DidItReply);
 
   // The file location (section 9.5). Placing as the person, removing any file and pruning them all are the person's:
   // no agent places as somebody else or removes another's files. Describing where a file is lets a surface on that
@@ -1008,9 +1008,9 @@ message DidItReply {
   bool changed = 1;
 }
 
-// What a hold did. `changed` is false when the agent was already held. `process` says what became of its process: `stopping`
-// (its node was asked, and waits for the turn), `not_running`, `open_outside` (no node holds a process of it to end) or `no_node`.
-message HoldReply {
+// What a freeze did. `changed` is false when the agent was already frozen. `process` says what became of its process: `stopping`
+// (its node was asked, and waits for the turn), `not_running`, `open_outside` (no node freezes a process of it to end) or `no_node`.
+message FreezeReply {
   bool changed = 1;
   string process = 2;
 }
@@ -1186,8 +1186,8 @@ message RegistryRow {
   // node now holds. `open_outside` is also true, since no node can give it a turn, but it was not opened by somebody.
   bool unsupervised = 20;
 
-  // When a person held the agent in this project (section 11.1); empty when it is not held.
-  string held_utc = 21;
+  // When a person frozen the agent in this project (section 11.1); empty when it is not frozen.
+  string frozen_utc = 21;
 }
 
 message RefusalsReply {
@@ -1564,8 +1564,8 @@ enum WakeOutcome {
   // The receiver is running only as a process Parley did not start (section 11.7): nobody was asked, and it reads
   // the message when somebody prompts it.
   WAKE_OUTCOME_OPEN_OUTSIDE = 6;
-  // A person has held the receiver (section 11.1): nobody was asked to start it, and the work waits until they resume it.
-  WAKE_OUTCOME_HELD = 7;
+  // A person has frozen the receiver (section 11.1): nobody was asked to start it, and the work waits until they unfreeze it.
+  WAKE_OUTCOME_FROZEN = 7;
 }
 
 enum ClosureError {

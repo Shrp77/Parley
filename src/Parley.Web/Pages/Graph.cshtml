@@ -53,13 +53,13 @@
                         <title>@node.Full: @node.State</title>
                         <rect x="@node.X" y="@node.Y" width="@node.Width" height="@node.Height" rx="8" />
                         <a href="/Projects/Agents?project=@project"><text x="@(node.X + 10)" y="@(node.Y + 17)" class="pg-label">@node.Label</text></a>
-                        <a href="/Projects/Act?project=@project&amp;action=holdall&amp;subject=@project"><text x="@(node.X + 10)" y="@(node.Y + 33)" class="pg-link">Hold all</text></a>
-                        <a href="/Projects/Act?project=@project&amp;action=resumeall&amp;subject=@project"><text x="@(node.X + 72)" y="@(node.Y + 33)" class="pg-link">Resume all</text></a>
+                        <a href="/Projects/Act?project=@project&amp;action=freezeall&amp;subject=@project"><text x="@(node.X + 10)" y="@(node.Y + 33)" class="pg-link">Freeze all</text></a>
+                        <a href="/Projects/Act?project=@project&amp;action=unfreezeall&amp;subject=@project"><text x="@(node.X + 72)" y="@(node.Y + 33)" class="pg-link">Unfreeze all</text></a>
                     </g>
                 }
                 else if (node.Kind == GraphKind.Agent)
                 {
-                    <g class="pg-node pg-agent@(node.Held ? " pg-held" : "")@(node.Muted ? " pg-muted" : "")">
+                    <g class="pg-node pg-agent@(node.Frozen ? " pg-frozen" : "")@(node.Muted ? " pg-muted" : "")">
                         <title>@node.Full: @node.State@(node.Background > 0 ? $"; {node.Background} background {(node.Background == 1 ? "task" : "tasks")}" : "")</title>
                         <rect x="@node.X" y="@node.Y" width="@node.Width" height="@node.Height" rx="8" />
                         <a href="/Projects/Agent?project=@project&amp;agent=@Enc(node.Full)"><text x="@(node.X + 10)" y="@(node.Y + 16)" class="pg-label">@node.Label</text></a>
@@ -75,7 +75,7 @@
                         }
                         @if (node.Actionable)
                         {
-                            <a href="/Projects/Act?project=@project&amp;action=@(node.Held ? "resume" : "hold")&amp;subject=@Enc(node.Full)"><text x="@(node.X + node.Width - 10)" y="@(node.Y + 33)" text-anchor="end" class="pg-link">@(node.Held ? "Resume" : "Hold")</text></a>
+                            <a href="/Projects/Act?project=@project&amp;action=@(node.Frozen ? "unfreeze" : "freeze")&amp;subject=@Enc(node.Full)"><text x="@(node.X + node.Width - 10)" y="@(node.Y + 33)" text-anchor="end" class="pg-link">@(node.Frozen ? "Unfreeze" : "Freeze")</text></a>
                         }
                     </g>
                 }

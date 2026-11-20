@@ -160,24 +160,24 @@ public sealed class OperatorConsole
     public async Task<bool> RetireAsync(AgentName agent, CancellationToken cancellationToken = default) =>
         await _agents.RetireAsync(agent, cancellationToken).ConfigureAwait(false) > 0;
 
-    /// <summary>Holds an agent: nothing starts it until a person resumes it (§10.2, §11.1).</summary>
-    /// <param name="agent">The agent to hold.</param>
-    /// <param name="nowUtc">When it was held.</param>
+    /// <summary>Freezes an agent: nothing starts it until a person unfreezes it (§10.2, §11.1).</summary>
+    /// <param name="agent">The agent to freeze.</param>
+    /// <param name="nowUtc">When it was frozen.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
-    /// <returns><see langword="true"/> if it was not held before.</returns>
+    /// <returns><see langword="true"/> if it was not frozen before.</returns>
     /// <remarks>
     /// Closes, moves and answers nothing: what the agent owes stays open. Refused for the person's seat and the
-    /// facilitator by storage, so the count is zero for them. Holding ends no process here; the runtime asks the node.
+    /// facilitator by storage, so the count is zero for them. Freezing ends no process here; the runtime asks the node.
     /// </remarks>
-    public async Task<bool> HoldAgentAsync(AgentName agent, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) =>
-        await _agents.HoldAsync(agent, nowUtc, cancellationToken).ConfigureAwait(false) > 0;
+    public async Task<bool> FreezeAgentAsync(AgentName agent, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) =>
+        await _agents.FreezeAsync(agent, nowUtc, cancellationToken).ConfigureAwait(false) > 0;
 
-    /// <summary>Clears an agent's hold (§10.2).</summary>
-    /// <param name="agent">The agent to resume.</param>
+    /// <summary>Clears an agent's freeze (§10.2).</summary>
+    /// <param name="agent">The agent to unfreeze.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
-    /// <returns><see langword="true"/> if it was held.</returns>
-    public async Task<bool> ResumeAgentAsync(AgentName agent, CancellationToken cancellationToken = default) =>
-        await _agents.ResumeAsync(agent, cancellationToken).ConfigureAwait(false) > 0;
+    /// <returns><see langword="true"/> if it was frozen.</returns>
+    public async Task<bool> UnfreezeAgentAsync(AgentName agent, CancellationToken cancellationToken = default) =>
+        await _agents.UnfreezeAsync(agent, cancellationToken).ConfigureAwait(false) > 0;
 
     /// <summary>Records that a person accepted a statement of what an agent owns (§10.2).</summary>
     /// <param name="agent">Whose line it is.</param>

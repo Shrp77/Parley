@@ -1,4 +1,4 @@
-# Specification Quality Checklist: A pinned graph of the work, and holding an agent
+# Specification Quality Checklist: A pinned graph of the work, and freezing an agent
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-11-20

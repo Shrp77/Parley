@@ -164,12 +164,12 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     private readonly ConcurrentDictionary<string, bool> _resumedMachines = new(StringComparer.Ordinal);
 
-    /// <summary>The agents a person has held (SPEC.md §11.1), by name: what <see cref="Ask"/> reads, because it cannot wait on the store.</summary>
+    /// <summary>The agents a person has frozen (SPEC.md §11.1), by name: what <see cref="Ask"/> reads, because it cannot wait on the store.</summary>
     /// <remarks>
-    /// Loaded when the broker starts and changed only by <see cref="MarkHeld"/>, which the operator operations call after the
+    /// Loaded when the broker starts and changed only by <see cref="MarkFrozen"/>, which the operator operations call after the
     /// store has been written, so it is a copy of the column and never a second fact.
     /// </remarks>
-    private readonly ConcurrentDictionary<string, bool> _held = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, bool> _frozen = new(StringComparer.Ordinal);
 
     private readonly SqliteConnection _connection;
     private readonly Parley.Broker.Broker _house;
@@ -218,9 +218,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
         _ = new NodeRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
         _ = new AgentRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
 
-        foreach (var held in new AgentRepository(connection).GetAllAsync().GetAwaiter().GetResult().Where(a => a.Held))
+        foreach (var frozen in new AgentRepository(connection).GetAllAsync().GetAwaiter().GetResult().Where(a => a.Frozen))
         {
-            _held[held.Name.Value] = true;
+            _frozen[frozen.Name.Value] = true;
         }
 
         // The two rows the broker writes itself (SPEC.md §12.3), before anything could want to send as, or to, either:
@@ -955,7 +955,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
         return joined;
     }
 
-    /// <summary>Asks an agent to start if it owes open work, as the restart wake does; used when a hold is cleared (SPEC.md §11.1).</summary>
+    /// <summary>Asks an agent to start if it owes open work, as the restart wake does; used when a freeze is cleared (SPEC.md §11.1).</summary>
     /// <param name="agent">The agent.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>A task that completes when it has been asked, or found to owe nothing.</returns>
@@ -967,7 +967,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         if (owes)
         {
-            _ = RequestAttentionForMail(agent, "a person resumed it and it owes work");
+            _ = RequestAttentionForMail(agent, "a person unfrozen it and it owes work");
         }
     }
 
@@ -1580,23 +1580,23 @@ public sealed class BrokerRuntime : IAsyncDisposable
     public bool RequestAttention(AgentName agent, string because) =>
         Ask(agent, because) is WakeOutcome.Started or WakeOutcome.AlreadyRunning;
 
-    /// <summary>Whether a person has held the agent (SPEC.md §11.1).</summary>
+    /// <summary>Whether a person has frozen the agent (SPEC.md §11.1).</summary>
     /// <param name="agent">The agent.</param>
-    /// <returns><see langword="true"/> while held.</returns>
-    public bool IsHeld(AgentName agent) => _held.ContainsKey(agent.Value);
+    /// <returns><see langword="true"/> while frozen.</returns>
+    public bool IsFrozen(AgentName agent) => _frozen.ContainsKey(agent.Value);
 
-    /// <summary>Records in memory that a hold was written to, or cleared from, the store.</summary>
+    /// <summary>Records in memory that a freeze was written to, or cleared from, the store.</summary>
     /// <param name="agent">The agent.</param>
-    /// <param name="held">Whether it is held now.</param>
-    internal void MarkHeld(AgentName agent, bool held)
+    /// <param name="frozen">Whether it is frozen now.</param>
+    internal void MarkFrozen(AgentName agent, bool frozen)
     {
-        if (held)
+        if (frozen)
         {
-            _held[agent.Value] = true;
+            _frozen[agent.Value] = true;
         }
         else
         {
-            _ = _held.TryRemove(agent.Value, out _);
+            _ = _frozen.TryRemove(agent.Value, out _);
         }
     }
 
@@ -1691,7 +1691,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         var outcome = Ask(agent, because);
 
-        if (outcome is WakeOutcome.Unreachable or WakeOutcome.Held)
+        if (outcome is WakeOutcome.Unreachable or WakeOutcome.Frozen)
         {
             // Nothing is coming after all, so the claim is given back rather than left to expire.
             // Holding it would suppress every wake for the next two minutes on the strength
@@ -1859,12 +1859,12 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     private WakeOutcome Ask(AgentName agent, string because)
     {
-        // **The one place a start or a turn is asked for, so the one place a hold is honoured** (SPEC.md §11.1): the
+        // **The one place a start or a turn is asked for, so the one place a freeze is honoured** (SPEC.md §11.1): the
         // restart wake, new work and a person's Start all come through here. Before any node is asked and before anything is
         // marked as coming.
-        if (_held.ContainsKey(agent.Value))
+        if (_frozen.ContainsKey(agent.Value))
         {
-            return WakeOutcome.Held;
+            return WakeOutcome.Frozen;
         }
 
         if (!_nodes.TryGetValue(agent.Machine, out var node))

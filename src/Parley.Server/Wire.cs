@@ -338,7 +338,7 @@ internal static class Conversions
         Core.WakeOutcome.Unreachable => Wire.WakeOutcome.Unreachable,
         Core.WakeOutcome.WithThePerson => Wire.WakeOutcome.WithThePerson,
         Core.WakeOutcome.OpenOutside => Wire.WakeOutcome.OpenOutside,
-        Core.WakeOutcome.Held => Wire.WakeOutcome.Held,
+        Core.WakeOutcome.Frozen => Wire.WakeOutcome.Frozen,
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Not a defined wake outcome.")
     };
 
@@ -546,7 +546,7 @@ internal static class Conversions
             BackgroundTasks = record.Turns?.BackgroundTasks ?? 0,
             OpenOutside = record.OpenOutside,
             Unsupervised = record.Unsupervised,
-            HeldUtc = record.HeldUtc is { } heldUtc ? Stamp(heldUtc) : string.Empty,
+            FrozenUtc = record.FrozenUtc is { } heldUtc ? Stamp(heldUtc) : string.Empty,
             Identity = record.Identity.Known ? record.Identity.ToString() : string.Empty,
         };
     }

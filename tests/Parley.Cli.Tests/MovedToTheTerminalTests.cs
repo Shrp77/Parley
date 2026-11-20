@@ -32,7 +32,7 @@ public sealed class MovedToTheTerminalTests
     [
         "retire", "reinstate", "purge", "export", "force-conclude", "prune", "start",
         "archive", "unarchive", "destroy", "refusals", "clarifications", "results", "flags",
-        "spin-off", "move", "stop", "restart", "hold", "resume",
+        "spin-off", "move", "stop", "restart", "freeze", "unfreeze",
     ];
 
     [Theory]

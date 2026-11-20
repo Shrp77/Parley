@@ -170,11 +170,11 @@ public sealed class SurfaceBoundaryTests
             nameof(OperatorConsole.SetConversationArchivedAsync),
             nameof(OperatorConsole.CountArchivedConversationsAsync),
 
-            // A person's hold on an agent (§11.1), and clearing it. An operator operation because an agent able to hold a peer
-            // would be deciding that nothing starts it, and one able to resume a held agent would undo a person's decision:
+            // A person's freeze on an agent (§11.1), and clearing it. An operator operation because an agent able to freeze a peer
+            // would be deciding that nothing starts it, and one able to unfreeze a frozen agent would undo a person's decision:
             // the authority Principle II says no agent has. Named apart from the facilitator's own `HoldAsync`.
-            nameof(OperatorConsole.HoldAgentAsync),
-            nameof(OperatorConsole.ResumeAgentAsync),
+            nameof(OperatorConsole.FreezeAgentAsync),
+            nameof(OperatorConsole.UnfreezeAgentAsync),
 
             // §14's purge argument applied to a narrower subject, and it sits beside purge rather
             // than beside force_conclude for that reason: force_conclude ends a discussion and

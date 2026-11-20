@@ -53,7 +53,7 @@ public sealed class AgentRepository(SqliteConnection connection)
                        o.statement      AS OwnsAccepted,
                        o.source         AS OwnsSource,
                        a.identity       AS Identity,
-                       a.held_utc       AS HeldUtc
+                       a.frozen_utc       AS FrozenUtc
                 FROM agents AS a
                 LEFT JOIN nodes AS n ON n.machine = a.machine
                 -- **Left joined, because most agents have no accepted line and that is not a
@@ -1086,28 +1086,28 @@ public sealed class AgentRepository(SqliteConnection connection)
                 new { Name = name.Value },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-    /// <summary>Records that a person has held an agent, so nothing starts it until they resume it (SPEC.md §11.1).</summary>
+    /// <summary>Records that a person has frozen an agent, so nothing starts it until they unfreeze it (SPEC.md §11.1).</summary>
     /// <param name="name">The agent.</param>
-    /// <param name="nowUtc">When it was held.</param>
+    /// <param name="nowUtc">When it was frozen.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
-    /// <returns>One if it was not held before, zero if it was held already or is not registered.</returns>
+    /// <returns>One if it was not frozen before, zero if it was frozen already or is not registered.</returns>
     /// <remarks>Guarded on the current value, so the count is a truthful answer to "did this change anything".</remarks>
-    public async Task<int> HoldAsync(AgentName name, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) =>
+    public async Task<int> FreezeAsync(AgentName name, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) =>
         await _connection.ExecuteAsync(
             new CommandDefinition(
-                "UPDATE agents SET held_utc = @Now WHERE name = @Name AND held_utc IS NULL "
+                "UPDATE agents SET frozen_utc = @Now WHERE name = @Name AND frozen_utc IS NULL "
                 + "AND adapter NOT IN ('parley-console', 'parley-facilitator');",
                 new { Now = nowUtc.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture), Name = name.Value },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-    /// <summary>Clears a hold.</summary>
+    /// <summary>Clears a freeze.</summary>
     /// <param name="name">The agent.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
-    /// <returns>One if it was held, zero otherwise.</returns>
-    public async Task<int> ResumeAsync(AgentName name, CancellationToken cancellationToken = default) =>
+    /// <returns>One if it was frozen, zero otherwise.</returns>
+    public async Task<int> UnfreezeAsync(AgentName name, CancellationToken cancellationToken = default) =>
         await _connection.ExecuteAsync(
             new CommandDefinition(
-                "UPDATE agents SET held_utc = NULL WHERE name = @Name AND held_utc IS NOT NULL;",
+                "UPDATE agents SET frozen_utc = NULL WHERE name = @Name AND frozen_utc IS NOT NULL;",
                 new { Name = name.Value },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
@@ -1514,8 +1514,8 @@ public sealed class AgentRepository(SqliteConnection connection)
         /// <summary>The repository's identifier as stored, or null when the agent presented none.</summary>
         public string? Identity { get; init; }
 
-        /// <summary>When a person held the agent, as stored, or null when it is not held.</summary>
-        public string? HeldUtc { get; init; }
+        /// <summary>When a person frozen the agent, as stored, or null when it is not frozen.</summary>
+        public string? FrozenUtc { get; init; }
 
         /// <summary>Parses a stored tier token.</summary>
         /// <param name="value">The token read from storage.</param>
@@ -1568,8 +1568,8 @@ public sealed class AgentRepository(SqliteConnection connection)
             OwnsAccepted,
             OwnsSource is null ? null : ParseSource(OwnsSource),
             Identity: AgentIdentity.TryRead(Identity, out var identity) ? identity : default,
-            HeldUtc: DateTimeOffset.TryParse(HeldUtc, System.Globalization.CultureInfo.InvariantCulture,
-                System.Globalization.DateTimeStyles.AssumeUniversal, out var held) ? held : null);
+            FrozenUtc: DateTimeOffset.TryParse(FrozenUtc, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal, out var frozen) ? frozen : null);
 
         /// <summary>Parses a stored ownership source.</summary>
         /// <param name="value">The token read from storage.</param>

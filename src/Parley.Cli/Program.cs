@@ -361,7 +361,7 @@ string[] Moved =
 [
     "retire", "reinstate", "purge", "export", "force-conclude", "prune", "start",
     "archive", "unarchive", "destroy", "refusals", "clarifications", "results", "flags",
-    "spin-off", "move", "stop", "restart", "kill", "hold", "resume",
+    "spin-off", "move", "stop", "restart", "kill", "freeze", "unfreeze",
 ];
 
 // Options are taken centrally, above the verb, because a flag consumed by the command it belongs

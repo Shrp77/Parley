@@ -59,7 +59,7 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             row.OpenOutside,
             AgentIdentity.TryRead(row.Identity, out var identity) ? identity : default,
             row.Unsupervised,
-            Read(row.HeldUtc)))];
+            Read(row.FrozenUtc)))];
     }
 
     /// <summary>Reads how an accepted line was arrived at, off a registry row.</summary>
@@ -177,24 +177,24 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     }
 
     /// <inheritdoc/>
-    public async Task<HoldResult> HoldAsync(AgentName agent, CancellationToken cancellationToken = default)
+    public async Task<FreezeResult> FreezeAsync(AgentName agent, CancellationToken cancellationToken = default)
     {
-        var reply = await _operators.HoldAsync(
+        var reply = await _operators.FreezeAsync(
             new Wire.AgentRequest { Agent = agent.Value }, cancellationToken: cancellationToken);
 
-        return new HoldResult(reply.Changed, reply.Process switch
+        return new FreezeResult(reply.Changed, reply.Process switch
         {
-            "stopping" => HoldProcess.Stopping,
-            "open_outside" => HoldProcess.OpenOutside,
-            "no_node" => HoldProcess.NoNode,
-            _ => HoldProcess.NotRunning
+            "stopping" => FreezeProcess.Stopping,
+            "open_outside" => FreezeProcess.OpenOutside,
+            "no_node" => FreezeProcess.NoNode,
+            _ => FreezeProcess.NotRunning
         });
     }
 
     /// <inheritdoc/>
-    public async Task<bool> ResumeAsync(AgentName agent, CancellationToken cancellationToken = default)
+    public async Task<bool> UnfreezeAsync(AgentName agent, CancellationToken cancellationToken = default)
     {
-        var reply = await _operators.ResumeAsync(
+        var reply = await _operators.UnfreezeAsync(
             new Wire.AgentRequest { Agent = agent.Value }, cancellationToken: cancellationToken);
 
         return reply.Changed;

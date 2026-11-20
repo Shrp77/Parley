@@ -293,12 +293,12 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             return new Wire.DidItReply { Changed = false };
         }
 
-        // SPEC.md §11.1: nothing starts a held agent, a person's Start included. Said, not silently declined.
-        if (_runtime.IsHeld(agent))
+        // SPEC.md §11.1: nothing starts a frozen agent, a person's Start included. Said, not silently declined.
+        if (_runtime.IsFrozen(agent))
         {
             throw new RpcException(new Status(
                 StatusCode.FailedPrecondition,
-                $"'{agent.Value}' is held, so nothing starts it. Resume it first."));
+                $"'{agent.Value}' is frozen, so nothing starts it. Unfreeze it first."));
         }
 
         var started = _runtime.RequestAttention(
@@ -384,10 +384,10 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Recorded before the node is asked, so a turn that ends and a message that arrives in between both find the hold
+    /// Recorded before the node is asked, so a turn that ends and a message that arrives in between both find the freeze
     /// (SPEC.md §11.1). The process is ended by the existing stop, which waits for the turn and never ends one a node did not start.
     /// </remarks>
-    public override async Task<Wire.HoldReply> Hold(Wire.AgentRequest request, ServerCallContext context)
+    public override async Task<Wire.FreezeReply> Freeze(Wire.AgentRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
@@ -398,14 +398,14 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         if (registry.All(row => row.Name != agent))
         {
             throw new RpcException(new Status(
-                StatusCode.NotFound, $"Nothing has registered under '{agent.Value}', so there is nothing to hold."));
+                StatusCode.NotFound, $"Nothing has registered under '{agent.Value}', so there is nothing to freeze."));
         }
 
-        var changed = await Console((console, now, ct) => console.HoldAgentAsync(agent, now, ct), context).ConfigureAwait(false);
+        var changed = await Console((console, now, ct) => console.FreezeAgentAsync(agent, now, ct), context).ConfigureAwait(false);
 
-        _runtime.MarkHeld(agent, true);
+        _runtime.MarkFrozen(agent, true);
 
-        var process = _runtime.RequestStop(agent, restart: false, "a person held it") switch
+        var process = _runtime.RequestStop(agent, restart: false, "a person frozen it") switch
         {
             StopOutcome.Sent => "stopping",
             StopOutcome.OpenOutside => "open_outside",
@@ -413,7 +413,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             _ => "not_running"
         };
 
-        return new Wire.HoldReply { Changed = changed, Process = process };
+        return new Wire.FreezeReply { Changed = changed, Process = process };
     }
 
     /// <inheritdoc/>
@@ -421,15 +421,15 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     /// Then, as after a restart, the agent is asked to start if it owes open work (SPEC.md §11.1); one that owes nothing stays
     /// as it is until work arrives.
     /// </remarks>
-    public override async Task<Wire.DidItReply> Resume(Wire.AgentRequest request, ServerCallContext context)
+    public override async Task<Wire.DidItReply> Unfreeze(Wire.AgentRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
         var agent = Acted(request.Agent);
-        var changed = await Console((console, _, ct) => console.ResumeAgentAsync(agent, ct), context).ConfigureAwait(false);
+        var changed = await Console((console, _, ct) => console.UnfreezeAgentAsync(agent, ct), context).ConfigureAwait(false);
 
-        _runtime.MarkHeld(agent, false);
+        _runtime.MarkFrozen(agent, false);
 
         if (changed)
         {

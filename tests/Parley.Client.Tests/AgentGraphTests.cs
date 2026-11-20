@@ -6,11 +6,11 @@ using Xunit;
 namespace Parley.Client.Tests;
 
 /// <summary>
-/// What the graph says: which agent is in which conversation of which project, which was spun off from which, which is held.
+/// What the graph says: which agent is in which conversation of which project, which was spun off from which, which is frozen.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The picture is drawn from this derivation, so what is held here is what a person reads from it. Positions are checked only
+/// The picture is drawn from this derivation, so what is frozen here is what a person reads from it. Positions are checked only
 /// for what a reader depends on: nothing overlaps, and every edge reaches nodes that exist.
 /// </para>
 /// <para>
@@ -23,10 +23,10 @@ public sealed class AgentGraphTests
 {
     private static readonly DateTimeOffset Now = new(2026, 11, 20, 12, 0, 0, TimeSpan.Zero);
 
-    private static AgentRecord Agent(string name, TurnStanding? turns = null, DateTimeOffset? held = null,
+    private static AgentRecord Agent(string name, TurnStanding? turns = null, DateTimeOffset? frozen = null,
         AgentStatus status = AgentStatus.Active, string adapter = "mcp") =>
         new(AgentName.Create(name), adapter, AgentTier.Full, null, null, null, true, status,
-            Presence: AgentPresence.Running, Turns: turns, HeldUtc: held);
+            Presence: AgentPresence.Running, Turns: turns, FrozenUtc: frozen);
 
     private static ConversationSummary Conversation(string id, string[] who, bool open = false, bool closed = false,
         bool archived = false, string? parent = null, int minutesAgo = 5) =>
@@ -73,29 +73,29 @@ public sealed class AgentGraphTests
 
         var graph = Graph(new GraphInput(
             "alpha",
-            [Agent("waits@pc", turns), Agent("held@pc", turns, held: Now)],
+            [Agent("waits@pc", turns), Agent("frozen@pc", turns, frozen: Now)],
             [],
             null));
 
         var waits = graph.Nodes.Single(n => n.Full == "waits@pc");
-        var held = graph.Nodes.Single(n => n.Full == "held@pc");
+        var frozen = graph.Nodes.Single(n => n.Full == "frozen@pc");
 
         Assert.Equal(3, waits.Background);
-        Assert.False(waits.Held);
+        Assert.False(waits.Frozen);
         Assert.Contains("background", waits.State, StringComparison.Ordinal);
-        Assert.True(held.Held);
-        Assert.Equal(Standing.Holding, held.State);
+        Assert.True(frozen.Frozen);
+        Assert.Equal(Standing.Freezing, frozen.State);
     }
 
     [Fact]
-    public void A_held_agent_that_is_no_longer_running_reads_held()
+    public void A_frozen_agent_that_is_no_longer_running_reads_frozen()
     {
-        var stopped = new AgentRecord(AgentName.Create("held@pc"), "mcp", AgentTier.Full, null, null, null, false,
-            AgentStatus.Active, Presence: AgentPresence.Stranded, HeldUtc: Now);
+        var stopped = new AgentRecord(AgentName.Create("frozen@pc"), "mcp", AgentTier.Full, null, null, null, false,
+            AgentStatus.Active, Presence: AgentPresence.Stranded, FrozenUtc: Now);
 
         var graph = Graph(new GraphInput("alpha", [stopped], [], null));
 
-        Assert.Equal(Standing.Held, graph.Nodes.Single(n => n.Kind == GraphKind.Agent).State);
+        Assert.Equal(Standing.Frozen, graph.Nodes.Single(n => n.Kind == GraphKind.Agent).State);
     }
 
     [Fact]
@@ -216,21 +216,21 @@ public sealed class AgentGraphTests
     }
 
     [Fact]
-    public void Holding_words_name_what_is_kept_and_what_stays_open()
+    public void Freezing_words_name_what_is_kept_and_what_stays_open()
     {
-        Assert.Contains("stays open", HoldingWords.Holding("orders@pc"), StringComparison.Ordinal);
-        Assert.Contains("restart", HoldingWords.Holding("orders@pc"), StringComparison.Ordinal);
-        Assert.Contains("other projects", HoldingWords.HoldingAll("alpha"), StringComparison.Ordinal);
+        Assert.Contains("stays open", FreezingWords.Freezing("orders@pc"), StringComparison.Ordinal);
+        Assert.Contains("restart", FreezingWords.Freezing("orders@pc"), StringComparison.Ordinal);
+        Assert.Contains("other projects", FreezingWords.FreezingAll("alpha"), StringComparison.Ordinal);
     }
 
     [Fact]
     public void Describing_a_hold_names_each_project_and_says_what_became_of_the_process()
     {
-        var outcome = new HoldOutcome(
+        var outcome = new FreezeOutcome(
             AgentName.Create("orders@pc"),
-            [new HeldIn("alpha", true, HoldProcess.Stopping, null), new HeldIn("beta", false, null, "it did not answer")]);
+            [new FrozenIn("alpha", true, FreezeProcess.Stopping, null), new FrozenIn("beta", false, null, "it did not answer")]);
 
-        var said = AgentHolding.Describe(outcome);
+        var said = AgentFreezing.Describe(outcome);
 
         Assert.Contains("alpha: changed", said, StringComparison.Ordinal);
         Assert.Contains("node was asked to stop it", said, StringComparison.Ordinal);
@@ -242,7 +242,7 @@ public sealed class AgentGraphTests
     [Fact]
     public void Describing_a_hold_where_no_project_lists_the_agent_says_there_was_nothing_to_do()
     {
-        var said = AgentHolding.Describe(new HoldOutcome(AgentName.Create("orders@pc"), []));
+        var said = AgentFreezing.Describe(new FreezeOutcome(AgentName.Create("orders@pc"), []));
 
         Assert.Contains("nothing to do", said, StringComparison.Ordinal);
     }

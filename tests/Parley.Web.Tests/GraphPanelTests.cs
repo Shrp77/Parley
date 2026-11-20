@@ -16,7 +16,7 @@ namespace Parley.Web.Tests;
 /// would put the name back.
 /// </para>
 /// <para>
-/// Run against a console whose broker cannot be dialled, so what is held is how the pages behave when nothing answers: the
+/// Run against a console whose broker cannot be dialled, so what is frozen is how the pages behave when nothing answers: the
 /// fragment still draws, saying each project could not be read, rather than failing.
 /// </para>
 /// </remarks>
@@ -96,13 +96,13 @@ public sealed class GraphPanelTests
     }
 
     [Fact]
-    public async Task Holding_an_agent_is_described_before_anything_is_done()
+    public async Task Freezing_an_agent_is_described_before_anything_is_done()
     {
         using var console = new DeadBrokerConsole();
         using var client = console.CreateStubbornClient();
 
         var page = await client.GetStringAsync(
-            new Uri($"/Projects/Act?project={DeadBrokerConsole.Project}&action=hold&subject=orders%40test", UriKind.Relative), Ct);
+            new Uri($"/Projects/Act?project={DeadBrokerConsole.Project}&action=freeze&subject=orders%40test", UriKind.Relative), Ct);
 
         Assert.Contains("will be stopped once its current turn ends", page, StringComparison.Ordinal);
         Assert.Contains("What it owes stays open", page, StringComparison.Ordinal);
@@ -110,20 +110,20 @@ public sealed class GraphPanelTests
     }
 
     [Fact]
-    public async Task Resuming_an_agent_and_holding_a_whole_project_are_each_described_too()
+    public async Task Unfreezing_an_agent_and_freezing_a_whole_project_are_each_described_too()
     {
         using var console = new DeadBrokerConsole();
         using var client = console.CreateStubbornClient();
 
-        var resume = await client.GetStringAsync(
-            new Uri($"/Projects/Act?project={DeadBrokerConsole.Project}&action=resume&subject=orders%40test", UriKind.Relative), Ct);
+        var unfreeze = await client.GetStringAsync(
+            new Uri($"/Projects/Act?project={DeadBrokerConsole.Project}&action=unfreeze&subject=orders%40test", UriKind.Relative), Ct);
         var holdAll = await client.GetStringAsync(
-            new Uri($"/Projects/Act?project={DeadBrokerConsole.Project}&action=holdall&subject={DeadBrokerConsole.Project}", UriKind.Relative), Ct);
+            new Uri($"/Projects/Act?project={DeadBrokerConsole.Project}&action=freezeall&subject={DeadBrokerConsole.Project}", UriKind.Relative), Ct);
         var resumeAll = await client.GetStringAsync(
-            new Uri($"/Projects/Act?project={DeadBrokerConsole.Project}&action=resumeall&subject={DeadBrokerConsole.Project}", UriKind.Relative), Ct);
+            new Uri($"/Projects/Act?project={DeadBrokerConsole.Project}&action=unfreezeall&subject={DeadBrokerConsole.Project}", UriKind.Relative), Ct);
 
-        Assert.Contains("can be started again", resume, StringComparison.Ordinal);
+        Assert.Contains("can be started again", unfreeze, StringComparison.Ordinal);
         Assert.Contains("may stop work for other projects too", holdAll, StringComparison.Ordinal);
-        Assert.Contains("held agent", resumeAll, StringComparison.Ordinal);
+        Assert.Contains("frozen agent", resumeAll, StringComparison.Ordinal);
     }
 }

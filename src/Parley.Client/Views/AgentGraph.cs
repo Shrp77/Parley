@@ -27,10 +27,10 @@ public enum GraphKind
 /// <param name="Height">Height.</param>
 /// <param name="Project">The project it belongs to.</param>
 /// <param name="Muted">Whether it is drawn quietly: a closed or archived conversation, a retired agent.</param>
-/// <param name="Held">Whether a person has held the agent.</param>
+/// <param name="Frozen">Whether a person has frozen the agent.</param>
 /// <param name="Closed">Whether a conversation has closed or been archived, so a control can hide it.</param>
 /// <param name="Background">For an agent: how many background tasks its node last said it has running.</param>
-/// <param name="Actionable">For an agent: whether Hold or Resume is offered (never for the person's seat or a retired agent).</param>
+/// <param name="Actionable">For an agent: whether Freeze or Unfreeze is offered (never for the person's seat or a retired agent).</param>
 public sealed record GraphNode(
     string Id,
     GraphKind Kind,
@@ -43,7 +43,7 @@ public sealed record GraphNode(
     int Height,
     string Project,
     bool Muted = false,
-    bool Held = false,
+    bool Frozen = false,
     bool Closed = false,
     int Background = 0,
     bool Actionable = false);
@@ -90,7 +90,7 @@ public sealed record AgentGraph(
 /// <remarks>
 /// <para>
 /// <b>Derived here and drawn in the page</b>, so what the graph says is a function a test can call: which agent is in which
-/// conversation, which conversation was spun off from which, which agent is held.
+/// conversation, which conversation was spun off from which, which agent is frozen.
 /// </para>
 /// <para>
 /// <b>An agent is joined to the conversations it is a participant in, never to what it is working on.</b> A turn report does not
@@ -174,7 +174,7 @@ public static class AgentGraphBuilder
                     id, GraphKind.Agent, Shorten(agent.Name.Value), agent.Name.Value, state,
                     AgentX, top + BandPadding + (i * Row), AgentWidth, Row - Gap + 4, input.Project,
                     Muted: retired,
-                    Held: agent.Held,
+                    Frozen: agent.Frozen,
                     Background: Math.Max(0, agent.Turns?.BackgroundTasks ?? 0),
                     Actionable: !seat && !retired));
 

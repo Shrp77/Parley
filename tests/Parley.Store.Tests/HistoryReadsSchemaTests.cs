@@ -112,7 +112,7 @@ public sealed class HistoryReadsSchemaTests : IDisposable
         using var connection = ParleyDatabase.Open(path);
         SchemaMigrator.Migrate(connection);
 
-        connection.Execute("DROP TABLE history_reads; ALTER TABLE agents DROP COLUMN held_utc; PRAGMA user_version = 8;");
+        connection.Execute("DROP TABLE history_reads; ALTER TABLE agents DROP COLUMN frozen_utc; PRAGMA user_version = 8;");
         connection.Execute("INSERT INTO conversations (id, state, opened_utc) VALUES ('kept', 'OPEN', '2026-11-05T09:00:00Z');");
 
         Assert.Equal(SchemaMigrator.LatestVersion - 8, SchemaMigrator.Migrate(connection));

@@ -92,7 +92,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     /// <summary>What happened, once it has.</summary>
     public string? Outcome { get; private set; }
 
-    /// <summary>The projects a hold or a resume of the agent reaches, said before the person agrees.</summary>
+    /// <summary>The projects a freeze or a unfreeze of the agent reaches, said before the person agrees.</summary>
     public string? Reaches { get; private set; }
 
     /// <summary>The agent's answer to Parley, on one line, when the action is accepting it.</summary>
@@ -136,11 +136,11 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
             Mentionable = [.. Parley.Client.Rendering.RoomRoster.NotInIt(roll.Value, [], PersonSeat.On(project.Name)).Select(agent => agent.Value)];
         }
 
-        // Holding ends the one process that serves every project the agent is in, so the person is told which they are before
-        // they agree (SPEC.md §11.1): holding it for one project's sake stops its work for the rest.
-        if (Action?.ToLowerInvariant() is "hold" or "resume" && AgentName.TryCreate(Subject, out var reached))
+        // Freezing ends the one process that serves every project the agent is in, so the person is told which they are before
+        // they agree (SPEC.md §11.1): freezing it for one project's sake stops its work for the rest.
+        if (Action?.ToLowerInvariant() is "freeze" or "unfreeze" && AgentName.TryCreate(Subject, out var reached))
         {
-            var (serving, unreachable) = await AgentHolding.ServedByAsync(directory, reached, HttpContext.RequestAborted)
+            var (serving, unreachable) = await AgentFreezing.ServedByAsync(directory, reached, HttpContext.RequestAborted)
                 .ConfigureAwait(false);
 
             Reaches = serving.Count == 0
@@ -181,15 +181,15 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
             "restart" => (Parley.Client.Rendering.StoppingWords.Restarting(Subject), false),
 
-            // Not destructive: nothing it owes is closed, moved or answered, and Resume undoes it. What is lost is only what its
+            // Not destructive: nothing it owes is closed, moved or answered, and Unfreeze undoes it. What is lost is only what its
             // process was doing once its turn has ended, which is said.
-            "hold" => (Parley.Client.Rendering.HoldingWords.Holding(Subject) + " " + HoldReach(), false),
+            "freeze" => (Parley.Client.Rendering.FreezingWords.Freezing(Subject) + " " + FreezeReach(), false),
 
-            "resume" => (Parley.Client.Rendering.HoldingWords.Resuming(Subject) + " " + HoldReach(), false),
+            "unfreeze" => (Parley.Client.Rendering.FreezingWords.Unfreezing(Subject) + " " + FreezeReach(), false),
 
-            "holdall" => (Parley.Client.Rendering.HoldingWords.HoldingAll(Project ?? string.Empty), false),
+            "freezeall" => (Parley.Client.Rendering.FreezingWords.FreezingAll(Project ?? string.Empty), false),
 
-            "resumeall" => (Parley.Client.Rendering.HoldingWords.ResumingAll(Project ?? string.Empty), false),
+            "unfreezeall" => (Parley.Client.Rendering.FreezingWords.UnfreezingAll(Project ?? string.Empty), false),
 
             // Ends a process now: not destructive of anything the agent owes, but what it is part-way through is lost, said.
             "kill" => (Parley.Client.Rendering.StoppingWords.Killing(Subject), false),
@@ -302,8 +302,8 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                 "askeveryownership" => AskEveryOwnership(broker, token),
 
                 // Above the name guard, as prune is: acts on the project's agents, and its subject is only what made the link.
-                "holdall" => HoldEveryone(hold: true, token),
-                "resumeall" => HoldEveryone(hold: false, token),
+                "freezeall" => FreezeEveryone(freeze: true, token),
+                "unfreezeall" => FreezeEveryone(freeze: false, token),
 
                 // Above the name guard for the same reason: its subject is the switch's new position, not an agent.
                 "autoaccept" => DescribeAutoAccept(
@@ -317,9 +317,9 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
                 "start" => DescribeStart(broker.StartAsync(agent, "a person asked from the web UI", token)),
 
-                "hold" => HoldOne(agent, hold: true, token),
+                "freeze" => FreezeOne(agent, freeze: true, token),
 
-                "resume" => HoldOne(agent, hold: false, token),
+                "unfreeze" => FreezeOne(agent, freeze: false, token),
 
                 "stop" => DescribeStop(agent, restart: false, broker.StopAsync(agent, "a person stopped it from the web UI", token)),
 
@@ -367,29 +367,29 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
             ? "Its node was asked to start it."
             : "Nothing was asked: it is retired, so reinstate it first, or no node on its machine is running.";
 
-    private string HoldReach() => Reaches ?? string.Empty;
+    private string FreezeReach() => Reaches ?? string.Empty;
 
-    private async Task<string> HoldOne(AgentName agent, bool hold, CancellationToken token) =>
-        AgentHolding.Describe(hold
-            ? await AgentHolding.HoldAsync(directory, agent, token).ConfigureAwait(false)
-            : await AgentHolding.ResumeAsync(directory, agent, token).ConfigureAwait(false));
+    private async Task<string> FreezeOne(AgentName agent, bool freeze, CancellationToken token) =>
+        AgentFreezing.Describe(freeze
+            ? await AgentFreezing.FreezeAsync(directory, agent, token).ConfigureAwait(false)
+            : await AgentFreezing.UnfreezeAsync(directory, agent, token).ConfigureAwait(false));
 
-    private async Task<string> HoldEveryone(bool hold, CancellationToken token)
+    private async Task<string> FreezeEveryone(bool freeze, CancellationToken token)
     {
-        var all = await AgentHolding.AllAsync(directory, Project ?? string.Empty, hold, token).ConfigureAwait(false);
+        var all = await AgentFreezing.AllAsync(directory, Project ?? string.Empty, freeze, token).ConfigureAwait(false);
 
         if (all.Count == 0)
         {
-            return hold
-                ? $"Nothing to hold: every agent in '{Project}' is already held, or none is registered."
-                : $"Nothing to resume: no agent in '{Project}' is held.";
+            return freeze
+                ? $"Nothing to freeze: every agent in '{Project}' is already frozen, or none is registered."
+                : $"Nothing to unfreeze: no agent in '{Project}' is frozen.";
         }
 
         var incomplete = all.Count(o => !o.Complete);
 
-        return $"{all.Count} {(all.Count == 1 ? "agent" : "agents")} {(hold ? "held" : "resumed")} in '{Project}'."
+        return $"{all.Count} {(all.Count == 1 ? "agent" : "agents")} {(freeze ? "frozen" : "unfrozen")} in '{Project}'."
             + (incomplete > 0
-                ? $" {incomplete} could not be reached in every project that serves it: " + string.Join(' ', all.Where(o => !o.Complete).Select(AgentHolding.Describe))
+                ? $" {incomplete} could not be reached in every project that serves it: " + string.Join(' ', all.Where(o => !o.Complete).Select(AgentFreezing.Describe))
                 : string.Empty);
     }
 

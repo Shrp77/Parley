@@ -14,7 +14,7 @@ namespace Parley.Web.Pages;
 /// fetches this only while it is open.
 /// </para>
 /// <para>
-/// A fragment with no layout, fetched by the console's own script and put in place. Hold and Resume are links to the console's
+/// A fragment with no layout, fetched by the console's own script and put in place. Freeze and Unfreeze are links to the console's
 /// own confirmation page, so the graph posts nothing itself.
 /// </para>
 /// </remarks>
