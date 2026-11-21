@@ -3,8 +3,8 @@
 @using Parley.Core
 @using Parley.Web.Pages.Shared
 @{
-    // Sooner on the agents tab, which is where a person looks to see who is working.
-    ViewData["Refresh"] = Model.AgentsTab ? "10" : "30";
+    // Not reloaded by the frame: the page refreshes its own grid in place (below), sooner on the agents tab, which is where a
+    // person looks to see who is working. A reload drew every placeholder again before it filled them, which flashed.
     ViewData["Title"] = Model.AgentsTab ? (Model.InProject is null ? "All Agents" : "Agents") : "Projects";
     ViewData["AsOf"] = Model.AsOf.ToString("HH:mm:ss");
 
@@ -206,19 +206,16 @@
                 <div class="dgrid-head" role="row">
                     <span role="columnheader">Agent</span>
                     <span role="columnheader">Machine</span>
-                    <span role="columnheader">Project</span>
+                    <span role="columnheader">Projects</span>
                     <span role="columnheader">State</span>
                 </div>
 
-                @* The page is drawn before any broker is asked. Each project has a place held for its agents, in the
-                   machine's order, and the page fills it when that project answers: a broker that is down delays its own
-                   place and no other. *@
-                @foreach (var project in Model.ScopedProjects)
-                {
-                    <div class="dgrid-group" style="display: contents;" data-agents-of="@project.Name.Value">
-                        <p class="dgrid-empty faint" role="status">Reading @project.Name.Value…</p>
-                    </div>
-                }
+                @* The page is drawn before any broker is asked, with one place held for the lines. The page fills it when the
+                   brokers have answered and then refreshes it in place, swapping it only when it changed. A broker that is down
+                   is said and delays the lines by no more than a few seconds. *@
+                <div class="dgrid-group" style="display: contents;" data-agent-table>
+                    <p class="dgrid-empty faint" role="status">Reading the agents…</p>
+                </div>
 
                 @if (Model.Projects.Count == 0)
                 {
@@ -389,29 +386,69 @@
             });
 
             settle();
+
+            // Refreshed in place, a row at a time and only when it changed, so nothing flashes and an opened row stays open.
+            setInterval(function () {
+                grid.querySelectorAll('details.dgrid-row[data-project]').forEach(function (row) {
+                    ask('Row', row.getAttribute('data-project')).then(function (text) {
+                        var fresh = parse(text).firstElementChild;
+                        fresh.open = row.open;
+                        if (fresh.outerHTML !== row.outerHTML) { row.replaceWith(fresh); settle(); }
+                    }).catch(function () { });
+                });
+            }, 30000);
         } else {
-            var groups = grid.querySelectorAll('[data-agents-of]');
-            var left = groups.length;
+            var holder = grid.querySelector('[data-agent-table]');
+            var asOf = document.querySelector('.as-of');
+            var last = null;
 
             var count = function () {
                 var rows = grid.querySelectorAll('[data-agent]').length;
-                tally.textContent = rows + (rows === 1 ? ' agent' : ' agents') + (left > 0 ? ', still reading' : '');
-                if (none) { none.hidden = !(left === 0 && rows === 0 && !grid.querySelector('[data-unread]')); }
+                tally.textContent = rows + (rows === 1 ? ' agent' : ' agents');
+                if (none) { none.hidden = !(rows === 0 && !grid.querySelector('[data-unread]')); }
             };
 
-            groups.forEach(function (group) {
-                ask('Agents', group.getAttribute('data-agents-of')).then(function (text) {
-                    group.replaceChildren(parse(text));
-                }).catch(function () {
-                    var p = document.createElement('p');
-                    p.className = 'dgrid-empty';
-                    p.setAttribute('data-unread', group.getAttribute('data-agents-of'));
-                    p.textContent = group.getAttribute('data-agents-of') + ': could not be asked, so its agents are not known.';
-                    group.replaceChildren(p);
-                }).then(function () { left--; count(); });
-            });
+            // Refreshed in place: the lines are swapped only when they differ from what is drawn, and what the person had
+            // opened and where they had scrolled to are put back, so a refresh that changes nothing changes nothing on screen.
+            var refresh = function () {
+                var q = new URLSearchParams(location.search);
+                q.set('handler', 'AgentTable');
 
-            count();
+                fetch(location.pathname + '?' + q.toString(), { cache: 'no-store', credentials: 'same-origin' })
+                    .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.text(); })
+                    .then(function (text) {
+                        if (asOf) { asOf.textContent = 'As of ' + new Date().toLocaleTimeString([], { hour12: false }) + '.'; }
+                        if (text === last) { return; }
+                        last = text;
+
+                        var opened = Array.prototype.map.call(holder.querySelectorAll('details[open][data-agent]'),
+                            function (d) { return d.getAttribute('data-agent'); });
+                        var top = grid.scrollTop;
+                        var fresh = parse(text);
+
+                        fresh.querySelectorAll('details[data-agent]').forEach(function (d) {
+                            if (opened.indexOf(d.getAttribute('data-agent')) >= 0) { d.open = true; }
+                        });
+
+                        holder.replaceChildren(fresh);
+                        grid.scrollTop = top;
+                        count();
+                    })
+                    .catch(function () {
+                        // Said only when nothing has been drawn yet; a refresh that fails leaves the last lines where they are.
+                        if (last === null) {
+                            var p = document.createElement('p');
+                            p.className = 'dgrid-empty';
+                            p.setAttribute('data-unread', 'all');
+                            p.textContent = 'The agents could not be asked. This page tries again in a few seconds.';
+                            holder.replaceChildren(p);
+                            count();
+                        }
+                    });
+            };
+
+            refresh();
+            setInterval(refresh, 10000);
         }
     })();
 </script>

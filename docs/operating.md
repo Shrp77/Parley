@@ -184,8 +184,10 @@ The web console says the same things on a conversation's page.
 **To see who is working across a project,** look at the agents list. On the terminal it groups agents
 under *working* (with how long), *stopped on a refused permission*, *idle* and the rest, and updates
 every few seconds. On the web console's Agents tab, working agents come first, under a *Working now*
-line, and the page updates every 10 seconds. An agent waiting on its own background work sorts with
-them. *Idle* means attached with no turn and no background work running. *Running*
+line. The tab shows one line for each agent, with every project that lists it on that line, because an agent is a repository
+and one repository can be in several projects; open the line to see how it stands in each. The page refreshes itself every
+10 seconds without reloading, so it changes only where something changed, and a line you opened stays open. An agent waiting
+on its own background work sorts with them. *Idle* means attached with no turn and no background work running. *Running*
 on its own means attached, and nobody reports whether it is in a turn, so Parley will not guess.
 These lists show who is working and for how long, not on which conversation: Parley does not record
 which conversation a turn is for.
