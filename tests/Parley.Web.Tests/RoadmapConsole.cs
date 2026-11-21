@@ -111,6 +111,12 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <summary>Every stop a person asked for.</summary>
     public List<Wire.StopRequest> Stopped { get; } = [];
 
+    /// <summary>The starts a person asked for.</summary>
+    public List<Wire.StartRequest> Started { get; } = [];
+
+    /// <summary>What a start is answered with: false for a node that was not asked.</summary>
+    public bool StartAccepted { get; set; } = true;
+
     /// <summary>Every restart a person asked for.</summary>
     public List<Wire.StopRequest> Restarted { get; } = [];
 
@@ -381,6 +387,7 @@ public sealed class RoadmapBroker : HttpMessageHandler
                 "/parley.v1.Operators/Implements" => new Wire.ImplementsReply { ProtocolVersion = Parley.Core.ProtocolVersion.Current },
                 "/parley.v1.Operators/SpinOff" => Spun(Wire.SpinOffRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/AbandonSpinOff" => Taken(Wire.SpinOffRequest.Parser.ParseFrom(payload)),
+                "/parley.v1.Operators/Start" => AskedToStart(Wire.StartRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/Stop" => Asked(Stopped, Wire.StopRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/Restart" => Asked(Restarted, Wire.StopRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/Kill" => Asked(Killed, Wire.StopRequest.Parser.ParseFrom(payload)),
@@ -427,6 +434,13 @@ public sealed class RoadmapBroker : HttpMessageHandler
         SpunOff.Add(asked);
 
         return new Wire.SpinOffReply { Refused = SpinOffRefusal };
+    }
+
+    private Wire.DidItReply AskedToStart(Wire.StartRequest asked)
+    {
+        Started.Add(asked);
+
+        return new Wire.DidItReply { Changed = StartAccepted };
     }
 
     private static Wire.DidItReply Asked(List<Wire.StopRequest> into, Wire.StopRequest asked)

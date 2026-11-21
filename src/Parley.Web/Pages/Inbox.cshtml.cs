@@ -321,6 +321,60 @@ public sealed class InboxModel(
         return Page();
     }
 
+    /// <summary>Asks the agent a row is waiting on to look at what is waiting for it now.</summary>
+    /// <returns>The page, saying what was asked.</returns>
+    /// <remarks>
+    /// <para>
+    /// The operator operation <c>start</c> (SPEC.md §10.2), which is what a person's Start is: a node that can resolve the
+    /// agent starts it, or, when it is already running as a process the node started, gives it a turn. Either way the agent
+    /// collects its mail, which is how it reads the message. It costs the agent a turn and nothing else: no message is written,
+    /// and the exchange is not touched. One click, because nothing is lost by it.
+    /// </para>
+    /// <para>
+    /// Not offered for the facilitator, which no node runs, or for the person's seat, and refused here too should a form ask. The
+    /// broker's own refusals (a frozen agent, one open in somebody's editor) are said in its words, since each says what to do.
+    /// </para>
+    /// </remarks>
+    public async Task<IActionResult> OnPostNudgeAsync()
+    {
+        var settings = For is { Length: > 0 } named ? directory.Find(named) : null;
+
+        if (settings is null || !AgentName.TryCreate(Agent, out var agent) || Facilitation.Is(agent) || PersonSeat.Is(agent))
+        {
+            Outcome = "Only an agent can be asked to look at its messages, and this one is not an agent of a project this console has.";
+        }
+        else
+        {
+            Outcome = await NudgeAsync(new BrokerClient(directory.ClientFor(settings)), agent).ConfigureAwait(false);
+        }
+
+        Me = seats.Seats().FirstOrDefault()?.Seat;
+
+        await LoadAsync().ConfigureAwait(false);
+
+        return Page();
+    }
+
+    private async Task<string> NudgeAsync(BrokerClient broker, AgentName agent)
+    {
+        try
+        {
+            return await broker.StartAsync(agent, "a person asked it, from the Inbox, to look at what is waiting for it", HttpContext.RequestAborted)
+                    .ConfigureAwait(false)
+                ? $"'{agent.Value}' was asked to look at its messages now. Its node starts it, or gives it a turn if it is already running."
+                : $"Nothing was asked of '{agent.Value}': it is retired, or no node on its machine is running.";
+        }
+        catch (Grpc.Core.RpcException refused) when (refused.StatusCode == Grpc.Core.StatusCode.FailedPrecondition)
+        {
+            // The broker says why in words a person can act on: frozen, or open in an editor Parley did not start.
+            return refused.Status.Detail;
+        }
+        catch (Grpc.Core.RpcException failure)
+        {
+            return $"'{agent.Value}' was not asked: {(failure.StatusCode == Grpc.Core.StatusCode.Unavailable ? "this project's broker is not answering." : failure.Status.Detail)}";
+        }
+    }
+
     /// <summary>Whether a delivered message passes the filters.</summary>
     /// <param name="project">The project it was delivered in.</param>
     /// <param name="item">The message.</param>

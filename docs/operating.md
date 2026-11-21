@@ -88,7 +88,11 @@ address and any warnings. Inside a project:
   Every row opens its conversation. In *Waiting on you*, a request has a box for your result, a box to ask the
   agent to clarify, and a button to close it without answering. A question the agent asked you has a box for your
   reply and the same button. A row in *In flight* or *Closed* has a box for a
-  follow-up, which goes to that agent as a new request in the same conversation; the facilitator's rows have none. **Ask which are still open** sends each agent that has questions
+  follow-up, which goes to that agent as a new request in the same conversation; the facilitator's rows have none. A row in
+  *In flight* also has an **Ask to look now** button: it starts that agent, or gives it a turn if it is already running, so
+  that it collects what is waiting for it. Use it when an agent has not picked something up. It writes no message and
+  touches nothing the agent owes; it costs the agent a turn. If the agent is frozen, or open in an editor Parley did not
+  start, the page says so in the broker's words instead. **Ask which are still open** sends each agent that has questions
   waiting on you one request per conversation, listing them, so it can say which a later message
   already answered; only the agent closes its own questions.
 - **Roadmaps**: your confirmed roadmaps, and proposals waiting for you.

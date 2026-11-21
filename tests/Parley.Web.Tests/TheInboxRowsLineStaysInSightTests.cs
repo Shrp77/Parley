@@ -84,8 +84,10 @@ public sealed class TheInboxRowsLineStaysInSightTests
         var cols = Regex.Match(rows, "--cols: ([^;]*);", RegexOptions.None, TimeSpan.FromSeconds(2)).Groups[1].Value;
         var tracks = Regex.Matches(cols, @"minmax\([^)]*\)|\d+(?:\.\d+)?rem", RegexOptions.None, TimeSpan.FromSeconds(2)).Count;
 
-        Assert.Equal(6, tracks);
-        Assert.Equal(6, Regex.Matches(rows, "role=\"columnheader\"", RegexOptions.None, TimeSpan.FromSeconds(2)).Count);
+        // Six, and a seventh that only In flight has: the button that asks the agent to look (its track and its header are both
+        // conditional on the view, so the two counts move together).
+        Assert.Equal(7, tracks);
+        Assert.Equal(7, Regex.Matches(rows, "role=\"columnheader\"", RegexOptions.None, TimeSpan.FromSeconds(2)).Count);
     }
 
     [Fact]

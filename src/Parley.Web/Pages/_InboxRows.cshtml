@@ -41,7 +41,7 @@
     </p>
 }
 
-<section class="view-card dgrid" style="--cols: minmax(9rem, 1.2fr) minmax(7rem, 0.8fr) minmax(8rem, 1.2fr) 5rem 8rem minmax(9rem, 1fr); --min: 50rem;"
+<section class="view-card dgrid" style="--cols: minmax(9rem, 1.2fr) minmax(7rem, 0.8fr) minmax(8rem, 1.2fr) 5rem 8rem minmax(9rem, 1fr)@(view == InboxView.InFlight ? " 9.5rem" : ""); --min: @(view == InboxView.InFlight ? "58" : "50")rem;"
          aria-label="@(view == InboxView.InFlight ? "In flight" : "Closed")">
     <div class="dgrid-inner" role="table">
         <div class="dgrid-head" role="row">
@@ -51,6 +51,10 @@
             <span role="columnheader">Exchange</span>
             <span role="columnheader">@(view == InboxView.InFlight ? "Last moved" : "Closed")</span>
             <span role="columnheader">@(view == InboxView.InFlight ? "Where it stands" : "How it ended")</span>
+            @if (view == InboxView.InFlight)
+            {
+                <span role="columnheader"><span class="visually-hidden">Ask it to look</span></span>
+            }
         </div>
 
         @foreach (var (project, row) in rows)
@@ -82,6 +86,21 @@
                             <span class="chip-state">@ended.Words</span>
                         }
                     </span>
+                    @if (view == InboxView.InFlight)
+                    {
+                        <span role="cell">
+                            @if (!Parley.Core.Facilitation.Is(row.Agent) && !Parley.Core.PersonSeat.Is(row.Agent))
+                            {
+                                @* Starts the agent, or gives it a turn if it is running, so it collects what is waiting. One click: it costs the
+                                   agent a turn and changes nothing it owes. The view and filters go with the post, so the page comes back as it was. *@
+                                <form method="post" asp-page-handler="Nudge" asp-route-view="@Model.View" asp-route-older="@(Model.Older > 0 ? Model.Older : null)" asp-route-scope="@Model.Scope" asp-route-q="@Model.Q" class="row-act">
+                                    <input type="hidden" name="For" value="@project" />
+                                    <input type="hidden" name="Agent" value="@row.Agent.Value" />
+                                    <button type="submit" class="tonal" title="Start @row.Agent.Role, or give it a turn if it is already running, so it looks at what is waiting for it. It costs it a turn and changes nothing it owes.">Ask to look now</button>
+                                </form>
+                            }
+                        </span>
+                    }
                 </summary>
 
                 <div class="dgrid-detail">

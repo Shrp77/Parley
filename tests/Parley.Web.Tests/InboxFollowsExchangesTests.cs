@@ -356,6 +356,114 @@ public sealed partial class InboxFollowsExchangesTests
         Assert.DoesNotContain("/parley.v1.Agents/DrainInbox", console.Broker.Paths);
     }
 
+    private static Uri NudgeAction(string page) => new(
+        System.Net.WebUtility.HtmlDecode(Regex.Match(page, @"action=""(/Inbox\?[^""]*handler=Nudge[^""]*)""", RegexOptions.None, TimeSpan.FromSeconds(2)).Groups[1].Value),
+        UriKind.Relative);
+
+    private static void WaitingOn(RoadmapConsole console, string agent, long exchange)
+    {
+        Said(console, exchange, exchange, Wire.MessageType.Request, agent, Person, Ask("Which ledger?"));
+        Exchange(console, exchange, open: true);
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Person, WaitedOn = agent, ExchangeId = exchange });
+    }
+
+    private static async Task<string> NudgeAsync(RoadmapConsole console, string agent)
+    {
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(new Uri("/Inbox?view=flight", UriKind.Relative), Ct);
+
+        using var form = new FormUrlEncodedContent(
+        [
+            new("__RequestVerificationToken", Token().Match(page).Groups[1].Value),
+            new("For", RoadmapConsole.Project),
+            new("Agent", agent),
+        ]);
+
+        using var response = await client.PostAsync(NudgeAction(page), form, Ct);
+
+        return await response.Content.ReadAsStringAsync(Ct);
+    }
+
+    [Fact]
+    public async Task Each_row_in_flight_offers_to_ask_its_agent_to_look_and_a_closed_row_does_not()
+    {
+        using var console = Console();
+
+        WaitingOn(console, Orders, 40);
+        Said(console, 5, 41, Wire.MessageType.Request, Billing, Person, Ask("Monthly or yearly?"));
+        Said(console, 6, 41, Wire.MessageType.Result, Person, Billing, """{"outcomes":[{"id":"request","outcome":"answered","text":"Yearly."}]}""");
+        Exchange(console, 41, open: false, Wire.ExchangeOutcome.Complete);
+
+        var flight = await GetAsync(console, "/Inbox?view=flight");
+        var closed = await GetAsync(console, "/Inbox?view=closed");
+
+        Assert.Contains("Ask to look now", flight, StringComparison.Ordinal);
+        Assert.Contains("handler=Nudge", flight, StringComparison.Ordinal);
+        Assert.DoesNotContain("Ask to look now", closed, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Asking_an_agent_to_look_starts_it_through_the_operators_start_and_says_so()
+    {
+        using var console = Console();
+
+        WaitingOn(console, Orders, 40);
+
+        var after = await NudgeAsync(console, Orders);
+
+        var started = Assert.Single(console.Broker.Started);
+
+        Assert.Equal(Orders, started.Agent);
+        Assert.Contains("orders@test&#x27; was asked to look at its messages now", after, StringComparison.Ordinal);
+
+        // Nothing was said to it and nothing it owes was touched: this is a nudge, not a message.
+        Assert.Empty(console.Broker.Requested);
+        Assert.Empty(console.Broker.Resulted);
+    }
+
+    [Fact]
+    public async Task A_node_that_was_not_asked_is_said_not_claimed()
+    {
+        using var console = Console();
+        console.Broker.StartAccepted = false;
+
+        WaitingOn(console, Orders, 40);
+
+        var after = await NudgeAsync(console, Orders);
+
+        Assert.Contains("Nothing was asked of &#x27;orders@test&#x27;", after, StringComparison.Ordinal);
+        Assert.DoesNotContain("was asked to look", after, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_facilitator_and_the_person_are_never_asked_to_look_even_by_a_forged_form()
+    {
+        using var console = Console();
+
+        WaitingOn(console, Orders, 40);
+
+        var facilitator = await NudgeAsync(console, Facilitator);
+        var person = await NudgeAsync(console, Person);
+
+        Assert.Empty(console.Broker.Started);
+        Assert.Contains("Only an agent can be asked", facilitator, StringComparison.Ordinal);
+        Assert.Contains("Only an agent can be asked", person, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_name_that_is_not_an_agent_name_is_refused_without_asking_anybody()
+    {
+        using var console = Console();
+
+        WaitingOn(console, Orders, 40);
+
+        var after = await NudgeAsync(console, "not an agent");
+
+        Assert.Empty(console.Broker.Started);
+        Assert.Contains("Only an agent can be asked", after, StringComparison.Ordinal);
+    }
+
     /// <summary>The address a page's follow-up form posts to, decoded.</summary>
     /// <param name="page">The page.</param>
     /// <returns>The form's action.</returns>
