@@ -14,7 +14,7 @@
 @if (Model.Outcome is { Length: > 0 } outcome)
 {
     <p role="status"><strong>@outcome</strong></p>
-    <p><a href="/Roadmaps?project=@Model.Project">Back to the roadmaps in @Model.Project</a></p>
+    <nav class="page-links" aria-label="This project"><a href="/Roadmaps?project=@Model.Project">Back to the roadmaps in @Model.Project</a></nav>
 }
 else if (Model.Proposal is { } proposal)
 {
@@ -29,6 +29,6 @@ else if (Model.Proposal is { } proposal)
 
     <form method="post">
         <button type="submit">Decline it</button>
-        <a href="/Roadmaps/Proposal?project=@Model.Project&amp;id=@proposal.Id">Keep it, and go back</a>
+        <a class="button quiet" href="/Roadmaps/Proposal?project=@Model.Project&amp;id=@proposal.Id">Keep it, and go back</a>
     </form>
 }

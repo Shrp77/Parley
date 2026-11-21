@@ -99,13 +99,13 @@ const string Help = """
       parley registry                                  every registered agent, with its workspace
       parley files list [--conversation <id>]          the files placed: name, size, sha256,
                         [--full]                       who placed each, totals and placements
-      parley files place <path> --conversation <id>    place a .md or .txt file from this machine
+      parley files place <path> --conversation <id>    place a .md, .txt or image file from this machine
                         [--name <name>]                in a conversation, as the person
       parley files remove <name>... [--conversation <id>]  remove files whoever placed them;
                         [--yes]                        describes them and asks first
       parley files prune [--yes-remove-every-file]     REMOVE every file; asks for the project's name
-      parley files open <name>... [--conversation <id>]  open files to read on this
-                                                       machine, or say which machine holds them
+      parley files open <name>... [--conversation <id>]  open files to read: in place on the
+                                                       broker's machine, a checked copy elsewhere
       parley files folder [--conversation <id>]        open a conversation's folder, or the whole
                                                        location, or say which machine holds it
       parley files problems [--all]                    what sweeps of the location found: files
@@ -351,8 +351,8 @@ if (arguments.Count == 0)
 var verb = arguments[0];
 var rest = arguments.Skip(1).ToArray();
 
-// **The fourteen operator operations that are the terminal's.** Held as data rather than
-// as fourteen case arms so that the refusal, the help and the test that holds them read one list --
+// **The operator operations that are the terminal's.** Held as data rather than
+// as a case arm each so that the refusal, the help and the test that holds them read one list --
 // three copies of a set like this agree until one of them is edited.
 //
 // `registry` and `open` are deliberately not here: the installers invoke both, so every command
@@ -361,7 +361,7 @@ string[] Moved =
 [
     "retire", "reinstate", "purge", "export", "force-conclude", "prune", "start",
     "archive", "unarchive", "destroy", "refusals", "clarifications", "results", "flags",
-    "spin-off", "move",
+    "spin-off", "move", "stop", "restart", "kill", "freeze", "unfreeze",
 ];
 
 // Options are taken centrally, above the verb, because a flag consumed by the command it belongs
@@ -739,8 +739,13 @@ if (verb == "serve" && rest.Length == 0)
 
             using var channel = GrpcChannel.ForAddress(addresses[0]);
 
+            // **Keeps trying, because nobody is watching it.** This is what the logon entry runs. A stream that drops
+            // while the broker keeps serving (seen when a busy broker's HTTP/2 connection closed under thread-pool
+            // starvation) ended the node for good, and every agent in the project read as stranded until somebody
+            // restarted the entry. A deliberate stop cancels `stopping`, which every retry checks first.
             return await NodeCommand.RunAsync(
-                channel, addresses[0], from, reporting, project.Name.Value, residents, stopping)
+                channel, addresses[0], from, reporting, project.Name.Value, residents, stopping,
+                keepTrying: true)
                 .ConfigureAwait(false);
         }
 

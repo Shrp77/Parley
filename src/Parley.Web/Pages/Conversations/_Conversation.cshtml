@@ -32,9 +32,22 @@ else if (Model.Messages.Count == 0)
             }
         </ul>
     }
-    else
+    else if (Model.Files.Count == 0)
     {
         <p>Nothing was recorded under this identifier.</p>
+    }
+
+    @* A conversation a file started has no message yet (SPEC.md §9.5), and the file is still what is in it. *@
+    @if (Model.Files.Count > 0)
+    {
+        <ol class="transcript">
+            @foreach (var file in Model.Files)
+            {
+                <li class="placed" id="@Parley.Web.Pages.Conversations.MediaModel.Anchor(file)" data-agent="@Parley.Client.Files.Placements.Placer(file)" data-to="">
+                    <partial name="_Placed" model="new Parley.Web.Pages.Conversations.PlacedItem(file, Model.Project, Model.Id!)" />
+                </li>
+            }
+        </ol>
     }
 }
 else
@@ -44,11 +57,28 @@ else
         @{
             var day = default(DateOnly?);
             var movesToNote = new Queue<Parley.Core.MoveRecord>(Model.Moves.Where(m => m.FirstMessage is not null).OrderBy(m => m.FirstMessage));
+            var wroteToNote = new Queue<Parley.Core.WroteElsewhere>(Model.WroteAcross.OrderBy(w => w.AfterMessage).ThenBy(w => w.Message));
+            var lastExchanges = new HashSet<long>();
+
+            // By the placement record, never by a message's words (SPEC.md §9.5, §13).
+            var placedToShow = new Queue<Parley.Core.SharedFile>(Model.Files);
+
+            // Straight to the message, so the reader lands on what was said rather than at the end of the other conversation.
+            Func<Parley.Core.WroteElsewhere, Microsoft.AspNetCore.Html.IHtmlContent> wroteNote = @<li class="moved-note">
+                @Parley.Client.Rendering.ConversationWording.WroteElsewhereLine(item)
+                <a target="_top" href="@Url.Page("/Conversations/Detail", null, new { project = Model.Project, id = item.Conversation }, null, null, $"m{item.Message}")">Open it</a>
+            </li>;
         }
         @foreach (var turn in Model.Turns())
         {
             var message = turn[0];
             var said = Payload.Read(message.PayloadJson);
+
+            @* After the message its agent last sent or received here, which is the last turn that started at or before it. *@
+            while (wroteToNote.Count > 0 && wroteToNote.Peek().AfterMessage < message.Id)
+            {
+                @wroteNote(wroteToNote.Dequeue())
+            }
 
             @* A move's note sits where the entries are, or were: by its earliest message's place in the broker's order. *@
             while (movesToNote.Count > 0 && movesToNote.Peek().FirstMessage <= message.Id)
@@ -57,6 +87,20 @@ else
                 <li class="moved-note">
                     @Parley.Client.Rendering.ConversationWording.MoveLine(move, Model.Id!)
                     <a target="_top" href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = Parley.Client.Rendering.ConversationWording.OtherSide(move, Model.Id!) })">Open @Parley.Client.Rendering.ConversationWording.OtherSide(move, Model.Id!)</a>
+                </li>
+            }
+            @foreach (var file in Parley.Client.Files.Placements.Before(placedToShow, message.CreatedUtc))
+            {
+                @* A file placed on a new day starts that day, as a message does: under the day before, its card's time
+                   would say it was placed then. *@
+                var placedOn = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(file.PlacedUtc, TimeZoneInfo.Local).DateTime);
+                if (day != placedOn)
+                {
+                    day = placedOn;
+                    <li class="day">@TimeZoneInfo.ConvertTime(file.PlacedUtc, TimeZoneInfo.Local).ToString("dddd, d MMMM yyyy")</li>
+                }
+                <li class="placed" id="@Parley.Web.Pages.Conversations.MediaModel.Anchor(file)" data-agent="@Parley.Client.Files.Placements.Placer(file)" data-to="">
+                    <partial name="_Placed" model="new Parley.Web.Pages.Conversations.PlacedItem(file, Model.Project, Model.Id!)" />
                 </li>
             }
             var on = DateOnly.FromDateTime(
@@ -78,11 +122,28 @@ else
             {
                 <li id="@($"m{also.Id}")" hidden></li>
             }
+            @* The broker's order is kept, so the transcript still says what happened when. A message that continues an exchange
+               sits in from the one that opened it, and says which that was when something else came between them. *@
+            var threadStart = Model.ThreadStart(message);
+            var continues = threadStart.Id != message.Id;
+            var interrupted = continues && !lastExchanges.Contains(message.ExchangeId);
+            var threadSize = Model.ThreadSize(turn);
+
+            lastExchanges = [.. turn.Select(m => m.ExchangeId)];
+
             <li id="@($"m{message.Id}")" data-agent="@message.From.Value" data-to="@string.Join(' ', turn.Select(m => m.To.Value))"
-                class="turn slot-@Palette.SlotFor(message.From)@(ghost ? " ghosted" : null)">
+                data-exchanges="@string.Join(' ', turn.Select(m => m.ExchangeId))"
+                class="turn slot-@Palette.SlotFor(message.From)@(ghost ? " ghosted" : null)@(continues ? " in-thread" : null)">
                 <div class="who" aria-hidden="true">@Palette.BadgeFor(message.From)</div>
 
-                <div class="bubble">
+                <div class="bubble" data-project="@Model.Project">
+                    @if (interrupted)
+                    {
+                        <a class="thread-of" href="@($"#m{threadStart.Id}")" target="_self">
+                            <span aria-hidden="true">↳</span>
+                            <strong>@threadStart.From.Value</strong>: @Parley.Web.Pages.Conversations.DetailModel.ThreadExcerpt(threadStart)
+                        </a>
+                    }
                     <p class="attribution">
                         <strong>@Speaker.From(message)</strong>
                         <span class="arrow">to</span>
@@ -94,53 +155,7 @@ else
                         <span class="stamp">@Parley.Client.Rendering.LocalTime.Clock(message.CreatedUtc)</span>
                     </p>
 
-                    @* Razor encodes every one of these. An agent wrote them, and they are content
-                       rather than markup: nothing here may alter the page or imitate a label the
-                       console speaks. *@
-                    @if (said.Raw is { Length: > 0 } raw)
-                    {
-                        <pre>@raw</pre>
-                    }
-                    else
-                    {
-                        @if (said.Said is { Length: > 0 } body)
-                        {
-                            <p class="said">@foreach (var part in Parley.Web.LinkedText.Split(body)) {if (part.Link is { } to) {<a href="@to.AbsoluteUri" target="_blank" rel="noopener noreferrer">@part.Text</a>} else {@part.Text}}</p>
-                        }
-
-                        @if (said.Points.Count > 0)
-                        {
-                            <ol class="points">
-                                @foreach (var point in said.Points)
-                                {
-                                    <li>
-                                        @if (point.Id is { Length: > 0 } label)
-                                        {
-                                            <span class="label">@label</span>
-                                        }
-                                        <span class="point-text">@foreach (var part in Parley.Web.LinkedText.Split(point.Text)) {if (part.Link is { } to) {<a href="@to.AbsoluteUri" target="_blank" rel="noopener noreferrer">@part.Text</a>} else {@part.Text}}</span>
-                                        @if (point.Outcome is { Length: > 0 } || point.Sources.Count > 0)
-                                        {
-                                            @* On a line of their own: beside the text, several chips left it a narrow column. *@
-                                            <span class="chits">
-                                                @if (point.Outcome is { Length: > 0 } verdict)
-                                                {
-                                                    @* The word the receiver chose, shown rather than
-                                                       summarised: "blocked" and "done" are different
-                                                       outcomes and only one of them is finished. *@
-                                                    <span class="verdict">@(point.Blocker is { } blocker ? $"{verdict}: {blocker.Replace('_', ' ')}" : verdict)</span>
-                                                }
-                                                @if (point.Sources.Count > 0)
-                                                {
-                                                    <span class="verdict">relied on @string.Join(", ", point.Sources)</span>
-                                                }
-                                            </span>
-                                        }
-                                    </li>
-                                }
-                            </ol>
-                        }
-                    }
+                    <partial name="_MessageBody" model="said" />
 
                     <p class="meta">
                         @if (ghost)
@@ -157,7 +172,17 @@ else
                             <span> · exchange @message.ExchangeId, @state</span>
                         }
                         <span> · written by @message.ResponderModel</span>
+                        @if (message.Type == Parley.Core.MessageType.Request && Model.ReadsOf(message.ExchangeId) is { Length: > 0 } seenBy)
+                        {
+                            @* What an agent read of the past is shown here to the person only (SPEC.md §5.8). *@
+                            <span class="history-read"> · @seenBy</span>
+                        }
                         <span> · <a class="spin-off" target="_top" href="@Url.Page("/Conversations/SpinOff", new { project = Model.Project, id = Model.Id, from = message.Id })">Spin off</a></span>
+                        @if (threadSize > 1)
+                        {
+                            @* The script reads the label and says "Show everything" while a thread is shown. *@
+                            <span> · <button type="button" class="thread-focus" data-exchanges="@string.Join(' ', turn.Select(m => m.ExchangeId))" data-label="Thread (@threadSize)">Thread (@threadSize)</button></span>
+                        }
                         @* Shown only while picking, by the page's script. Every exchange of a send to several goes together. *@
                         <label class="move-pick"><input type="checkbox" data-exchanges="@string.Join(' ', turn.Select(m => m.ExchangeId))" aria-label="Move this entry" /> Move</label>
                     </p>
@@ -166,7 +191,7 @@ else
                         @* The person chooses which question their words answer; the console never guesses (SPEC.md 5.6). *@
                         <p class="reply-line">
                             <strong>Waiting on you</strong>
-                            <button type="button" class="reply-to" data-exchange="@waiting.ExchangeId" data-agent="@waiting.From.Value" data-request="@(waiting.Type == Parley.Core.MessageType.Request ? "1" : null)">Reply to this</button>
+                            <button type="button" class="reply-to" data-exchange="@waiting.ExchangeId" data-agent="@waiting.From.Value" data-request="@(waiting.Type == Parley.Core.MessageType.Request ? "1" : "0")">Reply to this</button>
                             @* A button rather than a form here: a form carries an antiforgery token that differs at every
                                render, and this region is compared by digest, so it would be replaced every few seconds. The
                                form it submits sits outside the region. *@
@@ -187,6 +212,38 @@ else
                 </div>
             </li>
         }
+        @foreach (var wrote in wroteToNote)
+        {
+            @wroteNote(wrote)
+        }
+        @foreach (var file in placedToShow)
+        {
+            var placedOn = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(file.PlacedUtc, TimeZoneInfo.Local).DateTime);
+            if (day != placedOn)
+            {
+                day = placedOn;
+                <li class="day">@TimeZoneInfo.ConvertTime(file.PlacedUtc, TimeZoneInfo.Local).ToString("dddd, d MMMM yyyy")</li>
+            }
+            <li class="placed" id="@Parley.Web.Pages.Conversations.MediaModel.Anchor(file)" data-agent="@Parley.Client.Files.Placements.Placer(file)" data-to="">
+                <partial name="_Placed" model="new Parley.Web.Pages.Conversations.PlacedItem(file, Model.Project, Model.Id!)" />
+            </li>
+        }
+        @* Until its answer arrives, when the next read draws that in its place. *@
+        @foreach (var working in Model.WorkingNow)
+        {
+            <li id="@($"working-{working.Agent.Value}")" data-agent="@working.Agent.Value" data-to=""
+                class="turn working slot-@Palette.SlotFor(working.Agent)">
+                <div class="who" aria-hidden="true">@Palette.BadgeFor(working.Agent)</div>
+
+                <div class="bubble" data-project="@Model.Project">
+                    <p class="attribution">
+                        <strong>@working.Agent.Value</strong>
+                        <span class="arrow">working</span>
+                        <span class="stamp">@Parley.Web.Pages.Conversations.DetailModel.WorkingFor(working)</span>
+                    </p>
+                </div>
+            </li>
+        }
         @foreach (var move in movesToNote.Concat(Model.Moves.Where(m => m.FirstMessage is null)))
         {
             <li class="moved-note">
@@ -203,7 +260,10 @@ else
     @* A minimap of the conversation. Ticks in the order the broker recorded them rather than
        spaced by clock: the times come from different machines, and proportional spacing would
        pile a burst into one pixel and stretch a quiet hour across the screen. Each carries its
-       own text, so the colour is how you aim and never how you know. *@
+       own text, so the colour is how you aim and never how you know.
+       The note and the rail share one box, the grid's second column: the note is hidden while empty, and as a cell of
+       its own it took the rail's place when a tick filled it, pushing the rail below the whole transcript. *@
+    <div class="minimap">
     <p id="kin" class="kin-note" role="status"></p>
 
     <nav class="timeline" aria-label="Jump to a message">
@@ -224,13 +284,14 @@ else
             <a data-agent="@message.From.Value"
                class="tick slot-@Palette.SlotFor(message.From)@(closedByPerson ? " ghosted" : null)"
                href="@($"#m{message.Id}")" target="_self"
-               title="@message.CreatedUtc.ToString("d MMM HH:mm") — @message.From.Value to @string.Join(", ", turn.Select(m => m.To.Value))@(closedByPerson ? " — closed by a person" : null)">
+               title="@TimeZoneInfo.ConvertTime(message.CreatedUtc, TimeZoneInfo.Local).ToString("d MMM HH:mm") — @message.From.Value to @string.Join(", ", turn.Select(m => m.To.Value))@(closedByPerson ? " — closed by a person" : null)">
                 <span class="visually-hidden">
-                    @message.CreatedUtc.ToString("d MMM HH:mm"),
+                    @TimeZoneInfo.ConvertTime(message.CreatedUtc, TimeZoneInfo.Local).ToString("d MMM HH:mm"),
                     @message.From.Value to @string.Join(", ", turn.Select(m => m.To.Value))@(closedByPerson ? ", closed by a person" : null)
                 </span>
             </a>
         }
     </nav>
+    </div>
     </div>
 }

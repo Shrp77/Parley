@@ -1,0 +1,52 @@
+@* The full view of a placed image, over the page (SPEC.md §9.5). One per page, outside the followed region, so a follow
+   never closes it. The script opens it from a thumbnail and gives focus back to that thumbnail when it closes; Escape
+   closes it as any dialog. Without a script a thumbnail opens the image on its own instead, and this is never shown. *@
+<dialog id="viewer" class="viewer" aria-label="Image">
+    <form method="dialog" class="viewer-bar">
+        <p id="viewer-caption" class="viewer-caption"></p>
+        <button type="submit" class="quiet" aria-label="Close">
+            <span class="icon" aria-hidden="true">close</span>
+        </button>
+    </form>
+    <img id="viewer-image" alt="" />
+</dialog>
+<script>
+    (function () {
+        var viewer = document.getElementById("viewer");
+        var image = document.getElementById("viewer-image");
+        var caption = document.getElementById("viewer-caption");
+        var from = null;
+
+        if (!viewer || !viewer.showModal) { return; }
+
+        // Delegated, because the transcript is redrawn as it follows and a listener on each thumbnail would be lost.
+        document.addEventListener("click", function (e) {
+            var link = e.target.closest ? e.target.closest("a.thumb[data-full]") : null;
+            if (!link || e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) { return; }
+            e.preventDefault();
+            from = link;
+            image.src = link.getAttribute("data-full");
+            image.alt = link.querySelector("img") ? link.querySelector("img").alt : "";
+            caption.textContent = link.getAttribute("data-caption") || "";
+            viewer.showModal();
+        });
+
+        viewer.addEventListener("close", function () {
+            image.removeAttribute("src");
+            if (from && document.body.contains(from)) { from.focus(); }
+            from = null;
+        });
+
+        // A thumbnail the console would not serve, whose bytes are not the format its name says, becomes a tile.
+        // Capturing, because a load error does not bubble.
+        document.addEventListener("error", function (e) {
+            var img = e.target;
+            if (!img || img.tagName !== "IMG" || !img.closest || !img.closest("a.thumb")) { return; }
+            var link = img.closest("a.thumb");
+            var tile = document.createElement("p");
+            tile.className = "thumb-tile";
+            tile.textContent = (img.alt || "This file") + ": not a readable image.";
+            link.replaceWith(tile);
+        }, true);
+    })();
+</script>

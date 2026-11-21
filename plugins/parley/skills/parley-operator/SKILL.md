@@ -106,10 +106,10 @@ parley open                           conversations with an exchange still open,
                                       them; what stopping the broker would interrupt
 parley waiting <agent|role> [--with-files]   how many messages and polls await an agent; --with-files adds its file notices
 parley files list [--conversation <id>] [--full]  the files placed: size, sha256, who placed each
-parley files place <path> --conversation <id> [--name <name>]  place a .md or .txt file from here, as the person
+parley files place <path> --conversation <id> [--name <name>]  place a .md, .txt or image file from here, as the person
 parley files remove <name>... [--conversation <id>] [--yes]  remove files whoever placed them; describes them and asks
 parley files prune [--yes-remove-every-file]  REMOVE every file; asks for the project's name
-parley files open <name>... [--conversation <id>]  open files to read here, or say where they are
+parley files open <name>... [--conversation <id>]  open files to read: in place on the broker's machine, a checked copy elsewhere
 parley files folder [--conversation <id>] open a conversation's folder, or say where it is
 parley files problems [--all]         what checks of the location found: files changed on disk and moved to quarantine, and entries it could not read, move or delete
 parley files dismiss <id>             take a problem off the list; deletes nothing on disk

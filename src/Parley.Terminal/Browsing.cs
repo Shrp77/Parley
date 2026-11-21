@@ -204,7 +204,7 @@ internal sealed class Browsing : TableDialog<Browsing>, IKeyTable<Browsing>
 
         // Never looked up through a link off this machine: a folder link an agent made beside its repository would have
         // every listing offer the person's sign-in to the share it names (review, lens 2 run 72).
-        return !OffMachineLinks.LeadsOffThisMachine(git) && (Directory.Exists(git) || File.Exists(git));
+        return LocalOpen.Entry(git) == LocalOpenStatus.Opened;
     }
 
     /// <summary>Opens a folder, as if a row for it had been pressed.</summary>

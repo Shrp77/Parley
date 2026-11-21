@@ -340,6 +340,14 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
             UseShellExecute = false,
         };
 
+        // Every PARLEY_ variable this process inherited is cleared first, as CLAUDE.md requires of a test that starts a
+        // tool: PARLEY_BROKER outranks --project, so a shell pointed at a live broker had the hook ask it, and an
+        // inherited PARLEY_NODE_CONFIG named the live catalogue (review, lens 3 round 20).
+        foreach (var name in start.Environment.Keys.Where(key => key.StartsWith("PARLEY_", StringComparison.OrdinalIgnoreCase)).ToList())
+        {
+            start.Environment.Remove(name);
+        }
+
         // The hook shells out to `parley waiting`, so the tool has to be findable. Prepended
         // rather than replacing PATH, because the interpreter itself needs whatever is already
         // there.

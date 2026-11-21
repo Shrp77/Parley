@@ -27,6 +27,30 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     [BindProperty(SupportsGet = true)]
     public string? Project { get; set; }
 
+    /// <summary>What retiring and purging reach: one project's store, never the others.</summary>
+    private string ThisProjectOnly => AgentWithdrawal.ThisProjectOnly(Project);
+
+    /// <summary>The agent's name, typed back, for retiring, reinstating and purging.</summary>
+    /// <remarks>
+    /// The terminal's door, here too: a description and then the thing's own name, checked by
+    /// <see cref="AgentWithdrawal.TypedNameProblem"/> on both surfaces.
+    /// </remarks>
+    [BindProperty, FromForm]
+    public string? Typed { get; set; }
+
+    /// <summary>Whether the person accepted purging an agent that still owes work.</summary>
+    [BindProperty, FromForm]
+    public bool AcceptOwed { get; set; }
+
+    /// <summary>Whether this action is one of the three that withdraw an agent and take its name typed back.</summary>
+    public bool Withdraws => Action?.ToLowerInvariant() is "retire" or "reinstate" or "purge";
+
+    /// <summary>What the agent owes right now, read for retiring and purging, or null when not read.</summary>
+    public string? Owes { get; private set; }
+
+    /// <summary>What purging it would do to whoever waits on it, or null when it owes nothing.</summary>
+    public string? OwedConsequence { get; private set; }
+
     /// <summary>
     /// What to do: one of the arms of the two switches below.
     /// </summary>
@@ -48,6 +72,17 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     [BindProperty, FromForm]
     public string? Text { get; set; }
 
+    /// <summary>The agents typing <c>@</c> offers in a reply to a question asked back, read only for that action.</summary>
+    public IReadOnlyList<string> Mentionable { get; private set; } = [];
+
+    /// <summary>Whether a freeze outlasts a logon: the box that says not to unfreeze on logon.</summary>
+    /// <remarks>
+    /// Without it, a start of the broker, which a logon or a reboot brings, lets the freeze lapse and the agent is started if it owes
+    /// work (SPEC.md §11.1). Posted with the confirmation, never read from the link, so a followed link cannot choose it.
+    /// </remarks>
+    [BindProperty, FromForm]
+    public bool KeepFrozen { get; set; }
+
     /// <summary>Why the person is closing a conversation, when they give a reason.</summary>
     /// <remarks>
     /// Told to every participant holding open work in it (§5.3). Optional, because a close with no reason
@@ -64,6 +99,9 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
     /// <summary>What happened, once it has.</summary>
     public string? Outcome { get; private set; }
+
+    /// <summary>The projects a freeze or a unfreeze of the agent reaches, said before the person agrees.</summary>
+    public string? Reaches { get; private set; }
 
     /// <summary>The agent's answer to Parley, on one line, when the action is accepting it.</summary>
     /// <remarks>
@@ -97,21 +135,76 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                 .FirstOrDefault(q => q.Agent == answering && q.State == QuestionState.Waiting)?.Flattened;
         }
 
+        if (string.Equals(Action, "replyaskedback", StringComparison.OrdinalIgnoreCase))
+        {
+            var roll = await BrokerDirectory.ReadAsync(async () =>
+                await new BrokerClient(directory.ClientFor(project)).RegistryAsync(HttpContext.RequestAborted)
+                    .ConfigureAwait(false)).ConfigureAwait(false);
+
+            Mentionable = [.. Parley.Client.Rendering.RoomRoster.NotInIt(roll.Value, [], PersonSeat.On(project.Name)).Select(agent => agent.Value)];
+        }
+
+        // Freezing ends the one process that serves every project the agent is in, so the person is told which they are before
+        // they agree (SPEC.md §11.1): freezing it for one project's sake stops its work for the rest.
+        if (Action?.ToLowerInvariant() is "freeze" or "unfreeze" && AgentName.TryCreate(Subject, out var reached))
+        {
+            var (serving, unreachable) = await AgentFreezing.ServedByAsync(directory, reached, HttpContext.RequestAborted)
+                .ConfigureAwait(false);
+
+            Reaches = serving.Count == 0
+                ? $"No project this console can reach lists '{reached.Value}'."
+                : $"This reaches {string.Join(", ", serving)}."
+                  + (unreachable.Count > 0
+                      ? $" It cannot be reached in {string.Join(", ", unreachable.Select(u => u.Project))}, so it is not done there."
+                      : string.Empty);
+        }
+
+        // What it owes, as the terminal's dialog says it: the debt is what makes the difference between retiring and
+        // purging concrete, and a purge of an agent that still owes work asks for an acceptance first.
+        if (Action?.ToLowerInvariant() is "retire" or "purge" && AgentName.TryCreate(Subject, out var leaving))
+        {
+            var owed = await OwedAsync(new BrokerClient(directory.ClientFor(project)), leaving, HttpContext.RequestAborted)
+                .ConfigureAwait(false);
+
+            if (owed is not null)
+            {
+                Owes = AgentWithdrawal.Owing(owed);
+                OwedConsequence = owed.Count > 0 ? AgentWithdrawal.OwedConsequence(leaving.Value, owed) : null;
+            }
+        }
+
         (Warning, Destroys) = Action?.ToLowerInvariant() switch
         {
-            "retire" => ($"'{Subject}' will stop being routed to and will not be listed to its "
-                       + "peers. Its history is kept, and reinstating it undoes this.", false),
+            // The terminal's words, from the one place both surfaces read them.
+            "retire" => (AgentWithdrawal.Retiring + " Reinstating it undoes this. " + AgentWithdrawal.TheFiles + " "
+                       + ThisProjectOnly, false),
 
-            "reinstate" => ($"'{Subject}' will be routed to again.", false),
+            "reinstate" => ($"'{Subject}' will be routed to again. " + AgentWithdrawal.Reinstated, false),
 
             "start" => ($"The node on '{Subject}'s machine is asked to start it. It costs no turn. A retired agent is "
                       + "not started, and nothing can be asked of a machine whose node is not running.", false),
 
-            "purge" => ($"'{Subject}' will be deleted, along with every conversation it was party "
-                      + "to — including its peers' side of those conversations and each one's folder of files, "
-                      + "with anything copied into it by hand. Its name becomes "
-                      + "free for another agent. This cannot be undone, and retiring it instead "
-                      + "achieves everything except freeing the name.", true),
+            // Not destructive: what it owes stays owed. What is lost is what the session had learned, which is said.
+            "stop" => (Parley.Client.Rendering.StoppingWords.Stopping(Subject), false),
+
+            "restart" => (Parley.Client.Rendering.StoppingWords.Restarting(Subject), false),
+
+            // Not destructive: nothing it owes is closed, moved or answered, and Unfreeze undoes it. What is lost is only what its
+            // process was doing once its turn has ended, which is said.
+            "freeze" => (Parley.Client.Rendering.FreezingWords.Freezing(Subject) + " " + FreezeReach(), false),
+
+            "unfreeze" => (Parley.Client.Rendering.FreezingWords.Unfreezing(Subject) + " " + FreezeReach(), false),
+
+            "freezeall" => (Parley.Client.Rendering.FreezingWords.FreezingAll(Project ?? string.Empty), false),
+
+            "unfreezeall" => (Parley.Client.Rendering.FreezingWords.UnfreezingAll(Project ?? string.Empty), false),
+
+            // Ends a process now: not destructive of anything the agent owes, but what it is part-way through is lost, said.
+            "kill" => (Parley.Client.Rendering.StoppingWords.Killing(Subject), false),
+
+            "purge" => (AgentWithdrawal.Purging + " Its name becomes free for another agent; retiring it instead "
+                      + "achieves everything except freeing the name, and keeps its peers' side of those conversations. "
+                      + AgentWithdrawal.TheFiles + " " + ThisProjectOnly, true),
 
             "forceconclude" => ($"Conversation '{Subject}' will be closed now, whatever its participants "
                               + "have voted. Every request still open in it is closed with a result saying "
@@ -216,6 +309,10 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                 // incidental subject was not a name.
                 "askeveryownership" => AskEveryOwnership(broker, token),
 
+                // Above the name guard, as prune is: acts on the project's agents, and its subject is only what made the link.
+                "freezeall" => FreezeEveryone(freeze: true, token),
+                "unfreezeall" => FreezeEveryone(freeze: false, token),
+
                 // Above the name guard for the same reason: its subject is the switch's new position, not an agent.
                 "autoaccept" => DescribeAutoAccept(
                     broker.SetAutoAcceptAsync(string.Equals(Subject, "on", StringComparison.OrdinalIgnoreCase), token),
@@ -224,13 +321,20 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                 _ when !named => Task.FromResult(
                     $"'{Subject}' is not a name an agent can have, so there is nothing to act on."),
 
-                "retire" => Describe(broker.RetireAsync(agent, token)),
-
-                "reinstate" => Describe(broker.ReinstateAsync(agent, token)),
+                "retire" or "reinstate" or "purge" => Withdraw(project, broker, agent, token),
 
                 "start" => DescribeStart(broker.StartAsync(agent, "a person asked from the web UI", token)),
 
-                "purge" => DescribePurge(broker.PurgeAsync(agent, token)),
+                "freeze" => FreezeOne(agent, freeze: true, token),
+
+                "unfreeze" => FreezeOne(agent, freeze: false, token),
+
+                "stop" => DescribeStop(agent, restart: false, broker.StopAsync(agent, "a person stopped it from the web UI", token)),
+
+                "restart" => DescribeStop(
+                    agent, restart: true, broker.RestartAsync(agent, "a person restarted it from the web UI", token)),
+
+                "kill" => DescribeKill(agent, broker.KillAsync(agent, "a person ended it from the web UI", token)),
 
                 // Composed, because what a person types *here* is their own line and is recorded as
                 // theirs. A proposal an agent wrote arrives through the conversation it was agreed
@@ -270,6 +374,38 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
         await start.ConfigureAwait(false)
             ? "Its node was asked to start it."
             : "Nothing was asked: it is retired, so reinstate it first, or no node on its machine is running.";
+
+    private string FreezeReach() => Reaches ?? string.Empty;
+
+    private async Task<string> FreezeOne(AgentName agent, bool freeze, CancellationToken token) =>
+        AgentFreezing.Describe(freeze
+            ? await AgentFreezing.FreezeAsync(directory, agent, KeepFrozen, token).ConfigureAwait(false)
+            : await AgentFreezing.UnfreezeAsync(directory, agent, token).ConfigureAwait(false));
+
+    private async Task<string> FreezeEveryone(bool freeze, CancellationToken token)
+    {
+        var all = await AgentFreezing.AllAsync(directory, Project ?? string.Empty, freeze, KeepFrozen, token).ConfigureAwait(false);
+
+        if (all.Count == 0)
+        {
+            return freeze
+                ? $"Nothing to freeze: every agent in '{Project}' is already frozen, or none is registered."
+                : $"Nothing to unfreeze: no agent in '{Project}' is frozen.";
+        }
+
+        var incomplete = all.Count(o => !o.Complete);
+
+        return $"{all.Count} {(all.Count == 1 ? "agent" : "agents")} {(freeze ? "frozen" : "unfrozen")} in '{Project}'."
+            + (incomplete > 0
+                ? $" {incomplete} could not be reached in every project that serves it: " + string.Join(' ', all.Where(o => !o.Complete).Select(AgentFreezing.Describe))
+                : string.Empty);
+    }
+
+    private static async Task<string> DescribeKill(AgentName agent, Task<bool> asked) =>
+        Parley.Client.Rendering.StoppingWords.KillOutcome(agent.Value, await asked.ConfigureAwait(false));
+
+    private static async Task<string> DescribeStop(AgentName agent, bool restart, Task<bool> asked) =>
+        Parley.Client.Rendering.StoppingWords.Outcome(agent.Value, restart, await asked.ConfigureAwait(false));
 
     /// <summary>Writes the line where it takes effect, then records that a person accepted it.</summary>
     /// <param name="project">
@@ -500,13 +636,73 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
         return pruned.Applied is { } policy ? said + " " + Parley.Client.Rendering.RetentionWords.Applied(policy) : said;
     }
 
-    private static async Task<string> DescribePurge(Task<PurgeOutcome> action)
+    /// <summary>Retires, reinstates or purges, exactly as the terminal does: the name typed back, then the shared act.</summary>
+    /// <param name="project">The project, whose launch entry is the one withdrawn.</param>
+    /// <param name="broker">This project's broker.</param>
+    /// <param name="agent">The agent.</param>
+    /// <param name="token">Cancels the calls and the file work.</param>
+    /// <returns>What to put in front of the person.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The checks are made again here, at the POST, never trusted from the form.</b> The name must be typed exactly,
+    /// a seat is refused, and a purge of an agent that still owes work needs the acceptance ticked against what it owes
+    /// <em>now</em>: work may have arrived since the page was drawn.
+    /// </para>
+    /// <para>
+    /// <b>The workspace comes from the registry</b>, which is what the agent said about itself.
+    /// <see cref="Enrolment.WithdrawAsync(string, string, string?, string?, AgentIdentity, CancellationToken)"/> reads the name back out of the entry before removing it, so a stale
+    /// workspace leaves a different agent's entry alone and says so.
+    /// </para>
+    /// </remarks>
+    private async Task<string> Withdraw(
+        ProjectSettings project, BrokerClient broker, AgentName agent, CancellationToken token)
     {
-        var outcome = await action.ConfigureAwait(false);
+        if (PersonSeat.Is(agent))
+        {
+            return AgentWithdrawal.NotAnAgent;
+        }
 
-        return outcome.Verdict == PurgeVerdict.NotRegistered
-            ? "There is no such agent."
-            : "Purged: " + string.Join(", ",
-                outcome.Destroyed.Select(d => $"{d.Rows} from {d.Table}"));
+        if (AgentWithdrawal.TypedNameProblem(agent.Value, Typed) is { } wrong)
+        {
+            return wrong;
+        }
+
+        var action = Action!.ToLowerInvariant();
+
+        if (action == "reinstate")
+        {
+            return await AgentWithdrawal.ReinstateAsync(broker, agent, token).ConfigureAwait(false);
+        }
+
+        if (action == "purge" && !AcceptOwed)
+        {
+            var owed = await OwedAsync(broker, agent, token).ConfigureAwait(false);
+
+            if (owed is null or { Count: > 0 })
+            {
+                return AgentWithdrawal.Kept + " "
+                    + (owed is { Count: > 0 }
+                        ? AgentWithdrawal.OwedConsequence(agent.Value, owed)
+                        : "What it owes could not be read, so it was not purged.");
+            }
+        }
+
+        var registry = await broker.RegistryAsync(token).ConfigureAwait(false);
+        var workspace = registry.FirstOrDefault(r => r.Name == agent)?.Workspace;
+        var catalogue = WebCatalogue.Path(directory);
+
+        return action == "purge"
+            ? await AgentWithdrawal.PurgeAsync(broker, agent, workspace, project.Name.Value, catalogue, token).ConfigureAwait(false)
+            : await AgentWithdrawal.RetireAsync(broker, agent, workspace, project.Name.Value, catalogue, token).ConfigureAwait(false);
+    }
+
+    /// <summary>Every exchange the agent is waited on in, or null when the broker could not be read.</summary>
+    private static async Task<IReadOnlyList<WaitingEdge>?> OwedAsync(
+        BrokerClient broker, AgentName agent, CancellationToken token)
+    {
+        var waiting = await BrokerDirectory.ReadAsync(async () =>
+            await broker.WaitingAsync(token).ConfigureAwait(false)).ConfigureAwait(false);
+
+        return waiting.Value?.Where(edge => edge.WaitedOn == agent).ToList();
     }
 }

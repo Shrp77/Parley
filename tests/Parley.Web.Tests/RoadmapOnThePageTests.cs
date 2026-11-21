@@ -558,7 +558,8 @@ public sealed class RoadmapOnThePageTests
         Assert.Matches("name=\"Targets\" value=\"billing@test\" checked=\"checked\"", own);
 
         // Nor does the page's script tick the project's default agent on an item's conversation: who it is for is the item's.
-        Assert.DoesNotContain("data-new=\"true\"", forged, StringComparison.Ordinal);
+        Assert.Contains("data-new=\"false\"", forged, StringComparison.Ordinal);
+        Assert.Contains(".recipients[data-new=\"true\"]", forged, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -23,7 +23,6 @@ public sealed class CurrencyTests
     private static string Page(string relative) => File.ReadAllText(RepositoryPath(relative));
 
     [Theory]
-    [InlineData("src/Parley.Web/Pages/Index.cshtml")]
     [InlineData("src/Parley.Web/Pages/Projects/Agents.cshtml")]
     public void Every_list_view_refreshes_itself_and_stamps_what_it_shows(string page)
     {
@@ -31,6 +30,24 @@ public sealed class CurrencyTests
 
         Assert.Contains("ViewData[\"Refresh\"]", markup, StringComparison.Ordinal);
         Assert.Contains("ViewData[\"AsOf\"]", markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_projects_and_agents_views_refresh_in_place_and_never_reload()
+    {
+        // Their grids are filled after the page is drawn, so a reload drew "Reading..." and "Checking..." again every few
+        // seconds: the flash. They ask for their rows on a timer and swap one only when it differs, and still say when.
+        var markup = Page("src/Parley.Web/Pages/Index.cshtml");
+
+        Assert.DoesNotContain("ViewData[\"Refresh\"] =", markup, StringComparison.Ordinal);
+        Assert.Contains("ViewData[\"AsOf\"]", markup, StringComparison.Ordinal);
+        Assert.Contains("setInterval(refresh, 10000)", markup, StringComparison.Ordinal);
+        Assert.Contains("if (text === last) { return; }", markup, StringComparison.Ordinal);
+        Assert.Contains("fresh.outerHTML !== row.outerHTML", markup, StringComparison.Ordinal);
+
+        // What a reader had open and scrolled to survives a refresh that changes something.
+        Assert.Contains("grid.scrollTop = top", markup, StringComparison.Ordinal);
+        Assert.Contains("d.open = true", markup, StringComparison.Ordinal);
     }
 
     [Fact]

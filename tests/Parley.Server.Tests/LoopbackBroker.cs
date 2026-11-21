@@ -41,10 +41,12 @@ internal sealed class LoopbackBroker : IAsyncDisposable
     /// <summary>Starts a broker over an in-memory store.</summary>
     /// <param name="cancellationToken">Cancels startup.</param>
     /// <param name="clock">The clock to stamp from, or null for the system one.</param>
+    /// <param name="options">The broker's options, or null for the defaults a test broker gets (which never wake on a restart).</param>
     /// <returns>The running broker.</returns>
     public static async Task<LoopbackBroker> StartAsync(
         CancellationToken cancellationToken,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        BrokerOptions? options = null)
     {
         // **Settable for the same reason the patience above is.** The wake ceiling is two minutes,
         // and a test that waited it out would be deleted by whoever next ran the suite -- so the
@@ -52,13 +54,28 @@ internal sealed class LoopbackBroker : IAsyncDisposable
         // reach. Defaults to the system clock, so every existing test is unaffected.
         clock ??= TimeProvider.System;
 
-        var runtime = BrokerRuntime.OpenInMemory(BrokerOptions.Default, clock);
+        var runtime = BrokerRuntime.OpenInMemory(options ?? BrokerOptions.Default, clock);
 
         var server = await ParleyServer
             .StartAsync(runtime, "http://127.0.0.1:0", cancellationToken, Diagnostics())
             .ConfigureAwait(false);
 
         return new LoopbackBroker(server, clock);
+    }
+
+    /// <summary>Starts a broker over a store file, so a second one over the same file is a restart.</summary>
+    /// <param name="store">The store's path.</param>
+    /// <param name="cancellationToken">Cancels startup.</param>
+    /// <returns>The running broker.</returns>
+    public static async Task<LoopbackBroker> StartOnAsync(string store, CancellationToken cancellationToken)
+    {
+        var runtime = BrokerRuntime.Open(Parley.Core.ProjectName.Create("test"), store, BrokerOptions.Default, TimeProvider.System);
+
+        var server = await ParleyServer
+            .StartAsync(runtime, "http://127.0.0.1:0", cancellationToken, Diagnostics())
+            .ConfigureAwait(false);
+
+        return new LoopbackBroker(server, TimeProvider.System);
     }
 
     /// <summary>
@@ -301,6 +318,7 @@ internal sealed class AttachedClient : IAsyncDisposable
     /// </param>
     /// <param name="identity">The repository's identifier, when its launch configuration carries one (SPEC.md §4.1.1).</param>
     /// <param name="over">A channel to attach over, shared with other calls; a new one when <see langword="null"/>.</param>
+    /// <param name="processId">The process the adapter says hosts it, as a label; none when 0.</param>
     /// <returns>The attached client.</returns>
     public static async Task<AttachedClient> AttachAsync(
         LoopbackBroker broker,
@@ -312,7 +330,8 @@ internal sealed class AttachedClient : IAsyncDisposable
         string? launchToken = null,
         JoinedNodeClient? startedBy = null,
         string? identity = null,
-        GrpcChannel? over = null)
+        GrpcChannel? over = null,
+        long processId = 0)
     {
         if (startedBy is not null)
         {
@@ -348,7 +367,10 @@ internal sealed class AttachedClient : IAsyncDisposable
                 LaunchToken = launchToken ?? string.Empty,
 
                 // Reported as a label, never as authority (§4.1.1).
-                Identity = identity ?? string.Empty
+                Identity = identity ?? string.Empty,
+
+                // The process that hosts the adapter, a label too (§11.1); none when 0.
+                ProcessId = processId
             },
             cancellationToken: cancellationToken);
 

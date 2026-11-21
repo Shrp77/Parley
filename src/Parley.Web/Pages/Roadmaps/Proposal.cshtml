@@ -7,7 +7,7 @@
 
 <h1>@(Model.Proposal?.Content.Title ?? "Proposed roadmap")</h1>
 
-<p><a href="/Roadmaps?project=@Model.Project">Back to the roadmaps in @Model.Project</a></p>
+<nav class="page-links" aria-label="This project"><a href="/Roadmaps?project=@Model.Project">Back to the roadmaps in @Model.Project</a></nav>
 
 @if (Model.Problem is { Length: > 0 } problem)
 {
@@ -54,8 +54,9 @@ else if (Model.Proposal is { } proposal)
 
     <form method="post">
         <p>
-            <label for="text">The proposal as text. Change it if it is wrong; one line per item, in order.</label><br />
-            <textarea id="text" name="Text" rows="@Math.Clamp(proposal.Content.Items.Count + 2, 6, 24)" cols="90" required>@Model.Text</textarea>
+            <partial name="_Composer" model="@(new Parley.Web.ComposerBox(
+                "Text", Model.Text, Id: "text", Rows: Math.Clamp(proposal.Content.Items.Count + 2, 6, 24),
+                Label: "The proposal as text. Change it if it is wrong; one line per item, in order."))" />
         </p>
 
         <p class="composer-note">
@@ -71,6 +72,22 @@ else if (Model.Proposal is { } proposal)
                 <label><input type="radio" name="Target" value="new" checked="@(revising ? null : "checked")" /> A new roadmap</label>
                 <label><input type="radio" name="Target" value="@revises.Id" checked="@(revising ? "checked" : null)" /> A revision of roadmap #@revises.Number, <em>@revises.Title</em></label>
                 <p class="composer-note">@Parley.Client.Roadmaps.ProposalText.RevisionReplaces</p>
+                @* A proposal cannot number its own lines, so the page offers to number those whose words are unchanged. *@
+                @if (Model.Kept is { } kept)
+                {
+                    <p class="composer-note" role="status">
+                        <strong>@kept of @proposal.Content.Items.Count lines</strong> have the same words as an item roadmap #@revises.Number has,
+                        and now carry <code>| item: n</code> in the box above. Confirmed as a revision, those items and their
+                        conversations are kept. A line with different words is a new item.
+                    </p>
+                }
+                else
+                {
+                    <p class="composer-note">
+                        <a href="/Roadmaps/Proposal?project=@Model.Project&amp;id=@proposal.Id&amp;keep=true">Number the lines whose words are unchanged</a>,
+                        so a revision keeps those items and their conversations. This replaces what is in the box.
+                    </p>
+                }
                 <input type="hidden" name="Revision" value="@(Model.Revision ?? revises.Revision)" />
                 <input type="hidden" name="RevisionOf" value="@(Model.RevisionOf ?? revises.Id)" />
                 @if (Model.Superseding is { Length: > 0 } superseding)
@@ -85,13 +102,18 @@ else if (Model.Proposal is { } proposal)
             @* Said before anything is confirmed; the second submit is the deliberate act. *@
             <p class="unreachable" role="alert">@warning</p>
             <input type="hidden" name="Removing" value="@Model.Removing" />
-            <button type="submit" name="ConfirmRemoval" value="true">Remove them and confirm</button>
         }
-        else
-        {
-            <button type="submit">Confirm</button>
-        }
-        <a href="/Roadmaps/Decline?project=@Model.Project&amp;id=@proposal.Id">Decline it…</a>
-        <a href="/Roadmaps?project=@Model.Project">Leave it for now</a>
+        <p class="actions">
+            @if (Model.Warning is { Length: > 0 })
+            {
+                <button type="submit" name="ConfirmRemoval" value="true">Remove them and confirm</button>
+            }
+            else
+            {
+                <button type="submit">Confirm</button>
+            }
+            <a class="button danger" href="/Roadmaps/Decline?project=@Model.Project&amp;id=@proposal.Id">Decline it…</a>
+            <a class="button quiet" href="/Roadmaps?project=@Model.Project">Leave it for now</a>
+        </p>
     </form>
 }

@@ -38,13 +38,15 @@ public sealed class AttachedAgent : IAsyncDisposable
         AgentName name,
         Parley.Broker.Broker broker,
         Parley.Broker.StartResult started,
-        string? launchToken = null)
+        string? launchToken = null,
+        long? processId = null)
     {
         _runtime = runtime;
         Name = name;
         Broker = broker;
         Started = started;
         LaunchToken = launchToken;
+        ProcessId = processId;
 
         // One slot, newest wins. See the remarks: a notice supersedes its predecessor entirely,
         // so a backlog of them carries no information a single current one does not.
@@ -62,6 +64,10 @@ public sealed class AttachedAgent : IAsyncDisposable
 
     /// <summary>The launch token this attachment presented, or <see langword="null"/> for none.</summary>
     public string? LaunchToken { get; }
+
+    /// <summary>The process its adapter said hosts it, or <see langword="null"/> when the adapter did not say.</summary>
+    /// <remarks>A label the adapter gave and never authority: what a node ends by it is checked on the node (SPEC.md §11.1).</remarks>
+    public long? ProcessId { get; }
 
     /// <summary>Whether this is a process a node started, by the token it presented (SPEC.md §11.7).</summary>
     /// <remarks>

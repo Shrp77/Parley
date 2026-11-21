@@ -32,6 +32,7 @@ public sealed class Broker
     private readonly MessageRepository _messages;
     private readonly ConversationRepository _conversations;
     private readonly Pruner _pruner;
+    private readonly HistoryRate _historyRate;
     private readonly BrokerOptions _options;
 
     /// <summary>When this broker last applied the retention policy, or <see langword="null"/> since starting.</summary>
@@ -61,6 +62,7 @@ public sealed class Broker
         _messages = new MessageRepository(connection);
         _conversations = new ConversationRepository(connection);
         _pruner = new Pruner(connection);
+        _historyRate = HistoryRate.For(connection);
     }
 
     /// <summary>Gets when this broker started, or <see langword="null"/> before it has.</summary>
@@ -235,6 +237,8 @@ public sealed class Broker
         RequireStarted("sending a request");
         RequireAdapterResponder(responderModel);
         ArgumentException.ThrowIfNullOrEmpty(payloadJson);
+        RequireUnambiguousNames(payloadJson);
+        RequireAValidConversation(conversationId);
         await RequireRegisteredAsync(from, cancellationToken).ConfigureAwait(false);
 
         using var scope = WriteScope.Begin(_connection, ambient: null);
@@ -294,6 +298,8 @@ public sealed class Broker
         RequireAdapterResponder(responderModel);
         ArgumentException.ThrowIfNullOrEmpty(role);
         ArgumentException.ThrowIfNullOrEmpty(payloadJson);
+        RequireUnambiguousNames(payloadJson);
+        RequireAValidConversation(conversationId);
         await RequireRegisteredAsync(from, cancellationToken).ConfigureAwait(false);
 
         var members = (await _agents.ListRoleAsync(role, cancellationToken).ConfigureAwait(false))
@@ -437,12 +443,20 @@ public sealed class Broker
         IReadOnlyList<long>? settles = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(payloadJson);
+        RequireUnambiguousNames(payloadJson);
 
         if (!PayloadShape.TryReadOutcomes(payloadJson, out var outcomes))
         {
             throw new ArgumentException(
                 "A Result carries an 'outcomes' array, and every entry names an item id and one of done, " +
                 "answered, acknowledged or blocked. See SPEC.md §5.3.",
+                nameof(payloadJson));
+        }
+
+        if (outcomes.Any(o => o.Id.Length > MessageLimits.LongestItemId || o.Id.Any(char.IsControl)))
+        {
+            throw new ArgumentException(
+                $"An item id is at most {MessageLimits.LongestItemId} characters and holds no control character. See SPEC.md §5.3.",
                 nameof(payloadJson));
         }
 
@@ -453,6 +467,42 @@ public sealed class Broker
             (exchange, speaker) => exchange.Close(speaker, nowUtc, rollup),
             settles ?? [],
             cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Refuses a payload the store and the broker could read two ways (SPEC.md §13).</summary>
+    /// <param name="payloadJson">The payload.</param>
+    /// <exception cref="ArgumentException">The payload repeats a member name, holds a NUL, or has text that cannot be decoded.</exception>
+    private static void RequireUnambiguousNames(string payloadJson)
+    {
+        // The size in UTF-16 units, which is what every surface counts and the owner chose as 'a character' (2026-11-19). The
+        // schema holds a looser bound, in code points, as a second wall: SQLite cannot count UTF-16 units in a CHECK.
+        if (payloadJson.Length > MessageLimits.MaxPayloadCharacters)
+        {
+            throw new ArgumentException(
+                $"A message is at most {MessageLimits.MaxPayloadCharacters:N0} characters (UTF-16 units, as a JavaScript or .NET " +
+                "string counts them); this one is longer, so it is refused whole. Send what the other side needs, or place a file. " +
+                "See SPEC.md §9.3.",
+                nameof(payloadJson));
+        }
+
+        if (PayloadShape.HasAmbiguousName(payloadJson))
+        {
+            throw new ArgumentException(PayloadShape.AmbiguousNameRefusal, nameof(payloadJson));
+        }
+    }
+
+    /// <summary>Refuses a conversation identifier the grammar does not allow, before the store is asked (SPEC.md §9.3).</summary>
+    /// <param name="conversationId">The identifier an agent named, or null or empty for none.</param>
+    /// <exception cref="ArgumentException">The identifier is not one a conversation may have.</exception>
+    private static void RequireAValidConversation(string? conversationId)
+    {
+        if (!string.IsNullOrEmpty(conversationId) && !ConversationId.IsValid(conversationId))
+        {
+            throw new ArgumentException(
+                $"A conversation is named with 1 to {ConversationId.Longest} letters, digits, dots, underscores or hyphens, " +
+                "with no two dots together. Name it so, or leave it out and Parley names it.",
+                nameof(conversationId));
+        }
     }
 
     /// <summary>Applies a transition and writes the message announcing it, as one act.</summary>
@@ -497,6 +547,7 @@ public sealed class Broker
         RequireStarted(type == MessageType.Result ? "sending a result" : "clarifying");
         RequireAdapterResponder(responderModel);
         ArgumentException.ThrowIfNullOrEmpty(payloadJson);
+        RequireUnambiguousNames(payloadJson);
 
         using var scope = WriteScope.Begin(_connection, ambient: null);
 
@@ -676,6 +727,194 @@ public sealed class Broker
     {
         RequireStarted("listing agents");
         return await _agents.ListRoutableAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Reads one exchange of the project, by number, as a record of the past (§10.1).</summary>
+    /// <param name="reader">The attached caller.</param>
+    /// <param name="exchangeId">The exchange.</param>
+    /// <param name="after">Only messages after this identity; zero for the start.</param>
+    /// <param name="nowUtc">The instant.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The exchange as a record, that there is none, or that the caller must wait.</returns>
+    /// <exception cref="ArgumentException">The caller is the person seat or Parley, neither of which is an agent.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>This changes nothing a participant can observe.</b> It marks nothing delivered, appends nothing, moves no exchange,
+    /// makes the reader no participant and gives nobody a turn. The one write is the record the person sees, made by
+    /// <see cref="HistoryRepository"/> in the transaction of the read. A store is one project, so a number that belongs to
+    /// another project is a number that names nothing here.
+    /// </para>
+    /// <para>
+    /// Each message comes in its own history envelope (§13) with a token chosen for it, so a payload written years ago
+    /// cannot have predicted where the real delimiter falls.
+    /// </para>
+    /// </remarks>
+    public async Task<ExchangeHistory> ReadExchangeAsync(
+        AgentName reader,
+        long exchangeId,
+        long after,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default)
+    {
+        RequireStarted("reading an exchange");
+        await RequireReaderAsync(reader, cancellationToken).ConfigureAwait(false);
+
+        if (_historyRate.WaitFor(reader, nowUtc) is > 0 and var wait)
+        {
+            return new ExchangeHistory(false, exchangeId, string.Empty, string.Empty, [], 0, 0, wait, RateLimited: true);
+        }
+
+        var slice = await new HistoryRepository(_connection)
+            .ReadExchangeAsync(reader, exchangeId, Math.Max(0, after), nowUtc, cancellationToken).ConfigureAwait(false);
+
+        if (slice is null)
+        {
+            _historyRate.Took(reader, nowUtc, 0);
+            return new ExchangeHistory(false, exchangeId, string.Empty, string.Empty, [], 0, 0);
+        }
+
+        var messages = slice.Messages
+            .Select(m => new HistoryMessage(
+                m.Id,
+                m.ExchangeId,
+                m.Type,
+                m.From,
+                m.To,
+                m.ConversationId,
+                m.CreatedUtc,
+                TrustEnvelope.WrapHistory(
+                    m.From, m.To, m.ResponderModel, m.PayloadJson, TrustEnvelope.NewToken(), m.ConversationId, m.ExchangeId, m.CreatedUtc)))
+            .ToList();
+
+        _historyRate.Took(reader, nowUtc, messages.Sum(m => m.Envelope.Length));
+
+        return new ExchangeHistory(
+            true,
+            exchangeId,
+            slice.ConversationId,
+            slice.State,
+            messages,
+            slice.Remaining > 0 && messages.Count > 0 ? messages[^1].Id : 0,
+            slice.Remaining);
+    }
+
+    /// <summary>Finds messages of the project by words, returning snippets (§10.1).</summary>
+    /// <param name="reader">The attached caller.</param>
+    /// <param name="words">What was said to look for: plain text, whitespace between words.</param>
+    /// <param name="filter">What narrows the search.</param>
+    /// <param name="continueAfter">Only messages older than this identity; zero for the first page.</param>
+    /// <param name="nowUtc">The instant.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>A page, or a sentence saying why it was refused.</returns>
+    /// <exception cref="ArgumentException">The caller is the person seat or Parley.</exception>
+    /// <remarks>
+    /// Words are never read as operators. They are split on whitespace, each lower-cased as <c>A</c> to <c>Z</c> are, and
+    /// every one must occur. A word with a control, invisible or line-separating character is refused (<see cref="HistoryText.Unprintable"/>), as such a
+    /// character is in a conversation's name, because the words are kept for the person to read.
+    /// </remarks>
+    public async Task<HistorySearchPage> SearchHistoryAsync(
+        AgentName reader,
+        string words,
+        HistoryFilter filter,
+        long continueAfter,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default)
+    {
+        RequireStarted("searching the history");
+        ArgumentNullException.ThrowIfNull(filter);
+        await RequireReaderAsync(reader, cancellationToken).ConfigureAwait(false);
+
+        var said = (words ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if ((words ?? string.Empty).Length > HistoryLimits.WordsCharacters)
+        {
+            return Refused($"Search for at most {HistoryLimits.WordsCharacters} characters.");
+        }
+
+        if (said.Length == 0)
+        {
+            return Refused("Say what to search for: one or more words.");
+        }
+
+        var distinct = said.Select(HistoryText.AsciiLower).Distinct(StringComparer.Ordinal).ToList();
+
+        if (distinct.Count > HistoryRepository.MaxWords)
+        {
+            return Refused($"Search for at most {HistoryRepository.MaxWords} different words, then read the exchanges it finds.");
+        }
+
+        if (said.Any(HistoryText.Unprintable))
+        {
+            return Refused("A word has a character that is not ordinary text, such as a control, an invisible one (an emoji's variation selector or a zero-width joiner are among them) or a malformed one. Use ordinary words, or search a part of the word.");
+        }
+
+        if (_historyRate.WaitFor(reader, nowUtc) is > 0 and var wait)
+        {
+            return new HistorySearchPage($"Too many reads for now. Try again in {wait} seconds.", [], 0, 0, wait);
+        }
+
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        SearchSlice slice;
+
+        // No search runs without end: it holds the gate while it scans, and how long that takes depends on what the store holds. One
+        // that overruns is stopped, charged for the time it took, and refused with what to do about it.
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var allowed = _options.SearchTimeLimit ?? TimeSpan.FromMilliseconds(HistoryLimits.SearchTimeLimitMilliseconds);
+
+        if (allowed <= TimeSpan.Zero)
+        {
+            // No time at all is out now, on this thread. CancelAfter would hand even a delay of nothing to a timer, and a short search
+            // on a busy machine finishes before the timer's thread runs.
+            await limit.CancelAsync().ConfigureAwait(false);
+        }
+        else
+        {
+            limit.CancelAfter(allowed);
+        }
+
+        try
+        {
+            slice = await new HistoryRepository(_connection)
+                .SearchAsync(reader, distinct, string.Join(' ', said), filter, Math.Max(0, continueAfter), nowUtc, limit.Token)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is OperationCanceledException || exception is SqliteException { SqliteErrorCode: 9 })
+        {
+            // Charged for the time it held the gate whoever stopped it: a caller that sets a deadline of its own, shorter than the limit,
+            // would otherwise search again and again for nothing.
+            _historyRate.Took(reader, nowUtc, HistoryLimits.SearchCost(clock.ElapsedMilliseconds, 0));
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+
+            return Refused("That search took too long and was stopped. Narrow it to one conversation, one participant or a span of time, or use fewer words, and try again.");
+        }
+
+        // A search scans the store while it holds the gate, and what that costs depends on what the store holds, so it is charged by
+        // the time it took, never less than a fixed amount, besides what it returns.
+        _historyRate.Took(reader, nowUtc, HistoryLimits.SearchCost(clock.ElapsedMilliseconds, slice.Matches.Sum(m => m.Snippet.Length + 120)));
+
+        return new HistorySearchPage(
+            null,
+            slice.Matches,
+            slice.NotShown,
+            slice.NotShown > 0 && slice.Matches.Count > 0 ? slice.Matches[^1].MessageId : 0);
+
+        static HistorySearchPage Refused(string sentence) => new(sentence, [], 0, 0);
+    }
+
+    private async Task RequireReaderAsync(AgentName reader, CancellationToken cancellationToken)
+    {
+        if (PersonSeat.Is(reader) || Facilitation.Is(reader))
+        {
+            throw new ArgumentException(
+                "Only an agent reads the history through this call. A person reads every conversation whole in the console.",
+                nameof(reader));
+        }
+
+        await RequireRegisteredAsync(reader, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Puts a roadmap forward for a person to confirm (§5.7).</summary>

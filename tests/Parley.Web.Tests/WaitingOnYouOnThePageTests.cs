@@ -42,6 +42,42 @@ public sealed class WaitingOnYouOnThePageTests
     }
 
     [Fact]
+    public async Task Closing_is_offered_only_on_an_agents_request_and_the_script_reads_the_value_not_that_the_attribute_is_there()
+    {
+        using var console = Asked();
+
+        // The person's own Request, where the agent asked back: the question waits on them, and only the agent can close it.
+        console.Broker.Request(5, Person, Orders, "Export the invoices.");
+        console.Broker.Messages.Add(new Wire.Message
+        {
+            Id = 6,
+            ExchangeId = 5,
+            Type = Wire.MessageType.Clarify,
+            From = Orders,
+            To = Person,
+            ResponderModel = "test",
+            PayloadJson = """{"text":"Which schema?"}""",
+            ConversationId = "shared",
+            CreatedUtc = "2026-09-16T10:00:00Z",
+        });
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Orders, WaitedOn = Person, ExchangeId = 5 });
+
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+
+        // An attribute starting data- is written even when its value is null, so its being there says nothing. That offered
+        // to close the person's own Request, which only its receiver can, and the broker refused it.
+        Assert.Contains("data-exchange=\"5\" data-agent=\"" + Orders + "\" data-request=\"0\"", page, StringComparison.Ordinal);
+        Assert.Contains("data-exchange=\"1\" data-agent=\"" + Orders + "\" data-request=\"1\"", page, StringComparison.Ordinal);
+        Assert.Contains(
+            "outcome.hidden = button.getAttribute(\"data-request\") !== \"1\";",
+            ScriptSource.Code(page, "button.reply-to"),
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("hasAttribute(\"data-request\")", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_request_waiting_on_the_person_can_be_answered_or_closed_where_it_was_asked()
     {
         using var console = Asked();
@@ -159,5 +195,23 @@ public sealed class WaitingOnYouOnThePageTests
         var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
 
         Assert.DoesNotContain("class=\"waiting-on-you\"", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task What_waits_on_the_person_is_read_from_summaries_and_never_a_whole_conversation()
+    {
+        // Review, quality lens (0.62.7): every conversation with an open exchange was exported whole as soon as one agent
+        // waited, on every Inbox open and every poll of a conversation page.
+        using var console = Asked();
+        console.Broker.AlsoListed.Add(new Wire.ConversationSummary { ConversationId = "plain-work", HasOpenExchange = true });
+        console.Broker.AlsoListed.Add(new Wire.ConversationSummary { ConversationId = "more-plain-work", HasOpenExchange = true });
+
+        using var client = console.CreateClient();
+
+        _ = await client.GetStringAsync(
+            new Uri($"/Inbox?project={TranscriptConsole.Project}", UriKind.Relative), TestContext.Current.CancellationToken);
+
+        // Never a whole conversation: a question needs only the agent's newest message in its exchange.
+        Assert.DoesNotContain(console.Broker.ExportsAsked, e => !e.LatestOnly);
     }
 }

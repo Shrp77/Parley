@@ -114,6 +114,38 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
         }
     }
 
+    /// <summary>Reports that an agent began a turn on its own, because background work it started finished (SPEC.md §11.6).</summary>
+    /// <param name="agent">The agent, as this project names it.</param>
+    /// <param name="began">When the turn began.</param>
+    /// <returns>A task that completes when it has been reported, or could not be.</returns>
+    internal Task BeganOnItsOwnAsync(Parley.Core.AgentName agent, DateTimeOffset began) =>
+        SendAsync(new Wire.TurnReport
+        {
+            Machine = machine,
+            Agent = agent.Value,
+            Started = new Wire.TurnStarted { StartedUtc = Stamp(began) },
+        });
+
+    /// <summary>Reports that a turn an agent began on its own ended.</summary>
+    /// <param name="agent">The agent, as this project names it.</param>
+    /// <param name="began">When the turn began, which pairs the end with its start.</param>
+    /// <param name="outcome">How it ended.</param>
+    /// <returns>A task that completes when it has been reported, or could not be.</returns>
+    internal Task EndedOnItsOwnAsync(Parley.Core.AgentName agent, DateTimeOffset began, TurnOutcome outcome) =>
+        ReportEndAsync(agent, began, outcome);
+
+    /// <summary>Reports how many background tasks an agent has running now (SPEC.md §11.6).</summary>
+    /// <param name="agent">The agent, as this project names it.</param>
+    /// <param name="tasks">How many.</param>
+    /// <returns>A task that completes when it has been reported, or could not be.</returns>
+    internal Task BackgroundAsync(Parley.Core.AgentName agent, int tasks) =>
+        SendAsync(new Wire.TurnReport
+        {
+            Machine = machine,
+            Agent = agent.Value,
+            Background = new Wire.BackgroundWork { Tasks = tasks },
+        });
+
     private Task ReportEndAsync(Parley.Core.AgentName agent, DateTimeOffset started, TurnOutcome? outcome) =>
         SendAsync(new Wire.TurnReport
         {

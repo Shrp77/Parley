@@ -79,6 +79,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
     // restart forgetting them is right by construction, where a column would be false after every crash.
     private readonly ConcurrentDictionary<AgentName, RunningTurn> _turns = new();
 
+    // What each agent's node last said it has running in the background (SPEC.md §11.6), in memory like a running turn.
+    private readonly ConcurrentDictionary<AgentName, BackgroundWork> _background = new();
+
     // When the last few turns each agent was heard to end began. A start report slower than its own end (the node's call
     // gave up after its deadline and the broker handled it anyway) carries that same time, and must not leave the agent
     // reading as working until its next report. The same time, never an earlier one: a node's clock may step back, or
@@ -161,6 +164,21 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     private readonly ConcurrentDictionary<string, bool> _resumedMachines = new(StringComparer.Ordinal);
 
+    /// <summary>The agents a person has frozen (SPEC.md §11.1), by name: what <see cref="Ask"/> reads, because it cannot wait on the store.</summary>
+    /// <remarks>
+    /// Loaded when the broker starts and changed only by <see cref="MarkFrozen"/>, which the operator operations call after the
+    /// store has been written, so it is a copy of the column and never a second fact.
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, bool> _frozen = new(StringComparer.Ordinal);
+
+    /// <summary>A number this broker gave itself when it started, new every time (SPEC.md §11.1).</summary>
+    /// <remarks>
+    /// Kept with every freeze, so the next start can tell a freeze an earlier run made from one this run made. A start is the
+    /// evidence that the machine restarted, or that its owner logged on again and the processes were started afresh; a freeze
+    /// that is not marked to outlast one lapses with it.
+    /// </remarks>
+    public string RunId { get; } = Guid.NewGuid().ToString("D");
+
     private readonly SqliteConnection _connection;
     private readonly Parley.Broker.Broker _house;
     private readonly Parley.Broker.BrokerOptions _options;
@@ -207,6 +225,16 @@ public sealed class BrokerRuntime : IAsyncDisposable
         var now = clock.GetUtcNow();
         _ = new NodeRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
         _ = new AgentRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
+
+        // A freeze an earlier run made lapses now, unless the person asked that it outlast a start (SPEC.md §11.1). Before the set
+        // below is read, so `Ask` never sees what has just lapsed. The agents that owe work are started by the first join of
+        // their machine's node, which wakes every active agent that owes an open exchange.
+        _ = new AgentRepository(connection).UnfreezeLapsedAsync(RunId).GetAwaiter().GetResult();
+
+        foreach (var frozen in new AgentRepository(connection).GetAllAsync().GetAwaiter().GetResult().Where(a => a.Frozen))
+        {
+            _frozen[frozen.Name.Value] = true;
+        }
 
         // The two rows the broker writes itself (SPEC.md §12.3), before anything could want to send as, or to, either:
         // the facilitator, and the person seat an agent asks when no agent can help (principle 2.6). Nothing launches
@@ -663,6 +691,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="registration">What the adapter said about itself.</param>
     /// <param name="cancellationToken">Cancels the attach.</param>
     /// <param name="launchToken">What the node that started this process put in its environment, or null (SPEC.md §11.7).</param>
+    /// <param name="processId">The process its adapter said hosts it, or null (SPEC.md §11.1).</param>
     /// <returns>The attachment, which the caller disposes when the stream ends.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="registration"/> is null.</exception>
     /// <exception cref="InvalidOperationException">
@@ -671,7 +700,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
     public async Task<AttachedAgent> AttachAsync(
         AgentRecord registration,
         CancellationToken cancellationToken = default,
-        string? launchToken = null)
+        string? launchToken = null,
+        long? processId = null)
     {
         ArgumentNullException.ThrowIfNull(registration);
 
@@ -698,10 +728,12 @@ public sealed class BrokerRuntime : IAsyncDisposable
                     .ConfigureAwait(false) is { Length: > 0 } held
                 && !WorkspacePath.SameRepository(here, held))
             {
+                // The registered path is not said: the roster withholds every agent's workspace, and a refusal an
+                // agent can provoke with its own .mcp.json must not hand it another's.
                 throw new InvalidOperationException(
-                    $"'{registration.Name.Value}' is already registered to '{held}', and this " +
+                    $"'{registration.Name.Value}' is already registered to another repository, and this " +
                     $"one is attaching from '{here}'. An agent name belongs to one repository: " +
-                    "give this one a different role, or retire the other.");
+                    "give this one a different role, or retire the other (the registry on this machine says where it is).");
             }
 
             await ReconcileIdentityAsync(agents, registration, cancellationToken).ConfigureAwait(false);
@@ -740,7 +772,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
             // **Started by Parley only by the token its node reported for its latest launch** (SPEC.md §11.7), checked
             // whenever it matters (AttachedAgent.StartedByParley) rather than spent here.
             var attached = new AttachedAgent(
-                this, registration.Name, broker, started, launchToken is { Length: > 0 } ? launchToken : null);
+                this, registration.Name, broker, started, launchToken is { Length: > 0 } ? launchToken : null, processId);
 
             // Last, so that a failure above leaves nothing to find. Appended rather than
             // assigned: the name may already be here, and both sessions are real.
@@ -808,10 +840,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
             || !WorkspacePath.SameRepository(here, held))
         {
             throw new InvalidOperationException(
-                $"This repository's identity is already registered here as '{holder.Name.Value}', from " +
-                $"'{holder.Workspace ?? "no recorded workspace"}', and '{registration.Name.Value}' is attaching from " +
-                $"'{registration.Workspace ?? "no workspace"}'. An identity belongs to one repository on a machine: " +
-                "give this checkout its own, or retire the other.");
+                $"This repository's identity is already registered here as '{holder.Name.Value}', from another folder, " +
+                $"and '{registration.Name.Value}' is attaching from '{registration.Workspace ?? "no workspace"}'. An identity " +
+                "belongs to one repository on a machine: give this checkout its own, or retire the other (the registry on this " +
+                "machine says where it is).");
         }
 
         if (_attached.TryGetValue(holder.Name.Value, out var running) && !running.IsEmpty)
@@ -919,11 +951,39 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         if (_options.ResumePolicy == ResumePolicy.Always && _resumedMachines.TryAdd(node.Machine, true))
         {
-            await WakeForOutstandingWorkAsync(node.Machine, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await WakeForOutstandingWorkAsync(node.Machine, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // The join has succeeded: the node is recorded and connected, and failing it here would leave it
+                // connected with nothing to remove it, so every retry would be refused as a second node. The wake is
+                // an extra, so it is forgotten and asked for again at the machine's next join. The work stays open
+                // and is flagged on the ordinary schedule meanwhile.
+                _ = _resumedMachines.TryRemove(node.Machine, out _);
+            }
         }
 
         return joined;
     }
+
+    /// <summary>Asks an agent to start if it owes open work, as the restart wake does; used when a freeze is cleared (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>A task that completes when it has been asked, or found to owe nothing.</returns>
+    internal async Task WakeIfOwingAsync(AgentName agent, CancellationToken cancellationToken)
+    {
+        var owes = await UseConnectionAsync(
+            async (_, _, ct) => (await _house.OutstandingToWakeForAsync(agent, ct).ConfigureAwait(false)).Count > 0,
+            cancellationToken).ConfigureAwait(false);
+
+        if (owes)
+        {
+            _ = RequestAttentionForMail(agent, "a person unfroze it and it owes work");
+        }
+    }
+
 
     /// <summary>
     /// Wakes the agents on a machine that owe work outstanding from before the broker started (§14).
@@ -1175,10 +1235,80 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return false;
         }
 
+        // A new process has no background work yet: what the last one had running went with it. The same token again is a
+        // node telling a broker about a process it already runs, whose count stands.
+        if (!_launches.TryGetValue(agent, out var was) || !string.Equals(was, token, StringComparison.Ordinal))
+        {
+            _ = _background.TryRemove(agent, out _);
+        }
+
         _launches[agent] = token;
 
         return true;
     }
+
+    /// <summary>Records how many background tasks a node says an agent has running (SPEC.md §11.6).</summary>
+    /// <param name="machine">The reporting node's machine.</param>
+    /// <param name="agent">The agent.</param>
+    /// <param name="tasks">How many.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Whether the report was accepted.</returns>
+    /// <remarks>
+    /// The same checks a turn report meets. Held in memory with the node that said it, as a running turn is, so a node that
+    /// leaves takes its word with it.
+    /// </remarks>
+    public async Task<bool> BackgroundReportedAsync(
+        string machine, AgentName agent, int tasks, CancellationToken cancellationToken = default)
+    {
+        if (tasks is < 0 or > MostBackgroundTasks
+            || !_nodes.TryGetValue(machine, out var reporter)
+            || await AcceptedTurnAsync(machine, agent, cancellationToken).ConfigureAwait(false) is null)
+        {
+            return false;
+        }
+
+        if (tasks == 0)
+        {
+            _ = _background.TryRemove(agent, out _);
+        }
+        else
+        {
+            _background[agent] = new BackgroundWork(tasks, machine);
+        }
+
+        // The node may have left while the agent was looked up, and its release swept the table before this landed.
+        if (!_nodes.TryGetValue(machine, out var still) || !ReferenceEquals(still, reporter))
+        {
+            _ = _background.TryRemove(agent, out _);
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>The most background tasks a report may claim.</summary>
+    /// <remarks>Far past anything a session runs; what it stops is a number nobody could read.</remarks>
+    internal const int MostBackgroundTasks = 10_000;
+
+    /// <summary>How many background tasks an agent has running, as its node last said; zero when none or nobody says.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>The count.</returns>
+    /// <remarks>
+    /// Only while its turns are reported and it runs: a process that ended, or one opened outside Parley, has none that
+    /// Parley knows of.
+    /// </remarks>
+    public int BackgroundTasks(AgentName agent) =>
+        _background.TryGetValue(agent, out var work)
+        && TurnsReported(agent)
+        && _attached.TryGetValue(agent.Value, out var sessions)
+        && !sessions.IsEmpty
+            ? work.Tasks
+            : 0;
+
+    /// <summary>What a node said an agent has running in the background.</summary>
+    /// <param name="Tasks">How many tasks.</param>
+    /// <param name="Machine">The node that said so, whose leaving ends the claim.</param>
+    private sealed record BackgroundWork(int Tasks, string Machine);
 
     /// <summary>
     /// The name a repository is registered as on a machine now; or, when none is, <paramref name="fallback"/>, unless
@@ -1252,6 +1382,68 @@ public sealed class BrokerRuntime : IAsyncDisposable
         && _attached.TryGetValue(agent.Value, out var sessions)
         && !sessions.IsEmpty
         && sessions.All(session => !session.StartedByParley);
+
+    /// <summary>Whether an agent runs as a process a node started and a node that is gone still owns (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>
+    /// True when it is attached, no attachment presented a token a node now holds, and at least one presented some token.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <b>A token is what tells it from a process somebody opened in an editor.</b> A node puts one in the environment of
+    /// every agent it starts and an editor has none. A broker forgets the tokens it was told when it restarts, and a new
+    /// node knows only what it started, so a process a node started before an install is still holding a token nobody
+    /// holds: read as "open outside Parley" it was blamed on somebody who never opened it.
+    /// </para>
+    /// <para>
+    /// <see cref="OpenOutside"/> is also true for it, because no node can give it a turn. A person's session that happens to
+    /// run beside it is not mistaken for it: that one has no token.
+    /// </para>
+    /// </remarks>
+    public bool Unsupervised(AgentName agent) =>
+        !PersonSeat.Is(agent)
+        && !Facilitation.Is(agent)
+        && _attached.TryGetValue(agent.Value, out var sessions)
+        && !sessions.IsEmpty
+        && sessions.All(session => !session.StartedByParley)
+        && sessions.Any(session => session.LaunchToken is { Length: > 0 });
+
+    /// <summary>Asks the node on an agent's machine to end a process a node that is gone left running (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="because">Why, for the operator's benefit.</param>
+    /// <returns>What became of the asking.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Only one that presented a token and was not started by the current node</b>, so a process somebody opened in an
+    /// editor is never ended from here, and a supervised one is stopped the ordinary way, which waits for its turn.
+    /// </para>
+    /// <para>
+    /// <b>The process is the one its adapter named, and only a label.</b> The node checks what it is asked to end before
+    /// it does (§11.1). Of the sessions that qualify, the first to name a process is used: an agent has one process, and a
+    /// second is an editor's, which has no token.
+    /// </para>
+    /// </remarks>
+    public KillOutcome RequestKill(AgentName agent, string because)
+    {
+        if (!Unsupervised(agent) || !_attached.TryGetValue(agent.Value, out var sessions))
+        {
+            return KillOutcome.NotLeftRunning;
+        }
+
+        var left = sessions.Where(session => !session.StartedByParley && session.LaunchToken is { Length: > 0 }).ToList();
+
+        if (left.Select(session => session.ProcessId).FirstOrDefault(id => id is > 0) is not { } process)
+        {
+            return KillOutcome.NoProcess;
+        }
+
+        if (!_nodes.TryGetValue(agent.Machine, out var node) || !node.RequestKill(agent, process, because))
+        {
+            return KillOutcome.NoNode;
+        }
+
+        return KillOutcome.Sent;
+    }
 
     /// <summary>Whether this agent's turns are reported (SPEC.md §11.6).</summary>
     /// <param name="agent">The agent.</param>
@@ -1331,6 +1523,11 @@ public sealed class BrokerRuntime : IAsyncDisposable
             _ = _turns.TryRemove(turn);
         }
 
+        foreach (var work in _background.Where(entry => entry.Value.Machine == joined.Machine).ToList())
+        {
+            _ = _background.TryRemove(work);
+        }
+
         await LeaveIfUnheldAsync(joined.Machine, cancellationToken).ConfigureAwait(false);
     }
 
@@ -1396,6 +1593,66 @@ public sealed class BrokerRuntime : IAsyncDisposable
     public bool RequestAttention(AgentName agent, string because) =>
         Ask(agent, because) is WakeOutcome.Started or WakeOutcome.AlreadyRunning;
 
+    /// <summary>Whether a person has frozen the agent (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns><see langword="true"/> while frozen.</returns>
+    public bool IsFrozen(AgentName agent) => _frozen.ContainsKey(agent.Value);
+
+    /// <summary>Records in memory that a freeze was written to, or cleared from, the store.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="frozen">Whether it is frozen now.</param>
+    internal void MarkFrozen(AgentName agent, bool frozen)
+    {
+        if (frozen)
+        {
+            _frozen[agent.Value] = true;
+        }
+        else
+        {
+            _ = _frozen.TryRemove(agent.Value, out _);
+        }
+    }
+
+    /// <summary>Asks an agent's node to stop it, or restart it, once its turn is over (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="restart">Whether to start it again once it has stopped.</param>
+    /// <param name="because">Why, for the operator's benefit.</param>
+    /// <returns>What became of the asking.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Only a process Parley started.</b> One opened in somebody's editor is theirs (§11.7), and no node holds it.
+    /// </para>
+    /// <para>
+    /// <b>The pending wake is let go when the command is sent</b>, so the next work for the agent starts it again rather
+    /// than being suppressed by a turn the stop is about to end.
+    /// </para>
+    /// </remarks>
+    public StopOutcome RequestStop(AgentName agent, bool restart, string because)
+    {
+        if (PersonSeat.Is(agent)
+            || Facilitation.Is(agent)
+            || !_attached.TryGetValue(agent.Value, out var sessions)
+            || sessions.IsEmpty)
+        {
+            return StopOutcome.NotRunning;
+        }
+
+        if (sessions.All(session => !session.StartedByParley))
+        {
+            return StopOutcome.OpenOutside;
+        }
+
+        if (!_nodes.TryGetValue(agent.Machine, out var node)
+            || !node.RequestStop(agent, IdentityOf(agent), restart, because))
+        {
+            return StopOutcome.NoNode;
+        }
+
+        _ = _pending.TryRemove(agent.Value, out _);
+
+        return StopOutcome.Sent;
+    }
+
     /// <summary>
     /// Asks an agent's machine to see to its mail, unless something already has.
     /// </summary>
@@ -1447,7 +1704,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         var outcome = Ask(agent, because);
 
-        if (outcome is WakeOutcome.Unreachable)
+        if (outcome is WakeOutcome.Unreachable or WakeOutcome.Frozen)
         {
             // Nothing is coming after all, so the claim is given back rather than left to expire.
             // Holding it would suppress every wake for the next two minutes on the strength
@@ -1615,6 +1872,14 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     private WakeOutcome Ask(AgentName agent, string because)
     {
+        // **The one place a start or a turn is asked for, so the one place a freeze is honoured** (SPEC.md §11.1): the
+        // restart wake, new work and a person's Start all come through here. Before any node is asked and before anything is
+        // marked as coming.
+        if (_frozen.ContainsKey(agent.Value))
+        {
+            return WakeOutcome.Frozen;
+        }
+
         if (!_nodes.TryGetValue(agent.Machine, out var node))
         {
             return WakeOutcome.Unreachable;

@@ -63,6 +63,24 @@ public sealed class ResidentAgent : IAsyncDisposable
     private volatile string? _sessionId;
     private volatile bool _stopping;
 
+    // What the agent does on its own (OwnWork). Read and written on the pump, except as each says.
+    private readonly Channel<Func<OwnWork, Task>> _notices =
+        Channel.CreateUnbounded<Func<OwnWork, Task>>(new UnboundedChannelOptions { SingleReader = true });
+    private readonly Task _noticePump;
+    private readonly Lock _ownLock = new();
+    private volatile int _backgroundTasks;
+    private volatile bool _answeredOnce;
+    private volatile OwnWork? _watch;
+    private TaskCompletionSource<RunnerEvent?>? _ownTurn;
+    private Task _ownTurnTask = Task.CompletedTask;
+
+    // Whether an own turn holds the agent's turn lock right now, and the own turns waiting to be handed it, both under
+    // _ownLock. A turn that has ended and a turn that holds the lock are different things: one queued behind another has its
+    // result and does not hold it. A turn that ends with another waiting hands the lock over without releasing it, so the
+    // lock is never free between two own turns for a given turn or an init to mistake.
+    private bool _ownHolds;
+    private readonly Queue<TaskCompletionSource> _ownQueue = new();
+
     private ResidentAgent(
         AgentName name, string workspace, Process process, TimeProvider clock)
     {
@@ -73,8 +91,34 @@ public sealed class ResidentAgent : IAsyncDisposable
         _events = Channel.CreateUnbounded<RunnerEvent>(
             new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
 
+        _noticePump = Task.Run(PumpNoticesAsync);
         _outputPump = Task.Run(PumpOutputAsync);
         _errorPump = Task.Run(PumpErrorAsync);
+    }
+
+    /// <summary>How many background tasks the agent last said it has running (SPEC.md §11.6).</summary>
+    public int BackgroundTasks => _backgroundTasks;
+
+    /// <summary>How long a turn the agent began on its own is waited for before it is reported timed out.</summary>
+    /// <remarks>The node's patience with a turn it gave; a node sets it to the same.</remarks>
+    public TimeSpan OwnTurnPatience { get; set; } = TimeSpan.FromMinutes(20);
+
+    /// <summary>Tells someone what the agent does on its own: its background work and the turns it begins itself.</summary>
+    /// <param name="watch">Who to tell.</param>
+    /// <remarks>
+    /// Background work already running is told at once, so a watch set a moment after the start misses nothing that
+    /// counts.
+    /// </remarks>
+    public void Watch(OwnWork watch)
+    {
+        ArgumentNullException.ThrowIfNull(watch);
+
+        _watch = watch;
+
+        if (_backgroundTasks is var running and > 0)
+        {
+            Notify(w => w.BackgroundChanged(running));
+        }
     }
 
     /// <summary>Gets who this agent is, as the registry names it.</summary>
@@ -94,6 +138,26 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// resident agent that is restarted gets a new one and pretending otherwise would mislead.
     /// </remarks>
     public string? SessionId => _sessionId;
+
+    /// <summary>Gets the operating system's identifier of the agent's process, or 0 once it cannot be read.</summary>
+    /// <remarks>
+    /// So a node can tell a process it hosts from one a node that is gone left behind, and never end the first as the second
+    /// (SPEC.md §11.1).
+    /// </remarks>
+    public int ProcessId
+    {
+        get
+        {
+            try
+            {
+                return _process.Id;
+            }
+            catch (InvalidOperationException)
+            {
+                return 0;
+            }
+        }
+    }
 
     /// <summary>Gets whether the agent's process is still running.</summary>
     public bool IsAlive
@@ -525,6 +589,12 @@ public sealed class ResidentAgent : IAsyncDisposable
         // left running against a disposed process.
         await Task.WhenAll(Quietly(_outputPump), Quietly(_errorPump)).ConfigureAwait(false);
 
+        // A turn of its own ended with the output, which completed it; it releases the agent before the lock goes. Its last
+        // report is made before the queue closes.
+        await Quietly(Volatile.Read(ref _ownTurnTask)).ConfigureAwait(false);
+        _ = _notices.Writer.TryComplete();
+        await Quietly(_noticePump).ConfigureAwait(false);
+
         _turnLock.Dispose();
         _process.Dispose();
     }
@@ -544,7 +614,7 @@ public sealed class ResidentAgent : IAsyncDisposable
 
                 // A runner is free to write things that are not protocol events. Skipping is right:
                 // refusing would let one stray line end an otherwise healthy agent.
-                if (RunnerEvent.Read(line) is { } evt)
+                if (RunnerEvent.Read(line) is { } evt && !OnItsOwn(evt))
                 {
                     await _events.Writer.WriteAsync(evt).ConfigureAwait(false);
                 }
@@ -556,6 +626,206 @@ public sealed class ResidentAgent : IAsyncDisposable
         finally
         {
             _events.Writer.TryComplete();
+
+            // A turn the agent began on its own ends with its process.
+            lock (_ownLock)
+            {
+                _ = _ownTurn?.TrySetResult(null);
+            }
+        }
+    }
+
+    /// <summary>Notes what an event says the agent is doing on its own, and whether a turn the node gave may read it.</summary>
+    /// <param name="evt">The event, as it arrives.</param>
+    /// <returns><see langword="true"/> when the event is the agent's own business and no given turn's.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Read as it arrives, turn or no turn</b> (SPEC.md §11.6). An agent that starts sub-agents or commands in the
+    /// background ends its turn with its reply while they run; when they finish, the runner begins a turn of its own,
+    /// with nobody's prompt, and ends it with a result tagged <c>task-notification</c>. Read only inside given turns, that
+    /// result waited for the next one, which took it as its own reply at once: the agent read as idle while it worked on
+    /// the person's message, and every turn after was one reply behind.
+    /// </para>
+    /// <para>
+    /// <b>A turn of its own begins at its <c>init</c>, held like a given turn</b>, so one given meanwhile queues behind it,
+    /// as the runner would queue the prompt. Only once the agent has answered something, so a runner announcing itself at
+    /// launch is not a turn; and only when no given turn holds the agent, whose own <c>init</c> this would be.
+    /// </para>
+    /// </remarks>
+    private bool OnItsOwn(RunnerEvent evt)
+    {
+        Observe(evt);
+
+        if (evt is { Type: "system", Subtype: "background_tasks_changed", Tasks: { } tasks })
+        {
+            if (tasks != _backgroundTasks)
+            {
+                _backgroundTasks = tasks;
+                Notify(w => w.BackgroundChanged(tasks));
+            }
+
+            return true;
+        }
+
+        if (evt is { Type: "system", Subtype: "init" } && _answeredOnce)
+        {
+            BeginOwnTurn();
+        }
+
+        if (evt.Type == "result")
+        {
+            if (evt.OriginKind == "task-notification")
+            {
+                lock (_ownLock)
+                {
+                    _ = _ownTurn?.TrySetResult(evt);
+                }
+
+                return true;
+            }
+
+            _answeredOnce = true;
+        }
+
+        return false;
+    }
+
+    /// <summary>Starts accounting for a turn the agent began on its own, unless a given turn holds the agent.</summary>
+    /// <remarks>
+    /// <b>An own turn that starts as the last one ends queues behind it.</b> The result completes the turn on the pump, and
+    /// the turn lets go of the agent a moment later on another thread, so an <c>init</c> read in between found the agent held
+    /// and was dropped: that turn was never reported, and the agent read as idle while it worked. A turn is told apart from
+    /// a given one's own <c>init</c> by the held turn already being over, and the new one waits for it.
+    /// </remarks>
+    private void BeginOwnTurn()
+    {
+        TaskCompletionSource<RunnerEvent?> ending;
+        TaskCompletionSource? handOver = null;
+
+        // Taking the lock, reading who holds it and queuing behind that holder are one act under _ownLock, as letting go or
+        // handing over is in RunOwnTurnAsync: in any gap between them an init finds the agent held by nobody and is dropped.
+        lock (_ownLock)
+        {
+            if (_stopping)
+            {
+                return;
+            }
+
+            var holds = _turnLock.Wait(0);
+
+            if (!holds)
+            {
+                // Held by a turn of the agent's own that is over and about to let go, and by nothing else: a given turn's
+                // own init, or a turn still running, is dropped as before.
+                if (!_ownHolds || _ownTurn is not { Task.IsCompleted: true })
+                {
+                    return;
+                }
+
+                handOver = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _ownQueue.Enqueue(handOver);
+            }
+
+            ending = new TaskCompletionSource<RunnerEvent?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _ownTurn = ending;
+            _ownHolds |= holds;
+        }
+
+        Volatile.Write(ref _ownTurnTask, RunOwnTurnAsync(ending, _clock.GetTimestamp(), _clock.GetUtcNow(), handOver?.Task));
+    }
+
+    /// <summary>Holds the agent for a turn of its own until its result, its process's end, or the patience runs out.</summary>
+    /// <param name="ending">Completed by the pump with the turn's result, or null when the process ended.</param>
+    /// <param name="started">When it began, on the clock turns are measured against.</param>
+    /// <param name="began">When it began, as a time to report.</param>
+    /// <param name="handedOver">Completed when the turn before it passes it the agent, or <see langword="null"/> when it already
+    /// holds the agent.</param>
+    /// <returns>A task that completes when the agent is released.</returns>
+    private async Task RunOwnTurnAsync(
+        TaskCompletionSource<RunnerEvent?> ending, long started, DateTimeOffset began, Task? handedOver)
+    {
+        if (handedOver is not null)
+        {
+            await handedOver.ConfigureAwait(false);
+        }
+
+        try
+        {
+            Notify(w => w.TurnBegan(began));
+
+            TurnOutcome outcome;
+
+            try
+            {
+                outcome = await ending.Task.WaitAsync(OwnTurnPatience).ConfigureAwait(false) is { } result
+                    ? Completed(result, started)
+                    : Died(started);
+            }
+            catch (TimeoutException)
+            {
+                outcome = new TurnOutcome(
+                    Completed: false, IsError: false, StopReason: null,
+                    _clock.GetElapsedTime(started), CostUsd: 0, ModelTurns: 0,
+                    PermissionDenials: 0, TimedOut: true, ProcessDied: false);
+            }
+
+            Notify(w => w.TurnEnded(began, outcome));
+        }
+        finally
+        {
+            lock (_ownLock)
+            {
+                if (_ownQueue.Count > 0)
+                {
+                    // The next own turn already has its result: it is handed the agent as it stands, still held.
+                    _ = _ownQueue.Dequeue().TrySetResult();
+                }
+                else
+                {
+                    _ownHolds = false;
+
+                    if (ReferenceEquals(_ownTurn, ending))
+                    {
+                        _ownTurn = null;
+                    }
+
+                    try
+                    {
+                        _turnLock.Release();
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // Disposed while it was held: the agent is gone, and nothing waits on it.
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>Queues one call to whoever watches, so calls are made in order and never on the pump.</summary>
+    /// <param name="call">The call.</param>
+    private void Notify(Func<OwnWork, Task> call) => _ = _notices.Writer.TryWrite(call);
+
+    /// <summary>Makes the queued calls, one at a time, dropping any that fail.</summary>
+    /// <returns>A task that completes when the queue is closed and empty.</returns>
+    private async Task PumpNoticesAsync()
+    {
+        await foreach (var call in _notices.Reader.ReadAllAsync().ConfigureAwait(false))
+        {
+            if (_watch is not { } watch)
+            {
+                continue;
+            }
+
+#pragma warning disable CA1031 // A report must never stall or end the agent, whatever went wrong making it.
+            try
+            {
+                await call(watch).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+            }
+#pragma warning restore CA1031
         }
     }
 
@@ -702,9 +972,16 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// <param name="ModelTurns">How many model turns it took.</param>
     /// <param name="PermissionDenials">How many tool calls were refused permission.</param>
     /// <param name="Result">The reply.</param>
+    /// <param name="Tasks">
+    /// How many background tasks a <c>background_tasks_changed</c> event lists, or null when the line has no list.
+    /// </param>
+    /// <param name="OriginKind">
+    /// What started the turn a result ends, when the runner says: <c>task-notification</c> for a turn the agent began on
+    /// its own because background work it started finished.
+    /// </param>
     internal sealed record RunnerEvent(
         string? Type, string? Subtype, string? SessionId, bool IsError, string? StopReason, double CostUsd,
-        int ModelTurns, int PermissionDenials, string? Result)
+        int ModelTurns, int PermissionDenials, string? Result, int? Tasks = null, string? OriginKind = null)
     {
         /// <summary>Reads one line.</summary>
         /// <param name="line">The line.</param>
@@ -739,10 +1016,11 @@ public sealed class ResidentAgent : IAsyncDisposable
                     return null;
                 }
 
-                string? type = null, subtype = null, sessionId = null, stopReason = null, result = null;
+                string? type = null, subtype = null, sessionId = null, stopReason = null, result = null, origin = null;
                 var isError = false;
                 double cost = 0, turns = 0;
                 var denials = 0;
+                int? tasks = null;
 
                 while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
                 {
@@ -761,6 +1039,8 @@ public sealed class ResidentAgent : IAsyncDisposable
                         case "num_turns": turns = Number(ref reader); break;
                         case "permission_denials": denials = Count(ref reader); break;
                         case "result": result = String(ref reader); break;
+                        case "tasks" when reader.TokenType == JsonTokenType.StartArray: tasks = Count(ref reader); break;
+                        case "origin": origin = Kind(ref reader); break;
                     }
 
                     // Past whatever value is left; nothing for a value already read to its end.
@@ -773,7 +1053,8 @@ public sealed class ResidentAgent : IAsyncDisposable
                     return null;
                 }
 
-                return new RunnerEvent(type, subtype, sessionId, isError, stopReason, cost, (int)turns, denials, result);
+                return new RunnerEvent(
+                    type, subtype, sessionId, isError, stopReason, cost, (int)turns, denials, result, tasks, origin);
             }
             catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException)
             {
@@ -809,6 +1090,33 @@ public sealed class ResidentAgent : IAsyncDisposable
 
         private static double Number(ref Utf8JsonReader reader) =>
             reader.TokenType == JsonTokenType.Number && reader.TryGetDouble(out var number) ? number : 0;
+
+        // An object's `kind` member, every other member passed over; left on the object's end. Null for anything else.
+        private static string? Kind(ref Utf8JsonReader reader)
+        {
+            if (reader.TokenType != JsonTokenType.StartObject)
+            {
+                return null;
+            }
+
+            string? kind = null;
+
+            while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+            {
+                var name = Name(ref reader);
+
+                reader.Read();
+
+                if (name == "kind")
+                {
+                    kind = String(ref reader);
+                }
+
+                reader.Skip();
+            }
+
+            return kind;
+        }
 
         // The array's elements, each passed over; left on the array's end.
         private static int Count(ref Utf8JsonReader reader)

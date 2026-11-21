@@ -34,7 +34,7 @@
         </ul>
         <p class="move-actions">
             <button type="submit">Continue</button>
-            <a href="@back">Cancel</a>
+            <a class="button quiet" href="@back">Cancel</a>
         </p>
     </form>
 }
@@ -111,11 +111,11 @@ else if (Model.Preview is { Refused: null } preview)
 
         <p class="move-actions">
             <button type="submit">Move @preview.Exchanges.Count exchange@(preview.Exchanges.Count == 1 ? null : "s")</button>
-            <a href="@back">Cancel</a>
-        </p>
+            <a class="button quiet" href="@back">Cancel</a>
+</p>
     </form>
 }
 else
 {
-    <p><a href="@back">Back to @Model.Id</a></p>
+    <nav class="page-links" aria-label="This conversation"><a href="@back">Back to @Model.Id</a></nav>
 }

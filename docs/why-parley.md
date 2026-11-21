@@ -56,9 +56,9 @@ If you work in one repository, you do not need Parley.
 - **Not a way to change another repository.** Parley offers an agent nothing that could edit files
   outside its own repository. Its client's own permissions decide what else it can touch, so keep
   each agent to its own repository there.
-- **Not a shared memory.** No agent can read the message log or search it. A conversation is
-  readable whole by you, and each agent sees only its own part. Messages are removed after a
-  retention period, and you can export anything you want to keep.
+- **Not a shared memory.** Nothing is pushed into an agent's context. An agent can read an exchange by its number, or
+  search for words, as a bounded record marked as inert data, and you see every read. A conversation is readable whole by
+  you. Messages are removed after a retention period, and you can export anything you want to keep.
 - **Not a boss for your agents.** There is no lead agent and no orchestrator. Whoever holds a
   request coordinates the work it needs.
 - **Not where decisions live.** When a conversation reaches a decision, the agent that owns the

@@ -53,7 +53,7 @@
         }
         <input type="hidden" name="confirmed" value="yes" />
 
-        <button type="submit" class="danger">Remove them</button>
+        <button type="submit" class="danger act">Remove them</button>
         <a href="/Projects/Files?project=@Model.Project&amp;conversation=@Model.Conversation">Keep them</a>
     </form>
 }
@@ -71,7 +71,7 @@ else if (Model.ConfirmingPrune && Model.Listing is { } pruning)
         <label for="typed">Type the project's name to confirm:</label>
         <input id="typed" name="typed" autocomplete="off" />
 
-        <button type="submit" class="danger">Remove every file</button>
+        <button type="submit" class="danger act">Remove every file</button>
         <a href="/Projects/Files?project=@Model.Project">Keep them</a>
     </form>
 }
@@ -97,8 +97,8 @@ else if (Model.Listing is { } listing)
             <input type="hidden" name="project" value="@Model.Project" />
             <input type="hidden" name="conversation" value="@Model.Conversation" />
 
-            <label for="upload">A .md or .txt file</label>
-            <input id="upload" name="upload" type="file" accept=".md,.txt,text/markdown,text/plain" required />
+            <label for="upload">A @Parley.Core.SharedFileName.AllowedExtensionsInWords file</label>
+            <input id="upload" name="upload" type="file" accept="@string.Join(',', Parley.Core.SharedFileName.AllowedExtensions)" required />
 
             <label for="placeIn">In conversation</label>
             <select id="placeIn" name="placeIn">
@@ -154,7 +154,7 @@ else if (Model.Listing is { } listing)
                             <td>@(file.PlacedBy?.Value ?? "the person")</td>
                             <td>@Parley.Client.Rendering.LocalTime.Write(file.PlacedUtc)</td>
                             <td>
-                                <button type="submit" asp-page-handler="Open"
+                                <button type="submit" class="tonal" asp-page-handler="Open"
                                         asp-route-project="@Model.Project"
                                         asp-route-file="@file.Name.Value"
                                         asp-route-inConversation="@file.ConversationId">Open</button>

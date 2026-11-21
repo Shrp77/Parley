@@ -74,9 +74,11 @@ public interface IParleyBrokerClient
     /// <summary>Every message in a conversation, and the state of every exchange they belong to.</summary>
     /// <param name="conversationId">The conversation.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
+    /// <param name="latestOnly">Only the newest message each sender wrote in each exchange and its newest Result, and the exchange states, for a
+    /// surface that summarises a conversation and would otherwise hold the broker for every payload in it.</param>
     /// <returns>The messages and the exchange states, read at one instant.</returns>
     Task<ConversationExport> ExportAsync(
-        string conversationId, CancellationToken cancellationToken = default);
+        string conversationId, CancellationToken cancellationToken = default, bool latestOnly = false);
 
     /// <summary>Who is waiting on whom.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
@@ -89,6 +91,16 @@ public interface IParleyBrokerClient
     /// what is stuck.
     /// </remarks>
     Task<IReadOnlyList<WaitingEdge>> WaitingAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Says which conversation an exchange is in now (§10.2 <c>locate_exchange()</c>).</summary>
+    /// <param name="exchangeId">The exchange, by number.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The conversation, or <see langword="null"/> when the store has no such exchange.</returns>
+    /// <remarks>
+    /// So a surface can open an exchange a message names (§5.6). Finds any exchange by number, whoever is on it, which is
+    /// what makes it an operator operation.
+    /// </remarks>
+    Task<string?> LocateExchangeAsync(long exchangeId, CancellationToken cancellationToken = default);
 
     /// <summary>What the size cap refused, per agent and message type.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
@@ -315,6 +327,82 @@ public interface IParleyBrokerClient
     Task<bool> StartAsync(
         AgentName agent, string because, CancellationToken cancellationToken = default);
 
+    /// <summary>Ask the node that started an agent to stop it once its current turn is over (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="because">Why, for whoever reads the node's log.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether its node was asked; false when nothing is running under the name.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>It ends a process, not the agent.</b> What it owes stays owed, and the next work for it starts it again, as any
+    /// agent is started: only retirement keeps one out. What the process had learned is lost, which is the cost a person
+    /// is told before doing it.
+    /// </para>
+    /// <para>
+    /// Refused for an agent open outside Parley, which belongs to whoever opened it, and for one whose machine has no
+    /// node joined, since then nothing holds its process.
+    /// </para>
+    /// </remarks>
+    Task<bool> StopAsync(
+        AgentName agent, string because, CancellationToken cancellationToken = default);
+
+    /// <summary>Ask the node that started an agent to stop it once its turn is over and start it again.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="because">Why, for whoever reads the node's log.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether its node was asked; false when nothing is running under the name, which is a start's to fix.</returns>
+    /// <remarks>
+    /// The new process reads its launch configuration afresh. Refused where <see cref="StopAsync"/> is.
+    /// </remarks>
+    Task<bool> RestartAsync(
+        AgentName agent, string because, CancellationToken cancellationToken = default);
+
+    /// <summary>Ask the node on an agent's machine to end a process a node that is gone left running (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="because">Why, for whoever reads the node's log.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether the node was asked; false when nothing is running under the name.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Only for a process left running by a node that is gone</b>: one that presented a launch token no node now holds.
+    /// A process opened in somebody's editor has none and is never ended here, and a supervised one is stopped, which
+    /// waits for its turn. This does not wait: the process ends with whatever it was doing, which is the cost a person is
+    /// told before doing it.
+    /// </para>
+    /// <para>
+    /// Refused for an agent that is not so left, for one whose adapter did not say which process hosts it, and where no
+    /// node is joined for its machine.
+    /// </para>
+    /// </remarks>
+    Task<bool> KillAsync(
+        AgentName agent, string because, CancellationToken cancellationToken = default);
+
+    /// <summary>Freeze an agent in this project: nothing starts it until a person unfreezes it (SPEC.md §10.2 <c>freeze</c>, §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="keepFrozen">
+    /// Whether the freeze outlasts a start of the broker. Without it a later start, which is what a logon or a reboot brings,
+    /// lets the freeze lapse and the agent is started again if it owes work.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether it was newly frozen, and what became of its process.</returns>
+    /// <remarks>
+    /// <para>
+    /// Recorded first, then the agent's node is asked to stop it once its turn is over, so a turn that ends and a message that
+    /// arrives in between both find the freeze. It closes, moves and answers nothing.
+    /// </para>
+    /// <para>
+    /// This freezes it in one project's store. An agent whose repository is enrolled in several projects is frozen in each by a
+    /// surface, through <c>AgentFreezing</c>.
+    /// </para>
+    /// </remarks>
+    Task<FreezeResult> FreezeAsync(AgentName agent, bool keepFrozen = false, CancellationToken cancellationToken = default);
+
+    /// <summary>Clear an agent's freeze (SPEC.md §10.2 <c>unfreeze</c>).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns><see langword="true"/> if it was frozen. It is then asked to start, as after a restart, if it owes work.</returns>
+    Task<bool> UnfreezeAsync(AgentName agent, CancellationToken cancellationToken = default);
+
     /// <summary>Place a file as the person, into a conversation that exists (SPEC.md §10.2 <c>place_persons_file</c>).</summary>
     /// <param name="conversationId">The conversation.</param>
     /// <param name="name">The name to place it under; characters outside the set become <c>_</c> (§9.5).</param>
@@ -371,12 +459,31 @@ public interface IParleyBrokerClient
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The machine and path, or why there is none.</returns>
     /// <remarks>
-    /// What lets a surface open a file in place: on the broker's machine it launches, and anywhere else it names the
-    /// machine and the path and launches nothing, because the file is not there to open (§10.2).
+    /// What lets a surface open a file: on the broker's machine it launches the file in place, and anywhere else it reads
+    /// the file through <see cref="ReadSharedFileAsync"/> and opens a checked copy, since a placed file never changes
+    /// (§10.2).
     /// </remarks>
     Task<FileLocationAnswer> DescribeFileLocationAsync(
         string? conversationId = null,
         string? name = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Read one conversation's file as the person, recording nothing.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="name">The file.</param>
+    /// <param name="expected">The hash the caller expects, or <see langword="null"/>.</param>
+    /// <param name="limitBytes">The most this caller will take; a larger file is answered too large with no bytes.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The file and its bytes, or why not.</returns>
+    /// <remarks>
+    /// What lets a surface show an image wherever it runs, the broker's machine or the end of a tunnel (§9.5). Unlike an
+    /// agent's fetch it records nothing: viewing is not an act on the deployment.
+    /// </remarks>
+    Task<SharedFileRead> ReadSharedFileAsync(
+        string conversationId,
+        string name,
+        ContentHash? expected,
+        long limitBytes,
         CancellationToken cancellationToken = default);
 
     /// <summary>List what sweeps of the file location found and could not leave as it was.</summary>

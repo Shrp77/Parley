@@ -17,7 +17,7 @@ namespace Parley.Setup;
 /// a second writer. So the writing lives here and both callers use it.
 /// </para>
 /// <para>
-/// <b><see cref="WithdrawAsync"/> is written beside <see cref="AddAsync"/> so the two cannot drift.</b>
+/// <b><see cref="WithdrawAsync(string, string, string?, string?, AgentIdentity, CancellationToken)"/> is written beside <see cref="AddAsync"/> so the two cannot drift.</b>
 /// A withdrawal that leaves a launch configuration behind produces a repository that still
 /// announces itself as an agent of a project it was removed from, which is worse than either
 /// state on its own. Keeping the inverse next to the original is the cheapest way to notice when
@@ -191,26 +191,24 @@ public static class Enrolment
     /// the read is safe where the write is not — and without it the plan would report a *create* for
     /// a file that plainly exists, which reads as a fault in the tool rather than as a link refused.
     /// </remarks>
-    internal static async Task<string?> DeclinedTextAsync(
+    internal static Task<string?> DeclinedTextAsync(
         string? declined,
         string path,
         CancellationToken cancellationToken)
     {
         // Walked before it is read (lens 2 run 126): a repository can ship its instructions file as a link, and the plan's
         // read of a declined one followed a link to a share, signing in to that host as the person.
-        if (declined is null || OffMachineLinks.LeadsOffThisMachine(path) || !File.Exists(path))
-        {
-            return null;
-        }
+        cancellationToken.ThrowIfCancellationRequested();
 
+        // Prose, so read whole as ReadHeldProseAsync reads a held one; opened part by part (LocalOpen), so nothing is
+        // looked up through a link that appeared after a check (lens 2 round 13).
         try
         {
-            // Prose, so read whole as ReadHeldProseAsync reads a held one.
-            return await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+            return Task.FromResult(declined is null ? null : LocalOpen.ReadText(path, json: false).Text);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (IOException)
         {
-            return null;
+            return Task.FromResult<string?>(null);
         }
     }
 
@@ -254,40 +252,21 @@ public static class Enrolment
     /// it gives nothing rather than failing; taking that as "no link" let a write go through it (review, lens 2 run 72).
     /// So a reparse point is a link whatever its target reads as, and so is a path whose attributes cannot be read.
     /// </para>
+    /// <para>
+    /// <b>Asked by opening, never by a lookup and then another.</b> A path's attributes and then its target, each by
+    /// path, is a gap an agent flipping its own folder to a link to a share won within seconds (review, lens 2 round 13).
+    /// <see cref="LocalOpen"/> opens each part as itself, so the answer is the file's and nothing is followed.
+    /// </para>
     /// </remarks>
-    internal static string? Linked(string path)
-    {
-        FileAttributes attributes;
+    internal static string? Linked(string path) =>
+        LocalOpen.Itself(path) switch
+        {
+            LocalOpenStatus.Changed or LocalOpenStatus.Unreadable => UnreadableTarget,
+            LocalOpenStatus.OffThisMachine => "another machine",
+            _ => null,
+        };
 
-        try
-        {
-            attributes = File.GetAttributes(path);
-        }
-        catch (Exception missing) when (missing is FileNotFoundException or DirectoryNotFoundException)
-        {
-            return null;
-        }
-        catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
-        {
-            return UnreadableTarget;
-        }
-
-        if ((attributes & FileAttributes.ReparsePoint) == 0)
-        {
-            return null;
-        }
-
-        try
-        {
-            return new FileInfo(path).LinkTarget ?? UnreadableTarget;
-        }
-        catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
-        {
-            return UnreadableTarget;
-        }
-    }
-
-    private const string UnreadableTarget = "a target that cannot be read";
+    private const string UnreadableTarget = "something Parley does not follow";
 
     /// <summary>Takes the launch configuration for the length of a read-modify-write.</summary>
     /// <param name="path">The launch configuration.</param>
@@ -315,11 +294,6 @@ public static class Enrolment
     /// </remarks>
     internal static async Task<FileStream?> HoldAsync(string path, CancellationToken cancellationToken)
     {
-        if (!File.Exists(path))
-        {
-            return null;
-        }
-
         // **A launch configuration that is a link is refused, and this is the one place it can be.**
         // `.mcp.json` is a tracked file, so a repository can ship one as a symlink — and this tooling
         // is pointed at directories of clones somebody else wrote (`parley enroll scan /src`) and then
@@ -328,23 +302,43 @@ public static class Enrolment
         //
         // Refused rather than replaced. Replacing it would silently destroy a link somebody may have
         // meant, and this cannot tell the two apart; the person can.
-        if (Linked(path) is { } target)
-        {
-            throw new InvalidDataException(LinkRefusal(path, target));
-        }
-
+        //
+        // Opened as itself, part by part (LocalOpen), never checked and then opened by path: an agent flipping its folder
+        // or this file to a link to a share won that gap within seconds, and Windows offered the person's sign-in to the
+        // host (review, lens 2 round 13).
         for (var attempt = 0; ; attempt++)
         {
-            try
+            var (status, stream) = LocalOpen.File(path, FileAccess.ReadWrite, FileShare.None);
+
+            switch (status)
             {
-                return new FileStream(
-                    path, FileMode.Open, FileAccess.ReadWrite, FileShare.None, 4096, useAsync: true);
-            }
-            catch (IOException) when (attempt < 40 && File.Exists(path))
-            {
-                await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+                case LocalOpenStatus.Opened:
+                    return stream;
+                case LocalOpenStatus.Missing:
+                    return null;
+                case LocalOpenStatus.Changed:
+                    throw new InvalidDataException(LinkRefusal(path, UnreadableTarget));
+                case LocalOpenStatus.OffThisMachine:
+                    throw new InvalidDataException($"{path} leads to another machine, and Parley does not look up a path there");
+                case LocalOpenStatus.Busy when attempt < 40:
+                    await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+                    break;
+                default:
+                    throw new IOException($"{path} is held by another program, or could not be opened.");
             }
         }
+    }
+
+    /// <summary>Whether a file at a path an agent reported is there, or something stands there that is not followed.</summary>
+    /// <param name="path">The file.</param>
+    /// <returns><see langword="false"/> only when nothing is there.</returns>
+    internal static bool LocallyThere(string path)
+    {
+        var (status, stream) = LocalOpen.File(path, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+
+        stream?.Dispose();
+
+        return status != LocalOpenStatus.Missing;
     }
 
     /// <summary>Reads a held JSON file from the start; <see cref="ReadHeldProseAsync"/> reads an instructions file.</summary>
@@ -437,7 +431,7 @@ public static class Enrolment
     /// <see cref="HoldAsync"/>'s and the same words as <see cref="HoldInstructionsAsync"/>'s, so the two cannot differ.
     /// </remarks>
     internal static string? InstructionsDeclined(string path) =>
-        File.Exists(path) && Linked(path) is { } target ? Declining(path, LinkRefusal(path, target)) : null;
+        Linked(path) is { } target ? Declining(path, LinkRefusal(path, target)) : null;
 
     private static string LinkRefusal(string path, string target) =>
         $"{path} is a link to {Quoting.Flat(target)}, so writing it would write somewhere "
@@ -504,28 +498,24 @@ public static class Enrolment
 
         if (stream is null)
         {
-            // CreateNew refuses an existing path, so a link cannot be followed here: a link whose
-            // target exists is itself an existing path, and one whose target does not is still a
-            // directory entry this refuses to write over.
-            var created = new FileStream(
-                path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, useAsync: false);
+            // Created only where nothing is, so a link cannot be followed here: a link whose target exists is
+            // itself an existing path, and one whose target does not is still a directory entry this refuses to
+            // write over. Made relative to the folder opened part by part (LocalOpen.Create), so a folder swapped
+            // for a link to a share since the hold found no file is not followed either (lens 3 round 13).
+            var created = LocalOpen.Create(path);
 
             try
             {
+                // Flushed inside the try: a short write sits in the buffer until then, and a full disk found at the
+                // close skipped the clean-up and left an empty file (review, lens 1 round 16).
                 created.Write(bytes);
+                created.Flush();
             }
             catch
             {
-                // Only ever a file this call created a line ago: CreateNew refuses an existing one.
-                created.Dispose();
-
-                try
-                {
-                    File.Delete(path);
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                }
+                // Only ever a file this call created a line ago, removed through its own handle so a folder swapped
+                // since cannot redirect the delete (LocalOpen.Discard).
+                LocalOpen.Discard(created, path);
 
                 throw;
             }
@@ -553,6 +543,31 @@ public static class Enrolment
     /// </remarks>
     private static string Where(string? project) =>
         project is null ? "this repository" : $"{Quoting.Quoted(project)}";
+
+    /// <summary>Whether two paths name the same folder, as this machine compares them.</summary>
+    /// <param name="one">A path.</param>
+    /// <param name="other">Another.</param>
+    /// <returns>True when they are the same folder.</returns>
+    private static bool SameFolder(string one, string other)
+    {
+        // Where each really is, walked by the opener (LocalOpen.Reach), so a short spelling, a junction or a subst letter
+        // compares as the folder it names (review, lens 2 rounds 10 and 15), and a `~` or a link to a share is never
+        // looked up to find out: one that leads off this machine compares as its text alone.
+        static string Full(string path) => Path.TrimEndingDirectorySeparator(
+            LocalOpen.Reach(path, out var reached) == LocalOpenStatus.OffThisMachine ? OffMachineLinks.FullPath(path) : reached);
+
+        try
+        {
+            return string.Equals(
+                Full(one),
+                Full(other),
+                OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        }
+        catch (Exception unreadable) when (unreadable is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
 
     /// <summary>Takes an agent out of a catalogue.</summary>
     /// <param name="catalogue">The catalogue's <c>agents</c> object.</param>
@@ -680,8 +695,8 @@ public static class Enrolment
 
         try
         {
-            // Walked before it is read, as every launch configuration is (lens 2 run 126).
-            return !OffMachineLinks.LeadsOffThisMachine(path) && File.Exists(path) ? StrictJson.ReadFile(path) : null;
+            // Opened part by part before it is read, as every launch configuration is (lens 2 run 126, round 13).
+            return LocalOpen.ReadText(path, json: true).Text;
         }
         catch (Exception failure)
             when (failure is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
@@ -697,7 +712,7 @@ public static class Enrolment
     private static string? Refused(string? catalogued, string offered) =>
         catalogued is { Length: > 0 }
         && !WorkspacePath.SameRepository(catalogued, offered)
-        && Directory.Exists(catalogued)
+        && LocalOpen.FolderThere(catalogued)
             ? Catalogues.Copied(catalogued, offered)
             : null;
 
@@ -739,7 +754,7 @@ public static class Enrolment
         // roster row. Both ways in apply it, because neither failure is visible where it is caused: a
         // bad name announces a repository that appears on no roster, and an over-long owns line is
         // refused by a CHECK constraint at registration, far from the person who typed it.
-        if (EnrollmentPlan.Validate([entry], Directory.Exists, _ => "enrolment") is { Count: > 0 } wrong)
+        if (EnrollmentPlan.Validate([entry], LocalOpen.FolderThere, _ => "enrolment") is { Count: > 0 } wrong)
         {
             throw new InvalidDataException(string.Join("; ", wrong));
         }
@@ -895,11 +910,31 @@ public static class Enrolment
         return new Outcome([.. plan.Notes, .. said], written);
     }
 
+    /// <summary>Whether a launch entry's <c>PARLEY_AGENT</c> names the agent being withdrawn.</summary>
+    /// <param name="named">What the entry holds: the role, as every enrolment writes it.</param>
+    /// <param name="agent">The role, or the whole name (<c>orders@alpha</c>) a surface holds from the registry.</param>
+    /// <returns>True when they are the same agent.</returns>
+    /// <remarks>
+    /// <b>Enrolment writes the role; the registry names the whole agent.</b> Compared as written, the whole name never
+    /// matched the role, and every withdrawal left the entry and the catalogue line in place while telling the person it
+    /// took them, so the next session in that repository attached again under the name just freed.
+    /// </remarks>
+    internal static bool IsNamed(string named, string agent)
+    {
+        ArgumentNullException.ThrowIfNull(named);
+        ArgumentNullException.ThrowIfNull(agent);
+
+        var at = agent.IndexOf('@', StringComparison.Ordinal);
+
+        return string.Equals(named, agent, StringComparison.Ordinal)
+            || (at > 0 && string.Equals(named, agent[..at], StringComparison.Ordinal));
+    }
+
     /// <summary>
     /// Unmakes it: the launch configuration's parley entry and the catalogue line, and nothing else.
     /// </summary>
     /// <param name="workspace">The repository directory.</param>
-    /// <param name="agent">The role being withdrawn.</param>
+    /// <param name="agent">The agent being withdrawn: its role, or its whole name, whose role is what an entry holds.</param>
     /// <param name="project">The project being withdrawn from, or null when none is named.</param>
     /// <param name="catalogueFile">The project's catalogue, or null when the project has none.</param>
     /// <param name="cancellationToken">Stops the reads and writes.</param>
@@ -923,11 +958,34 @@ public static class Enrolment
     /// talking about, and the person finds out when a peer stops being answered.
     /// </para>
     /// </remarks>
+    public static Task<Outcome> WithdrawAsync(
+        string workspace,
+        string agent,
+        string? project,
+        string? catalogueFile,
+        CancellationToken cancellationToken) =>
+        WithdrawAsync(workspace, agent, project, catalogueFile, default, cancellationToken);
+
+    /// <summary>Unmakes it, only when the repository is the agent the registry knows by this identity.</summary>
+    /// <param name="workspace">The repository directory.</param>
+    /// <param name="agent">The agent being withdrawn: its role, or its whole name.</param>
+    /// <param name="project">The project being withdrawn from, or null when none is named.</param>
+    /// <param name="catalogueFile">The project's catalogue, or null when the project has none.</param>
+    /// <param name="expected">The identity the registry holds for the agent, or none when it holds none.</param>
+    /// <param name="cancellationToken">Stops the reads and writes.</param>
+    /// <returns>What was removed, and what was already gone.</returns>
+    /// <remarks>
+    /// <b>The identity decides whose files these are.</b> An entry names only a role, so a registry row whose workspace
+    /// is this repository but whose identity is another's (an agent attached under a name it does not own, or one that
+    /// wrote another's identity into its own file) would otherwise have this repository's entry and catalogue line taken
+    /// for it. Both are left alone when the two identities are known and differ.
+    /// </remarks>
     public static async Task<Outcome> WithdrawAsync(
         string workspace,
         string agent,
         string? project,
         string? catalogueFile,
+        AgentIdentity expected,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspace);
@@ -937,12 +995,24 @@ public static class Enrolment
         var written = new List<string>();
         var launchPath = LaunchPath(workspace);
 
+        // **Never looked up off this machine.** The workspace is what the agent's adapter reported on attach, and an agent
+        // can turn that folder into a link to a share after: looking for its .mcp.json would offer the person's sign-in to
+        // that host. Checked before anything else touches the disk, and the file is then opened the same way
+        // (HoldAsync), so a link that appears between the two is never followed either (lens 2 round 13).
+        if (LocalOpen.Folder(workspace) == LocalOpenStatus.OffThisMachine)
+        {
+            notes.Add($"{workspace}: left alone, it is not a folder on this machine");
+
+            return new Outcome(notes, written);
+        }
+
         // **Which agent this repository is, and whether it is still one when this is done.** The catalogue
         // is keyed by identity and one entry serves every project the checkout answers in, so withdrawing
         // from one of two projects must leave it there: taking it would stop the other project being able
         // to start the repository, which nobody asked for. Both are filled in from the file below.
         var withdrawn = default(AgentIdentity);
         var stillAnAgent = false;
+        var another = false;
 
         // Catalogue before launch, the same order AddAsync takes them in. Two runs acquiring in
         // opposite orders is how each comes to hold the half the other is waiting for.
@@ -952,7 +1022,7 @@ public static class Enrolment
 
         try
         {
-            if (!File.Exists(launchPath))
+            if (!LocallyThere(launchPath))
             {
                 notes.Add($"{launchPath}: already absent");
             }
@@ -970,7 +1040,8 @@ public static class Enrolment
 
                 try
                 {
-                    held = await HoldAsync(launchPath, cancellationToken).ConfigureAwait(false);
+                    held = await HoldAsync(launchPath, cancellationToken).ConfigureAwait(false)
+                        ?? throw new InvalidDataException("it went while it was being read");
                 }
                 catch (InvalidDataException linked)
                 {
@@ -981,10 +1052,7 @@ public static class Enrolment
 
                 using var holding = held;
 
-                var text = held is null
-                    ? await Bounded(StrictJson.ReadFileAsync(launchPath, cancellationToken), launchPath)
-                        .ConfigureAwait(false)
-                    : await ReadHeldAsync(held, cancellationToken).ConfigureAwait(false);
+                var text = await ReadHeldAsync(held, cancellationToken).ConfigureAwait(false);
 
                 JsonNode? parsed;
 
@@ -1001,6 +1069,8 @@ public static class Enrolment
                 if (parsed is JsonObject root)
                 {
                     withdrawn = EnrollmentPlan.IdentityIn(text);
+
+                    another = expected.Known && withdrawn.Known && withdrawn != expected;
 
                     if (root["mcpServers"] is JsonObject servers)
                     {
@@ -1065,7 +1135,13 @@ public static class Enrolment
                             notes.Add(
                                 $"{launchPath}: left alone, {Quoting.Quoted(stranger.Key)} is not an entry this wrote");
                         }
-                        else if (named is not null && !string.Equals(named, agent, StringComparison.Ordinal))
+                        else if (another)
+                        {
+                            notes.Add(
+                                $"{launchPath}: left alone, it is another agent's repository: its identity is not the one "
+                                + $"{Quoting.Quoted(agent)} registered with");
+                        }
+                        else if (named is not null && !IsNamed(named, agent))
                         {
                             // Somebody else's. The workspace comes from the registry, which is what the
                             // agent said about itself and may be some time old, so a repository
@@ -1146,7 +1222,11 @@ public static class Enrolment
                     // start this checkout, and every project it answers in is started through that one
                     // entry — so removing it because one project let it go would take the others' ability
                     // to start it.
-                    if (stillAnAgent)
+                    if (another)
+                    {
+                        notes.Add($"{catalogueFile}: left alone, the repository is another agent's");
+                    }
+                    else if (stillAnAgent)
                     {
                         notes.Add(
                             $"{catalogueFile}: entry kept, the repository still answers in another project");
@@ -1159,6 +1239,15 @@ public static class Enrolment
                         notes.Add(
                             $"{catalogueFile}: left alone, {launchPath} says which agent this is and it "
                             + "does not — re-enrol it, or remove the entry by hand");
+                    }
+                    else if (agents[withdrawn.ToString()] is JsonObject line
+                             && line["workspace"] is JsonValue listed
+                             && listed.TryGetValue<string>(out var where)
+                             && !SameFolder(where, workspace))
+                    {
+                        // The line this identity keys is another repository's: an agent that copied another
+                        // checkout's identity into its own file would otherwise have that checkout's line taken.
+                        notes.Add($"{catalogueFile}: left alone, its line for this identity is another repository's");
                     }
                     else if (Unlist(agents, withdrawn))
                     {

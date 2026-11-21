@@ -161,6 +161,24 @@ public sealed class FilePlacementTests
         Assert.Contains("may or may not have been placed", dropped.Status.Detail, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void A_type_that_cannot_be_placed_is_refused_in_words_naming_every_type_that_can()
+    {
+        // Without the guard the refusal said only a .md or .txt file can be placed, leaving out the images that can
+        // (review, lens 3 round 34).
+        var said = Files.PlacementSaid.Of(
+            new PersonPlacement(null, FileRejection.ExtensionNotAllowed, "pricing", "build.zip", 0, null, null),
+            "build.zip",
+            _ => "0 B");
+
+        Assert.StartsWith("Not placed: ", said, StringComparison.Ordinal);
+
+        foreach (var extension in SharedFileName.AllowedExtensions)
+        {
+            Assert.Contains(extension, said, StringComparison.Ordinal);
+        }
+    }
+
     /// <summary>A placement call answered from a script, recording what the client did in order.</summary>
     private sealed class ScriptedPlacement : IClientStreamWriter<Wire.PlaceFileFrame>, IAsyncStreamReader<Wire.PlaceFileAnswer>
     {

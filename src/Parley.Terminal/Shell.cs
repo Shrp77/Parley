@@ -2,6 +2,7 @@
 using System.Drawing;
 using System.Text;
 using Parley.Client;
+using Parley.Client.Files;
 using Parley.Client.Rendering;
 using Parley.Client.Seating;
 using Parley.Client.Views;
@@ -321,6 +322,16 @@ internal sealed partial class Shell : Window
                 }
 
                 return;
+            }
+
+            // The first message says what this is. Only the draft changes, so words that reach nobody stay in the box as written.
+            // An empty box stays empty, so it is refused as it always was rather than sending the line alone.
+            if (_spinningOff is { } opening
+                && opening.Project == place.Name.Value
+                && opening.Conversation == conversation
+                && !string.IsNullOrWhiteSpace(draft.Text))
+            {
+                draft.Text = Parley.Client.Rendering.Quoting.Opened(conversation, opening.Parent, draft.Text);
             }
 
             var sent = await voice.SendAsync(hold, draft, conversation, token).ConfigureAwait(false);
@@ -1786,9 +1797,10 @@ internal sealed partial class Shell : Window
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>When it has been taken, or there was nothing to take.</returns>
     /// <remarks>
-    /// Quiet, always: the count leaving the status line says it, and a message line sentence on every conversation opened
-    /// is noise that costs the status line its actions. A broker that cannot be reached is left to the other reads to say, for the reason a failed follow keeps
-    /// the transcript and says so once: this is not what the person asked for.
+    /// Quiet, always: a message line sentence on every conversation opened is noise that costs the status line its actions.
+    /// Collecting does not change the count, which is what waits on the person's answer, not what was collected. A broker
+    /// that cannot be reached is left to the other reads to say, for the reason a failed follow keeps the transcript and
+    /// says so once: this is not what the person asked for.
     /// </remarks>
     private async Task CollectOnArrivalAsync(CancellationToken cancellationToken)
     {
@@ -1799,15 +1811,7 @@ internal sealed partial class Shell : Window
 
         try
         {
-            var (taken, polls) = await voice.TakeDeliveryAsync(hold, cancellationToken).ConfigureAwait(false);
-
-            if (taken.Count > 0 || polls > 0)
-            {
-                // Not said on the message line. The count leaving the status line is the feedback, and a sentence there
-                // pushes the actions off a narrow status line until somebody clears it.
-                Mail = (0, true);
-                Relay();
-            }
+            await voice.TakeDeliveryAsync(hold, cancellationToken).ConfigureAwait(false);
         }
         catch (Grpc.Core.RpcException)
         {
@@ -2434,6 +2438,27 @@ internal sealed partial class Shell : Window
     /// <summary>What the row menu offers on an agent that is not running, before the name.</summary>
     private const string StartThisTitle = "Start ";
 
+    /// <summary>What the row menu offers on a running agent Parley started, to restart it, before the name.</summary>
+    internal const string RestartThisTitle = "Restart ";
+
+    /// <summary>What the row menu offers on a running agent Parley started, to stop it, before the name.</summary>
+    internal const string StopThisTitle = "Stop ";
+
+    /// <summary>What the row menu offers on a running agent a node that is gone left behind, to end its process, before the name.</summary>
+    internal const string KillThisTitle = "Kill process of ";
+
+    /// <summary>What the row menu offers on an agent that is not frozen, to freeze it, before the name.</summary>
+    private const string FreezeThisTitle = "Freeze ";
+
+    /// <summary>What follows the name when the freeze is the one a logon does not lift.</summary>
+    private const string KeepFrozenSuffix = ", and keep it frozen after a logon";
+
+    /// <summary>What the row menu offers on a frozen agent, to unfreeze it, before the name.</summary>
+    private const string UnfreezeThisTitle = "Unfreeze ";
+
+    /// <summary>The choice that leaves a running agent alone.</summary>
+    private const string KeepItRunning = "Keep it running";
+
     /// <summary>
     /// Opens what can be done with the row under the cursor in the agents list.
     /// </summary>
@@ -2491,6 +2516,35 @@ internal sealed partial class Shell : Window
             if (Agents.SelectedStanding is { Running: false, Retired: false, StartableHere: true })
             {
                 entries.Add((StartThisTitle + name.Value, StartSelected));
+            }
+
+            // Frozen or not, whichever it is: a freeze is the person's, kept through a restart, and cleared only by unfreezing.
+            if (Agents.SelectedStanding is { Retired: false } freezable)
+            {
+                var frozen = Standing.IsFrozen(freezable.Standing);
+
+                entries.Add(((frozen ? UnfreezeThisTitle : FreezeThisTitle) + name.Value, () => FreezeSelected(freeze: !frozen)));
+
+                // The second way to freeze: one a logon does not lift, so the person has to unfreeze it themselves.
+                if (!frozen)
+                {
+                    entries.Add((FreezeThisTitle + name.Value + KeepFrozenSuffix, () => FreezeSelected(freeze: true, keepFrozen: true)));
+                }
+            }
+
+            // One a node that is gone left running can be ended, not stopped: nothing holds it to wait for its turn.
+            if (Agents.SelectedStanding is { Running: true } left
+                && string.Equals(left.Standing, Standing.Left, StringComparison.Ordinal))
+            {
+                entries.Add((KillThisTitle + name.Value, KillSelected));
+            }
+
+            // Only a process Parley started: one open outside Parley is whoever opened it's, and no node holds it.
+            else if (Agents.SelectedStanding is { Running: true } running
+                && !string.Equals(running.Standing, Standing.Outside, StringComparison.Ordinal))
+            {
+                entries.Add((RestartThisTitle + name.Value, () => StopSelected(restart: true)));
+                entries.Add((StopThisTitle + name.Value, () => StopSelected(restart: false)));
             }
         }
 
@@ -2580,6 +2634,152 @@ internal sealed partial class Shell : Window
         });
 
         return Settled;
+    }
+
+    /// <summary>Asks this agent's node to stop it, or restart it, from its row, once the person has read what it costs.</summary>
+    /// <param name="restart">Whether to start it again.</param>
+    /// <returns>When the description is open.</returns>
+    /// <remarks>
+    /// The deliberate act is choosing the second entry of a menu that describes the act, keeping it running being the
+    /// first: nothing is destroyed (what it owes stays owed), so a typed name would ask more than the act takes. The same
+    /// operator operation the web console uses (§10.2 <c>stop</c>, <c>restart</c>).
+    /// </remarks>
+    private Task StopSelected(bool restart)
+    {
+        if (App is not { } app
+            || Current is not { } project
+            || Agents.Selected is not { } row
+            || !AgentName.TryCreate(row.Name, out var agent))
+        {
+            return Task.CompletedTask;
+        }
+
+        var act = (restart ? RestartThisTitle : StopThisTitle) + agent.Value;
+        var menu = Prompting.Choose(
+            act,
+            restart ? StoppingWords.Restarting(agent.Value) : StoppingWords.Stopping(agent.Value),
+            [KeepItRunning, act]);
+        var opened = Prompting.Open(app, menu);
+
+        menu.Done += (_, chosen) =>
+        {
+            Prompting.Close(app, opened);
+
+            if (chosen != act)
+            {
+                return;
+            }
+
+            Queue(async token =>
+            {
+                var client = new BrokerClient(_directory.ClientFor(project));
+                var asked = await BrokerDirectory.ReadAsync(async () =>
+                    restart
+                        ? await client.RestartAsync(agent, "a person restarted it from its row", token).ConfigureAwait(false)
+                        : await client.StopAsync(agent, "a person stopped it from its row", token).ConfigureAwait(false))
+                    .ConfigureAwait(false);
+
+                Said = asked.Problem ?? StoppingWords.Outcome(agent.Value, restart, asked.Value);
+
+                await SelectAsync(project, token).ConfigureAwait(false);
+            });
+        };
+
+        return Task.CompletedTask;
+    }
+    /// <summary>Freezes this agent, or unfreezes it, in every project that serves it, once the person has read what it costs.</summary>
+    /// <param name="freeze">Whether to freeze it; otherwise unfreeze it.</param>
+    /// <param name="keepFrozen">For a freeze: whether it outlasts a logon, so the person has to unfreeze it themselves.</param>
+    /// <returns>When the description is open.</returns>
+    /// <remarks>
+    /// The deliberate act is choosing the second entry of a menu that describes it, as a stop's is: nothing is destroyed
+    /// and unfreezing undoes it, so a typed name would ask more than the act takes. The same implementation the web console
+    /// uses (<see cref="AgentFreezing"/>, SPEC.md §10.2 <c>freeze</c>, <c>unfreeze</c>).
+    /// </remarks>
+    private Task FreezeSelected(bool freeze, bool keepFrozen = false)
+    {
+        if (App is not { } app
+            || Current is not { } project
+            || Agents.Selected is not { } row
+            || !AgentName.TryCreate(row.Name, out var agent))
+        {
+            return Task.CompletedTask;
+        }
+
+        var act = (freeze ? FreezeThisTitle : UnfreezeThisTitle) + agent.Value + (freeze && keepFrozen ? KeepFrozenSuffix : string.Empty);
+        var menu = Prompting.Choose(
+            act,
+            freeze ? FreezingWords.Freezing(agent.Value, keepFrozen) : FreezingWords.Unfreezing(agent.Value),
+            [KeepItRunning, act]);
+        var opened = Prompting.Open(app, menu);
+
+        menu.Done += (_, chosen) =>
+        {
+            Prompting.Close(app, opened);
+
+            if (chosen != act)
+            {
+                return;
+            }
+
+            Queue(async token =>
+            {
+                var done = freeze
+                    ? await AgentFreezing.FreezeAsync(_directory, agent, keepFrozen, token).ConfigureAwait(false)
+                    : await AgentFreezing.UnfreezeAsync(_directory, agent, token).ConfigureAwait(false);
+
+                Said = AgentFreezing.Describe(done);
+
+                await SelectAsync(project, token).ConfigureAwait(false);
+            });
+        };
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Asks this agent's machine to end the process a node that is gone left running, once the person has read what it costs.</summary>
+    /// <returns>When the description is open.</returns>
+    /// <remarks>
+    /// The same deliberate act as a stop's: choosing the second entry of a menu that describes it, keeping it running being
+    /// the first. The operator operation the web console uses (§10.2 <c>kill</c>).
+    /// </remarks>
+    private Task KillSelected()
+    {
+        if (App is not { } app
+            || Current is not { } project
+            || Agents.Selected is not { } row
+            || !AgentName.TryCreate(row.Name, out var agent))
+        {
+            return Task.CompletedTask;
+        }
+
+        var act = KillThisTitle + agent.Value;
+        var menu = Prompting.Choose(act, StoppingWords.Killing(agent.Value), [KeepItRunning, act]);
+        var opened = Prompting.Open(app, menu);
+
+        menu.Done += (_, chosen) =>
+        {
+            Prompting.Close(app, opened);
+
+            if (chosen != act)
+            {
+                return;
+            }
+
+            Queue(async token =>
+            {
+                var client = new BrokerClient(_directory.ClientFor(project));
+                var asked = await BrokerDirectory.ReadAsync(async () =>
+                    await client.KillAsync(agent, "a person ended it from its row", token).ConfigureAwait(false))
+                    .ConfigureAwait(false);
+
+                Said = asked.Problem ?? StoppingWords.KillOutcome(agent.Value, asked.Value);
+
+                await SelectAsync(project, token).ConfigureAwait(false);
+            });
+        };
+
+        return Task.CompletedTask;
     }
 
     /// <summary>Opens the menu of what the focused region can do.</summary>
@@ -3579,12 +3779,11 @@ internal sealed partial class Shell : Window
                 return;
             }
 
-            var read = await BrokerDirectory.ReadAsync(async () =>
-                await new BrokerClient(_directory.ClientFor(project))
-                    .ExportAsync(conversationId, cancellationToken).ConfigureAwait(false))
+            var read = await BrokerDirectory.ReadAsync(
+                () => ReadWithFilesAsync(new BrokerClient(_directory.ClientFor(project)), conversationId, cancellationToken))
                 .ConfigureAwait(false);
 
-            if (read.Value is { } export)
+            if (read.Value is var (export, files) && export is not null)
             {
                 // Recovered: take back the warning, but only if nothing has been said since.
                 if (_followFailed is { } warned && string.Equals(Said, warned, StringComparison.Ordinal))
@@ -3593,7 +3792,7 @@ internal sealed partial class Shell : Window
                 }
 
                 _followFailed = null;
-                _ = Transcript.Follow(conversationId, project.Name.Value, export);
+                _ = Transcript.Follow(conversationId, project.Name.Value, export, files);
 
                 // **The room as well, every time, and whether or not the transcript changed.** Somebody picking
                 // a request up changes nothing in the transcript but everything in the room's marks, and "working 3m"
@@ -3736,24 +3935,19 @@ internal sealed partial class Shell : Window
     {
         try
         {
-            // **Through `Voice()` rather than built here**, which `ClientSeparationTests` insists on: the agents
-            // client is the one that can speak as a person, and every path to it goes through the seat the book
-            // granted.
-            if (Voice() is { } voice)
+            // **What waits on the person's answer, never the mail not yet collected** (owner, 2026-11-06, the console's
+            // count and the terminal's alike): `WaitingOnThePerson`, the one filter every surface counts with. It stays until each
+            // question is answered or settled. Asked of the operator service, which collects nothing and opens no
+            // attachment, so it works the same while the person is away and does not make them present.
+            if (Seats is not null && Current is { } project)
             {
+                var me = Seats.Held(project.Name.Value)?.Seat.Name ?? Seats.Known(project.Name.Value)?.Name ?? PersonSeat.On(project.Name);
                 var read = await BrokerDirectory.ReadAsync(async () =>
-                    await voice.WaitingAsync(cancellationToken).ConfigureAwait(false))
+                    await WaitingOnThePerson.CountAsync(new BrokerClient(_directory.ClientFor(project)), me, cancellationToken)
+                        .ConfigureAwait(false))
                     .ConfigureAwait(false);
 
-                Mail = read.Problem is null ? (read.Value.Messages, true) : (0, false);
-            }
-            else if (Seats is not null && Current is { } project)
-            {
-                // Away: no stream, and the seat is still the broker's, so its mail is counted without one — the count
-                // opens no attachment and so does not make the person present (`SeatBook.WaitingAsync`).
-                var (waiting, certain) = await Seats.WaitingAsync([project], cancellationToken).ConfigureAwait(false);
-
-                Mail = (waiting, certain);
+                Mail = read.Problem is null ? (read.Value, true) : (0, false);
             }
             else
             {
@@ -4578,6 +4772,276 @@ internal sealed partial class Shell : Window
     /// asking them would spend a turn on a question that cannot apply. Retired agents go too: §10.2's
     /// retire stops them being routed to at all, so what they own is no longer a question anybody acts on.
     /// </remarks>
+    /// <summary>The key that asks which of the person's questions are still open.</summary>
+    internal const char StillOpenKey = 'o';
+
+    /// <summary>What the command that asks which questions are still open is called.</summary>
+    internal const string StillOpenTitle = "Ask which questions are still open";
+
+    /// <summary>What this terminal last asked about which questions are still open, per project.</summary>
+    private readonly StillOpenAsks _stillOpen = new();
+
+    /// <summary>The list of agents asked, once it has been opened.</summary>
+    internal StillOpenView? StillOpenShown { get; private set; }
+
+    /// <summary>The list's session, so a test can close it as Escape does on a running loop.</summary>
+    internal SessionToken? StillOpenSession { get; private set; }
+
+    /// <summary>Asks each agent with questions waiting on the person in this project whether they are still open.</summary>
+    /// <returns>When the round has been queued.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The console's round, run here</b> (<see cref="StillOpen.AskAsync"/>, owner 2026-11-06): one Request from the person
+    /// to each agent in each conversation it has questions in, never twice to an agent still to reply, and the agent closes
+    /// what was answered. Then the agents asked are listed with where each stands, read from their conversations; pressing
+    /// it again reads them again.
+    /// </para>
+    /// <para>
+    /// Needs the seat, because the Requests go out as the person.
+    /// </para>
+    /// </remarks>
+    private Task AskWhichAreStillOpen()
+    {
+        if (App is not { } app || Current is not { } project || Voice() is not { } voice)
+        {
+            return Task.CompletedTask;
+        }
+
+        Queue(async token =>
+        {
+            var name = project.Name.Value;
+            var read = await BrokerDirectory.ReadAsync(async () =>
+                await StillOpen.AskAsync(
+                        new BrokerClient(_directory.ClientFor(project)), voice, name, _stillOpen.Latest(), token)
+                    .ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            if (read.Value is not { } round)
+            {
+                Said = $"Could not ask which questions are still open: {read.Problem}";
+
+                return;
+            }
+
+            _stillOpen.Replace([name], round.Asks);
+
+            var standing = await StillOpen.StandingAsync(
+                round.Asks,
+                other => _directory.Find(other) is { } known ? new BrokerClient(_directory.ClientFor(known)) : null,
+                token).ConfigureAwait(false);
+
+            var says = StillOpen.Says(round);
+
+            Said = says;
+            (StillOpenShown, StillOpenSession) = StillOpenView.Open(app, says, standing);
+        });
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>The Inbox command's key, with Alt.</summary>
+    internal const char InboxKey = 'i';
+
+    /// <summary>The Inbox command's name.</summary>
+    internal const string InboxTitle = "Inbox: waiting on you, in flight and closed";
+
+    /// <summary>The key that opens the exchanges a message names, with Alt.</summary>
+    internal const char ReferenceKey = 'g';
+
+    /// <summary>The name of that command when a message names several, or none.</summary>
+    internal const string ReferenceTitle = "Open the exchanges this message names";
+
+    /// <summary>The Inbox, once opened.</summary>
+    internal InboxWindow? InboxShown { get; private set; }
+
+    /// <summary>Its session, so a test can close it as a person would.</summary>
+    internal SessionToken? InboxSession { get; private set; }
+
+    /// <summary>The exchanges last opened from a message.</summary>
+    internal ExchangeView? ExchangeShown { get; private set; }
+
+    /// <summary>Its session.</summary>
+    internal SessionToken? ExchangeSession { get; private set; }
+
+    /// <summary>The references to exchanges in the message under the transcript's cursor.</summary>
+    internal IReadOnlyList<ExchangeReference> ReferencesUnder =>
+        Transcript.Under is { } message && Transcript.MessageText(message) is { } text ? ExchangeReferences.Find(text) : [];
+
+    /// <summary>What the reference command is called on the status line now: the exchange it opens, when there is one.</summary>
+    internal string ReferenceSays =>
+        ReferencesUnder.Select(found => found.Exchange).Distinct().ToList() is [var one]
+            ? $"Open exchange #{one.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+            : ReferenceTitle;
+
+    /// <summary>Opens the Inbox for the project in view (spec 036).</summary>
+    /// <returns>When the read has been queued.</returns>
+    /// <remarks>
+    /// The console's three views from the same derivation (<see cref="Inbox"/>) and the same window, read from this machine's
+    /// settings. Needs no seat to read; a follow-up from it does, because it speaks as the person.
+    /// </remarks>
+    private Task OpenInbox()
+    {
+        if (App is not { } app || Current is not { } project)
+        {
+            return Task.CompletedTask;
+        }
+
+        Queue(async token =>
+        {
+            // The Inbox's own project's seat, read when this runs: the project in view may have changed since the key.
+            var me = Seats?.Held(project.Name.Value)?.Seat.Name ?? Seats?.Known(project.Name.Value)?.Name ?? PersonSeat.On(project.Name);
+            var days = _directory.ManifestPath is { Length: > 0 } root
+                ? Parley.Configuration.ParleySettings.ReadClosedDays(root)
+                : Inbox.DefaultDays;
+
+            var read = await BrokerDirectory.ReadAsync(async () =>
+                await Inbox.ReadAsync(new BrokerClient(_directory.ClientFor(project)), me, days, 0, DateTimeOffset.UtcNow, token)
+                    .ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            if (read.Value is not { } reading)
+            {
+                Said = $"Could not read the Inbox: {read.Problem}";
+
+                return;
+            }
+
+            // **A read can land after the person has moved on**: the Inbox opens only over the project it was read for.
+            if (Current?.Name != project.Name)
+            {
+                return;
+            }
+
+            var (view, session) = InboxWindow.Open(app, project.Name.Value, reading);
+
+            (InboxShown, InboxSession) = (view, session);
+
+            view.Chosen += (_, row) =>
+            {
+                Prompting.Close(app, session);
+
+                Queue(async _ =>
+                {
+                    // **Gone to, not only read.** Reading the row's conversation into the transcript left the place and
+                    // the box on the conversation the person was in, so the next line went there, to an agent pulled into
+                    // it; from the project view nothing was shown at all (review, lens 1 round 25).
+                    if (Current?.Name != project.Name)
+                    {
+                        return;
+                    }
+
+                    await GoAsync(ViewPlace.Into(project.Name).Into(row.Conversation)).ConfigureAwait(false);
+
+                    if (row.Last is { } last && Transcript.Reach(last.Id))
+                    {
+                        Focus(Panes.ToList().IndexOf(Transcript));
+                    }
+                });
+            };
+
+            view.FollowingUp += (_, row) => FollowUp(app, project, row);
+        });
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Asks for a follow-up and sends it: a new Request to the row's agent in the row's conversation.</summary>
+    /// <param name="app">The application.</param>
+    /// <param name="project">The project.</param>
+    /// <param name="row">The row.</param>
+    /// <remarks>A person's line to an agent is a new Request (SPEC.md §5.6), so the row's own exchange is never reopened.</remarks>
+    private void FollowUp(IApplication app, ProjectSettings project, InboxRow row)
+    {
+        // **The Inbox's own project, never whatever is in view when the key is pressed.** A conversation's name is unique
+        // only within a project, so a follow-up sent through another project's broker landed in that project's
+        // conversation of the same name, or started one.
+        var voice = Seats?.Held(project.Name.Value) is { } inboxHeld
+            ? new SeatVoice(_directory.AgentsFor(project), inboxHeld.Seat)
+            : Current?.Name == project.Name ? Voice() : null;
+
+        if (voice is null || !row.FollowUp)
+        {
+            Said = NoSeatToFollowUp;
+
+            return;
+        }
+
+        var asking = Prompting.Text(
+            InboxWindow.FollowUpTitle,
+            $"A new request to {Safe.Text(row.Agent.Value)} in {Safe.Text(row.Conversation)}.");
+        var asked = Prompting.Open(app, asking);
+
+        asking.Done += (_, words) =>
+        {
+            Prompting.Close(app, asked);
+
+            if (string.IsNullOrWhiteSpace(words))
+            {
+                Said = "Nothing was written, so nothing was sent.";
+
+                return;
+            }
+
+            Queue(async token =>
+            {
+                var sent = await voice.RequestOpeningAsync(row.Agent, words, row.Conversation, token).ConfigureAwait(false);
+
+                Said = sent.Says;
+            });
+        };
+    }
+
+    /// <summary>Said when a follow-up is asked for with no seat to send it from.</summary>
+    private const string NoSeatToFollowUp = "A follow-up goes out as you, and you are not seated in this project.";
+
+    /// <summary>Opens the exchanges the message under the cursor names (spec 036, FR-025).</summary>
+    /// <returns>When the read has been queued.</returns>
+    private Task OpenReferences()
+    {
+        if (App is not { } app || Current is not { } project)
+        {
+            return Task.CompletedTask;
+        }
+
+        var numbers = ReferencesUnder.Select(found => found.Exchange).Distinct().ToList();
+
+        if (numbers.Count == 0)
+        {
+            Said = "This message names no exchange.";
+
+            return Task.CompletedTask;
+        }
+
+        Queue(async token =>
+        {
+            var broker = new BrokerClient(_directory.ClientFor(project));
+            var read = await BrokerDirectory.ReadAsync(async () =>
+            {
+                var details = new List<ExchangeDetail>();
+
+                foreach (var number in numbers)
+                {
+                    var conversation = await broker.LocateExchangeAsync(number, token).ConfigureAwait(false);
+
+                    details.Add(await ExchangeDetail.ReadAsync(broker, number, conversation, token).ConfigureAwait(false));
+                }
+
+                return (IReadOnlyList<ExchangeDetail>)details;
+            }).ConfigureAwait(false);
+
+            if (read.Value is not { } details)
+            {
+                Said = $"Could not read the exchanges: {read.Problem}";
+
+                return;
+            }
+
+            (ExchangeShown, ExchangeSession) = ExchangeView.Open(app, details);
+        });
+
+        return Task.CompletedTask;
+    }
+
     private Task AskEveryoneWhatTheyOwn()
     {
         if (App is not { } app || Current is not { } project)
@@ -4666,6 +5130,34 @@ internal sealed partial class Shell : Window
     /// <returns>When the list has been read and opened.</returns>
     private Task ShowConversationFiles() =>
         Conversations.Selected is { } chosen ? ShowFilesIn(chosen.Id) : Task.CompletedTask;
+
+    /// <summary>Lists the selected conversation's images and other files, to open one.</summary>
+    /// <returns>When the list has been read and opened.</returns>
+    private Task ShowConversationMedia() =>
+        Conversations.Selected is { } chosen ? ShowMediaIn(Current ?? Projects.Selected, chosen.Id) : Task.CompletedTask;
+
+    /// <summary>Lists the open conversation's images and other files, to open one.</summary>
+    /// <returns>When the list has been read and opened.</returns>
+    private Task ShowOpenMedia() =>
+        Transcript.Open is { } open ? ShowMediaIn(Current, open) : Task.CompletedTask;
+
+    private Task ShowMediaIn(ProjectSettings? project, string conversation)
+    {
+        if (App is not { } app || project is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        _ = Media.OpenAsync(
+            app, new BrokerClient(_directory.ClientFor(project)), conversation, FileLauncher, Queue, said =>
+            {
+                Said = said;
+
+                return Task.CompletedTask;
+            });
+
+        return Settled;
+    }
 
     private Task ShowFilesIn(string? conversation)
     {
@@ -5090,20 +5582,49 @@ internal sealed partial class Shell : Window
     {
         ArgumentNullException.ThrowIfNull(project);
 
-        var read = await BrokerDirectory.ReadAsync(async () =>
-            await new BrokerClient(_directory.ClientFor(project))
-                .ExportAsync(conversationId, cancellationToken).ConfigureAwait(false))
+        var read = await BrokerDirectory.ReadAsync(
+            () => ReadWithFilesAsync(new BrokerClient(_directory.ClientFor(project)), conversationId, cancellationToken))
             .ConfigureAwait(false);
 
-        Transcript.Show(conversationId, project.Name.Value, read.Value, read.Problem);
+        Transcript.Show(conversationId, project.Name.Value, read.Value.Export, read.Problem, read.Value.Files);
 
-        await FillRoomAsync(project, conversationId, read.Value, cancellationToken).ConfigureAwait(false);
+        await FillRoomAsync(project, conversationId, read.Value.Export, cancellationToken).ConfigureAwait(false);
 
         // Followed only once it has been read. A conversation that could not be read already says why,
         // and asking a broker that did not answer every few seconds would say it again each time.
         if (read.Problem is null)
         {
             StartFollowing(project, conversationId);
+        }
+    }
+
+    /// <summary>Reads a conversation and the files placed in it, which its transcript draws where they were placed.</summary>
+    /// <param name="client">The operator's client.</param>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="cancellationToken">Stops the reads.</param>
+    /// <returns>The conversation and its files.</returns>
+    /// <remarks>
+    /// <b>The files are read apart from the conversation.</b> A file list the broker cannot answer, because the file
+    /// location or a row in it is broken, leaves the transcript without its placement lines rather than leaving the
+    /// person without the conversation. Media (<c>Alt+e</c>) reads the list again and says what went wrong there.
+    /// </remarks>
+    private static async Task<(ConversationExport Export, IReadOnlyList<SharedFile> Files)> ReadWithFilesAsync(
+        BrokerClient client, string conversationId, CancellationToken cancellationToken)
+    {
+        var export = await client.ExportAsync(conversationId, cancellationToken).ConfigureAwait(false);
+
+        if (export.Destroyed is not null)
+        {
+            return (export, []);
+        }
+
+        try
+        {
+            return (export, await Placements.EveryAsync(client, conversationId, cancellationToken).ConfigureAwait(false));
+        }
+        catch (Grpc.Core.RpcException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return (export, []);
         }
     }
 

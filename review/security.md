@@ -50,13 +50,38 @@ Check a change against each; a new page or a new path lookup must keep all of th
   terminal's agents list, enrolment's look at the other catalogued repositories; `RepositoryProjects.Read`, which every
   `parley` command typed in a repository runs; enrolment's read of a declined instructions file; the bulk enrolment's
   copy check and its described plan). The adapter's own read of its `.mcp.json` runs in the agent's own process.
+  On Windows those lookups are one act with the walk (`LocalOpen`): each part is opened as itself relative to the
+  folder already open, a link is followed only from its own handle, and the disk is opened by its device name, so an
+  agent flipping its folder or file to a link mid-lookup gets nothing followed (owner, 2026-11-09: fixed in 035 after
+  lens 2 round 13 won the old check-then-lookup gap within seconds). Withdrawal, the ownership write, `HoldAsync` and
+  `Linked`, `LaunchConfiguration.TryRead`, `RepositoryProjects.Read`, the enrolment scan and plan, `LocalStorage.Problem`
+  (so the web Enrol page and the terminal's workspace check), and the browsers' repository checks use it. Still a check
+  and then a lookup: the folder browsers' listing of a folder's children (and the enrolment scan's listing of a root),
+  the person's placement (`PlaceableFile`), `LocalStorage`'s question of a drive's kind and label, asked of a letter the
+  walk found local, and the node: its workspace-gone judgement asks of the catalogued folder and the folders above it by
+  path, and its start and restart refuse a workspace they could not open cleanly and then start the process in that
+  folder by path, so a flip between the two is followed. The enrolment scan and plan (the existence, worktree, `.mcp.json` and
+  instructions-file questions, and plan validation) and the catalogue-copy check go through the opener; each is held by a test
+  (`LinkRaceTests`, `EnrollCommandTests`, `NothingUnderALinkToAShareIsLookedUpTests`, which puts the link above the
+  last part, where `File.Exists` and `Directory.Exists` do follow it). A file `OverwriteHeldAsync` creates (a first
+  `.mcp.json` or instructions file, a new catalogue) is made relative to the folder the walk opened (`LocalOpen.Create`),
+  and a failed write is undone through the file's own handle (`LocalOpen.Discard`), but that does not close the race:
+  with the folder flipping to a link to a share during the create, Windows itself (pid 4) still dialled the share in
+  three runs of four, most likely a file-system filter resolving the new file's name again by path (2026-11-09;
+  owner, 2026-11-10: recorded, not blocking; staging the file in Parley's own folder and moving it into place, with the
+  other remaining check-then-lookup places, is a follow-up feature after 035). The walk refuses a relative link reached after a junction, since Windows
+  resolves it from the path as reached. Each part's long name is read from its handle,
+  so a short (8.3) spelling is judged as the folder it is. Off Windows a share is a
+  mount and following a link to one offers no sign-in, so the walk is kept and the open is ordinary, except that a file
+  about to be written is still refused when it is itself a link.
 - Enrolment treats any reparse point as a link, whatever its target reads as, and never writes through one.
 - **Only local storage** (the owner's rule): a repository, a deployment's root and an agent's workspace are refused on a
   synced cloud folder (OneDrive, Google Drive, Dropbox, iCloud Drive, Box), a network drive or a virtual file system
   (`LocalStorage`).
 
 **Files between agents**
-- Only `.md` and `.txt` cross. A fetch is written only as `.md` or `.txt`, never under `.git`, `.claude`, `.github` or
+- Only `.md`, `.txt` and image files (PNG, JPEG, GIF, WebP) cross. A fetch is written only under one of those
+  extensions, never under `.git`, `.claude`, `.github` or
   another agent client's settings or rules folder, and never as `CLAUDE.md`, `AGENTS.md` or their kind. The lists are
   partial on purpose; the agent is told never to put a fetched file where a tool would read it as instructions.
 - A placed file is checked against its hash; a tampered one is quarantined and its fetchers and placer are told.

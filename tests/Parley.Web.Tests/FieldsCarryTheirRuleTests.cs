@@ -69,14 +69,15 @@ public sealed class FieldsCarryTheirRuleTests
 
         // Read from the projects page, as there is no Join page: the script is the frame's,
         // so every page carries it.
-        Assert.Contains("querySelectorAll('[data-correct]')", body, StringComparison.Ordinal);
+        // Read as code, comments out, so a script commented out no longer counts as there.
+        var correcting = ScriptSource.Code(body, "querySelectorAll('[data-correct]')");
 
         // A space becomes the separator the rule allows rather than being dropped, which is the
         // owner's own choice and the one thing the character class cannot express. Walked
         // character by character rather than by collapsing the whitespace first: the two give
         // different answers for `1.2 / notes`, and a console that named it differently from the
         // terminal is what one shared rule exists to prevent.
-        Assert.Contains("wasSpace", body, StringComparison.Ordinal);
+        Assert.Contains("wasSpace = true;", correcting, StringComparison.Ordinal);
         Assert.DoesNotContain("replace(/\\s+/g", body, StringComparison.Ordinal);
     }
 }

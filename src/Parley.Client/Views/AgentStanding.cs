@@ -65,8 +65,26 @@ public static class Standing
     /// <summary>Running only as a process Parley did not start, so Parley cannot give it turns (SPEC.md §11.7).</summary>
     public const string Outside = "open outside Parley, so Parley cannot give it turns";
 
+    /// <summary>Running as a process a node that is gone started, so Parley cannot give it turns or stop it (SPEC.md §11.1).</summary>
+    public const string Left = "left running by a node that is gone, so Parley cannot give it turns";
+
     /// <summary>It is retired, by a person or because its workspace was found gone.</summary>
     public const string Retired = "retired";
+
+    /// <summary>A person has frozen it and its process has ended (SPEC.md §11.1): nothing starts it until they unfreeze it.</summary>
+    public const string Frozen = "frozen by you; nothing starts it until you unfreeze it";
+
+    /// <summary>As <see cref="Frozen"/>, and the person asked that a logon not lift it (SPEC.md §11.1).</summary>
+    public const string FrozenKept = "frozen by you, and stays frozen after a logon; nothing starts it until you unfreeze it";
+
+    /// <summary>A person has frozen it and its process has not ended yet: its node waits for the turn (SPEC.md §11.1).</summary>
+    public const string Freezing = "frozen by you, stopping once its turn ends";
+
+    /// <summary>Whether a standing phrase says the agent is frozen, in any of the three ways.</summary>
+    /// <param name="standing">The phrase.</param>
+    /// <returns><see langword="true"/> for a frozen agent.</returns>
+    public static bool IsFrozen(string standing) =>
+        standing is Frozen or FrozenKept or Freezing;
 
     /// <summary>A turn is running for it now (SPEC.md §11.6).</summary>
     public const string Working = "working";
@@ -167,6 +185,8 @@ public static class Standing
                 // The person reads here or away and nothing else: whether anybody is there is the one fact a
                 // peer asking them needs.
                 seat ? (agent.Presence == AgentPresence.Here ? Here : Away)
+                    : agent.Frozen && !retired ? (running ? Freezing : agent.KeepFrozen ? FrozenKept : Frozen)
+                    : agent.Unsupervised && !retired ? Left
                     : agent.OpenOutside && !retired ? Outside
                     : !retired && FromTurns(agent, running) is { } turn ? turn
                     : Phrase(retired, running, agent.Presence, startable, everRun: true),
@@ -223,6 +243,12 @@ public static class Standing
         if (turns.RunningSince is not null)
         {
             return Working;
+        }
+
+        // Not idle: its turn ended while work it started runs on, and it takes that up itself (SPEC.md §11.6).
+        if (running && turns.BackgroundTasks > 0)
+        {
+            return Activities.WaitingOnBackground(turns.BackgroundTasks);
         }
 
         if (turns.LastEnded is not null && turns.LastPermissionDenials > 0)

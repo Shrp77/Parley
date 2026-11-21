@@ -24,7 +24,8 @@ way you would write to a colleague: what you want, and what it is for when that 
 
 **Clarify.** A question back to the requester, for something only the requester can give. The
 requester answers with a clarify of its own. This can go back and forth as long as the two sides
-need.
+need. A clarify stays in its exchange's conversation, so it is only for what that exchange asked; work
+elsewhere that prompts a message to the same agent is a new request in that work's conversation.
 
 **Result.** What the request came to, answered whole with one outcome and one text. The outcome is one of:
 
@@ -52,7 +53,7 @@ Only a person, or an agent that is holding no request, starts a new conversation
 finds unrelated work partway through a request raises it inside the conversation, or finishes
 first.
 
-You can read a conversation whole. An agent sees only its own exchanges, not the others'.
+You can read a conversation whole. An agent is sent only its own exchanges; it may ask for others by number or by search, and you see it do so.
 
 ## The rules that matter
 
@@ -66,7 +67,7 @@ request instead of telling it to try again later. A model told to "retry in a wh
 tokens in a loop or quietly gives up.
 
 **Messages are meant to be short.** A message past 16,000 characters still goes, and its sender is
-told it was long. Past 512,000 it is refused, and that limit is enforced in the database. The limit
+told it was long. Past 512,000 it is refused, and that limit is enforced by the broker, and the database holds a looser second wall. The limit
 is a defence against context poisoning. An unbounded channel between agents would rebuild the
 shared-documentation problem in a new place.
 
@@ -97,7 +98,7 @@ it. A message to it waits until somebody there takes a turn.
 
 ## What an agent can do
 
-An agent has eleven tools. There is no tool for saying who it is.
+An agent has thirteen tools. There is no tool for saying who it is.
 
 | Tool | What it does |
 |---|---|
@@ -106,14 +107,19 @@ An agent has eleven tools. There is no tool for saying who it is.
 | `parley_result` | Report what the request came to, and close the exchange |
 | `parley_inbox` | Collect what is waiting, work you owe first |
 | `parley_agents` | List the agents, what each owns, and whether it is running |
+| `parley_read_exchange` | Read an exchange of the project by its number, as a record of the past |
+| `parley_search_history` | Find messages of the project by words, with a snippet and the exchange number of each |
 | `parley_conclude` | Say whether you are finished with a conversation (a roadmap item's is closed only by you) |
 | `parley_propose_roadmap` | Propose a list of work for you to confirm |
-| `parley_file_place` | Put a `.md` or `.txt` file where other agents can fetch it |
+| `parley_file_place` | Put a `.md`, `.txt` or image file where other agents can fetch it |
 | `parley_file_fetch` | Write a placed file into your own repository, checked against its hash |
 | `parley_file_list` | List the placed files |
 | `parley_file_remove` | Take back files you placed |
 
-The inbox is **pull**, not push. An agent collects its mail when it calls `parley_inbox`. For
+The inbox is **pull**, not push. An agent collects its mail when it calls `parley_inbox`. An agent that has restarted and
+is told "carry on from exchange 555" reads that exchange with `parley_read_exchange`, or finds it by words it remembers with
+`parley_search_history`. Anything it reads this way is a record, framed as another participant's inert words, and **you see
+each read**: beneath the exchange's first message in the console and the terminal, and one line beside each conversation for each agent that searched. For
 Claude Code, [a channel](claude-code.md#mail-that-arrives-while-a-session-is-open) can nudge an
 open session so that nobody has to type.
 
@@ -136,7 +142,7 @@ the answer can be taken as it stands, otherwise once you accept it. You can revi
 ## Files
 
 Some things are too big or too exact for a message: a schema, a price list, a generated client.
-An agent can **place** a `.md` or `.txt` file with Parley, and another agent **fetches** it onto
+An agent can **place** a `.md`, `.txt` or image file with Parley, and another agent **fetches** it onto
 disk in its own repository. The contents go from disk to disk and never into anyone's context.
 Code travels as `Name.cs.txt`, so nothing that runs can be opened by accident. A file is checked
 against its SHA-256 hash when it is fetched. A placed file is never changed: a new version goes

@@ -1,0 +1,174 @@
+@model Parley.Web.Pages.InboxModel
+@using Parley.Client.Rendering
+@using Parley.Client.Seating
+@{
+    var view = Model.Showing;
+    var rows = Model.RowsOf(view);
+
+    string Older(int older)
+    {
+        var query = Microsoft.AspNetCore.Http.QueryString.Create(
+            new[] { ("view", "closed"), ("older", older > 0 ? older.ToString(System.Globalization.CultureInfo.InvariantCulture) : null), ("q", Model.Q), ("scope", Model.Scope) }
+                .Where(pair => !string.IsNullOrEmpty(pair.Item2))
+                .Select(pair => new KeyValuePair<string, string?>(pair.Item1, pair.Item2)));
+
+        return "/Inbox" + query;
+    }
+}
+@* **In flight and Closed** (spec 036): every exchange the person waits on an agent for, and every one they were on that
+   closed within the window, read from the broker's graph and each exchange's own state. Nothing here is stored, and reading
+   it delivers nothing. Each row opens its conversation and offers a follow-up, a new Request in the same conversation. *@
+@if (view == InboxView.Closed)
+{
+    var reading = Model.Readings.Select(r => r.Reading).FirstOrDefault(r => r is not null);
+
+    <p class="view-card inbox-window-said">
+        @if (Model.Older == 0)
+        {
+            <text>Closed in the last @Model.ClosedDays @(Model.ClosedDays == 1 ? "day" : "days").</text>
+        }
+        else if (reading is not null)
+        {
+            <text>Closed from @reading.FromUtc.ToLocalTime().ToString("d MMM", System.Globalization.CultureInfo.InvariantCulture)
+            to @reading.UntilUtc.ToLocalTime().ToString("d MMM", System.Globalization.CultureInfo.InvariantCulture).</text>
+        }
+        <a href="@Older(Model.Older + 1)">Show older</a>
+        @if (Model.Older > 0)
+        {
+            <a href="@Older(Model.Older - 1)">Show newer</a>
+        }
+        <a href="/Settings">Change the window</a>
+    </p>
+}
+
+<section class="view-card dgrid" style="--cols: minmax(9rem, 1.2fr) minmax(7rem, 0.8fr) minmax(8rem, 1.2fr) 5rem 8rem minmax(9rem, 1fr)@(view == InboxView.InFlight ? " 9.5rem" : ""); --min: @(view == InboxView.InFlight ? "58" : "50")rem;"
+         aria-label="@(view == InboxView.InFlight ? "In flight" : "Closed")">
+    <div class="dgrid-inner" role="table">
+        <div class="dgrid-head" role="row">
+            <span role="columnheader">@(view == InboxView.InFlight ? "Waiting on" : "With")</span>
+            <span role="columnheader">Project</span>
+            <span role="columnheader">Conversation</span>
+            <span role="columnheader">Exchange</span>
+            <span role="columnheader">@(view == InboxView.InFlight ? "Last moved" : "Closed")</span>
+            <span role="columnheader">@(view == InboxView.InFlight ? "Where it stands" : "How it ended")</span>
+            @if (view == InboxView.InFlight)
+            {
+                <span role="columnheader"><span class="visually-hidden">Ask it to look</span></span>
+            }
+        </div>
+
+        @foreach (var (project, row) in rows)
+        {
+            var kept = Model.FollowUpKept(project, row.Exchange);
+
+            <details class="dgrid-row" role="row" open="@kept" data-exchange-row="@row.Exchange">
+                <summary class="dgrid-line">
+                    <span role="cell">
+                        <span class="who slot-@Palette.SlotFor(row.Agent)" aria-hidden="true" style="display:inline-grid;vertical-align:middle;margin-right:0.5rem;width:1.6rem;height:1.6rem;font-size:0.58rem;">@Palette.BadgeFor(row.Agent)</span>
+                        <strong class="name" title="@row.Agent.Value">@row.Agent.Role</strong>
+                        <span class="faint from-machine">@@@row.Agent.Machine</span>
+                    </span>
+                    <span role="cell">@project</span>
+                    <span role="cell" class="faint">@row.Conversation</span>
+                    <span role="cell" class="faint">#@row.Exchange</span>
+                    <span role="cell" class="faint">@((row.Ended?.ClosedUtc ?? row.MovedUtc).ToLocalTime().ToString("d MMM HH:mm", System.Globalization.CultureInfo.InvariantCulture))</span>
+                    <span role="cell">
+                        @if (row.Standing is { } standing)
+                        {
+                            <span class="chip-state state-@standing.State.ToString().ToLowerInvariant()" title="@standing.Detail">@standing.Chip</span>
+                            @if (standing.FlagWords is { } flag)
+                            {
+                                <span class="chip-state flag">@flag</span>
+                            }
+                        }
+                        else if (row.Ended is { } ended)
+                        {
+                            <span class="chip-state">@ended.Words</span>
+                        }
+                    </span>
+                    @if (view == InboxView.InFlight)
+                    {
+                        <span role="cell">
+                            @if (!Parley.Core.Facilitation.Is(row.Agent) && !Parley.Core.PersonSeat.Is(row.Agent))
+                            {
+                                @* Starts the agent, or gives it a turn if it is running, so it collects what is waiting. One click: it costs the
+                                   agent a turn and changes nothing it owes. The view and filters go with the post, so the page comes back as it was. *@
+                                <form method="post" asp-page-handler="Nudge" asp-route-view="@Model.View" asp-route-older="@(Model.Older > 0 ? Model.Older : null)" asp-route-scope="@Model.Scope" asp-route-q="@Model.Q" class="row-act">
+                                    <input type="hidden" name="For" value="@project" />
+                                    <input type="hidden" name="Agent" value="@row.Agent.Value" />
+                                    <button type="submit" class="tonal" title="Start @row.Agent.Role, or give it a turn if it is already running, so it looks at what is waiting for it. It costs it a turn and changes nothing it owes.">Ask to look now</button>
+                                </form>
+                            }
+                        </span>
+                    }
+                </summary>
+
+                <div class="dgrid-detail">
+                    <article class="letter" data-project="@project">
+                        <p class="attribution">
+                            @if (row.Standing is { } why)
+                            {
+                                <span>@why.Chip: @why.Detail</span>
+                            }
+                            @if (row.Ended is { By: { } by } && row.Ended.How != Ending.Closed)
+                            {
+                                <span>@row.Ended.Words, by @by.Value.</span>
+                            }
+                            <a href="/Conversations/Detail?project=@Uri.EscapeDataString(project)&amp;id=@Uri.EscapeDataString(row.Conversation)@(row.Last is { } last ? $"#m{last.Id}" : string.Empty)">Open in @row.Conversation</a>
+                        </p>
+                        @* The whole exchange, under this line, as a reference to it opens it anywhere. *@
+                        <partial name="_MessageBody" model="@(new Payload($"Show exchange #{row.Exchange.ToString(System.Globalization.CultureInfo.InvariantCulture)} here", [], null))" />
+
+                        @if (row.Last is { } said)
+                        {
+                            <p class="faint">@Speaker.From(said) to @Speaker.To(said), @LocalTime.Clock(said.CreatedUtc):</p>
+                            <partial name="_MessageBody" model="@Payload.Read(said.PayloadJson)" />
+                        }
+                        else
+                        {
+                            <p class="faint">Its last words were removed by retention.</p>
+                        }
+
+                        @if (row.FollowUp)
+                        {
+                            @* A person's line to an agent is a new Request (SPEC.md §5.6): this never reopens the exchange. *@
+                            @* The view, window and filters go with the post, so a refused follow-up comes back to the row it was
+                               written on, with the words still in its box, and a sent one stays where the person was. *@
+                            <form method="post" asp-page-handler="FollowUp" asp-route-view="@Model.View" asp-route-older="@(Model.Older > 0 ? Model.Older : null)" asp-route-scope="@Model.Scope" asp-route-q="@Model.Q" class="reply" enctype="multipart/form-data">
+                                <input type="hidden" name="For" value="@project" />
+                                <input type="hidden" name="Exchange" value="@row.Exchange" />
+                                <input type="hidden" name="Agent" value="@row.Agent.Value" />
+                                <input type="hidden" name="Conversation" value="@row.Conversation" />
+                                <partial name="_Composer" model="@(new Parley.Web.ComposerBox(
+                                    "Words",
+                                    kept ? Model.Words : null,
+                                    Id: $"f-{project}-{row.Exchange}",
+                                    Rows: 2,
+                                    Label: $"Follow up with {row.Agent.Role}: a new request in {row.Conversation}",
+                                    Attach: true,
+                                    Attached: kept ? [.. Model.Attached] : null,
+                                    Draft: $"{project}/follow-up/{row.Exchange}",
+                                    Mentions: Model.MentionsIn(project)))" />
+                                <button type="submit">Send follow-up</button>
+                            </form>
+                        }
+                    </article>
+                </div>
+            </details>
+        }
+
+        @if (rows.Count == 0)
+        {
+            <p class="dgrid-empty">
+                @if (view == InboxView.InFlight)
+                {
+                    <text>You are not waiting on anybody.</text>
+                }
+                else
+                {
+                    <text>Nothing you were part of closed in this window.</text>
+                }
+            </p>
+        }
+    </div>
+</section>

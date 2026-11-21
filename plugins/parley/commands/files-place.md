@@ -1,5 +1,5 @@
 ---
-description: Place a .md or .txt file from this machine in a Parley conversation, as the person, so any agent in the project can fetch it.
+description: Place a .md, .txt or image file from this machine in a Parley conversation, as the person, so any agent in the project can fetch it.
 disable-model-invocation: true
 ---
 
@@ -20,7 +20,7 @@ The conversation must already exist. If the person did not say which, ask; `/par
 that hold files, and the terminal or web console shows every conversation. Do not choose one for them.
 
 Show the person what it says. It says the file was placed, with its size and the first twelve characters of its sha256,
-or that the same content was already there, or why it was refused. Only `.md` and `.txt` can be placed, and characters
+or that the same content was already there, or why it was refused. Only `.md`, `.txt`, `.png`, `.jpg`, `.jpeg`, `.gif` and `.webp` can be placed, and characters
 other than letters, digits, `.`, `_` and `-` in the name become `_`; it says when that happened.
 
 A placed file is never changed. If the name already holds other content it is refused: place the new version under a

@@ -188,6 +188,10 @@ public sealed class Pruner(SqliteConnection connection)
         DELETE FROM roadmap_proposals
          WHERE state <> 'waiting'
            AND unixepoch(decided_utc) <= @NowSeconds - @MaximumAgeSeconds;
+
+        -- What agents read of the past, for the person (section 5.8): a tally, kept until the agent last read, up to the age cap, whether or not the messages are.
+        DELETE FROM history_reads
+         WHERE unixepoch(last_utc) <= @NowSeconds - @MaximumAgeSeconds;
         """;
 
     private readonly SqliteConnection _connection =

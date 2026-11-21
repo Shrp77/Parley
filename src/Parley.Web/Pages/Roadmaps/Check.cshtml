@@ -1,0 +1,66 @@
+@page
+@model Parley.Web.Pages.Roadmaps.CheckModel
+@{
+    ViewData["Title"] = "Ask the agents about a roadmap";
+}
+
+<h1>Ask the agents about this roadmap</h1>
+
+@if (Model.Problem is { Length: > 0 } problem)
+{
+    <p class="unreachable" role="alert">@problem</p>
+}
+
+@if (Model.Refused.Count > 0)
+{
+    <ul class="sent" role="status">
+        @foreach (var (agent, outcome) in Model.Refused)
+        {
+            <li><strong>@agent</strong> @outcome</li>
+        }
+    </ul>
+}
+
+@if (Model.Roadmap is { } roadmap)
+{
+    <h2>#@roadmap.Number @roadmap.Title</h2>
+
+    @if (Model.Agents.Count > 0)
+    {
+        @* Said before anything is sent, as every action on this console is: who, what, what it costs and what it changes. *@
+        <p>
+            This sends <strong>every agent in the project</strong> (@Model.Agents.Count) the message below, from you, in a new
+            conversation named <strong>@(Parley.Web.Pages.Roadmaps.CheckModel.Prefix(roadmap.Number))</strong> and the date and
+            time. An agent that is not running is started to read it, so this uses every agent's time. Each answers in its
+            own Result: where each item stands, what can be removed, and what is missing and where it goes.
+        </p>
+        <p>
+            Nothing in the roadmap changes. When they have answered, the roadmap's page offers to turn the answers into one
+            proposal for you to confirm. The agents are asked not to propose a roadmap in answer, because confirming one
+            discards the others.
+        </p>
+
+        <p>Going to: @string.Join(", ", Model.Agents.Select(a => a.Value)).</p>
+
+        <form method="post" class="move-form" enctype="multipart/form-data">
+            <p>
+                <partial name="_Composer" model="@(new Parley.Web.ComposerBox(
+                    "Says", Model.Says, Id: "says", Rows: 18, Label: "The message. Change it if you want to ask something else.", Attach: true,
+                    Draft: $"{Model.Project}/roadmap-check/{Model.Id}",
+                    Mentions: [.. Model.Agents.Select(agent => agent.Value)]))" />
+            </p>
+            <p class="move-actions">
+                <button type="submit">Ask @Model.Agents.Count agents</button>
+                <a class="button quiet" href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@roadmap.Id">Do not ask, and go back</a>
+            </p>
+        </form>
+    }
+    else
+    {
+        <nav class="page-links" aria-label="This project"><a href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@roadmap.Id">Back to the roadmap</a></nav>
+    }
+}
+else
+{
+    <nav class="page-links" aria-label="This project"><a href="/Roadmaps?project=@Model.Project">Back to the roadmaps in @Model.Project</a></nav>
+}

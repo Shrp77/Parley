@@ -10,6 +10,20 @@ A pull request merges when three lenses each pass three times in a row on the sa
 | [security.md](security.md) | Lens 2: security and data integrity, and the web console's defences |
 | [surface.md](surface.md) | Lens 3: API surface and maintainability: SPEC, docs, plugin prose and tests against the code |
 
+## Before the merge: the documentation and the website
+
+The lenses and the smoke run are not the last step. Before a pull request that changes what a person or an agent sees
+merges to `main`:
+
+- **The documentation says what it does.** `README.md`, `docs/` and the plugin's README describe the change, and
+  nothing in them still says the old thing. This is a docs-only commit, so it keeps the lens counts.
+- **The Parley website has been asked to say it too.** The website is another repository with its own agent, so this
+  repository never edits it: send that agent a `parley_request` (find it with `parley_agents`, or ask the person) naming
+  what changed, which claims on the site are now wrong, and what done looks like. The merge waits for its result, or
+  for the person to say it need not.
+
+Say in the pull request body which docs changed and which exchange asked the website.
+
 ## Two parts
 
 **The floor runs as tests.** `tests/Parley.Spec.Tests` checks SPEC.md: section references resolve, no table is

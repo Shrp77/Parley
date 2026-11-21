@@ -26,8 +26,9 @@ namespace Parley.Web.Pages.Projects;
 /// </para>
 /// <para>
 /// <b>Opening launches on the machine running this console, and only there.</b> The broker says which machine holds
-/// the location; a console viewed from another machine's browser opens files where the console runs, or says where
-/// they are when that is not the broker's machine. Every action is a POST, so a link or an
+/// the location; on that machine the file opens in place, and anywhere else the console reads it through the broker and
+/// opens a checked copy (<see cref="LocalLauncher.OpenPlacedAsync"/>). A console viewed from another machine's browser
+/// opens files where the console runs. Every action is a POST, so a link or an
 /// image elsewhere cannot open, remove or prune anything, and Razor Pages refuses a POST without this page's
 /// antiforgery token.
 /// </para>
@@ -48,7 +49,7 @@ public sealed class FilesModel(BrokerDirectory directory) : PageModel
     /// </para>
     /// <para>
     /// Set here rather than left to the server's default, which is 30 MB on Kestrel and none at all elsewhere, so what
-    /// the console accepts does not depend on which server hosts it. 256 MiB is far past any <c>.md</c> or <c>.txt</c>
+    /// the console accepts does not depend on which server hosts it. 256 MiB is far past any file
     /// a person hands over; the command line and the terminal stream from disk and have no bound but the broker's
     /// disk.
     /// </para>
@@ -292,7 +293,7 @@ public sealed class FilesModel(BrokerDirectory directory) : PageModel
     /// <returns>The page, saying what happened.</returns>
     /// <remarks>
     /// From the query by choice: each file's button carries its own file in its action, so one form serves every row.
-    /// Opening changes nothing and opens only a <c>.md</c> or <c>.txt</c> file the broker holds, and a POST still needs
+    /// Opening changes nothing and opens only a kind of file that can be placed, that the broker holds, and a POST still needs
     /// the page's antiforgery token.
     /// </remarks>
     public async Task<IActionResult> OnPostOpenAsync([FromQuery] string? file, [FromQuery] string? inConversation)
@@ -308,11 +309,21 @@ public sealed class FilesModel(BrokerDirectory directory) : PageModel
         var located = await BrokerDirectory.ReadAsync(async () =>
             await broker.DescribeFileLocationAsync(inConversation, file, token).ConfigureAwait(false)).ConfigureAwait(false);
 
-        Outcome = !located.Reachable
-            ? located.Problem
-            : located.Value!.Location is { } location
-                ? Launcher.OpenFile(location).Said
-                : located.Value.Refusal?.Detail ?? "That file is not in the location.";
+        if (located.Reachable && located.Value!.Location is { } location)
+        {
+            // In place on the broker's machine, a checked copy anywhere else: the terminal's way, through one helper.
+            var opened = await BrokerDirectory.ReadAsync(async () =>
+                await Launcher.OpenPlacedAsync(broker, inConversation, file ?? string.Empty, null, location, token).ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            Outcome = opened.Reachable ? opened.Value!.Said : opened.Problem;
+        }
+        else
+        {
+            Outcome = !located.Reachable
+                ? located.Problem
+                : located.Value!.Refusal?.Detail ?? "That file is not in the location.";
+        }
 
         await LoadAsync(project).ConfigureAwait(false);
 

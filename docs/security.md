@@ -48,7 +48,7 @@ prioritises, closes or overrides anything.
 
 **Context poisoning.** What one agent sends lands in another's working memory, so:
 
-- **Messages are limited** to 512,000 characters, enforced in the database. That is a large share of
+- **Messages are limited** to 512,000 characters (UTF-16 units), enforced by the broker and again by the database. That is a large share of
   an agent's context, on the owner's decision that being able to say what is needed matters more.
   Every message's length is recorded, so the limit can be judged from what happens.
 - **Message text is inert data.** A payload is never parsed for an address or a command. An
@@ -56,15 +56,24 @@ prioritises, closes or overrides anything.
   sent.
 - **Messages arrive wrapped** so that a peer's words are marked as data, not instruction. A
   request never overrides the receiver's standing instructions.
-- **No agent can read the log or search it.** There is no shared memory to poison.
-- **Files go to disk, not into context.** Only `.md` and `.txt` files can be placed, so code
+- **An agent can read the log, framed, bounded and in view.** It can read an exchange by number or search for words, and
+  nothing else of the past. What it reads is a record in an envelope that says so, a reply and a page have ceilings, a caller
+  has a rate, nothing is pushed into any context, it changes nothing, and every read is shown to you.
+- **Files go to disk, not into context.** Only `.md`, `.txt` and image files (PNG, JPEG, GIF, WebP) can be placed, so code
   travels as `Name.cs.txt` and nothing that runs can be opened by accident. A fetched file is
-  another participant's data, never instructions. It is written only as a `.md` or
-  `.txt` file, never under `.git`, `.claude`, `.github` or another agent client's settings or rules folder, and
+  another participant's data, never instructions. It is written only as a `.md`, `.txt`
+  or image file, never under `.git`, `.claude`, `.github` or another agent client's settings or rules folder, and
   never as `CLAUDE.md`, `AGENTS.md` and the other instruction files Parley knows of. No list can
   name every place a tool reads instructions from, so the agent is told never to put a fetched
   file where one would. Files are checked against their
   SHA-256 hash when fetched.
+- **The web console shows placed images, including an agent's.** This is a recorded reduction in a
+  control, made so that the answer to "what does this look like" can be seen in the conversation.
+  Showing an image does not change what a model reads from one: words in an image still reach any
+  model that opens it. The new risk is to your browser, since the broker never inspects a placed file's
+  bytes. So the console serves an image only from its Media page, only for an image name, and only
+  when the file's first bytes are the format its name claims. It tells the browser not to guess the
+  type and not to run anything in the response, and it shows an image over 20 MiB only when you ask.
 - **An agent's answer becomes its ownership line with nobody reading it, by default.** Auto
   Accept is a recorded reduction in a control: peers route by a line no person checked. It is
   recorded as `automatic`, shown for review on every surface, kept in the agent's own words, and
@@ -95,7 +104,13 @@ console page. It cannot choose what you send, to whom, or skip a confirmation: w
 comes only from the form you see, and every page that acts shows which project it acts in. Nor can it
 make the console look up a folder on another machine: a path naming a network share or a device,
 or reaching one through a folder link, is refused before anything touches the disk, because on Windows the lookup alone would offer your
-sign-in to that machine.
+sign-in to that machine. On Windows an agent's folder is opened one part at a time, and a link is followed only
+when Parley has read where it leads and that is on this machine, so most lookups follow nothing to a share even when
+an agent swaps its folder for a link while Parley is looking. Some still check first and act afterwards, and an agent
+that swaps its folder at exactly that moment can still make Windows reach a share. Among them: creating a new file in
+its folder (a first `.mcp.json` or `CLAUDE.md`), the node starting or restarting the agent there, the folder browsers
+and the enrolment scan listing a folder, placing a file you name by its path, and a `parley` command typed in a
+repository finding its `.git`. Closing those is planned work.
 
 **Silent damage to your files.** Project files are written atomically, preserve what they do not
 understand, and refuse to write when anything was left out of a read. Nothing is kept on a synced cloud

@@ -155,7 +155,7 @@ public static class ServeCommand
 
             try
             {
-                runtime = BrokerRuntime.Open(project.Name, project.Store, BrokerOptions.Default, TimeProvider.System);
+                runtime = BrokerRuntime.Open(project.Name, project.Store, BrokerOptions.Default with { ResumePolicy = Core.ResumePolicy.Always }, TimeProvider.System);
             }
             catch (StoreHeldException held)
             {
@@ -883,7 +883,7 @@ public static class ServeCommand
         {
             await output.WriteLineAsync(
                 $"{who} stopped: {Inert.Line(failure.Message)}. The broker is still serving; " +
-                "nothing on this machine will be started until `parley up` runs again.")
+                "nothing on this machine will be started until the broker is restarted or `parley up` runs.")
                 .ConfigureAwait(false);
 
             return Unavailable;

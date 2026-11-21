@@ -65,6 +65,21 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         return row?.ToDomain();
     }
 
+    /// <summary>The conversation an exchange is in now.</summary>
+    /// <param name="id">The exchange's primary key.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The conversation, or <see langword="null"/> when no exchange has that identity or it is in none.</returns>
+    /// <remarks>
+    /// Read from the exchange's own row, which a move rewrites (§5.0), so a reference to an exchange that moved finds where it
+    /// is rather than where it was.
+    /// </remarks>
+    public async Task<string?> GetConversationOfAsync(long id, CancellationToken cancellationToken = default) =>
+        await _connection.QuerySingleOrDefaultAsync<string?>(
+            new CommandDefinition(
+                "SELECT conversation_id FROM exchanges WHERE id = @Id;",
+                new { Id = id },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
     /// <summary>Loads every open exchange.</summary>
     /// <param name="transaction">The transaction to read within, when the result will inform a write.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
@@ -155,11 +170,11 @@ public sealed class ExchangeRepository(SqliteConnection connection)
                   AND owed_by = @Agent
                   AND NOT EXISTS (SELECT 1 FROM messages m
                                    WHERE m.exchange_id = exchanges.id
-                                     AND m.to_agent = @Agent
+                                     AND +m.to_agent = @Agent
                                      AND m.delivered_utc IS NULL)
                   AND EXISTS (SELECT 1 FROM messages m
                                WHERE m.exchange_id = exchanges.id
-                                 AND m.to_agent = @Agent);
+                                 AND +m.to_agent = @Agent);
                 """,
                 new { Agent = agent.Value },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);

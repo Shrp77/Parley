@@ -339,6 +339,64 @@ public sealed class MessageRepository(SqliteConnection connection)
         return [.. rows.Select(r => r.ToDomain())];
     }
 
+    /// <summary>The newest message each sender wrote in an exchange, as a condition.</summary>
+    /// <remarks>
+    /// <b>The unary plus on <c>conversation_id</c> keeps the planner on the by-exchange index.</b> An exchange lies in one
+    /// conversation, so the test only guards against a stray row; written plainly, the planner chose the by-conversation index,
+    /// which also satisfies the GROUP BY, and walked every message of the conversation once for each exchange: 5 ms an exchange
+    /// at 2,590 messages, 72 s for the Inbox of 200 such conversations. A test reads the plan.
+    /// </remarks>
+    internal const string NewestPerSender =
+        "id IN (SELECT max(id) FROM messages WHERE exchange_id = @Exchange AND +conversation_id = @Conversation GROUP BY from_agent)";
+
+    /// <summary>The newest Result of an exchange, as a condition; see <see cref="NewestPerSender"/> for the unary plus.</summary>
+    internal const string NewestResult =
+        "id = (SELECT max(id) FROM messages WHERE exchange_id = @Exchange AND +conversation_id = @Conversation AND type = 'result')";
+
+    /// <summary>Reads the newest message each sender wrote in each exchange and the newest Result of each, in this conversation.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="exchangeIds">The exchanges to read.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Those messages, oldest first, each once.</returns>
+    /// <remarks>
+    /// For a surface that summarises a conversation: the newest message of the two parties says who they are and what each
+    /// last said (what the person owes a reply to is the agent's newest), and the newest Result says how an exchange ended.
+    /// Two reads an exchange through the by-exchange index, so the cost follows the exchanges and not the messages in the
+    /// conversation.
+    /// </remarks>
+    public async Task<IReadOnlyList<Message>> GetLatestOfExchangesAsync(
+        string conversationId,
+        IEnumerable<long> exchangeIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(conversationId);
+        ArgumentNullException.ThrowIfNull(exchangeIds);
+
+        var found = new Dictionary<long, Message>();
+
+        foreach (var exchange in exchangeIds.Distinct())
+        {
+            foreach (var where in new[] { NewestPerSender, NewestResult })
+            {
+                var rows = await _connection.QueryAsync<MessageRow>(
+                    new CommandDefinition(
+                        $"""
+                        {SelectColumns}
+                        WHERE {where};
+                        """,
+                        new { Exchange = exchange, Conversation = conversationId },
+                        cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+                foreach (var row in rows)
+                {
+                    found[row.Id] = row.ToDomain();
+                }
+            }
+        }
+
+        return [.. found.Values.OrderBy(m => m.Id)];
+    }
+
     /// <summary>Loads the Request an exchange was opened with.</summary>
     /// <param name="exchangeId">The exchange.</param>
     /// <param name="transaction">The transaction to read within, or <see langword="null"/>.</param>

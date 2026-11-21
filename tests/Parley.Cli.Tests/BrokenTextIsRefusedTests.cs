@@ -15,7 +15,7 @@ namespace Parley.Cli.Tests;
 /// <see cref="InvalidOperationException"/> out of it, even in another server's <c>env</c> that nobody reads. An agent
 /// could not attach and every <c>parley</c> command in the repository crashed.
 /// </remarks>
-[Unit]
+[Integration]
 public sealed class BrokenTextIsRefusedTests
 {
     // A lone high surrogate in a top-level name.

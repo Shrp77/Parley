@@ -34,8 +34,10 @@ public sealed class ToolSurfaceTests
         "parley_file_remove",
         "parley_inbox",
         "parley_propose_roadmap",
+        "parley_read_exchange",
         "parley_request",
-        "parley_result"
+        "parley_result",
+        "parley_search_history"
     ];
 
     private static IEnumerable<MethodInfo> ToolMethods() =>

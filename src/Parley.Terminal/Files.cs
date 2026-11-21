@@ -288,7 +288,18 @@ internal static class Files
         return (files, placements, notListed);
     }
 
-    private static async Task OpenFileAsync(
+    /// <summary>Opens one file to read: in place on the broker's machine, or a copy read through the broker anywhere else.</summary>
+    /// <param name="client">The operator's client.</param>
+    /// <param name="file">The file.</param>
+    /// <param name="launcher">Opens files on this machine.</param>
+    /// <param name="cancellationToken">Stops the reads.</param>
+    /// <param name="done">Told what to say.</param>
+    /// <returns>When it has been opened or refused.</returns>
+    /// <remarks>
+    /// A copy is the same file, because a placed file never changes (SPEC.md §10.2); it is how a person at the end of a
+    /// tunnel sees an agent's image in a terminal, which cannot draw one.
+    /// </remarks>
+    internal static async Task OpenFileAsync(
         BrokerClient client,
         SharedFile file,
         LocalLauncher launcher,
@@ -297,6 +308,18 @@ internal static class Files
     {
         var read = await BrokerDirectory.ReadAsync(
             () => client.DescribeFileLocationAsync(file.ConversationId, file.Name.Value, cancellationToken)).ConfigureAwait(false);
+
+        if (read.Reachable && read.Value!.Location is { } elsewhere && !launcher.IsOnThisMachine(elsewhere))
+        {
+            // The one way every surface opens a file, into the launcher's own copies folder.
+            var copied = await BrokerDirectory.ReadAsync(
+                () => launcher.OpenPlacedAsync(client, file.ConversationId, file.Name.Value, file.Sha256, elsewhere, cancellationToken))
+                .ConfigureAwait(false);
+
+            await done(!copied.Reachable ? copied.Problem! : Safe.Text(copied.Value!.Said)).ConfigureAwait(false);
+
+            return;
+        }
 
         await done(!read.Reachable
             ? read.Problem!

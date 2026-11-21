@@ -136,11 +136,13 @@ internal sealed class TranscriptRegion : FrameView
     /// <param name="project">The project it came from.</param>
     /// <param name="export">The messages and the state of their exchanges, or null when unread.</param>
     /// <param name="problem">Why the broker could not be asked, or null when it could.</param>
+    /// <param name="files">The conversation's placed files, each drawn where it was placed (SPEC.md §9.5).</param>
     internal void Show(
         string conversationId,
         string project,
         ConversationExport? export,
-        string? problem)
+        string? problem,
+        IReadOnlyList<SharedFile>? files = null)
     {
         // **Opened at the end, and read again at the end when the reader was there**: a conversation taking place
         // is tailed. A conversation is read for what has just been said, so the newest message is where somebody
@@ -175,7 +177,7 @@ internal sealed class TranscriptRegion : FrameView
             _tailing = true;
         }
 
-        Mark(Laid(conversationId, project, export));
+        Mark(Laid(conversationId, project, export, files));
     }
 
     /// <summary>Whether what is on screen says the reader is at the end, judged when the reader has just scrolled.</summary>
@@ -219,6 +221,7 @@ internal sealed class TranscriptRegion : FrameView
     /// <param name="conversationId">Which conversation this read was of.</param>
     /// <param name="project">The project it came from.</param>
     /// <param name="export">What the broker holds now.</param>
+    /// <param name="files">The conversation's placed files now.</param>
     /// <returns>Whether anything was redrawn.</returns>
     /// <remarks>
     /// <para>
@@ -236,7 +239,7 @@ internal sealed class TranscriptRegion : FrameView
     /// exchange changing state is a different transcript with the same number of messages in it.
     /// </para>
     /// </remarks>
-    internal bool Follow(string conversationId, string project, ConversationExport export)
+    internal bool Follow(string conversationId, string project, ConversationExport export, IReadOnlyList<SharedFile>? files = null)
     {
         ArgumentNullException.ThrowIfNull(export);
 
@@ -247,7 +250,7 @@ internal sealed class TranscriptRegion : FrameView
             return false;
         }
 
-        var lines = Laid(conversationId, project, export);
+        var lines = Laid(conversationId, project, export, files);
         var written = Safe.Lines(string.Join(Environment.NewLine, lines.Select(line => line.Text)));
 
         if (string.Equals(written, _written, StringComparison.Ordinal))
@@ -380,13 +383,14 @@ internal sealed class TranscriptRegion : FrameView
     /// <param name="conversationId">Which conversation.</param>
     /// <param name="project">The project it came from.</param>
     /// <param name="export">What the broker holds, or null when it holds nothing.</param>
+    /// <param name="files">Its placed files, or null to leave them out.</param>
     /// <returns>The lines to draw.</returns>
     /// <remarks>
     /// One layout for opening and for following, so the two cannot come to disagree about what a
     /// destroyed or an empty conversation looks like — which would make every refresh of one a redraw.
     /// </remarks>
     private IReadOnlyList<TranscriptLine> Laid(
-        string conversationId, string project, ConversationExport? export)
+        string conversationId, string project, ConversationExport? export, IReadOnlyList<SharedFile>? files)
     {
         if (export?.Destroyed is { } gone)
         {
@@ -405,7 +409,8 @@ internal sealed class TranscriptRegion : FrameView
             ];
         }
 
-        if (export is null || export.Messages.Count == 0)
+        // A conversation a file started has no message yet, and the file is still what is in it (SPEC.md §9.5).
+        if (export is null || (export.Messages.Count == 0 && files is not { Count: > 0 }))
         {
             // An emptied conversation says where everything went (SPEC.md §5.0).
             return export?.Moves is { Count: > 0 } moves
@@ -421,13 +426,14 @@ internal sealed class TranscriptRegion : FrameView
                 ];
         }
 
-        return Lay(conversationId, project, export);
+        return Lay(conversationId, project, export, files);
     }
 
     /// <summary>Lays a conversation out for reading.</summary>
     /// <param name="conversationId">Which conversation.</param>
     /// <param name="project">The project it came from.</param>
     /// <param name="export">Its messages and their exchange states.</param>
+    /// <param name="files">Its placed files, or null to leave them out.</param>
     /// <returns>The transcript, line by line and each line knowing what it is.</returns>
     /// <remarks>
     /// <para>
@@ -443,7 +449,7 @@ internal sealed class TranscriptRegion : FrameView
     /// </para>
     /// </remarks>
     private static IReadOnlyList<TranscriptLine> Lay(
-        string conversationId, string project, ConversationExport export) =>
+        string conversationId, string project, ConversationExport export, IReadOnlyList<SharedFile>? files) =>
     [
         new TranscriptLine(
             $"Conversation {conversationId} in project {project}", LineKind.Header, null),
@@ -454,7 +460,7 @@ internal sealed class TranscriptRegion : FrameView
         new TranscriptLine(new string(' ', Reading.Indent) + LocalTime.Note(), LineKind.Body, null),
         .. Related(export),
         new TranscriptLine(string.Empty, LineKind.Blank, null),
-        .. Reading.Lines(export, conversation: conversationId),
+        .. Reading.Lines(export, conversation: conversationId, files: files),
     ];
 
     /// <summary>The conversation's parent and children, under its heading (SPEC.md §5.0).</summary>

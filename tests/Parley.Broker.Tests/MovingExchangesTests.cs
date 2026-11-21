@@ -1121,7 +1121,13 @@ public sealed class MovingExchangesTests : IDisposable
     [Fact]
     public async Task A_lone_surrogate_in_a_payload_does_not_stop_the_preview()
     {
-        var going = await AskAsync(Orders, Billing, """hello \ud800 there""");
+        // The broker refuses such a payload on the way in now (SPEC.md §13, security run 5), so the row is made as a store from
+        // before that was: the preview still must not fall over on one.
+        var going = await AskAsync(Orders, Billing, "placeholder");
+
+        _connection.Execute(
+            "UPDATE messages SET payload_json = @payload WHERE exchange_id = @going;",
+            new { payload = """{"ask":"hello \ud800 there"}""", going });
 
         var preview = await _console.PreviewMoveAsync("pricing", [going], Ct);
 

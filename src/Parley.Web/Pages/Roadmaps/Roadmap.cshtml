@@ -7,7 +7,7 @@
 
 <h1>@(Model.Roadmap is { } named ? $"#{named.Number} {named.Title}" : "Roadmap")</h1>
 
-<p><a href="/Roadmaps?project=@Model.Project">Back to the roadmaps in @Model.Project</a></p>
+<nav class="page-links" aria-label="This project"><a href="/Roadmaps?project=@Model.Project">Back to the roadmaps in @Model.Project</a></nav>
 
 @if (Model.Problem is { Length: > 0 } problem)
 {
@@ -19,7 +19,29 @@ else if (Model.Roadmap is { } roadmap && Model.Standing is { } standing)
        conversation and never set here. *@
     <p role="status">@ItemWording.Next(standing)</p>
 
-    <p><a href="/Roadmaps/Edit?project=@Model.Project&amp;id=@roadmap.Id">Edit this roadmap</a></p>
+    @* Asking is a page that says who and what first, and a POST there sends; the button sends nothing. *@
+    <p class="actions">
+        <a class="button tonal" href="/Roadmaps/Edit?project=@Model.Project&amp;id=@roadmap.Id">Edit this roadmap</a>
+        <a class="button tonal" href="/Roadmaps/Check?project=@Model.Project&amp;id=@roadmap.Id" title="Ask every agent where these items stand, what can come out, and what is missing">Ask the agents to check it</a>
+    </p>
+
+    @if (Model.Checks.Count > 0)
+    {
+        @* What asking led to. Turning the answers into a proposal is a page that says what it sends first. *@
+        <section aria-label="Checks of this roadmap">
+            <h2>Asked the agents</h2>
+            <ul>
+                @foreach (var check in Model.Checks)
+                {
+                    <li>
+                        <a href="/Conversations/Detail?project=@Model.Project&amp;id=@check.Id">@check.Id</a>
+                        <span class="between">@(check.HasOpenExchange ? "some have not answered yet" : "everyone asked has answered")</span>
+                        <a class="button quiet" href="/Roadmaps/Merge?project=@Model.Project&amp;id=@roadmap.Id&amp;from=@check.Id">Turn the answers into a proposal</a>
+                    </li>
+                }
+            </ul>
+        </section>
+    }
 
     @if (Model.Agents.Count > 0)
     {

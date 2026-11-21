@@ -6,7 +6,7 @@
 
 <h1>@(Model.Roadmap is { } named ? $"Edit #{named.Number} {named.Title}" : "Edit roadmap")</h1>
 
-<p><a href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@Model.Id">Back to the roadmap</a></p>
+<nav class="page-links" aria-label="This project"><a href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@Model.Id">Back to the roadmap</a></nav>
 
 @if (Model.Problem is { Length: > 0 } problem)
 {
@@ -23,8 +23,9 @@ else if (Model.Roadmap is { } roadmap)
         <input type="hidden" name="Revision" value="@Model.Revision" />
 
         <p>
-            <label for="text">The roadmap as text. Take a line out to remove it, change a line to reword it, add a line for a new item.</label><br />
-            <textarea id="text" name="Text" rows="@Math.Clamp(roadmap.Items.Count + 2, 6, 24)" cols="90" required>@Model.Text</textarea>
+            <partial name="_Composer" model="@(new Parley.Web.ComposerBox(
+                "Text", Model.Text, Id: "text", Rows: Math.Clamp(roadmap.Items.Count + 2, 6, 24),
+                Label: "The roadmap as text. Take a line out to remove it, change a line to reword it, add a line for a new item."))" />
         </p>
 
         <p class="composer-note">
@@ -56,6 +57,6 @@ else if (Model.Roadmap is { } roadmap)
         {
             <button type="submit">Save</button>
         }
-        <a href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@Model.Id">Leave it as it is</a>
+        <a class="button quiet" href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@Model.Id">Leave it as it is</a>
     </form>
 }

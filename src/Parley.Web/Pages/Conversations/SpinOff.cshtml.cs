@@ -22,6 +22,8 @@ namespace Parley.Web.Pages.Conversations;
 /// <param name="directory">The projects and their brokers.</param>
 /// <param name="seats">The seats this console holds.</param>
 /// <param name="notices">What the console tells the person.</param>
+[RequestSizeLimit(Parley.Web.Pages.Projects.FilesModel.PlaceLimitBytes)]
+[RequestFormLimits(MultipartBodyLengthLimit = Parley.Web.Pages.Projects.FilesModel.PlaceLimitBytes)]
 public sealed class SpinOffModel(BrokerDirectory directory, SeatBook seats, Parley.Web.Notifications.NotificationLog notices) : PageModel
 {
     /// <summary>Which project.</summary>
@@ -44,6 +46,14 @@ public sealed class SpinOffModel(BrokerDirectory directory, SeatBook seats, Parl
     /// <summary>What goes in its first message.</summary>
     [BindProperty, FromForm]
     public string? Says { get; set; }
+
+    /// <summary>What the person pasted or dropped into the box, placed once the first words have started the conversation.</summary>
+    [BindProperty, FromForm]
+    public IList<IFormFile> Attachments { get; set; } = [];
+
+    /// <summary>Files placed, each as its name and hash, to name in the message that follows the first words.</summary>
+    /// <remarks>Filled only while sending: a spin-off that reached nobody placed nothing, so nothing is carried over.</remarks>
+    public IList<string> Attached { get; } = [];
 
     /// <summary>Who it goes to.</summary>
     [BindProperty, FromForm]
@@ -140,11 +150,12 @@ public sealed class SpinOffModel(BrokerDirectory directory, SeatBook seats, Parl
 
         var voice = new SeatVoice(directory.AgentsFor(project), hold.Seat);
         var sent = new List<(string, string)>();
+        var opened = Quoting.Opened(name, Id, Says);
 
         foreach (var target in Targets)
         {
             sent.Add((target, AgentName.TryCreate(target, out var agent)
-                ? await voice.RequestAsync(agent, Says, name, token).ConfigureAwait(false)
+                ? await voice.RequestAsync(agent, opened, name, token).ConfigureAwait(false)
                 : "That is not a name an agent can have."));
         }
 
@@ -153,11 +164,23 @@ public sealed class SpinOffModel(BrokerDirectory directory, SeatBook seats, Parl
             notices.Add(project.Name.Value, name, who, outcome, outcome.StartsWith("Sent.", StringComparison.Ordinal));
         }
 
+        var reached = sent.Where(result => result.Item2.StartsWith("Sent.", StringComparison.Ordinal)).Select(result => result.Item1).ToList();
+
         // Once it reached anybody the conversation exists, so this form could only be refused the name if it were sent again.
         // What became of anybody it did not reach is in the bell.
-        if (sent.Exists(result => result.Item2.StartsWith("Sent.", StringComparison.Ordinal)))
+        if (reached.Count > 0)
         {
+            // A conversation that does not exist yet has nowhere to hold a file, so its words went first (SPEC.md §9.5).
+            await ComposerFiles.SendAfterWordsAsync(
+                new BrokerClient(directory.ClientFor(project)), voice, notices, project.Name.Value, name,
+                Attachments, Attached, ComposerFiles.AgentsNamed(reached), token).ConfigureAwait(false);
+
             return RedirectToPage("/Conversations/Detail", new { project = project.Name.Value, id = name });
+        }
+
+        if (Attachments.Count > 0)
+        {
+            Problem = "Nobody took your words, so the files you attached were not placed. Attach them again when you send.";
         }
 
         // Reached nobody, so nothing was started: no record says it was, and the name stays free for another try.

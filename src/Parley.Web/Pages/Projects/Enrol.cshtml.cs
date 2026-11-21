@@ -93,9 +93,13 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
 
         if (FolderMode)
         {
-            Entries = Directory.Exists(Folder!.Trim()) ? EnrollCommand.Find(Folder.Trim()) : [];
+            // Every lookup here opens each part as itself (LocalOpen): this page is a GET a link in an agent's message can
+            // reach while that agent flips its folder to a link to a share (review, lens 2 round 15).
+            var there = Here(Folder!.Trim());
 
-            if (!Directory.Exists(Folder.Trim()))
+            Entries = there ? EnrollCommand.Find(Folder.Trim()) : [];
+
+            if (!there)
             {
                 Problems = [$"There is no directory at {Folder.Trim()}."];
             }
@@ -140,7 +144,7 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
             // the folder, never from the browser.
             wanted =
             [
-                .. (Directory.Exists(Folder!.Trim()) ? EnrollCommand.Find(Folder.Trim()) : [])
+                .. (Here(Folder!.Trim()) ? EnrollCommand.Find(Folder.Trim()) : [])
                     .Where(entry => ticked.Contains(Normal(entry.Workspace)))
                     .Select(entry => entry with { Enroll = true })
             ];
@@ -165,7 +169,7 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
             wanted =
             [
                 new EnrollmentEntry(
-                    Path.GetFullPath(Workspace!.Trim()), Role!, null, Unattended: true)
+                    OffMachineLinks.FullPath(Workspace!.Trim()), Role!, null, Unattended: true)
                 {
                     Enroll = true,
                 }
@@ -278,11 +282,15 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
     {
         var workspace = Workspace?.Trim();
 
-        if (!OffMachineLinks.LeadsOffThisMachine(Folder)
-            && !OffMachineLinks.LeadsOffThisMachine(workspace)
+        // Each walked by opening every part as itself (LocalOpen): a GET from a link in an agent's message lands here
+        // while that agent can flip its folder to a link to a share, and a check followed by a lookup lost that race.
+        static bool Off(string? path) =>
+            path is { Length: > 0 } && LocalOpen.Reach(path, out _) == LocalOpenStatus.OffThisMachine;
+
+        if (!Off(Folder)
+            && !Off(workspace)
             && !(workspace is { Length: > 0 }
-                && (OffMachineLinks.LeadsOffThisMachine(Path.Combine(workspace, ".git"))
-                    || OffMachineLinks.LeadsOffThisMachine(Path.Combine(workspace, ".mcp.json")))))
+                && (Off(Path.Combine(workspace, ".git")) || Off(Path.Combine(workspace, ".mcp.json")))))
         {
             // Then the owner's rule, said before the plan says it: only this machine's own disks.
             if ((LocalStorage.Problem(Folder) ?? LocalStorage.Problem(workspace)) is not { } notLocal)
@@ -312,15 +320,8 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
             return false;
         }
 
-        var manifest = directory.ManifestPath;
-        var resolved = ProjectResolution.NodeConfig(null, Environment.GetEnvironmentVariable, manifest);
-
-        Catalogue = resolved.Value is { Length: > 0 } named
-            ? named
-            : manifest is { Length: > 0 }
-                // In the root itself, as `ProjectResolution.BesideTheManifest` puts it: the manifest path is the root.
-                ? Path.Combine(Path.GetFullPath(manifest), NodeCatalogue.DefaultFileName)
-                : NodeCatalogue.DefaultFileName;
+        // The same resolution retiring and purging withdraw from.
+        Catalogue = WebCatalogue.Path(directory);
 
         Role = string.IsNullOrWhiteSpace(Role) ? Role : EnrollmentPlan.CorrectName(Role);
 
@@ -342,11 +343,11 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
         {
             problems.Add("Name a repository directory on this machine.");
         }
-        else if (!Directory.Exists(workspace))
+        else if (!Here(workspace))
         {
             problems.Add($"There is no directory at {workspace}.");
         }
-        else if (!Directory.Exists(Path.Combine(workspace, ".git")) && !System.IO.File.Exists(Path.Combine(workspace, ".git")))
+        else if (LocalOpen.Entry(Path.Combine(workspace, ".git")) != LocalOpenStatus.Opened)
         {
             problems.Add($"{workspace} is not a repository: it holds no .git.");
         }
@@ -359,5 +360,7 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
         return problems;
     }
 
-    private static string Normal(string path) => Path.GetFullPath(path).Replace('\\', '/').TrimEnd('/');
+    private static string Normal(string path) => OffMachineLinks.FullPath(path).Replace('\\', '/').TrimEnd('/');
+
+    private static bool Here(string folder) => LocalOpen.FolderThere(folder);
 }

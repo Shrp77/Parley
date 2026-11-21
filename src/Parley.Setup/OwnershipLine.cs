@@ -90,22 +90,24 @@ public static class OwnershipLine
 
         // The workspace is what the agent's adapter reported on attach, so it is never looked up when it, its .mcp.json
         // or a link along either leads off this machine: Auto Accept would otherwise offer the person's sign-in to a
-        // host with no click at all (review, lens 2 run 71).
-        if (OffMachineLinks.LeadsOffThisMachine(workspace)
-            || (!string.IsNullOrWhiteSpace(workspace) && OffMachineLinks.LeadsOffThisMachine(Path.Combine(workspace, ".mcp.json"))))
+        // host with no click at all (review, lens 2 run 71). Asked by opening each part as itself, never by a check and
+        // then a lookup: an agent flipping its folder to a link to a share won that gap (lens 2 round 13).
+        var there = string.IsNullOrWhiteSpace(workspace) ? LocalOpenStatus.Missing : LocalOpen.Folder(workspace);
+
+        if (there is LocalOpenStatus.OffThisMachine or LocalOpenStatus.Changed)
         {
             return $"the registry says '{agent.Value}' runs in {workspace}, which is not a folder on this machine. " +
                    "Nothing has been written.";
         }
 
-        if (string.IsNullOrWhiteSpace(workspace) || !Directory.Exists(workspace))
+        if (there != LocalOpenStatus.Opened)
         {
             return $"the registry says '{agent.Value}' runs in " +
                    $"{(string.IsNullOrWhiteSpace(workspace) ? "no recorded directory" : workspace)}, " +
                    "and there is no repository there. Nothing has been written. Re-enrol it if it moved.";
         }
 
-        var path = Path.Combine(workspace, LaunchConfiguration.FileName);
+        var path = Path.Combine(workspace!, LaunchConfiguration.FileName);
 
         FileStream? held;
 
@@ -121,7 +123,7 @@ public static class OwnershipLine
         {
             // A link, which HoldAsync will not write through. An answer, not a throw: the facilitator's pass calls this
             // for each answer in turn, and one repository's link must not strand every answer after it.
-            return $"{refused.Message} Nothing has been written.";
+            return $"{refused.Message}. Nothing has been written.";
         }
 
         using (held)

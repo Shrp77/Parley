@@ -145,8 +145,12 @@ moving on is not enough — the case is added so the next edit is checked too.
 **What crosses between agents is messages and placed files, never contexts.** Requests,
 Clarifies and Results cross as messages. Files cross only by being placed in a project's file
 location and fetched from it onto disk, each carrying a content hash the broker computed. Never
-conversation history, never another agent's context, and never a file's contents delivered into
-a model's context by Parley. An operation that returns more about a peer than a participant needs
+another agent's context poured into one, and never a file's contents delivered into a model's
+context by Parley. **An agent may read the project's exchange history, and only read it** (amended
+2026-11-17, the owner's decision): an exchange by number, or the matches of a search, each
+returned as a bounded record in an envelope that says it is a record and asks nothing, changing
+nothing a participant can observe, and shown to the person who runs the deployment. Nothing is
+pushed into an agent's context, and nothing of a roadmap, a file's bytes or a turn is in a reply. An operation that returns more about a peer than a participant needs
 to address it is a disclosure, and must be argued as one. The agent-facing roster withholds
 workspace paths for exactly this reason.
 
@@ -210,7 +214,9 @@ reach three; `review/` holds the rules. Each run must probe something the previo
 did not, or it is one run repeated. The running count belongs in `REVIEW-LEDGER.md`, which is
 untracked because it is the state of one checkout's review rather than a fact about the
 protocol, and which logs clean runs as well as findings — a ledger of findings alone cannot
-distinguish an area that held from one nobody probed.
+distinguish an area that held from one nobody probed. Before the merge, the documentation says what
+the change does, and the Parley website's agent has been asked through Parley to say it too; the
+merge waits for its answer.
 
 **The repository is public and its history goes with it.** No trace of any originating
 private project may appear in any commit. Placeholder agents are `orders`, `billing` and
@@ -235,4 +241,4 @@ versioning: MAJOR for a principle or boundary removed or redefined, MINOR for on
 materially expanded, PATCH for wording. **An amendment that changes what a principle permits is
 MAJOR even when its title is unchanged.**
 
-**Version**: 6.1.1 | **Ratified**: 2026-08-22 | **Last Amended**: 2026-10-29 (says credential references are not built yet)
+**Version**: 7.0.0 | **Ratified**: 2026-08-22 | **Last Amended**: 2026-11-17 (an agent may read the exchange history)

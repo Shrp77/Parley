@@ -838,31 +838,41 @@ public sealed class ConversationRepository(SqliteConnection connection)
             new CommandDefinition(
                 """
                 WITH messaged AS (
-                    SELECT conversation_id      AS id,
-                           count(*)             AS messages,
-                           min(created_utc)     AS first_utc,
-                           max(created_utc)     AS last_utc
-                      FROM messages
-                     GROUP BY conversation_id
+                    -- The first and last message of each conversation are two ends of an index (conversation_id,
+                    -- created_utc), not a pass over every message: a GROUP BY here read the whole table for every page
+                    -- of 50, and the Inbox reads every page. The count is taken for the rows returned, below.
+                    SELECT c.id,
+                           (SELECT min(created_utc) FROM messages WHERE conversation_id = c.id) AS first_utc,
+                           (SELECT max(created_utc) FROM messages WHERE conversation_id = c.id) AS last_utc
+                      FROM conversations c
                 ),
                 -- A conversation started by placing a file has no message (SPEC.md §5.0), and is still a line of work
                 -- a person must be able to find: its activity is when it opened, until a message says otherwise. One
                 -- that was named and never used — no message, no participant, no file — still does not appear.
                 activity AS (
                     SELECT c.id                                   AS id,
-                           coalesce(m.messages, 0)                AS messages,
                            coalesce(m.first_utc, c.opened_utc)    AS first_utc,
                            coalesce(m.last_utc, c.opened_utc)     AS last_utc
                       FROM conversations c
                       LEFT JOIN messaged m ON m.id = c.id
-                     WHERE m.id IS NOT NULL
+                     WHERE m.last_utc IS NOT NULL
                         OR EXISTS (SELECT 1 FROM conversation_participants p WHERE p.conversation_id = c.id)
                         OR EXISTS (SELECT 1 FROM shared_files f WHERE f.conversation_id = c.id)
                         -- Everything moved out of it: it stays, and says what left (SPEC.md 5.0).
                         OR EXISTS (SELECT 1 FROM conversation_moves mv WHERE mv.source = c.id)
+                ),
+                -- Each conversation's newest close, found in one pass rather than once per conversation: nothing indexes
+                -- exchanges by conversation, and a lookup per row read the whole table for every conversation on every page
+                -- (review, lens 1 round 19). Every closed_utc is written as UTC round-trip text, so the greatest text is the
+                -- latest instant.
+                closes AS (
+                    SELECT conversation_id AS id, max(closed_utc) AS last_closed
+                      FROM exchanges
+                     WHERE closed_utc IS NOT NULL
+                     GROUP BY conversation_id
                 )
                 SELECT c.id                                       AS Id,
-                       a.messages                                 AS Messages,
+                       0                                          AS Messages,
                        a.first_utc                                AS FirstActivityUtc,
                        a.last_utc                                 AS LastActivityUtc,
                        EXISTS (SELECT 1 FROM exchanges e
@@ -871,9 +881,11 @@ public sealed class ConversationRepository(SqliteConnection connection)
                        (c.archived_utc IS NOT NULL)               AS Archived,
                        (SELECT l.parent FROM conversation_links l
                          WHERE l.child = c.id)                    AS Parent,
-                       (c.state = 'CLOSED')                       AS Closed
+                       (c.state = 'CLOSED')                       AS Closed,
+                       cl.last_closed                             AS LastClosedUtc
                   FROM conversations c
                   JOIN activity a ON a.id = c.id
+                  LEFT JOIN closes cl ON cl.id = c.id
                  WHERE (@IncludeArchived OR c.archived_utc IS NULL)
                    AND (@Participant IS NULL
                         OR EXISTS (SELECT 1 FROM conversation_participants p
@@ -914,6 +926,13 @@ public sealed class ConversationRepository(SqliteConnection connection)
                     new { row.Id },
                     cancellationToken: cancellationToken)).ConfigureAwait(false);
 
+            // Counted for the page's rows only: counting for every conversation to find the page read every message.
+            var messageCount = await _connection.ExecuteScalarAsync<int>(
+                new CommandDefinition(
+                    "SELECT count(*) FROM messages WHERE conversation_id = @Id;",
+                    new { row.Id },
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+
             // By the reservation and by nothing else: a payload or a name that merely looks like an item's marks no
             // conversation as one (SPEC.md §5.7).
             var reserved = await new RoadmapRepository(_connection)
@@ -922,14 +941,15 @@ public sealed class ConversationRepository(SqliteConnection connection)
             summaries.Add(new ConversationSummary(
                 row.Id,
                 [.. participants.Select(AgentName.Create)],
-                row.Messages,
+                messageCount,
                 ExchangeRow.ParseTimestamp(row.FirstActivityUtc),
                 ExchangeRow.ParseTimestamp(row.LastActivityUtc),
                 row.HasOpenExchange,
                 row.Archived,
                 reserved is { } r ? new RoadmapItemRef(r.RoadmapId, r.RoadmapNumber, r.Title, r.ItemNumber, r.Removed) : null,
                 row.Parent,
-                row.Closed));
+                row.Closed,
+                row.LastClosedUtc is { Length: > 0 } closed ? ExchangeRow.ParseTimestamp(closed) : null));
         }
 
         return summaries;
@@ -955,16 +975,15 @@ public sealed class ConversationRepository(SqliteConnection connection)
             new CommandDefinition(
                 """
                 WITH messaged AS (
-                    SELECT conversation_id      AS id,
-                           max(created_utc)     AS last_utc
-                      FROM messages
-                     GROUP BY conversation_id
+                    SELECT c.id,
+                           (SELECT max(created_utc) FROM messages WHERE conversation_id = c.id) AS last_utc
+                      FROM conversations c
                 ),
                 activity AS (
                     SELECT c.id AS id, coalesce(m.last_utc, c.opened_utc) AS last_utc
                       FROM conversations c
                       LEFT JOIN messaged m ON m.id = c.id
-                     WHERE m.id IS NOT NULL
+                     WHERE m.last_utc IS NOT NULL
                         OR EXISTS (SELECT 1 FROM conversation_participants p WHERE p.conversation_id = c.id)
                         OR EXISTS (SELECT 1 FROM shared_files f WHERE f.conversation_id = c.id)
                         OR EXISTS (SELECT 1 FROM conversation_moves mv WHERE mv.source = c.id)
@@ -1187,6 +1206,15 @@ public sealed class ConversationRepository(SqliteConnection connection)
                AND settled_by IN (SELECT id FROM exchanges WHERE conversation_id = @Conversation);
             """).ConfigureAwait(false);
 
+        // What agents read of these exchanges (SPEC.md §5.8) goes with them: destroying is the person's erase control, and a tally of
+        // who read an exchange that is gone is a trace of it. It holds no text, so it is not reported as removed text.
+        await ExecuteAsync(
+            """
+            DELETE FROM history_reads
+             WHERE kind = 'exchange'
+               AND exchange_id IN (SELECT id FROM exchanges WHERE conversation_id = @Conversation);
+            """).ConfigureAwait(false);
+
         await RazeAsync("exchanges", "DELETE FROM exchanges WHERE conversation_id = @Conversation;")
             .ConfigureAwait(false);
 
@@ -1292,6 +1320,8 @@ public sealed class ConversationRepository(SqliteConnection connection)
         public bool HasOpenExchange { get; init; }
 
         public bool Archived { get; init; }
+
+        public string? LastClosedUtc { get; init; }
     }
 
     private sealed class ConversationRow

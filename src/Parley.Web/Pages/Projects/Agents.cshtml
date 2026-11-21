@@ -6,12 +6,14 @@
     ViewData["Refresh"] = "30";
     ViewData["Title"] = Model.Project;
     ViewData["AsOf"] = Model.AsOf.ToString("HH:mm:ss");
+    // Stamped in the title row below, as the data-grid views stamp theirs, rather than above the title by the frame.
+    ViewData["AsOfInTitle"] = true;
 }
 
 <div class="view" style="height:auto;min-height:0;">
     <div class="view-title">
         <h1>Conversations</h1>
-        <p class="as-of" role="status"><strong>@Model.Project</strong></p>
+        <p class="as-of" role="status">As of @ViewData["AsOf"].</p>
     </div>
 
     <section aria-label="Conversations in this project" class="conversations">
@@ -94,8 +96,27 @@
         }
         else
         {
-            <div class="grid" role="table" aria-label="Conversations">
+            @if (Model.Did is { Length: > 0 } did)
+            {
+                <p role="status"><strong>@Model.Filed @(Model.Filed == 1 ? "conversation" : "conversations") @did.</strong>@(Model.Failed > 0 ? $" {Model.Failed} could not be changed; they may have been destroyed since this page was drawn." : "")</p>
+            }
+
+            @* The ticked rows belong to this form by its id, so the rows keep their own forms. Archiving and bringing back
+               are one click because they reverse. Ending is not: it goes to a page that lists what will end and takes a typed word. *@
+            <form id="bulk" method="post" asp-page-handler="Bulk" class="bulk-bar" aria-label="Act on several conversations">
+                <input type="hidden" name="project" value="@Model.Project" />
+                <input type="hidden" name="showArchived" value="@(Model.ShowArchived ? "true" : "false")" />
+                <input type="hidden" name="sort" value="@Model.Sort" />
+                <span class="count" id="bulk-count" role="status">None ticked</span>
+                <button type="submit" name="op" value="archive" class="tonal" data-needs-ticks>Archive selected</button>
+                <button type="submit" name="op" value="unarchive" class="tonal" data-needs-ticks>Bring back selected</button>
+                <button type="submit" formaction="/Projects/EndMany" name="op" value="end" class="danger" data-needs-ticks>End selected…</button>
+                <button type="submit" name="op" value="archiveclosed" class="quiet">Archive all closed</button>
+            </form>
+
+            <div class="grid select-grid" role="table" aria-label="Conversations">
                 <div class="grid-head" role="row">
+                    <input type="checkbox" id="bulk-all" aria-label="Tick every conversation shown" />
                     <a role="columnheader" href="/Projects/Agents?project=@Model.Project&amp;participant=@Model.Participant&amp;showArchived=@(Model.ShowArchived ? "true" : "false")&amp;sort=name">Name</a>
                     <span role="columnheader">Messages</span>
                     <a role="columnheader" href="/Projects/Agents?project=@Model.Project&amp;participant=@Model.Participant&amp;showArchived=@(Model.ShowArchived ? "true" : "false")">Last active</a>
@@ -106,10 +127,11 @@
                        it works with no script. *@
                     <details class="grid-row" role="row">
                         <summary>
+                            <input type="checkbox" form="bulk" name="ids" value="@conversation.Id" class="bulk-tick" aria-label="Tick @conversation.Id" />
                             <a class="name" href="/Conversations/Detail?project=@Model.Project&amp;id=@conversation.Id">@conversation.Id@if (conversation.Parent is { } parent) {<span class="spinoff-of">@Parley.Client.Rendering.ConversationWording.SpinoffSuffix(parent)</span>}</a>
                             <span class="num">@conversation.Messages</span>
                             <span class="when">
-                                @conversation.LastActivityUtc.ToString("d MMM yyyy, HH:mm")
+                                @TimeZoneInfo.ConvertTime(conversation.LastActivityUtc, TimeZoneInfo.Local).ToString("d MMM yyyy, HH:mm")
                                 @if (conversation.HasOpenExchange)
                                 {
                                     @* A question somebody still owes an answer to. Said in words; the tint is only how you find it. *@
@@ -125,19 +147,18 @@
                                     <span class="tag">@Parley.Client.Roadmaps.ItemWording.Belongs(item)</span>
                                 }
                             </span>
-                        </summary>
-                        <div class="grid-detail">
-                            <p class="between">@string.Join(", ", conversation.Participants.Select(p => p.Value))</p>
-                            @* Archiving is one click because one click reverses it; destroying goes to a page that
-                               describes it and takes the name typed. *@
-                            <form method="post" asp-page-handler="Archive">
+                            @* Also here and not only inside the opened row, so filing a conversation is one click from the list. *@
+                            <form method="post" asp-page-handler="Archive" class="row-act">
                                 <input type="hidden" name="project" value="@Model.Project" />
                                 <input type="hidden" name="id" value="@conversation.Id" />
                                 <input type="hidden" name="archived" value="@(conversation.Archived ? "true" : "false")" />
                                 <input type="hidden" name="showArchived" value="@(Model.ShowArchived ? "true" : "false")" />
                                 <input type="hidden" name="sort" value="@Model.Sort" />
-                                <button type="submit">@(conversation.Archived ? "Bring back" : "Archive")</button>
+                                <button type="submit" class="tonal">@(conversation.Archived ? "Bring back" : "Archive")</button>
                             </form>
+                        </summary>
+                        <div class="grid-detail">
+                            <p class="between">@string.Join(", ", conversation.Participants.Select(p => p.Value))</p>
                             <a class="button danger" href="/Conversations/Destroy?project=@Model.Project&amp;id=@conversation.Id">Destroy…</a>
                         </div>
                     </details>
@@ -155,6 +176,28 @@
 </div>
 
 @section Scripts {
+    <script>
+        // The count of ticked rows, and the buttons that need one. Without script the buttons work and an empty act does nothing.
+        (function () {
+            var ticks = Array.prototype.slice.call(document.querySelectorAll(".bulk-tick"));
+            var all = document.getElementById("bulk-all");
+            var count = document.getElementById("bulk-count");
+            var needs = document.querySelectorAll("[data-needs-ticks]");
+
+            if (!count) { return; }
+
+            function update() {
+                var n = ticks.filter(function (t) { return t.checked; }).length;
+                count.textContent = n === 0 ? "None ticked" : n + " ticked";
+                Array.prototype.forEach.call(needs, function (b) { b.disabled = n === 0; });
+                if (all) { all.checked = n > 0 && n === ticks.length; }
+            }
+
+            ticks.forEach(function (t) { t.addEventListener("change", update); });
+            if (all) { all.addEventListener("change", function () { ticks.forEach(function (t) { t.checked = all.checked; }); update(); }); }
+            update();
+        })();
+    </script>
     <script>
         // A name is asked for in a dialog rather than in the page, so that the list keeps its place.
         (function () {

@@ -397,20 +397,17 @@ internal sealed class FileWork(BrokerRuntime runtime)
     /// <param name="id">The id.</param>
     /// <returns><see langword="true"/> when the conversations table's CHECK would admit it.</returns>
     /// <remarks>
-    /// The same rule as that CHECK (SPEC.md §9.2) and as the adapter's refusal. A copy, because the broker must not trust
-    /// an adapter to have applied it and the store's own refusal arrives as an exception rather than as a sentence.
+    /// The one rule the broker holds, <see cref="ConversationId"/>: the schema's CHECK can be walked past with a NUL, and the
+    /// store's own refusal arrives as an exception rather than as a sentence.
     /// </remarks>
-    private static bool IsConversationId(string id) =>
-        id.Length is >= 1 and <= 64
-        && !id.Contains("..", StringComparison.Ordinal)
-        && id.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-');
+    private static bool IsConversationId(string id) => ConversationId.IsValid(id);
 
     /// <summary>Streams one whole content of a file, holding it for reading while it does.</summary>
     /// <param name="request">What to fetch.</param>
     /// <param name="writer">The response stream.</param>
     /// <param name="cancellationToken">Cancels the fetch and ends the hold.</param>
     /// <returns>A task that completes when the stream ends.</returns>
-    public async Task FetchAsync(
+    public Task FetchAsync(
         Wire.FetchFileRequest request,
         IServerStreamWriter<Wire.FetchFileFrame> writer,
         CancellationToken cancellationToken)
@@ -419,6 +416,48 @@ internal sealed class FileWork(BrokerRuntime runtime)
 
         RequireAttached(agent);
 
+        return StreamAsync(agent, Blank(request.ConversationId), request.Name, request.ExpectSha256, writer, cancellationToken);
+    }
+
+    /// <summary>Streams one file to the person, recording nothing.</summary>
+    /// <param name="request">What to read.</param>
+    /// <param name="writer">The response stream.</param>
+    /// <param name="cancellationToken">Cancels the read and ends the hold.</param>
+    /// <returns>A task that completes when the stream ends.</returns>
+    /// <remarks>
+    /// <b>Viewing is not an act on the deployment</b> (SPEC.md §9.5), so this records no fetch: a fetch is what tells an
+    /// agent that a file it holds has changed, and the person holds nothing. One conversation is required, because a surface
+    /// shows a file where it was placed and a name looked for across the location could be another conversation's.
+    /// </remarks>
+    public Task ReadAsync(
+        Wire.ReadSharedFileRequest request,
+        IServerStreamWriter<Wire.FetchFileFrame> writer,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(request.ConversationId))
+        {
+            throw Invalid("conversation_id is required: a read is of one conversation's file.");
+        }
+
+        return StreamAsync(null, request.ConversationId, request.Name, request.ExpectSha256, writer, cancellationToken);
+    }
+
+    /// <summary>Streams one whole content of a file, for an agent's fetch or the person's read.</summary>
+    /// <param name="agent">The fetching agent, or <see langword="null"/> for the person, whose read records nothing.</param>
+    /// <param name="conversationId">The conversation, or <see langword="null"/> to look across the location.</param>
+    /// <param name="name">The file's name.</param>
+    /// <param name="expectSha256">The hash the caller expects, or empty.</param>
+    /// <param name="writer">The response stream.</param>
+    /// <param name="cancellationToken">Cancels the stream and ends the hold.</param>
+    /// <returns>A task that completes when the stream ends.</returns>
+    private async Task StreamAsync(
+        AgentName? agent,
+        string? conversationId,
+        string name,
+        string expectSha256,
+        IServerStreamWriter<Wire.FetchFileFrame> writer,
+        CancellationToken cancellationToken)
+    {
         FileLocationStore.ReadHold hold;
 
         // **A download that has stopped is let go.** Flow control parks a write to a client that stops reading, and the
@@ -452,14 +491,14 @@ internal sealed class FileWork(BrokerRuntime runtime)
 
         ContentHash? expected = null;
 
-        if (!string.IsNullOrEmpty(request.ExpectSha256))
+        if (!string.IsNullOrEmpty(expectSha256))
         {
-            expected = ContentHash.TryParse(request.ExpectSha256, out var parsed)
+            expected = ContentHash.TryParse(expectSha256, out var parsed)
                 ? parsed
                 : throw Invalid("expect_sha256 is 64 hexadecimal characters.");
         }
 
-        var reference = new FileRef(Blank(request.ConversationId), request.Name);
+        var reference = new FileRef(conversationId, name);
         var resolution = await ResolveCurrentAsync(reference, cancellationToken).ConfigureAwait(false);
 
         if (resolution.Refusal is { } refusal)
@@ -573,7 +612,10 @@ internal sealed class FileWork(BrokerRuntime runtime)
                 return;
             }
 
-            _runtime.Fetches.Served(agent, file.ConversationId, stored.NameKey, streamed);
+            if (agent is { } fetching)
+            {
+                _runtime.Fetches.Served(fetching, file.ConversationId, stored.NameKey, streamed);
+            }
         }
     }
 

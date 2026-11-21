@@ -139,6 +139,9 @@ public static class ConsoleHost
         builder.Services.AddSingleton<Notifications.NotificationLog>();
         builder.Services.AddSingleton<EnrolmentRuns>();
 
+        // What the Inbox last asked about which questions are still open. One for the process, for the same reason.
+        builder.Services.AddSingleton<Parley.Client.Seating.StillOpenAsks>();
+
         var app = builder.Build();
 
         // **Nothing another site starts reaches a page.** A page here does things on a GET: it takes the person's seat and
@@ -203,10 +206,12 @@ public static class ConsoleHost
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var site = context.Request.Headers["Sec-Fetch-Site"].ToString();
-
-        return string.Equals(site, "cross-site", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(site, "same-site", StringComparison.OrdinalIgnoreCase);
+        // Every value: a header written twice reads as one joined text ('none,cross-site'), which no comparison matched.
+        return context.Request.Headers["Sec-Fetch-Site"]
+            .SelectMany(line => (line ?? string.Empty).Split(','))
+            .Select(site => site.Trim())
+            .Any(site => string.Equals(site, "cross-site", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(site, "same-site", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>Whether a request is the console framing one of its own conversation pages.</summary>
@@ -233,14 +238,18 @@ public static class ConsoleHost
     /// manifest resource named by whatever a caller asked for, which is the same shape as
     /// serving a file named by a caller — and while assembly resources hold no directories to
     /// escape into, a lookup that can be pointed at anything is not worth having for the sake of
-    /// three entries. The font is Material Symbols Outlined (Apache License 2.0), cut down to
-    /// the icons the console names; see the comment beside it in the layout.
+    /// three entries. The icon font is Material Symbols Outlined (Apache License 2.0), cut down to
+    /// the icons the console names; see the comment beside it in the layout. The text face is Roboto Flex (SIL Open Font
+    /// License 1.1), cut to Latin with only its weight and optical size left to vary, and its licence is served beside it,
+    /// as the licence asks of anything that distributes the font.
     /// </remarks>
     private static readonly (string Route, string Resource, string ContentType)[] Brand =
     [
         ("icon.png", "Parley.Web.Brand.icon.png", "image/png"),
         ("wordmark.png", "Parley.Web.Brand.wordmark.png", "image/png"),
-        ("material-symbols.woff2", "Parley.Web.Brand.material-symbols.woff2", "font/woff2")
+        ("material-symbols.woff2", "Parley.Web.Brand.material-symbols.woff2", "font/woff2"),
+        ("roboto-flex.woff2", "Parley.Web.Brand.roboto-flex.woff2", "font/woff2"),
+        ("roboto-flex-license.txt", "Parley.Web.Brand.RobotoFlex-OFL.txt", "text/plain; charset=utf-8")
     ];
 
     /// <summary>Serves the brand images out of the assembly.</summary>

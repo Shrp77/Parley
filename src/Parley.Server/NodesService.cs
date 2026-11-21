@@ -140,6 +140,11 @@ public sealed class NodesService : Wire.Nodes.NodesBase
                         Math.Max(0, ended.ModelTurns)),
                     context.CancellationToken).ConfigureAwait(false);
                 break;
+
+            case Wire.TurnReport.PhaseOneofCase.Background:
+                _ = await _runtime.BackgroundReportedAsync(
+                    machine, agent, request.Background.Tasks, context.CancellationToken).ConfigureAwait(false);
+                break;
         }
 
         return new Wire.Empty();
@@ -466,6 +471,47 @@ public sealed class JoinedNode : IAsyncDisposable
             Refresh = new Wire.RefreshAgent { Agent = agent.Value, Because = because, Identity = IdentityText(identity) }
         });
     }
+
+    /// <summary>Asks the node to stop an agent it started, or restart it, once its turn is over (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="identity">Its identity when the broker knows one, so the node can find the checkout by it.</param>
+    /// <param name="restart">Whether to start it again once it has stopped.</param>
+    /// <param name="because">Why, for the operator's benefit.</param>
+    /// <returns><see langword="true"/> if the command was queued.</returns>
+    /// <remarks>
+    /// A person's act, where a refresh is the broker's. The node waits for the turn lock, as for a refresh, because only
+    /// the node knows whether a turn is in progress, and a turn is bounded by the node's patience.
+    /// </remarks>
+    internal bool RequestStop(AgentName agent, AgentIdentity identity, bool restart, string because)
+    {
+        if (!Can(agent, identity))
+        {
+            return false;
+        }
+
+        return _commands.Writer.TryWrite(new Wire.NodeCommand
+        {
+            Stop = new Wire.StopAgent
+            {
+                Agent = agent.Value, Because = because, Identity = IdentityText(identity), Restart = restart,
+            }
+        });
+    }
+
+    /// <summary>Tells the node to end a process a node that is gone left running (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent it belongs to.</param>
+    /// <param name="processId">What the agent's adapter said hosts it.</param>
+    /// <param name="because">Why, for the node's log.</param>
+    /// <returns>Whether the command was queued.</returns>
+    /// <remarks>
+    /// Not through <c>Can</c>: this node did not start the process and cannot start the agent from it, which is why it is
+    /// being ended. Only for a machine this node is joined for.
+    /// </remarks>
+    internal bool RequestKill(AgentName agent, long processId, string because) =>
+        _commands.Writer.TryWrite(new Wire.NodeCommand
+        {
+            Kill = new Wire.KillProcess { Agent = agent.Value, ProcessId = processId, Because = because },
+        });
 
     private static string IdentityText(AgentIdentity identity) => identity.Known ? identity.ToString() : string.Empty;
 
