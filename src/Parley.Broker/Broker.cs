@@ -859,7 +859,18 @@ public sealed class Broker
         // No search runs without end: it holds the gate while it scans, and how long that takes depends on what the store holds. One
         // that overruns is stopped, charged for the time it took, and refused with what to do about it.
         using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        limit.CancelAfter(_options.SearchTimeLimit ?? TimeSpan.FromMilliseconds(HistoryLimits.SearchTimeLimitMilliseconds));
+        var allowed = _options.SearchTimeLimit ?? TimeSpan.FromMilliseconds(HistoryLimits.SearchTimeLimitMilliseconds);
+
+        if (allowed <= TimeSpan.Zero)
+        {
+            // No time at all is out now, on this thread. CancelAfter would hand even a delay of nothing to a timer, and a short search
+            // on a busy machine finishes before the timer's thread runs.
+            await limit.CancelAsync().ConfigureAwait(false);
+        }
+        else
+        {
+            limit.CancelAfter(allowed);
+        }
 
         try
         {

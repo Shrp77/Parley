@@ -190,8 +190,16 @@ public sealed class NoLinkLeadsALookupOffThisMachineTests : IDisposable
         }
         finally
         {
-            // The link alone, by its exact path, never what it leads to.
-            Directory.Delete(link);
+            // The link alone, by its exact path, never what it leads to. On Windows it is a folder link and is removed as a folder. On
+            // Unix a link is a file whatever it names, and removing it as a folder follows it to a share that is not there and throws.
+            if (OperatingSystem.IsWindows())
+            {
+                Directory.Delete(link);
+            }
+            else
+            {
+                File.Delete(link);
+            }
         }
     }
 
