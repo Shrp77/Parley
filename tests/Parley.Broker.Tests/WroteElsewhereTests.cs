@@ -359,4 +359,33 @@ public sealed class WroteElsewhereTests : IDisposable
 
         Assert.Empty(await NotedHereAsync());
     }
+
+    [Fact]
+    public async Task Retention_never_turns_a_note_into_straight_after_a_message_the_agent_wrote_before_others()
+    {
+        // Here: orders asks billing (left open), billing asks orders, orders answers. Days later orders asks billing in
+        // another conversation: straight after its answer here. Retention then removes the answered exchange, and the read
+        // found the open request as the message before, saying orders went elsewhere straight after it, which it did not
+        // (review, lens 2 run 3 on ae1d0e0f).
+        await _broker.StartAsync(Orders, T0, Ct);
+        await _broker.StartAsync(Billing, T0, Ct);
+
+        _ = await _broker.RequestAsync(Orders, Billing, "model-a", """{"ask":"which ledger?"}""", T0, Here, Ct);
+        var asked = (await _broker.RequestAsync(Billing, Orders, "model-a", """{"ask":"net or gross?"}""", T0.AddMinutes(1), Here, Ct)).Exchange!.Id;
+        _ = await _broker.ResultAsync(
+            asked, Orders, "model-a", $$"""{"outcomes":[{"id":"{{PayloadShape.WholeRequest}}","outcome":"done","text":"net"}]}""", T0.AddMinutes(2), Ct);
+
+        var answer = LastMessage();
+
+        _ = await _broker.RequestAsync(Orders, Billing, "model-a", """{"ask":"stock?"}""", T0.AddDays(3), Older, Ct);
+
+        var later = LastMessage();
+
+        Assert.Contains(await NotedHereAsync(), note => note.Message == later && note.AfterMessage == answer);
+
+        _ = await _console.PruneAsync(new RetentionPolicy(TimeSpan.FromDays(1), TimeSpan.FromDays(2)), T0.AddDays(3).AddHours(1), Ct);
+
+        Assert.Equal(0, _connection.ExecuteScalar<long>("SELECT COUNT(*) FROM messages WHERE id = @Id;", new { Id = answer }));
+        Assert.DoesNotContain(await NotedHereAsync(), note => note.Message == later);
+    }
 }

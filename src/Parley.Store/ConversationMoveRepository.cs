@@ -580,6 +580,16 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
                    AND n.from_agent NOT LIKE @Person AND n.to_agent NOT LIKE @Person
                    AND n.from_agent NOT LIKE @Facilitator AND n.to_agent NOT LIKE @Facilitator
                    AND Conversation <> @Id
+                   -- "Straight after" only while nothing between is gone. Retention, a destroy or a purge removes
+                   -- messages, and the next one still in the store need not be the next one the agent saw. The record
+                   -- of lengths keeps every message's sender and recipient after its words are gone, so a gone message
+                   -- of this agent's in between drops the note; an id in between in neither table (a purge removes
+                   -- both) drops it too, since nothing then says whose it was.
+                   AND NOT EXISTS (SELECT 1 FROM message_lengths l
+                                    WHERE l.message_id > f.before_id AND l.message_id < n.id
+                                      AND (l.from_agent = f.agent OR l.to_agent = f.agent))
+                   AND (SELECT COUNT(*) FROM message_lengths l
+                         WHERE l.message_id > f.before_id AND l.message_id < n.id) = n.id - f.before_id - 1
                  ORDER BY n.id;
                 """,
                 new

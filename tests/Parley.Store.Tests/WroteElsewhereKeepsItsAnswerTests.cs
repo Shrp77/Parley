@@ -95,7 +95,8 @@ public sealed class WroteElsewhereKeepsItsAnswerTests
     {
         connection.Execute("PRAGMA foreign_keys = OFF;");
 
-        foreach (var trigger in connection.Query<string>("SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name IN ('messages', 'exchanges');").ToList())
+        // Every trigger but the record of lengths, which the read consults to tell a gap a deletion left from none.
+        foreach (var trigger in connection.Query<string>("SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name IN ('messages', 'exchanges') AND name <> 'tr_message_length_recorded';").ToList())
         {
             connection.Execute($"DROP TRIGGER \"{trigger}\";");
         }
