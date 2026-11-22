@@ -670,9 +670,10 @@ if [ "$replacing_broker" = "1" ]; then
 
             echo "warning: $count conversation(s) have an exchange still open. Installing ends the" >&2
             echo "         broker and its node. Under systemd or launchd the agents the node started end" >&2
-            echo "         with it, part-way through a turn if one is running; the agents of a broker" >&2
-            echo "         started by hand are left running with nothing holding them. An open" >&2
-            echo "         exchange stays open and is flagged to the person:" >&2
+            echo "         with it, part-way through a turn if one is running. Every Parley adapter has" >&2
+            echo "         already been ended, so no agent is still connected; one that owes open work is" >&2
+            echo "         started again once the broker is back. An open exchange stays open and is" >&2
+            echo "         flagged to the person:" >&2
 
             printf '%s\n' "$in_flight" | while IFS= read -r line; do
                 [ -n "$line" ] && echo "      $line" >&2

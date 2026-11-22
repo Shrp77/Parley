@@ -860,7 +860,7 @@ if ($replacingBroker) {
         $lines = @($inFlight | Where-Object { $_ -is [string] -and $_.Trim() })
 
         if ($lines.Count -gt 0) {
-            Write-Warning "$($lines.Count) conversation(s) have an exchange still open. Installing ends the broker and its node. Agents the node started keep running with nothing holding them: they read as left running and can be ended with Kill process. An open exchange stays open and is flagged to the person:"
+            Write-Warning "$($lines.Count) conversation(s) have an exchange still open. Installing ends the broker and its node. Every Parley adapter has already been ended, so no agent the node started is still connected: one part-way through a turn finishes it without Parley's tools, and one that owes open work is started again once the broker is back. An open exchange stays open and is flagged to the person:"
 
             foreach ($line in $lines) {
                 Write-Host "      $line" -ForegroundColor DarkGray

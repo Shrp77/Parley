@@ -104,8 +104,8 @@ You can **stop** or **restart** an agent a node started. Its node lets the curre
 first. What the agent owes stays owed, so the next work for it starts it again, unless you froze it.
 
 To keep an agent stopped, **freeze** it. Nothing starts a frozen agent until you unfreeze it, or
-until the broker next starts, which a logon or a reboot does. You can ask for a freeze that
-outlasts a logon too. Its work waits, and anybody who writes to it is told it is frozen. See
+until the broker next starts, which a logon, a reboot, an install or a crash does. You can ask for
+a freeze that outlasts that too. Its work waits, and anybody who writes to it is told it is frozen. See
 [Running a deployment](operating.md#freezing-an-agent-to-keep-it-stopped).
 
 An agent can end its turn while work it started carries on in the background, such as a

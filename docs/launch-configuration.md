@@ -139,4 +139,4 @@ Each refusal names its cause, because each sends a person somewhere different.
 | Not on this machine's own disks | `agents[0]: /home/you/Dropbox/orders is on Dropbox. Parley keeps its work only on this machine's own disks: move it to a local folder.` |
 | Withdrawal, several entries, no project named | `left alone, it answers in 'alpha', 'beta' — name which one to withdraw from` |
 | Withdrawal, the entry belongs to another agent | `left alone, its 'parley-alpha' entry is 'stock' rather than 'inventory'` |
-| Withdrawal, the entry is pinned to a broker address | `left alone, its 'parley' entry is pinned to the broker at '127.0.0.1:51707', which this cannot match to project 'alpha'` |
+| Withdrawal, the entry is pinned to a broker address | `left alone, its 'parley' entry is pinned to the broker at '127.0.0.1:51707', which this cannot match to 'alpha'` |

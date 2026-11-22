@@ -56,8 +56,8 @@ and it has not looked, **Ask to look now** in the web console's Inbox gives it a
 
 Press Enter on its row in the terminal, or open its page in the web console. **Stop** ends its
 process once its current turn is over, but the next work for it starts it again. **Freeze** keeps
-it stopped: nothing starts it until you unfreeze it, or until the broker next starts (a logon or a
-reboot), unless you asked for the freeze to outlast that. Its work waits either way. To keep agents
+it stopped: nothing starts it until you unfreeze it, or until the broker next starts (a logon, a
+reboot, an install or a crash), unless you asked for the freeze to outlast that. Its work waits either way. To keep agents
 from starting straight away after you restart a machine, freeze them and ask for the freeze to
 outlast the restart.
 

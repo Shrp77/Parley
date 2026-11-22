@@ -343,8 +343,10 @@ anybody is working on it right now. To end work, close its conversation.
 
 Sometimes a node ends and the agents it started keep running, with nothing holding them.
 
-- On Windows, installing a new build ends the broker and its node, but not the agents the node
-  started.
+- On Windows, the install script ends every Parley adapter first (it refuses without `-Force`),
+  so an agent the node started loses its Parley tools rather than reading as left running. One that
+  owes open work is started again once the broker is back. A broker stopped any other way (its
+  scheduled task ended, or `-Only parley`) leaves its agents running, and those read as left running.
 - On Linux and macOS, the agents of a broker the autostart entry runs end with it, because systemd
   and launchd end everything the entry started. A broker you started yourself and then killed
   leaves its agents running, as on Windows.
@@ -622,8 +624,8 @@ no autostart entry is re-registered.
 
 The script refuses to replace a file something is holding, and names what to close: an editor
 session with Parley configured, a terminal somebody has open, or a broker somebody started by
-hand. `-Force` or `--force` ends them and carries on. Those editor sessions keep running without
-Parley until each editor restarts. That is the cost.
+hand. `-Force` or `--force` ends them and carries on, including the adapters of agents the node
+started. Those sessions keep running without Parley until each restarts. That is the cost.
 
 When the protocol number moves, install on every machine running a broker or an agent, then
 restart the sessions that had Parley configured. See [Configuration](configuration.md#versions).
