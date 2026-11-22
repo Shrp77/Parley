@@ -137,14 +137,17 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
     /// <summary>Reports how many background tasks an agent has running now (SPEC.md §11.6).</summary>
     /// <param name="agent">The agent, as this project names it.</param>
     /// <param name="tasks">How many.</param>
+    /// <param name="stillTrue">Whether the count is still the one to say, asked before a retry; null to always retry.</param>
     /// <returns>A task that completes when it has been reported, or could not be.</returns>
-    internal Task BackgroundAsync(Parley.Core.AgentName agent, int tasks) =>
-        SendAsync(new Wire.TurnReport
-        {
-            Machine = machine,
-            Agent = agent.Value,
-            Background = new Wire.BackgroundWork { Tasks = tasks },
-        });
+    internal Task BackgroundAsync(Parley.Core.AgentName agent, int tasks, Func<bool>? stillTrue = null) =>
+        SendAsync(
+            new Wire.TurnReport
+            {
+                Machine = machine,
+                Agent = agent.Value,
+                Background = new Wire.BackgroundWork { Tasks = tasks },
+            },
+            stillTrue);
 
     private Task ReportEndAsync(Parley.Core.AgentName agent, DateTimeOffset started, TurnOutcome? outcome) =>
         SendAsync(new Wire.TurnReport
@@ -223,7 +226,9 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
                 // ended, which has no bound (review, lens 1 run 2 on ae1d0e0f).
                 if (resident.BackgroundTasks is var tasks and > 0 && Parley.Core.AgentName.TryJoin(role, machine, out var named))
                 {
-                    await BackgroundAsync(named, tasks).ConfigureAwait(false);
+                    // Not retried once the count has moved: a retry landing behind the pump's newer report would show work
+                    // that has ended (review, lens 1 run B on d99806d9).
+                    await BackgroundAsync(named, tasks, () => resident.BackgroundTasks == tasks).ConfigureAwait(false);
                 }
             }
         }
@@ -329,11 +334,11 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
         value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
 
 #pragma warning disable CA1031 // A report must never fail a turn, whatever went wrong sending it.
-    private async Task SendAsync(Wire.TurnReport report)
+    private async Task SendAsync(Wire.TurnReport report, Func<bool>? stillTrue = null)
     {
         try
         {
-            _ = await PatientlyAsync(async deadline => await nodes.ReportTurnAsync(report, deadline: deadline))
+            _ = await PatientlyAsync(async deadline => await nodes.ReportTurnAsync(report, deadline: deadline), stillTrue)
                 .ConfigureAwait(false);
         }
         catch (Exception failure)
