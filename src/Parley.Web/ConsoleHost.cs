@@ -176,9 +176,17 @@ public static class ConsoleHost
         // console's own Host, which the host check admits, and forge the delivery record (review, lens 2 run 66). The
         // browser says who started a request; another site, or another port on this machine, is refused before any page
         // runs. A typed address or a bookmark says `none`, the console's own pages `same-origin`.
+        //
+        // A listed name must also say who asked. A browser sends Sec-Fetch-Site only to a secure origin: loopback is one, and a
+        // listed name forwarded over HTTPS is one, but over plain HTTP (a port proxy, `tailscale serve --http`) nothing
+        // arrives, and an image or a navigation another site started reached a page that acts (review, lens 2 run A on
+        // d99806d9). So a listed name is answered only to a browser that marks its requests, which means only over HTTPS.
         app.Use(async (context, next) =>
         {
-            if (StartedElsewhere(context))
+            if (StartedElsewhere(context)
+                || (listed.Count > 0
+                    && !context.Request.Headers.ContainsKey("Sec-Fetch-Site")
+                    && listed.Contains(context.Request.Host.Host, StringComparer.OrdinalIgnoreCase)))
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await context.Response.WriteAsync(StartedElsewhereSaid, context.RequestAborted).ConfigureAwait(false);

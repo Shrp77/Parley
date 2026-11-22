@@ -82,6 +82,9 @@ names it also answers to.
 
 - **Write each name out in full.** A wildcard such as `*.ts.net`, an IP address or a port is left
   out, and the console says so when it starts. Up to 16 names are taken.
+- **Forward it over HTTPS** (plain `tailscale serve` does). Over plain HTTP a browser does not say
+  which site asked for a page, so Parley refuses every request that comes in under a listed name
+  that way.
 - **Anyone who can reach that name acts as you.** The console has no sign-in. With Tailscale,
   your tailnet's access rules decide who that is.
 - **Never make the name public.** Tailscale Funnel, or any tunnel open to the internet, would let
