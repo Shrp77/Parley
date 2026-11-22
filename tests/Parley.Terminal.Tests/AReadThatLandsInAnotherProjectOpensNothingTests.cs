@@ -67,6 +67,7 @@ public sealed class AReadThatLandsInAnotherProjectOpensNothingTests
         await HeldThenMovedAsync(seated, () => seated.Session.Press(new Key(Shell.StillOpenKey).WithAlt));
 
         var shown = seated.Shell.StillOpenShown;
+        var said = seated.Shell.Said ?? string.Empty;
 
         if (shown is not null)
         {
@@ -74,6 +75,11 @@ public sealed class AReadThatLandsInAnotherProjectOpensNothingTests
         }
 
         Assert.Equal(Seated.Beta, seated.Shell.Place.Project);
+
+        // The round went out before the person moved, so it is still said; only its list is not opened over beta.
+        Assert.True(
+            said.StartsWith("Asked about", StringComparison.Ordinal) || said.StartsWith("Nobody was asked.", StringComparison.Ordinal),
+            $"the round that went out was not said; the status line read: {said}");
         Assert.Null(shown is null ? null : string.Join(" | ", shown.Shown));
     }
 

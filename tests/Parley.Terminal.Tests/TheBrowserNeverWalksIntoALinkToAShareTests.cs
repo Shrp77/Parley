@@ -78,5 +78,8 @@ public sealed class TheBrowserNeverWalksIntoALinkToAShareTests : IDisposable
         browsing.List.NewKeyDownEvent(Key.Enter);
 
         Assert.True(waited.Elapsed < TimeSpan.FromSeconds(5), $"pressing the row waited {waited.Elapsed}, as a lookup on {host} would");
+
+        // And the person is told why nothing opened, rather than left with a press that did nothing.
+        Assert.Equal(Parley.Core.LocalPath.OffThisMachine, browsing.Said);
     }
 }
