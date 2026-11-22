@@ -200,6 +200,28 @@ public static class AgentFreezing
         return new FreezeAllOutcome(outcomes, null);
     }
 
+    /// <summary>Names, for a freeze or unfreeze of every agent in one project, each agent it also changed in another project.</summary>
+    /// <param name="all">What the act did.</param>
+    /// <param name="project">The project the person acted in.</param>
+    /// <param name="freeze">Whether it froze rather than unfroze.</param>
+    /// <returns>A sentence per agent, each starting with a space, or empty.</returns>
+    /// <remarks>
+    /// One process serves every project an agent is in, so the act reaches them all; said by name, so a person who unfreezes
+    /// one project learns an agent frozen for another project's sake was released there too (review, lens 2 run B on 44c8e1e6).
+    /// </remarks>
+    public static string Elsewhere(FreezeAllOutcome all, string project, bool freeze)
+    {
+        ArgumentNullException.ThrowIfNull(all);
+
+        return string.Concat(all.Agents
+            .Select(o => (o.Agent, Others: o.Projects
+                .Where(p => p.Problem is null && p.Changed && !string.Equals(p.Project, project, StringComparison.Ordinal))
+                .Select(p => p.Project)
+                .ToList()))
+            .Where(o => o.Others.Count > 0)
+            .Select(o => $" '{o.Agent.Value}' was {(freeze ? "frozen" : "unfrozen")} in {string.Join(", ", o.Others.Select(p => $"'{p}'"))} too."));
+    }
+
     /// <summary>Says what freezing did, in a few sentences a person can act on.</summary>
     /// <param name="outcome">What happened.</param>
     /// <returns>The sentences.</returns>

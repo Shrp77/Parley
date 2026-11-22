@@ -65,4 +65,21 @@ public sealed class KillIsOfferedFromTheAgentsOwnRowTests
         Assert.Contains("was started by a node that is gone", said, StringComparison.Ordinal);
         Assert.Contains("type=\"submit\"", said, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task An_action_that_only_folds_to_kill_is_not_offered_as_one()
+    {
+        // The offer compared ignoring case while the description and the act lower-case it, which differ for a Kelvin sign:
+        // "Kill" showed Kill's words and Confirm for an editor's session (review, lens 2 run B on 44c8e1e6).
+        using var console = new RoadmapConsole();
+        var editor = Row(Agent, left: false);
+        editor.OpenOutside = true;
+        console.Broker.Registry.Add(editor);
+
+        using var client = console.CreateClient();
+        var said = WebUtility.HtmlDecode(await client.GetStringAsync(
+            new Uri($"/Projects/Act?project={RoadmapConsole.Project}&action=%E2%84%AAill&subject={Agent}", UriKind.Relative), Ct));
+
+        Assert.DoesNotContain("was started by a node that is gone", said, StringComparison.Ordinal);
+    }
 }

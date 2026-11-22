@@ -42,12 +42,14 @@ public static class FreezingWords
     public static string FreezingAll(string project) =>
         $"Every agent in '{project}' that is not frozen will be frozen, each as freezing one is: one a node holds is stopped once its "
         + "turn ends; one a node that is gone left running keeps running until you end it with Kill; one open in an editor stays "
-        + "open until whoever opened it closes it. None is started again until unfrozen. Each is frozen in every project that "
+        + "open until whoever opened it closes it; one whose node is not joined runs until a node returns to stop it. None is started again until unfrozen. Each is frozen in every project that "
         + "serves it, so this may stop work for other projects too. What they owe stays open.";
 
     /// <summary>Says what unfreezing every frozen agent in a project does.</summary>
     /// <param name="project">The project.</param>
     /// <returns>The sentences.</returns>
     public static string UnfreezingAll(string project) =>
-        $"Every frozen agent in '{project}' can be started again, and those that owe open work, or have anything waiting, are asked to start now.";
+        $"Every frozen agent in '{project}' can be started again, and those that owe open work, or have anything waiting, are asked to start now. "
+        + "Each is unfrozen in every project that serves it, because one process serves them all, so work for other projects may "
+        + "start it too.";
 }

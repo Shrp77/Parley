@@ -159,7 +159,8 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
         // Ending a process is described only for one a node that is gone left running (SPEC.md §11.1): for any other the
         // description would be untrue and the broker refuses the act, so neither is offered. A registry that cannot be read
         // leaves it offered, and the broker's own check decides.
-        if (string.Equals(Action, "kill", StringComparison.OrdinalIgnoreCase) && AgentName.TryCreate(Subject, out var killing))
+        // Lower-cased as the description and the act read it, never compared ignoring case: those differ for a Kelvin sign.
+        if (Action?.ToLowerInvariant() == "kill" && AgentName.TryCreate(Subject, out var killing))
         {
             var roll = await BrokerDirectory.ReadAsync(async () =>
                 await new BrokerClient(directory.ClientFor(project)).RegistryAsync(HttpContext.RequestAborted)
@@ -448,8 +449,11 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
             // A freeze that ends no process is said agent by agent: a left process runs on until Kill, an editor's session stays
             // (review, lens 3 run B on fc26cb8a). Counted alone, the person was never told.
             + string.Concat(all.Agents
-                .Where(o => o.Complete && o.Projects.Any(p => p.Process is FreezeProcess.LeftRunning or FreezeProcess.OpenOutside))
-                .Select(o => $" '{o.Agent.Value}': {AgentFreezing.Describe(o)}"));
+                .Where(o => o.Complete && o.Projects.Any(p => p.Process is FreezeProcess.LeftRunning or FreezeProcess.OpenOutside or FreezeProcess.NoNode))
+                .Select(o => $" '{o.Agent.Value}': {AgentFreezing.Describe(o)}"))
+            // One process serves every project an agent is in, so the act reached the others too: said by name, so the person
+            // knows an agent frozen for another project's sake was released there (review, lens 2 run B on 44c8e1e6).
+            + AgentFreezing.Elsewhere(all, Project ?? string.Empty, freeze);
     }
 
     // A refusal is said as the act that was refused, never as a read that failed, which is what the containment around every
