@@ -40,9 +40,10 @@ public static class FreezingWords
     /// <param name="project">The project.</param>
     /// <returns>The sentences.</returns>
     public static string FreezingAll(string project) =>
-        $"Every agent in '{project}' that is not frozen will be frozen, each as freezing one is: stopped once its turn ends, and kept "
-        + "from starting until unfrozen. Each is frozen in every project that serves it, so this may stop work for other projects "
-        + "too. What they owe stays open.";
+        $"Every agent in '{project}' that is not frozen will be frozen, each as freezing one is: one a node holds is stopped once its "
+        + "turn ends; one a node that is gone left running keeps running until you end it with Kill; one open in an editor stays "
+        + "open until whoever opened it closes it. None is started again until unfrozen. Each is frozen in every project that "
+        + "serves it, so this may stop work for other projects too. What they owe stays open.";
 
     /// <summary>Says what unfreezing every frozen agent in a project does.</summary>
     /// <param name="project">The project.</param>

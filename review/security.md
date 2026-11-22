@@ -110,7 +110,8 @@ Check a change against each; a new page or a new path lookup must keep all of th
   (truthful provenance, a review on every surface, the agent's own words). Not to be re-raised.
 - **The unauthenticated loopback port** is §16's concession; what a hand-made client on it can do is low.
 - **Roadmap text has no bound**; the terminal's slowness on a huge item is recorded evidence.
-- **A GET that delivers on the person's own act** (reload, a restored tab, a prerender they started) is by design.
+- **A GET that delivers on the person's own act** (reload, a restored tab) is by design. A speculative load is refused
+  even when the person started it (the defences above), so a prerender of theirs delivers nothing.
 - macOS `/net` autofs and a link the person made themselves are recorded lows.
 - **A link an agent makes in its own repository is low** (owner, 2026-10-31, lens 2 run 123): a junction, a hard link
   or a symbolic link that leads a placement, the person's or the agent's own, to a file outside the repository gives

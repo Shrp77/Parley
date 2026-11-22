@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.64.31, protocol 0.20, schema 11. Nothing has been released, but **live stores hold work
+- Version 0.64.32, protocol 0.20, schema 11. Nothing has been released, but **live stores hold work
   in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
   `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
   upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
@@ -40,7 +40,8 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 - Feature 041, a graph panel pinned to every console page and a person's freeze on an agent (SPEC.md §14), is built on the 035
   branch: `specs/041-agent-freeze-and-graph/`. A freeze is kept per agent in each project that serves it, honoured at the one place
   the broker asks a node to start an agent (`BrokerRuntime.Ask`), and cleared by a person's `unfreeze` or, unless the person asked
-  it to outlast one, by the broker's next start. It took migration 011.
+  it to outlast one, by the broker's next start, which lets it lapse and clears it once the start it owes has been asked. It took
+  migration 011.
 Current plan: `specs/041-agent-freeze-and-graph/plan.md`
 <!-- SPECKIT END -->
 - A person speaks to an agent only with a Request. An agent's row menu in the terminal has one

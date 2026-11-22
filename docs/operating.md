@@ -324,7 +324,8 @@ of how many it tried.
 
 A frozen agent cannot be restarted, because a restart starts it again. Unfreeze it first. An agent
 somebody opened in an editor can be frozen, so that nothing starts it again, but Parley cannot end
-that session.
+that session. One left running by a node that is gone is frozen too, but keeps running until you end
+it with Kill (below).
 
 ### When the broker starts again
 

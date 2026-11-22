@@ -444,7 +444,12 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
             + (incomplete > 0
                 ? $" {incomplete} {(incomplete == 1 ? "was" : "were")} not {(freeze ? "frozen" : "unfrozen")} in every project that serves {(incomplete == 1 ? "it" : "them")}: "
                   + string.Join(' ', all.Agents.Where(o => !o.Complete).Select(o => $"'{o.Agent.Value}': {AgentFreezing.Describe(o)}"))
-                : string.Empty);
+                : string.Empty)
+            // A freeze that ends no process is said agent by agent: a left process runs on until Kill, an editor's session stays
+            // (review, lens 3 run B on fc26cb8a). Counted alone, the person was never told.
+            + string.Concat(all.Agents
+                .Where(o => o.Complete && o.Projects.Any(p => p.Process is FreezeProcess.LeftRunning or FreezeProcess.OpenOutside))
+                .Select(o => $" '{o.Agent.Value}': {AgentFreezing.Describe(o)}"));
     }
 
     // A refusal is said as the act that was refused, never as a read that failed, which is what the containment around every

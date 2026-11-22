@@ -1619,7 +1619,7 @@ CREATE TABLE agents (
   -- the row and a rename carries it to the new name.
   frozen_utc        TEXT    CHECK (frozen_utc IS NULL OR unixepoch(frozen_utc) IS NOT NULL),
   -- The run of the broker the person froze it under (§14): a number the broker gives itself at every start, so a later start,
-  -- which is what a logon or a reboot brings, lets the freeze lapse unless `keep_frozen`.
+  -- which a logon, a reboot, an install or a crash brings, lets the freeze lapse unless `keep_frozen`.
   frozen_run      TEXT    CHECK (frozen_run IS NULL OR (frozen_utc IS NOT NULL AND length(frozen_run) = 36)),
   -- The person's choice that this freeze outlasts a start of the broker; cleared with the freeze.
   keep_frozen     INTEGER NOT NULL DEFAULT 0 CHECK (keep_frozen IN (0, 1) AND (keep_frozen = 0 OR frozen_utc IS NOT NULL)),
@@ -4587,7 +4587,7 @@ it to the new name, and a purge ends it with the row, so a name registered again
 
 **A start of the broker lifts it, unless the person said not to.** Every start gives the broker a number of its own (a GUID, new each
 time), and a freeze is stored with the number of the run that made it. When the broker starts and finds a freeze made under a
-different number, that is a logon or a reboot, because a start is what either brings: the freeze lapses, and the agent is started if it
+different number, that is a later start of the broker (a logon, a reboot, an install, a crash): the freeze lapses, and the agent is started if it
 owes open work, as the restart wake does (above). **An unfreeze pays what the freeze put off.** A message or a closure poll that
 reached a frozen agent had its wake declined, so when the freeze ends, by `unfreeze` or by a lapse, the agent is asked to start if
 anything is waiting for it that it has not collected, whatever the resume policy; after a lapse that is at the first join of its

@@ -336,6 +336,29 @@ public sealed partial class FreezingOnTheWebTests
         Assert.DoesNotContain("will be stopped once its current turn ends", page, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("left_running", "end it with Kill")]
+    [InlineData("open_outside", "stays until somebody closes it")]
+    public async Task Freezing_everyone_names_an_agent_whose_process_the_freeze_does_not_end(string process, string said)
+    {
+        // Counted alone, the person was never told a left process runs on until Kill, or an editor's session stays (review,
+        // lens 3 run B on fc26cb8a); nor were they promised less than a stop beforehand.
+        using var console = new RoadmapConsole();
+        var row = Row(Orders);
+        row.Presence = Wire.AgentPresence.Running;
+        row.OpenOutside = true;
+        row.Unsupervised = process == "left_running";
+        console.Broker.Registry.Add(row);
+        console.Broker.FreezeProcess = process;
+
+        using var client = console.CreateClient();
+        var before = WebUtility.HtmlDecode(await client.GetStringAsync(Address("freezeall", RoadmapConsole.Project, string.Empty), Ct));
+        var after = await ConfirmAsync(console, "freezeall", RoadmapConsole.Project, []);
+
+        Assert.Contains("keeps running until you end it with Kill", before, StringComparison.Ordinal);
+        Assert.Contains(said, after, StringComparison.Ordinal);
+    }
+
     private static async Task<string> AgentPageAsync(RoadmapConsole console, string agent)
     {
         using var client = console.CreateClient();
