@@ -325,8 +325,53 @@ public sealed class GraphTests
     /// It passed on Windows, which is the machine it was written on, and failed on the two that
     /// were not.
     /// </remarks>
-    private static string NameOf(string reference) =>
-        Path.GetFileNameWithoutExtension(reference.Replace('\\', '/'));
+    private static string NameOf(string reference)
+    {
+        // Only a project file's extension is removed. A package id is dotted all the way through,
+        // and `Path.GetFileNameWithoutExtension` read `Microsoft.Data.Sqlite` as `Microsoft.Data`,
+        // so the one package the store walk exists to find never matched "Sqlite".
+        var name = reference.Replace('\\', '/');
+        name = name[(name.LastIndexOf('/') + 1)..];
+
+        return name.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)
+            ? name[..^".csproj".Length]
+            : name;
+    }
+
+    [Fact]
+    public void The_package_names_the_walk_reads_are_whole()
+    {
+        Assert.Equal("Microsoft.Data.Sqlite", NameOf("Microsoft.Data.Sqlite"));
+        Assert.Equal("Parley.Store", NameOf(@"..\Parley.Store\Parley.Store.csproj"));
+    }
+
+    [Fact]
+    public void Core_has_no_dependencies_at_all()
+    {
+        // CLAUDE.md: "Parley.Core has no dependencies at all". Neither a package nor a project.
+        Assert.Empty(DirectReferences(RepositoryPath("src/Parley.Core/Parley.Core.csproj")));
+    }
+
+    [Fact]
+    public void The_adapter_reaches_neither_the_broker_nor_setup()
+    {
+        // CLAUDE.md: "Parley.Mcp references neither Parley.Broker nor Parley.Setup". Setup holds
+        // the person's acts (AgentWithdrawal and the rest), so an adapter that reached it could
+        // perform them whatever its tools are called.
+        var reached = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        Walk(RepositoryPath("src/Parley.Mcp/Parley.Mcp.csproj"), "Parley.Mcp", reached);
+
+        string[] forbidden = [.. Forbidden, "Parley.Setup"];
+
+        var breaches = reached
+            .Where(r => forbidden.Any(f => r.Key.Contains(f, StringComparison.OrdinalIgnoreCase)))
+            .Select(r => $"{r.Key} (via {r.Value})")
+            .ToList();
+
+        Assert.Contains("Parley.Transport", reached.Keys);
+        Assert.True(breaches.Count == 0, "the adapter reaches: " + string.Join(", ", breaches));
+    }
 
     /// <summary>The package and project references a project file declares itself.</summary>
     /// <param name="path">The project file.</param>

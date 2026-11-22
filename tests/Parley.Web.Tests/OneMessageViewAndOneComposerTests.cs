@@ -44,6 +44,45 @@ public sealed class OneMessageViewAndOneComposerTests
     }
 
     [Fact]
+    public void A_messages_payload_reaches_markup_only_through_the_message_partial()
+    {
+        // The check above asks only that each page contains the partial somewhere, so a page that
+        // uses it once and draws another message itself passed. This follows the payload: every
+        // place markup reads a message's PayloadJson must hand it, through Payload.Read, to
+        // _MessageBody, inline or by a variable the same file passes as the partial's model. The one
+        // exception is the first words of a message as a link's text (DetailModel.Start), by name.
+        var inline = new Regex("""<partial name="_MessageBody" model="@[A-Za-z.]*Payload\.Read\([A-Za-z.]+\.PayloadJson\)" />""",
+            RegexOptions.None, TimeSpan.FromSeconds(1));
+        var assigned = new Regex("""var (?<name>\w+) = Payload\.Read\([A-Za-z.]+\.PayloadJson\);""",
+            RegexOptions.None, TimeSpan.FromSeconds(1));
+
+        var loose = new List<string>();
+
+        foreach (var (name, text) in Pages().Where(page => page.Name != "_MessageBody.cshtml"))
+        {
+            foreach (var line in text.Split('\n').Where(line => line.Contains("PayloadJson", StringComparison.Ordinal)))
+            {
+                if (inline.IsMatch(line)
+                    || line.Contains("DetailModel.Start(Parley.Core.PayloadShape.Spoken(", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (assigned.Match(line) is { Success: true } match
+                    && (text.Contains($"<partial name=\"_MessageBody\" model=\"{match.Groups["name"].Value}\"", StringComparison.Ordinal)
+                        || text.Contains($"<partial name=\"_MessageBody\" model=\"@{match.Groups["name"].Value}\"", StringComparison.Ordinal)))
+                {
+                    continue;
+                }
+
+                loose.Add($"{name}: {line.Trim()}");
+            }
+        }
+
+        Assert.True(loose.Count == 0, "A message drawn outside _MessageBody: " + string.Join(" | ", loose));
+    }
+
+    [Fact]
     public void Every_page_that_shows_a_message_uses_the_message_partial()
     {
         foreach (var name in new[] { "_Conversation.cshtml", "Inbox.cshtml", "_InboxRows.cshtml", "Panel.cshtml" })

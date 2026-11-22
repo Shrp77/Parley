@@ -80,6 +80,19 @@ public sealed class SurfaceBoundaryTests
             .Where(n => n is not ("Equals" or "GetHashCode" or "ToString"));
 
     [Fact]
+    public void The_broker_exposes_no_field()
+    {
+        // The method list above cannot see a field, so a public field holding an OperatorConsole (or a delegate to one of
+        // its operations) handed an adapter every operator operation and passed.
+        var fields = typeof(Broker)
+            .GetFields(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static)
+            .Where(f => !f.IsLiteral) // a constant carries a value, never an operation
+            .Select(f => f.Name);
+
+        Assert.Empty(fields);
+    }
+
+    [Fact]
     public void The_broker_exposes_no_operation_it_has_not_declared()
     {
         var unexpected = PublicMethodsOf(typeof(Broker)).Where(n => !BrokerSurface.Contains(n));
