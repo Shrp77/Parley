@@ -2159,7 +2159,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         Wire.WakeOutcome.OpenOutside =>
             "open in a session Parley did not start; it reads your request when somebody there prompts it",
         Wire.WakeOutcome.Frozen =>
-            "frozen by the person: it is not started, and it gets your request when they unfreeze it. Nothing is lost",
+            "frozen by the person: it is not started, and it gets your request when it is unfrozen, by them or by their next logon. Nothing is lost",
         _ => "unknown"
     };
 

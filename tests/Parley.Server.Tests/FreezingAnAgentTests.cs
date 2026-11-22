@@ -169,7 +169,7 @@ public sealed class FreezingAnAgentTests
     }
 
     [Fact]
-    public async Task A_hold_is_read_back_by_the_registry()
+    public async Task A_freeze_is_read_back_by_the_registry()
     {
         var token = TestContext.Current.CancellationToken;
 
@@ -213,7 +213,77 @@ public sealed class FreezingAnAgentTests
     }
 
     [Fact]
-    public void An_agent_cannot_hold_or_resume_anybody()
+    public async Task A_frozen_agent_that_is_renamed_stays_frozen_under_its_new_name()
+    {
+        // The stored freeze goes with the row to the new name. The freeze the broker honours was left under the old one, so the
+        // registry said frozen while new work and a person's start both started the agent (review, lens 2 run 1 on 0.64.3).
+        var token = TestContext.Current.CancellationToken;
+        var identity = Guid.NewGuid().ToString();
+
+        await using var broker = await LoopbackBroker.StartAsync(token);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["billing", "payments"], token);
+
+        await using (await AttachedClient.AttachAsync(
+            broker, "billing@alpha", workspace: "/work/billing", cancellationToken: token, identity: identity))
+        {
+        }
+
+        await broker.WaitUntilDetachedAsync("billing@alpha", Patience);
+
+        var console = broker.ConnectAsOperator();
+        _ = await console.FreezeAsync(Freeze("billing@alpha", keep: true), cancellationToken: token);
+
+        await using (await AttachedClient.AttachAsync(
+            broker, "payments@alpha", workspace: "/work/billing", cancellationToken: token, identity: identity))
+        {
+        }
+
+        await broker.WaitUntilDetachedAsync("payments@alpha", Patience);
+
+        Assert.NotEmpty((await console.DescribeRegistryAsync(new Wire.Empty(), cancellationToken: token)).Rows
+            .Single(r => r.Name == "payments@alpha").FrozenUtc);
+
+        await using var docs = await AttachedClient.AttachAsync(broker, "docs@alpha", cancellationToken: token);
+
+        var sent = await docs.Client.RequestAsync(
+            Requests.Open("docs@alpha", "payments@alpha", "you were renamed while frozen", "c1"), cancellationToken: token);
+
+        Assert.Equal(Wire.WakeOutcome.Frozen, Assert.Single(sent.Outcomes).Wake);
+
+        var refused = await Assert.ThrowsAsync<RpcException>(async () =>
+            await console.StartAsync(new Wire.StartRequest { Agent = "payments@alpha" }, cancellationToken: token));
+
+        Assert.Equal(StatusCode.FailedPrecondition, refused.StatusCode);
+        Assert.Equal(0, await node.CountCommandsAsync(TimeSpan.FromMilliseconds(300)));
+    }
+
+    [Fact]
+    public async Task A_name_whose_frozen_agent_was_purged_is_not_frozen_for_whoever_registers_under_it_next()
+    {
+        // A freeze is a column of the row. The purge took the row and left the name frozen in the broker's memory, so the next
+        // agent under that name could not be started and no surface showed a freeze to lift (review, lens 2 run 1 on 0.64.3).
+        var token = TestContext.Current.CancellationToken;
+
+        await using var broker = await LoopbackBroker.StartAsync(token);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["orders"], token);
+
+        await RegisterAndCloseAsync(broker, "orders@alpha", token);
+
+        var console = broker.ConnectAsOperator();
+        _ = await console.FreezeAsync(Freeze("orders@alpha"), cancellationToken: token);
+        _ = await console.RetireAsync(Agent("orders@alpha"), cancellationToken: token);
+
+        var purged = await console.PurgeAsync(Agent("orders@alpha"), cancellationToken: token);
+
+        Assert.Equal(Wire.PurgeVerdict.Gone, purged.Verdict);
+
+        await RegisterAndCloseAsync(broker, "orders@alpha", token);
+
+        Assert.True((await console.StartAsync(new Wire.StartRequest { Agent = "orders@alpha" }, cancellationToken: token)).Changed);
+    }
+
+    [Fact]
+    public void An_agent_cannot_freeze_or_unfreeze_anybody()
     {
         // The Agents service is what an adapter binds. The operations are the person's alone (SPEC.md §10.2).
         var agentOperations = typeof(Wire.Agents.AgentsClient).GetMethods().Select(m => m.Name);

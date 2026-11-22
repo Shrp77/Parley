@@ -164,6 +164,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     private readonly ConcurrentDictionary<string, bool> _resumedMachines = new(StringComparer.Ordinal);
 
+    /// <summary>The agents whose freeze lapsed when this broker started, until their machine's node first joins (SPEC.md §11.1).</summary>
+    /// <remarks>
+    /// A lapse is an unfreeze nobody was there to act on: no node had joined, so nothing could be started. The first join of the
+    /// agent's machine pays what an unfreeze pays, a turn for anything that arrived while it was frozen, whatever the resume policy.
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, bool> _lapsed = new(StringComparer.Ordinal);
+
     /// <summary>The agents a person has frozen (SPEC.md §11.1), by name: what <see cref="Ask"/> reads, because it cannot wait on the store.</summary>
     /// <remarks>
     /// Loaded when the broker starts and changed only by <see cref="MarkFrozen"/>, which the operator operations call after the
@@ -228,8 +235,12 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         // A freeze an earlier run made lapses now, unless the person asked that it outlast a start (SPEC.md §11.1). Before the set
         // below is read, so `Ask` never sees what has just lapsed. The agents that owe work are started by the first join of
-        // their machine's node, which wakes every active agent that owes an open exchange.
-        _ = new AgentRepository(connection).UnfreezeLapsedAsync(RunId).GetAwaiter().GetResult();
+        // their machine's node, which wakes every active agent that owes an open exchange. Each is remembered until that join,
+        // because what arrived for it while it was frozen had its wake declined and is owed a turn too.
+        foreach (var lapsed in new AgentRepository(connection).UnfreezeLapsedAsync(RunId).GetAwaiter().GetResult())
+        {
+            _lapsed[lapsed.Value] = true;
+        }
 
         foreach (var frozen in new AgentRepository(connection).GetAllAsync().GetAwaiter().GetResult().Where(a => a.Frozen))
         {
@@ -781,6 +792,14 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 [attached],
                 (_, existing) => existing.Add(attached));
 
+            // **Frozen while it was starting** (SPEC.md §11.1): the freeze found no process to stop, because the start a node
+            // had already been asked for had not attached yet. It is stopped now, as the freeze would have stopped it, once
+            // the turn it came up for is over. Without this it came up and went on working while every surface said frozen.
+            if (_frozen.ContainsKey(registration.Name.Value) && attached.StartedByParley)
+            {
+                _ = RequestStop(registration.Name, restart: false, "a person froze it while it was starting");
+            }
+
             return attached;
         }
         finally
@@ -859,6 +878,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
         if (_launches.TryRemove(holder.Name, out var token))
         {
             _launches[registration.Name] = token;
+        }
+
+        // The stored freeze went with the row to the new name, so the freeze the broker honours goes with it. Left under the old
+        // name, the registry would say frozen while new work and a person's start still started the agent.
+        if (_frozen.TryRemove(holder.Name.Value, out _))
+        {
+            _frozen[registration.Name.Value] = true;
         }
 
         _ = _identities.TryRemove(holder.Name, out _);
@@ -965,22 +991,52 @@ public sealed class BrokerRuntime : IAsyncDisposable
             }
         }
 
+        foreach (var name in _lapsed.Keys)
+        {
+            if (!AgentName.TryCreate(name, out var lapsed)
+                || !string.Equals(lapsed.Machine, node.Machine, StringComparison.Ordinal)
+                || !_lapsed.TryRemove(name, out _))
+            {
+                continue;
+            }
+
+            try
+            {
+                await WakeIfOwingAsync(lapsed, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // As above: the join stands, and the wake is asked for again at the machine's next join.
+                _lapsed[name] = true;
+            }
+        }
+
         return joined;
     }
 
-    /// <summary>Asks an agent to start if it owes open work, as the restart wake does; used when a freeze is cleared (SPEC.md §11.1).</summary>
+    /// <summary>
+    /// Asks an agent to start if it owes open work or has anything waiting for it; used when a freeze is cleared (SPEC.md §11.1).
+    /// </summary>
     /// <param name="agent">The agent.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>A task that completes when it has been asked, or found to owe nothing.</returns>
+    /// <returns>A task that completes when it has been asked, or found to have nothing to do.</returns>
+    /// <remarks>
+    /// Wider than the restart wake, which asks only about open work owed. Every wake for a frozen agent was declined, so a
+    /// Result to its own question, or a closure poll waiting on its vote, arrived with no turn coming and its sender was told
+    /// nothing is lost. The unfreeze is the one moment that debt can be paid, so mail and polls count here too.
+    /// </remarks>
     internal async Task WakeIfOwingAsync(AgentName agent, CancellationToken cancellationToken)
     {
         var owes = await UseConnectionAsync(
-            async (_, _, ct) => (await _house.OutstandingToWakeForAsync(agent, ct).ConfigureAwait(false)).Count > 0,
+            async (connection, _, ct) =>
+                (await _house.OutstandingToWakeForAsync(agent, ct).ConfigureAwait(false)).Count > 0
+                || await new MessageRepository(connection).CountPendingAsync(agent, cancellationToken: ct).ConfigureAwait(false)
+                + await new ConversationRepository(connection).CountOutstandingPollsAsync(agent, ct).ConfigureAwait(false) > 0,
             cancellationToken).ConfigureAwait(false);
 
         if (owes)
         {
-            _ = RequestAttentionForMail(agent, "a person unfroze it and it owes work");
+            _ = RequestAttentionForMail(agent, "a person unfroze it and work or mail is waiting for it");
         }
     }
 
@@ -2214,6 +2270,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
         foreach (var (question, agent) in due)
         {
             if (_pending.TryGetValue(agent.Value, out var claimed) && Live(Clock.GetUtcNow() - claimed))
+            {
+                continue;
+            }
+
+            // A refresh ends the process and starts it again, and nothing starts a frozen agent (SPEC.md §11.1). It is not
+            // marked sent, so it is due again once the agent is unfrozen.
+            if (_frozen.ContainsKey(agent.Value))
             {
                 continue;
             }

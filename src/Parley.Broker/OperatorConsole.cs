@@ -160,7 +160,7 @@ public sealed class OperatorConsole
     public async Task<bool> RetireAsync(AgentName agent, CancellationToken cancellationToken = default) =>
         await _agents.RetireAsync(agent, cancellationToken).ConfigureAwait(false) > 0;
 
-    /// <summary>Freezes an agent: nothing starts it until a person unfreezes it (§10.2, §11.1).</summary>
+    /// <summary>Freezes an agent: nothing starts it until a person unfreezes it, or the broker next starts unless the freeze is kept (§10.2, §11.1).</summary>
     /// <param name="agent">The agent to freeze.</param>
     /// <param name="nowUtc">When it was frozen.</param>
     /// <param name="run">The run of the broker freezing it, kept with the freeze so a later start can tell it is an earlier run's.</param>

@@ -231,7 +231,8 @@ with the same words and the same typed name, because both run one implementation
 its page in the web console, and choose Stop or Restart. Its node lets the current turn finish, then stops
 it, and for a restart starts it again so it reads its launch configuration afresh. What it owes stays owed
 and its conversations are untouched; only what the running session had learned is lost. A stopped agent is
-started again by the next work for it. To keep it from being started, retire it. Neither is offered for an
+started again by the next work for it. To keep it from being started, freeze it (below), or retire it for good. A
+frozen agent cannot be restarted, because a restart starts it again; unfreeze it first. Neither is offered for an
 agent somebody opened in an editor, because Parley did not start that process and cannot stop it.
 
 **Freezing an agent, to keep it stopped.** Stop does not stay: the next work for the agent starts it again, and so does a
@@ -241,7 +242,8 @@ is started. Press Enter on its row in the
 terminal, or use the *Freeze* button on its page, in the graph, or *Freeze all* for a whole project. The page says what it does first:
 the agent is stopped once its current turn ends, and then nothing starts it: not new work for it, not a Start, and until the broker
 next starts, not a restart wake either. What it owes stays open and waits, and a message sent to it tells its sender that the agent is frozen.
-*Unfreeze* undoes it by hand, and an agent that owes work is then started as after a restart. To keep an agent frozen through the
+*Unfreeze* undoes it by hand, and an agent that owes work, or that has a message or a closing vote waiting from while it was
+frozen, is then started. The same is paid when a logon lifts the freeze. To keep an agent frozen through the
 logon as well, check *Do not unfreeze on logon* when you freeze it (on the confirmation page, or the second Freeze entry in the
 terminal's row menu); it then stays frozen until you unfreeze it yourself. Anything that restarts the broker, such as installing a
 new build or a crash, lifts a freeze the same way, because the broker cannot tell that from a logon. One agent process serves every project whose
@@ -287,6 +289,11 @@ timezone, sortable either way.
 - **Archive** files a conversation out of the list. The count of what is hidden stays on screen,
   because an archived conversation goes on receiving messages, and a message does not un-archive
   it.
+- **Several at once**, in the web console's conversation list: tick the rows you mean, then *Archive selected* or *Bring
+  back selected*. *Archive all closed* files every conversation that is closed and not yet archived, whatever is ticked,
+  and never an open one. Each takes one click, because bringing back undoes it, and each changes at most 500 at a time.
+  *End selected* ends the ticked conversations for everybody, which cannot be undone, so it opens a page that lists
+  them and does nothing until you type `end`; it ends at most 100 at a time. Each row also has its own Archive button.
 - **Destroy** deletes a conversation and every participant's half of it. It is described first,
   and keeping is offered first. If a move had split a question from what settled it, and what settled it goes, the
   question stays in its conversation and reads as closed.

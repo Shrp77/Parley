@@ -2459,6 +2459,9 @@ internal sealed partial class Shell : Window
     /// <summary>The choice that leaves a running agent alone.</summary>
     private const string KeepItRunning = "Keep it running";
 
+    /// <summary>The first choice of the unfreeze description, which changes nothing: the agent is not running, so the stop's words would be wrong.</summary>
+    private const string LeaveItFrozen = "Leave it frozen";
+
     /// <summary>
     /// Opens what can be done with the row under the cursor in the agents list.
     /// </summary>
@@ -2518,7 +2521,7 @@ internal sealed partial class Shell : Window
                 entries.Add((StartThisTitle + name.Value, StartSelected));
             }
 
-            // Frozen or not, whichever it is: a freeze is the person's, kept through a restart, and cleared only by unfreezing.
+            // Frozen or not, whichever it is: a freeze is the person's, cleared by unfreezing or, unless kept, by the broker's next start.
             if (Agents.SelectedStanding is { Retired: false } freezable)
             {
                 var frozen = Standing.IsFrozen(freezable.Standing);
@@ -2707,32 +2710,41 @@ internal sealed partial class Shell : Window
         }
 
         var act = (freeze ? FreezeThisTitle : UnfreezeThisTitle) + agent.Value + (freeze && keepFrozen ? KeepFrozenSuffix : string.Empty);
-        var menu = Prompting.Choose(
-            act,
-            freeze ? FreezingWords.Freezing(agent.Value, keepFrozen) : FreezingWords.Unfreezing(agent.Value),
-            [KeepItRunning, act]);
-        var opened = Prompting.Open(app, menu);
 
-        menu.Done += (_, chosen) =>
+        // One process serves every project the agent is in, so the person is told which a freeze reaches before they agree
+        // (SPEC.md §11.1). That is a read of each project, so the description opens after it, from the queue.
+        Queue(async token =>
         {
-            Prompting.Close(app, opened);
+            var (serving, unreachable) = await AgentFreezing.ServedByAsync(_directory, agent, token).ConfigureAwait(false);
 
-            if (chosen != act)
+            var menu = Prompting.Choose(
+                act,
+                (freeze ? FreezingWords.Freezing(agent.Value, keepFrozen) : FreezingWords.Unfreezing(agent.Value))
+                + " " + AgentFreezing.Reach(agent, serving, unreachable),
+                [freeze ? KeepItRunning : LeaveItFrozen, act]);
+            var opened = Prompting.Open(app, menu);
+
+            menu.Done += (_, chosen) =>
             {
-                return;
-            }
+                Prompting.Close(app, opened);
 
-            Queue(async token =>
-            {
-                var done = freeze
-                    ? await AgentFreezing.FreezeAsync(_directory, agent, keepFrozen, token).ConfigureAwait(false)
-                    : await AgentFreezing.UnfreezeAsync(_directory, agent, token).ConfigureAwait(false);
+                if (chosen != act)
+                {
+                    return;
+                }
 
-                Said = AgentFreezing.Describe(done);
+                Queue(async inner =>
+                {
+                    var done = freeze
+                        ? await AgentFreezing.FreezeAsync(_directory, agent, keepFrozen, inner).ConfigureAwait(false)
+                        : await AgentFreezing.UnfreezeAsync(_directory, agent, inner).ConfigureAwait(false);
 
-                await SelectAsync(project, token).ConfigureAwait(false);
-            });
-        };
+                    Said = AgentFreezing.Describe(done);
+
+                    await SelectAsync(project, inner).ConfigureAwait(false);
+                });
+            };
+        });
 
         return Task.CompletedTask;
     }

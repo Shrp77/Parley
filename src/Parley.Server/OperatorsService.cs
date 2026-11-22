@@ -331,6 +331,15 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         var agent = Acted(request.Agent);
         var because = string.IsNullOrWhiteSpace(request.Because) ? "the person asked for it" : request.Because;
 
+        // SPEC.md §11.1: nothing starts a frozen agent, and a restart starts it again. One still finishing its turn is already
+        // being stopped by the freeze, so there is nothing a stop would add either.
+        if (restart && _runtime.IsFrozen(agent))
+        {
+            throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"'{agent.Value}' is frozen, so nothing starts it again. Unfreeze it first."));
+        }
+
         return _runtime.RequestStop(agent, restart, because) switch
         {
             StopOutcome.Sent => Task.FromResult(new Wire.DidItReply { Changed = true }),
@@ -401,9 +410,22 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
                 StatusCode.NotFound, $"Nothing has registered under '{agent.Value}', so there is nothing to freeze."));
         }
 
-        var changed = await Console((console, now, ct) => console.FreezeAgentAsync(agent, now, _runtime.RunId, request.KeepFrozen, ct), context).ConfigureAwait(false);
+        // Marked only when a row took the freeze: one already frozen is marked already, and a row that went between the look
+        // and the write (a purge) must not leave its name frozen with nothing stored to lift. Marked inside the same turn at the
+        // store as the write, so a freeze and an unfreeze that cross cannot leave the store saying one thing and the broker another.
+        var changed = await Console(
+            async (console, now, ct) =>
+            {
+                var took = await console.FreezeAgentAsync(agent, now, _runtime.RunId, request.KeepFrozen, ct).ConfigureAwait(false);
 
-        _runtime.MarkFrozen(agent, true);
+                if (took)
+                {
+                    _runtime.MarkFrozen(agent, true);
+                }
+
+                return took;
+            },
+            context).ConfigureAwait(false);
 
         var process = _runtime.RequestStop(agent, restart: false, "a person froze it") switch
         {
@@ -427,9 +449,17 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(context);
 
         var agent = Acted(request.Agent);
-        var changed = await Console((console, _, ct) => console.UnfreezeAgentAsync(agent, ct), context).ConfigureAwait(false);
+        // Cleared in the same turn at the store as the write, for the reason Freeze marks there.
+        var changed = await Console(
+            async (console, _, ct) =>
+            {
+                var lifted = await console.UnfreezeAgentAsync(agent, ct).ConfigureAwait(false);
 
-        _runtime.MarkFrozen(agent, false);
+                _runtime.MarkFrozen(agent, false);
+
+                return lifted;
+            },
+            context).ConfigureAwait(false);
 
         if (changed)
         {
@@ -617,6 +647,17 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         var before = await RecordedFoldersAsync(context.CancellationToken).ConfigureAwait(false);
 
         var outcome = await Console((console, _, ct) => console.PurgeAsync(agent, ct), context).ConfigureAwait(false);
+
+        // A freeze is a column of the row. When the row has gone the freeze has gone, and an agent registered later under the
+        // same name must not find itself frozen with nothing on any surface to unfreeze.
+        // Not cancelled, like the folders below: the rows have gone whatever the caller does since.
+        var remains = await _runtime.UseConnectionAsync(
+            (connection, _, ct) => new OperatorConsole(connection).DescribeRegistryAsync(ct), CancellationToken.None).ConfigureAwait(false);
+
+        if (remains.All(row => row.Name != agent))
+        {
+            _runtime.MarkFrozen(agent, false);
+        }
 
         // Not cancelled from here: the rows have gone, so their folders go whatever the caller does.
         var after = await RecordedFoldersAsync(CancellationToken.None).ConfigureAwait(false);

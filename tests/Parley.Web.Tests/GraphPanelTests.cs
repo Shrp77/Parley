@@ -140,13 +140,13 @@ public sealed class GraphPanelTests
 
         var unfreeze = await client.GetStringAsync(
             new Uri($"/Projects/Act?project={DeadBrokerConsole.Project}&action=unfreeze&subject=orders%40test", UriKind.Relative), Ct);
-        var holdAll = await client.GetStringAsync(
+        var freezeAll = await client.GetStringAsync(
             new Uri($"/Projects/Act?project={DeadBrokerConsole.Project}&action=freezeall&subject={DeadBrokerConsole.Project}", UriKind.Relative), Ct);
-        var resumeAll = await client.GetStringAsync(
+        var unfreezeAll = await client.GetStringAsync(
             new Uri($"/Projects/Act?project={DeadBrokerConsole.Project}&action=unfreezeall&subject={DeadBrokerConsole.Project}", UriKind.Relative), Ct);
 
         Assert.Contains("can be started again", unfreeze, StringComparison.Ordinal);
-        Assert.Contains("may stop work for other projects too", holdAll, StringComparison.Ordinal);
-        Assert.Contains("frozen agent", resumeAll, StringComparison.Ordinal);
+        Assert.Contains("may stop work for other projects too", freezeAll, StringComparison.Ordinal);
+        Assert.Contains("frozen agent", unfreezeAll,StringComparison.Ordinal);
     }
 }

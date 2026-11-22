@@ -48,7 +48,7 @@ public sealed class AgentFreezeTests : IDisposable
         (await new AgentRepository(_connection).GetAllAsync(Ct)).Single(a => a.Name.Value == name);
 
     [Fact]
-    public async Task A_new_store_holds_nobody()
+    public async Task A_new_store_freezes_nobody()
     {
         Assert.All(await _agents.GetAllAsync(Ct), agent => Assert.False(agent.Frozen));
     }
@@ -85,7 +85,7 @@ public sealed class AgentFreezeTests : IDisposable
     }
 
     [Fact]
-    public async Task A_hold_does_not_touch_the_agents_status_or_its_registration()
+    public async Task A_freeze_does_not_touch_the_agents_status_or_its_registration()
     {
         _ = await _agents.FreezeAsync(AgentName.Create("orders@test"), Then, cancellationToken: Ct);
 
@@ -96,7 +96,7 @@ public sealed class AgentFreezeTests : IDisposable
     }
 
     [Fact]
-    public async Task Retiring_keeps_the_hold_so_a_reinstated_agent_is_still_frozen()
+    public async Task Retiring_keeps_the_freeze_so_a_reinstated_agent_is_still_frozen()
     {
         _ = await _agents.FreezeAsync(AgentName.Create("orders@test"), Then, cancellationToken: Ct);
         _ = await _agents.RetireAsync(AgentName.Create("orders@test"), Ct);
@@ -128,7 +128,7 @@ public sealed class AgentFreezeTests : IDisposable
     }
 
     [Fact]
-    public void The_hold_column_is_the_last_migration_and_changes_no_row()
+    public void The_freeze_column_is_the_last_migration_and_changes_no_row()
     {
         Assert.True(SchemaMigrator.LatestVersion >= 11);
 
@@ -188,6 +188,46 @@ public sealed class AgentFreezeTests : IDisposable
             Execute("UPDATE agents SET keep_frozen = 1 WHERE name = 'orders@test';"));
         Assert.Throws<SqliteException>(() =>
             Execute("UPDATE agents SET frozen_run = '11111111-1111-1111-1111-111111111111' WHERE name = 'orders@test';"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("short")]
+    [InlineData("11111111-1111-1111-1111-11111111111")]
+    [InlineData("11111111-1111-1111-1111-1111111111111")]
+    public void Storage_refuses_a_run_that_is_not_thirty_six_long_on_a_frozen_agent(string run)
+    {
+        // The agent is frozen in the same statement, so the only thing wrong is the run's length: the refusal below is that
+        // guard's and not the one that wants a run to belong to a freeze.
+        var refused = Assert.Throws<SqliteException>(() => Execute(
+            $"UPDATE agents SET frozen_utc = '2026-11-20T12:00:00+00:00', frozen_run = '{run}' WHERE name = 'orders@test';"));
+
+        Assert.Contains("CHECK", refused.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0L, ScalarCount("SELECT COUNT(*) FROM agents WHERE frozen_utc IS NOT NULL;"));
+
+        // And one that is thirty-six long is taken, so the statement was refused for its length alone.
+        Execute(
+            "UPDATE agents SET frozen_utc = '2026-11-20T12:00:00+00:00', frozen_run = '11111111-1111-1111-1111-111111111111' "
+            + "WHERE name = 'orders@test';");
+
+        Assert.Equal(1L, ScalarCount("SELECT COUNT(*) FROM agents WHERE frozen_run IS NOT NULL;"));
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(-1)]
+    public void Storage_refuses_a_keep_that_is_neither_nought_nor_one_on_a_frozen_agent(int keep)
+    {
+        var refused = Assert.Throws<SqliteException>(() => Execute(
+            $"UPDATE agents SET frozen_utc = '2026-11-20T12:00:00+00:00', keep_frozen = {keep} WHERE name = 'orders@test';"));
+
+        Assert.Contains("CHECK", refused.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0L, ScalarCount("SELECT COUNT(*) FROM agents WHERE frozen_utc IS NOT NULL;"));
+
+        // And one is taken on the same frozen agent, so the statement was refused for the value alone.
+        Execute("UPDATE agents SET frozen_utc = '2026-11-20T12:00:00+00:00', keep_frozen = 1 WHERE name = 'orders@test';");
+
+        Assert.Equal(1L, ScalarCount("SELECT COUNT(*) FROM agents WHERE keep_frozen = 1;"));
     }
 
     private long ScalarCount(string sql)

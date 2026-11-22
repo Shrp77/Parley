@@ -114,7 +114,7 @@ public sealed record AgentRecord(
     DateTimeOffset? FrozenUtc = null,
     bool KeepFrozen = false)
 {
-    /// <summary>Whether a person has frozen the agent in this project (SPEC.md §11.1), so nothing starts it until they unfreeze it.</summary>
+    /// <summary>Whether a person has frozen the agent in this project (SPEC.md §11.1), so nothing starts it until they unfreeze it or, unless <see cref="KeepFrozen"/>, the broker next starts.</summary>
     /// <remarks>Derived from <see cref="FrozenUtc"/>, which is the one fact; a flag beside it would be a second one to disagree.</remarks>
     public bool Frozen => FrozenUtc is not null;
 

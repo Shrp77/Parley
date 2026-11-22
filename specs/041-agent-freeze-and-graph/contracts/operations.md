@@ -17,7 +17,7 @@
 
 ## Surfaces
 
-- Web: `Projects/Act` arms `freeze`, `unfreeze` (one agent, every project it serves) and `holdall`, `resumeall` (a project's agents);
+- Web: `Projects/Act` arms `freeze`, `unfreeze` (one agent, every project it serves) and `freezeall`, `unfreezeall` (a project's agents);
   each described on GET and done on POST. The graph and the agent page link them.
 - Web: `GET /Graph` returns the panel's fragment. Collapsed, nothing calls it.
 - Terminal: agent row menu entries *Freeze* and *Unfreeze*; CLI: `parley freeze <agent>` and `parley unfreeze <agent>` exit 64 naming the

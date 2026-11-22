@@ -100,7 +100,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     /// <summary>What happened, once it has.</summary>
     public string? Outcome { get; private set; }
 
-    /// <summary>The projects a freeze or a unfreeze of the agent reaches, said before the person agrees.</summary>
+    /// <summary>The projects a freeze or an unfreeze of the agent reaches, said before the person agrees.</summary>
     public string? Reaches { get; private set; }
 
     /// <summary>The agent's answer to Parley, on one line, when the action is accepting it.</summary>
@@ -151,12 +151,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
             var (serving, unreachable) = await AgentFreezing.ServedByAsync(directory, reached, HttpContext.RequestAborted)
                 .ConfigureAwait(false);
 
-            Reaches = serving.Count == 0
-                ? $"No project this console can reach lists '{reached.Value}'."
-                : $"This reaches {string.Join(", ", serving)}."
-                  + (unreachable.Count > 0
-                      ? $" It cannot be reached in {string.Join(", ", unreachable.Select(u => u.Project))}, so it is not done there."
-                      : string.Empty);
+            Reaches = AgentFreezing.Reach(reached, serving, unreachable);
         }
 
         // What it owes, as the terminal's dialog says it: the debt is what makes the difference between retiring and

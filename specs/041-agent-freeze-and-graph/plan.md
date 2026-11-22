@@ -21,7 +21,7 @@ dependency graph rules in CLAUDE.md. **Scale**: tens of agents, hundreds of conv
   wording) in the same change. Code and spec move together.
 - *No agent has authority over another*: Freeze and Unfreeze are on `Operators` only; a test fails if `Agents` gains either.
 - *Nothing times out; work stays open*: a freeze closes, moves and answers nothing. It is a recorded reduction of the 2026-11-18
-  decision that a restart wakes whoever owes work, and it is the person's, per agent, cleared only by the person.
+  decision that a restart wakes whoever owes work, and it is the person's, per agent, cleared by the person or, unless they asked it to outlast one, by the broker's next start.
 - *Invariants live in storage*: the column's CHECK refuses a value that is not an ISO-8601 UTC instant and refuses a freeze on the
   person seat or the facilitator.
 - *Surfaces*: web, terminal (and the CLI's exit 64 naming it) carry both acts; `DriftTests` freezes it.
@@ -39,7 +39,7 @@ No gate is violated; the one standing rule narrowed is named above.
 | Server | `Ask` refuses a frozen agent (`WakeOutcome.Frozen`); `Operators.Freeze` records then `RequestStop`; `Unfreeze` clears then asks it to start if it owes work; `Start` refuses a frozen agent; `frozen_utc` on the agent row. |
 | Transport | `Freeze`, `Unfreeze`, `FreezeReply`, `frozen_utc`. |
 | Client | `BrokerClient` calls; `AgentFreezing` (every project the agent serves, one result); `AgentGraph` (derivation and layout); frozen in agent wording. |
-| Web | `Pages/Graph` fragment; layout tab, pin and script; `Act` arms `freeze`, `unfreeze`, `holdall`, `resumeall`; the agent page and the graph link them. |
+| Web | `Pages/Graph` fragment; layout tab, pin and script; `Act` arms `freeze`, `unfreeze`, `freezeall`, `unfreezeall`; the agent page and the graph link them. |
 | Terminal | Freeze and Unfreeze in an agent's row menu through `AgentFreezing`. |
 | Docs | SPEC.md, docs, CLAUDE.md state (version 0.64.0, migration 011, 027 to 012). |
 
@@ -48,7 +48,7 @@ No gate is violated; the one standing rule narrowed is named above.
 1. **Freeze in the store and broker** (US2 core): migration, record, repository, console ops, `Ask` check, server ops, proto.
 2. **Client and surfaces for freeze**: `BrokerClient`, `AgentFreezing`, wording, `Act` arms, terminal entries.
 3. **The graph** (US1): `AgentGraph`, the fragment, the panel.
-4. **Project-wide** (US3): `holdall`/`resumeall`.
+4. **Project-wide** (US3): `freezeall`/`unfreezeall`.
 5. **Spec, docs, version; full test run.**
 
 ## Risks

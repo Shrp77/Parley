@@ -123,6 +123,15 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <summary>Every kill of a process a node that is gone left running it was asked for.</summary>
     public List<Wire.StopRequest> Killed { get; } = [];
 
+    /// <summary>Every freeze of an agent a person asked for, with whether it was to outlast a start of the broker.</summary>
+    public List<Wire.FreezeRequest> Frozen { get; } = [];
+
+    /// <summary>Every unfreeze of an agent a person asked for.</summary>
+    public List<Wire.AgentRequest> Unfrozen { get; } = [];
+
+    /// <summary>What a freeze says became of the agent's process, in the wire's words; <c>not_running</c> by default.</summary>
+    public string FreezeProcess { get; set; } = "not_running";
+
     /// <summary>When set, the proposals read is not implemented, as a broker older than roadmaps would answer.</summary>
     public bool Old { get; set; }
 
@@ -391,6 +400,8 @@ public sealed class RoadmapBroker : HttpMessageHandler
                 "/parley.v1.Operators/Stop" => Asked(Stopped, Wire.StopRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/Restart" => Asked(Restarted, Wire.StopRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/Kill" => Asked(Killed, Wire.StopRequest.Parser.ParseFrom(payload)),
+                "/parley.v1.Operators/Freeze" => AskedToFreeze(Wire.FreezeRequest.Parser.ParseFrom(payload)),
+                "/parley.v1.Operators/Unfreeze" => AskedToUnfreeze(Wire.AgentRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Agents/Request" when Seats && RefusesRequestsTo.Contains(Requested[^1].To) => new Wire.RequestReply
                 {
                     Outcomes = { new Wire.RequestOutcome { Ok = false, Rejection = Wire.RequestRejection.Duplicate } },
@@ -441,6 +452,20 @@ public sealed class RoadmapBroker : HttpMessageHandler
         Started.Add(asked);
 
         return new Wire.DidItReply { Changed = StartAccepted };
+    }
+
+    private Wire.FreezeReply AskedToFreeze(Wire.FreezeRequest asked)
+    {
+        Frozen.Add(asked);
+
+        return new Wire.FreezeReply { Changed = true, Process = FreezeProcess };
+    }
+
+    private Wire.DidItReply AskedToUnfreeze(Wire.AgentRequest asked)
+    {
+        Unfrozen.Add(asked);
+
+        return new Wire.DidItReply { Changed = true };
     }
 
     private static Wire.DidItReply Asked(List<Wire.StopRequest> into, Wire.StopRequest asked)

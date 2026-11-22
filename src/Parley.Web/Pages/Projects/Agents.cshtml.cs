@@ -51,9 +51,27 @@ public sealed class AgentsModel(BrokerDirectory directory) : PageModel
     [BindProperty(SupportsGet = true)]
     public int Failed { get; set; }
 
-    /// <summary>What the last bulk act did, for the line that says so.</summary>
+    /// <summary>Which bulk act was last done, as one of this page's own two tokens.</summary>
     [BindProperty(SupportsGet = true)]
     public string? Did { get; set; }
+
+    /// <summary>The words for the last bulk act, or <see langword="null"/> when the address names none this page does.</summary>
+    /// <remarks>
+    /// The address is a link anybody can write, an agent's message included, so it only chooses between this page's own
+    /// sentences and its counts are held to what one act can change. Its words are never drawn.
+    /// </remarks>
+    public string? DidWords => Did switch
+    {
+        "archived" => "archived",
+        "restored" => "brought back",
+        _ => null,
+    };
+
+    /// <summary>How many the status line says were changed, held to what one act can change.</summary>
+    public int FiledShown => Math.Clamp(Filed, 0, MostAtOnce);
+
+    /// <summary>How many the status line says could not be changed, held to what one act can change.</summary>
+    public int FailedShown => Math.Clamp(Failed, 0, MostAtOnce);
 
     /// <summary>The agents registered in it.</summary>
     public IReadOnlyList<AgentRecord> Agents { get; private set; } = [];
@@ -275,7 +293,7 @@ public sealed class AgentsModel(BrokerDirectory directory) : PageModel
             sort = Sort,
             filed = done,
             failed,
-            did = restore ? "brought back" : "archived"
+            did = restore ? "restored" : "archived"
         });
     }
 }

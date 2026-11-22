@@ -67,7 +67,7 @@ public sealed class AgentGraphTests
     }
 
     [Fact]
-    public void An_agent_carries_its_standing_and_its_background_tasks_and_a_hold_outranks_both()
+    public void An_agent_carries_its_standing_and_its_background_tasks_and_a_freeze_outranks_both()
     {
         var turns = new TurnStanding(true, null, null, true, 0, 3);
 
@@ -99,7 +99,7 @@ public sealed class AgentGraphTests
     }
 
     [Fact]
-    public void Hold_is_offered_for_an_agent_and_never_for_the_persons_seat_or_a_retired_agent_and_the_facilitator_is_not_drawn()
+    public void Freeze_is_offered_for_an_agent_and_never_for_the_persons_seat_or_a_retired_agent_and_the_facilitator_is_not_drawn()
     {
         var seat = Agent($"{PersonSeat.Role}@alpha", adapter: PersonSeat.Adapter);
         var retired = Agent("old@pc", status: AgentStatus.Retired);
@@ -226,7 +226,7 @@ public sealed class AgentGraphTests
     }
 
     [Fact]
-    public void Describing_a_hold_names_each_project_and_says_what_became_of_the_process()
+    public void Describing_a_freeze_names_each_project_and_says_what_became_of_the_process()
     {
         var outcome = new FreezeOutcome(
             AgentName.Create("orders@pc"),
@@ -242,7 +242,7 @@ public sealed class AgentGraphTests
     }
 
     [Fact]
-    public void Describing_a_hold_where_no_project_lists_the_agent_says_there_was_nothing_to_do()
+    public void Describing_a_freeze_where_no_project_lists_the_agent_says_there_was_nothing_to_do()
     {
         var said = AgentFreezing.Describe(new FreezeOutcome(AgentName.Create("orders@pc"), []));
 

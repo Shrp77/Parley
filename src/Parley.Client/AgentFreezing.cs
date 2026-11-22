@@ -4,8 +4,8 @@ namespace Parley.Client;
 
 /// <summary>What freezing or unfreezing an agent did in one project.</summary>
 /// <param name="Project">The project.</param>
-/// <param name="Changed">Whether its state there changed: it was not frozen before (a freeze), or it was frozen (a unfreeze).</param>
-/// <param name="Process">What became of its process, for a freeze; null for a unfreeze or when the project could not be reached.</param>
+/// <param name="Changed">Whether its state there changed: it was not frozen before (a freeze), or it was frozen (an unfreeze).</param>
+/// <param name="Process">What became of its process, for a freeze; null for an unfreeze or when the project could not be reached.</param>
 /// <param name="Problem">Why it could not be done there, or null when it could.</param>
 public sealed record FrozenIn(string Project, bool Changed, FreezeProcess? Process, string? Problem);
 
@@ -74,6 +74,25 @@ public static class AgentFreezing
         return (serving, unreachable);
     }
 
+    /// <summary>Says which projects a freeze or an unfreeze of an agent reaches, for the person to read before agreeing (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="serving">The projects that list it.</param>
+    /// <param name="unreachable">The projects that could not be asked.</param>
+    /// <returns>The sentences, the same on every surface.</returns>
+    public static string Reach(
+        AgentName agent, IReadOnlyList<string> serving, IReadOnlyList<(string Project, string Problem)> unreachable)
+    {
+        ArgumentNullException.ThrowIfNull(serving);
+        ArgumentNullException.ThrowIfNull(unreachable);
+
+        return serving.Count == 0
+            ? $"No project that can be reached lists '{agent.Value}'."
+            : $"This reaches {string.Join(", ", serving)}."
+              + (unreachable.Count > 0
+                  ? $" It cannot be reached in {string.Join(", ", unreachable.Select(u => u.Project))}, so it is not done there."
+                  : string.Empty);
+    }
+
     /// <summary>Freezes an agent in every project that serves it.</summary>
     /// <param name="directory">The projects and their brokers.</param>
     /// <param name="agent">The agent.</param>
@@ -84,7 +103,7 @@ public static class AgentFreezing
         BrokerDirectory directory, AgentName agent, bool keepFrozen = false, CancellationToken cancellationToken = default) =>
         ActAsync(directory, agent, freeze: true, keepFrozen, cancellationToken);
 
-    /// <summary>Resumes an agent in every project where it is frozen.</summary>
+    /// <summary>Unfreezes an agent in every project where it is frozen.</summary>
     /// <param name="directory">The projects and their brokers.</param>
     /// <param name="agent">The agent.</param>
     /// <param name="cancellationToken">Cancels the acts.</param>

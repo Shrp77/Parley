@@ -1,90 +1,205 @@
+using System.Text.RegularExpressions;
 using Xunit;
+using Wire = Parley.Transport;
 
 namespace Parley.Web.Tests;
 
 /// <summary>
-/// That acting on several conversations from the list keeps the properties the single acts have.
+/// That acting on several conversations from the list does what its buttons say, to no more than it was given, and ends
+/// nothing until the word is typed.
 /// </summary>
 /// <remarks>
-/// Read from the source, as <c>ListingStateTests</c> does, because driving a post needs an antiforgery token and a live
-/// broker, and what is held is a property of the lines: what the redirect carries back, what a bulk act asks the broker
-/// rather than trusts the page for, and that ending names what it ends and takes a word before it does anything.
+/// Every case posts the real form to the real page and counts what the broker was asked. These were once checks of the
+/// source text, and review of 0.64.3 turned the typed word off, removed the cap and swapped archive with bring-back, all
+/// at once, with every one of them still passing.
 /// </remarks>
-[Unit]
-public sealed class BulkConversationActsTests
+[Integration]
+public sealed partial class BulkConversationActsTests
 {
-    private static string Read(params string[] path)
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+    private const string Archive = "/parley.v1.Operators/Archive";
+    private const string Unarchive = "/parley.v1.Operators/Unarchive";
+    private const string ForceConclude = "/parley.v1.Operators/ForceConclude";
 
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Parley.slnx")))
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    [GeneratedRegex("""name="__RequestVerificationToken"[^>]*value="([^"]+)""")]
+    private static partial Regex Token();
+
+    /// <summary>A console whose project has one open, one closed and one closed-and-archived conversation.</summary>
+    private static RoadmapConsole Console()
+    {
+        var console = new RoadmapConsole();
+
+        console.Broker.Conversations.Add(new Wire.ConversationSummary { ConversationId = "open", HasOpenExchange = true });
+        console.Broker.Conversations.Add(new Wire.ConversationSummary { ConversationId = "closed", Closed = true });
+        console.Broker.Conversations.Add(new Wire.ConversationSummary { ConversationId = "filed", Closed = true, Archived = true });
+
+        return console;
+    }
+
+    private static int Asked(RoadmapConsole console, string path) => console.Broker.Paths.Count(p => p == path);
+
+    private static async Task<HttpResponseMessage> PostAsync(
+        RoadmapConsole console, string address, IEnumerable<KeyValuePair<string, string>> fields)
+    {
+        using var client = console.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+        var page = await client.GetStringAsync(
+            new Uri($"/Projects/Agents?project={RoadmapConsole.Project}&showArchived=true", UriKind.Relative), Ct);
+
+        using var form = new FormUrlEncodedContent(
+        [
+            new("__RequestVerificationToken", Token().Match(page).Groups[1].Value),
+            new("project", RoadmapConsole.Project),
+            .. fields,
+        ]);
+
+        return await client.PostAsync(new Uri(address, UriKind.Relative), form, Ct);
+    }
+
+    private static Task<HttpResponseMessage> BulkAsync(RoadmapConsole console, string op, params string[] ids) =>
+        PostAsync(
+            console,
+            $"/Projects/Agents?project={RoadmapConsole.Project}&handler=Bulk",
+            [new("op", op), .. ids.Select(id => new KeyValuePair<string, string>("ids", id))]);
+
+    private static Task<HttpResponseMessage> EndAsync(RoadmapConsole console, string? typed, params string[] ids) =>
+        PostAsync(
+            console,
+            "/Projects/EndMany",
+            [
+                .. ids.Select(id => new KeyValuePair<string, string>("Ids", id)),
+                .. typed is null ? Array.Empty<KeyValuePair<string, string>>() : [new("Typed", typed)],
+            ]);
+
+    [Fact]
+    public async Task Archiving_the_ticked_asks_the_broker_to_archive_each_once_and_to_bring_none_back()
+    {
+        using var console = Console();
+
+        using var response = await BulkAsync(console, "archive", "open", "closed", "closed", " ");
+
+        Assert.Equal(2, Asked(console, Archive));
+        Assert.Equal(0, Asked(console, Unarchive));
+        Assert.Equal(0, Asked(console, ForceConclude));
+    }
+
+    [Fact]
+    public async Task Bringing_back_the_ticked_asks_the_broker_to_bring_each_back_and_to_archive_none()
+    {
+        using var console = Console();
+
+        using var response = await BulkAsync(console, "unarchive", "filed");
+
+        Assert.Equal(1, Asked(console, Unarchive));
+        Assert.Equal(0, Asked(console, Archive));
+    }
+
+    [Fact]
+    public async Task Archiving_all_closed_takes_only_what_the_broker_says_is_closed_and_not_yet_archived_whatever_is_ticked()
+    {
+        using var console = Console();
+
+        using var response = await BulkAsync(console, "archiveclosed", "open");
+
+        Assert.Equal(1, Asked(console, Archive));
+        Assert.Equal(0, Asked(console, Unarchive));
+    }
+
+    [Fact]
+    public async Task A_bulk_act_changes_no_more_than_its_bound_however_many_are_ticked()
+    {
+        using var console = Console();
+
+        using var response = await BulkAsync(console, "archive", [.. Enumerable.Range(0, 600).Select(i => $"c{i}")]);
+
+        Assert.Equal(500, Asked(console, Archive));
+    }
+
+    [Theory]
+    [InlineData("end")]
+    [InlineData("ARCHIVE")]
+    [InlineData("destroy")]
+    [InlineData("")]
+    public async Task An_operation_the_list_does_not_have_changes_nothing(string op)
+    {
+        using var console = Console();
+
+        using var response = await BulkAsync(console, op, "open", "closed");
+
+        Assert.Equal(0, Asked(console, Archive));
+        Assert.Equal(0, Asked(console, Unarchive));
+        Assert.Equal(0, Asked(console, ForceConclude));
+    }
+
+    [Fact]
+    public async Task A_bulk_act_says_what_it_did_and_keeps_the_listing_as_it_was()
+    {
+        using var console = Console();
+
+        using var response = await PostAsync(
+            console,
+            $"/Projects/Agents?project={RoadmapConsole.Project}&handler=Bulk",
+            [new("op", "unarchive"), new("ids", "filed"), new("showArchived", "true"), new("sort", "name")]);
+
+        var back = response.Headers.Location!.ToString();
+
+        Assert.Contains("did=restored", back, StringComparison.Ordinal);
+        Assert.Contains("showArchived=True", back, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("sort=name", back, StringComparison.Ordinal);
+        Assert.Contains("filed=", back, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("END")]
+    [InlineData("ending")]
+    [InlineData("yes")]
+    public async Task Ending_lists_what_would_end_and_ends_nothing_until_the_word_is_typed(string? typed)
+    {
+        using var console = Console();
+
+        using var response = await EndAsync(console, typed, "open", "closed");
+        var page = await response.Content.ReadAsStringAsync(Ct);
+
+        Assert.Equal(0, Asked(console, ForceConclude));
+        Assert.Contains("name=\"Typed\"", page, StringComparison.Ordinal);
+        Assert.Contains("value=\"open\"", page, StringComparison.Ordinal);
+        Assert.Contains("value=\"closed\"", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Ending_with_the_word_typed_ends_each_chosen_conversation_once_and_no_more_than_its_bound()
+    {
+        using var console = Console();
+
+        using (await EndAsync(console, "end", "open", "closed", "open", " "))
         {
-            directory = directory.Parent;
         }
 
-        Assert.NotNull(directory);
+        Assert.Equal(2, Asked(console, ForceConclude));
 
-        return File.ReadAllText(Path.Combine([directory!.FullName, "src", "Parley.Web", "Pages", .. path]));
-    }
+        using var many = Console();
 
-    private static string BulkHandler()
-    {
-        var model = Read("Projects", "Agents.cshtml.cs");
+        using (await EndAsync(many, " end ", [.. Enumerable.Range(0, 150).Select(i => $"c{i}")]))
+        {
+        }
 
-        return model[model.IndexOf("OnPostBulkAsync", StringComparison.Ordinal)..];
-    }
-
-    [Fact]
-    public void A_bulk_act_carries_the_listing_options_back_and_says_what_it_did()
-    {
-        var handler = BulkHandler();
-
-        Assert.Contains("showArchived", handler, StringComparison.Ordinal);
-        Assert.Contains("sort", handler, StringComparison.Ordinal);
-        Assert.Contains("filed = done", handler, StringComparison.Ordinal);
-        Assert.Contains("failed", handler, StringComparison.Ordinal);
+        Assert.Equal(100, Asked(many, ForceConclude));
     }
 
     [Fact]
-    public void Archiving_all_closed_asks_the_broker_and_never_takes_an_open_conversation()
+    public async Task The_list_offers_a_tick_on_each_row_and_sends_ending_to_its_own_page()
     {
-        var handler = BulkHandler();
+        using var console = Console();
+        using var client = console.CreateClient();
 
-        Assert.Contains("c.Closed && !c.Archived && !c.HasOpenExchange", handler, StringComparison.Ordinal);
-        Assert.Contains("broker.ConversationsAsync(", handler, StringComparison.Ordinal);
-    }
+        var page = await client.GetStringAsync(new Uri($"/Projects/Agents?project={RoadmapConsole.Project}&showArchived=true", UriKind.Relative), Ct);
 
-    [Fact]
-    public void A_bulk_act_is_bounded_and_refuses_an_operation_it_does_not_know()
-    {
-        var handler = BulkHandler();
-
-        Assert.Contains("Take(MostAtOnce)", handler, StringComparison.Ordinal);
-        Assert.DoesNotContain("ForceConclude", handler, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Ending_lists_what_it_ends_and_does_nothing_until_the_word_is_typed()
-    {
-        var model = Read("Projects", "EndMany.cshtml.cs");
-
-        var post = model[model.IndexOf("OnPostAsync", StringComparison.Ordinal)..];
-        var word = post.IndexOf("Word", StringComparison.Ordinal);
-        var act = post.IndexOf("ForceConcludeAsync", StringComparison.Ordinal);
-
-        Assert.True(word > 0 && act > word, "the word is checked before anything is ended");
-        Assert.Contains("Typed is null", post, StringComparison.Ordinal);
-        Assert.Contains("return Page()", post, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void The_list_offers_ticks_that_belong_to_the_bulk_form_and_ending_goes_to_its_own_page()
-    {
-        var markup = Read("Projects", "Agents.cshtml");
-
-        Assert.Contains("form=\"bulk\" name=\"ids\"", markup, StringComparison.Ordinal);
-        Assert.Contains("formaction=\"/Projects/EndMany\"", markup, StringComparison.Ordinal);
-        Assert.Contains("value=\"archiveclosed\"", markup, StringComparison.Ordinal);
-        Assert.Contains("name=\"Typed\"", Read("Projects", "EndMany.cshtml"), StringComparison.Ordinal);
+        Assert.Contains("form=\"bulk\" name=\"ids\" value=\"open\"", page, StringComparison.Ordinal);
+        Assert.Contains("form=\"bulk\" name=\"ids\" value=\"filed\"", page, StringComparison.Ordinal);
+        Assert.Contains("formaction=\"/Projects/EndMany\"", page, StringComparison.Ordinal);
+        Assert.Contains("value=\"archiveclosed\"", page, StringComparison.Ordinal);
     }
 }

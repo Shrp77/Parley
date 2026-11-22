@@ -546,7 +546,7 @@ internal static class Conversions
             BackgroundTasks = record.Turns?.BackgroundTasks ?? 0,
             OpenOutside = record.OpenOutside,
             Unsupervised = record.Unsupervised,
-            FrozenUtc = record.FrozenUtc is { } heldUtc ? Stamp(heldUtc) : string.Empty,
+            FrozenUtc = record.FrozenUtc is { } frozenUtc ? Stamp(frozenUtc) : string.Empty,
             KeepFrozen = record.KeepFrozen,
             Identity = record.Identity.Known ? record.Identity.ToString() : string.Empty,
         };

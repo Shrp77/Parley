@@ -403,6 +403,31 @@ public sealed partial class InboxFollowsExchangesTests
         Assert.DoesNotContain("Ask to look now", closed, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(Facilitator)]
+    [InlineData("human-user@elsewhere")]
+    public async Task A_row_waiting_on_the_facilitator_or_on_a_persons_seat_is_drawn_without_the_button(string waitedOn)
+    {
+        // Neither is started by a node, so there is nothing to ask to look. The row is still there: only its button is not.
+        using var console = Console();
+
+        WaitingOn(console, waitedOn, 42);
+
+        var flight = await GetAsync(console, "/Inbox?view=flight");
+
+        Assert.Contains("In flight <span class=\"count\">1</span>", flight, StringComparison.Ordinal);
+        Assert.Contains("#42", flight, StringComparison.Ordinal);
+        Assert.DoesNotContain("Ask to look now", flight, StringComparison.Ordinal);
+        Assert.DoesNotContain("handler=Nudge", flight, StringComparison.Ordinal);
+
+        // And an agent beside it has one, so the page that was read is one that draws the button at all.
+        WaitingOn(console, Orders, 43);
+
+        var both = await GetAsync(console, "/Inbox?view=flight");
+
+        Assert.Equal(1, Regex.Count(both, "Ask to look now", RegexOptions.None, TimeSpan.FromSeconds(2)));
+    }
+
     [Fact]
     public async Task Asking_an_agent_to_look_starts_it_through_the_operators_start_and_says_so()
     {

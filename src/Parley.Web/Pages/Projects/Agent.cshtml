@@ -119,7 +119,7 @@ else
         else if (agent.Status != AgentStatus.Retired)
         {
             <a class="button tonal" href="/Projects/Act?project=@Model.Project&amp;action=freeze&amp;subject=@agent.Name.Value"
-               title="Stop it once its turn ends and keep anything from starting it, through a restart of the machine, until you unfreeze it. What it owes stays open.">Freeze</a>
+               title="Stop it once its turn ends and keep anything from starting it until you unfreeze it, or until the broker next starts (a logon or a restart of the computer) unless you ask it to stay frozen through one. What it owes stays open.">Freeze</a>
         }
         @if (agent.Status == AgentStatus.Retired)
         {

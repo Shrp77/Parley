@@ -96,9 +96,9 @@
         }
         else
         {
-            @if (Model.Did is { Length: > 0 } did)
+            @if (Model.DidWords is { } did)
             {
-                <p role="status"><strong>@Model.Filed @(Model.Filed == 1 ? "conversation" : "conversations") @did.</strong>@(Model.Failed > 0 ? $" {Model.Failed} could not be changed; they may have been destroyed since this page was drawn." : "")</p>
+                <p role="status"><strong>@Model.FiledShown @(Model.FiledShown == 1 ? "conversation" : "conversations") @did.</strong>@(Model.FailedShown > 0 ? $" {Model.FailedShown} could not be changed; they may have been destroyed since this page was drawn." : "")</p>
             }
 
             @* The ticked rows belong to this form by its id, so the rows keep their own forms. Archiving and bringing back

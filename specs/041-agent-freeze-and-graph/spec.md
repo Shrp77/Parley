@@ -7,7 +7,7 @@
 agents, projects and conversations they are in, including sub-agents. I want to see what is being worked on, by which
 agents, for which project, and be able to tell it to pause the work and save its state, so it can be unfrozen after a
 restart of the computer." The owner chose **freeze** for pause (the agent's process ends after its current turn and nothing
-wakes it until a person unfreezes it; a turn is never cut off mid-way) and a **pinned panel on every page** for the graph.
+wakes it until a person unfreezes it or, unless they asked it to stay frozen, the broker next starts; a turn is never cut off mid-way) and a **pinned panel on every page** for the graph.
 
 ## What already exists
 
@@ -139,7 +139,7 @@ returns them.
 ### Key Entities
 
 - **Freeze**: a person's standing decision that an agent is not started. Belongs to one agent, is recorded in each project it serves, records who
-  (the person's seat) and when, and is cleared only by Unfreeze.
+  (the person's seat) and when, and is cleared by Unfreeze or, unless kept, by the broker's next start.
 - **Graph node**: a project, an agent, a conversation, or an agent's background work; edges are *is in*, *spun off from*
   and *is running*.
 - **Panel state**: whether the panel is open and pinned, per browser, never stored by the broker.
