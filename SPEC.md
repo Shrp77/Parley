@@ -4565,9 +4565,10 @@ is where a person looks for why an agent could not be started; the broker is not
 **A restart wakes the agents that owe work.** Two restarts that are byte-identical to the broker carry opposite
 intent: an operator killing the process to stop agents burning through a quota, and an unattended machine taking a
 forced update at the weekend. The broker cannot tell them apart and does not try. **The owner decided on 2026-11-18
-that the second reading wins**: when a machine's node first joins a broker (the first join since the broker started; one that threw is asked again at the next), every active agent on that
+that the second reading wins**: when a machine's node first joins a broker (the first join since the broker started; one that threw, or that the node left or the broker stopped before, is asked again at the next), every active agent on that
 machine that owes an open exchange is asked to start (once each, however many exchanges it owes), subject to the
-resume gate and never for an agent open outside Parley (§11.7). Work stays open under every policy; the policy decides
+resume gate and never for an agent open outside Parley or left running (§11.7, §11.1). The asking waits five seconds after the join, so a process that outlived
+the broker attaches again first and reads as left running rather than being started a second time beside itself; an adapter slower than that is not waited for. Work stays open under every policy; the policy decides
 only whether anybody is started to do it. The way to stop work is to close its conversation. Stopping an agent
 from a surface (§11.1) ends its process and not its work: the work stays open, and under `always` the agent is started again at
 the next restart or by the next work for it, as any agent is. Killing the broker stops nothing for long. The resume policy is `always` in the broker the
