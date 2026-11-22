@@ -52,6 +52,9 @@ public sealed class NodeStopTests : IDisposable
             Assert.False(residents.ContainsKey(identity), "it is still in the table");
             Assert.False(old.IsAlive, "its process is still running");
             Assert.Contains("next work for it starts it again", said.Text, StringComparison.Ordinal);
+
+            // A freeze sends this same stop, and a frozen agent is started by nothing (review, lens 3 on fc26cb8a).
+            Assert.Contains("unless it is frozen", said.Text, StringComparison.Ordinal);
         }
         finally
         {
