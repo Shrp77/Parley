@@ -1410,8 +1410,8 @@ public static class NodeCommand
     /// so the wait is too.
     /// </para>
     /// <para>
-    /// <b>A stop starts nothing.</b> The next work for the agent starts it again through the ordinary start, which is
-    /// what the person is told.
+    /// <b>A stop starts nothing of its own.</b> The next work for the agent starts it again through the ordinary start,
+    /// which is what the person is told; a start that arrives while the process is still going is made once it has gone.
     /// </para>
     /// </remarks>
     internal static async Task StopAsync(

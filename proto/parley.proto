@@ -964,7 +964,8 @@ service Operators {
 
   // A person's stop or restart of an agent its node started (section 11.1). The node waits for the agent's current turn to
   // end. Refused for an agent open outside Parley and for one whose machine has no node; changed is false when it is not
-  // running. A stopped agent is started again by the next work for it, as any agent is: only retirement keeps one out.
+  // running. A stopped agent is started again by the next work for it, as any agent is: only a freeze or retirement keeps
+  // one from being started. Restart is refused for a frozen agent.
   rpc Stop(StopRequest) returns (DidItReply);
   rpc Restart(StopRequest) returns (DidItReply);
 

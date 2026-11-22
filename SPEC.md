@@ -3793,7 +3793,8 @@ conversations are untouched, so it is not a way to end work (§6) and is never a
 never stops an agent on its own account. A stopped agent is started again by the next work for it, as
 any agent is, because only retirement gates routing (§14); a person who wants it kept stopped freezes it (§14), and one who wants it out
 for good retires it. A start asked for while the stopped process is still going is made once it has gone, never given to the
-process that is ending.
+process that is ending, and work that arrives while that process is still attached is asked for again, as a start, once it has
+gone. Only work that arrived meanwhile does this: what the agent already owed does not start it.
 It waits for the turn rather than cutting it short, and a turn is bounded by the node's patience, so the
 wait is bounded too.
 

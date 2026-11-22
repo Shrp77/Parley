@@ -82,6 +82,13 @@ public sealed class ResidentAgent : IAsyncDisposable
     private bool _ownHolds;
     private readonly Queue<TaskCompletionSource> _ownQueue = new();
 
+    // Where a given turn stands, both under _ownLock: whether its prompt has been written and its reply not yet read off the
+    // process, and whether that reply has been read while the turn still holds the agent. Between the reply being read on the
+    // pump and the turn letting go on another thread, an init is a turn of the agent's own and not the given turn's: it
+    // queues behind the given turn, which hands it the agent, where it used to be dropped and never reported.
+    private bool _givenAwaiting;
+    private bool _givenAnswered;
+
     private ResidentAgent(
         AgentName name, string workspace, Process process, TimeProvider clock)
     {
@@ -374,6 +381,14 @@ public sealed class ResidentAgent : IAsyncDisposable
             // is looked at before anything is said, when nothing is owed, and after the whole line is, when the reply is.
             cancellationToken.ThrowIfCancellationRequested();
 
+            // From here the next reply that is not the agent's own business is this turn's: replies owed to nobody were
+            // drained above, before anything was said.
+            lock (_ownLock)
+            {
+                _givenAwaiting = true;
+                _givenAnswered = false;
+            }
+
             var sending = SendAsync(message.ToJsonString());
 
             try
@@ -457,7 +472,24 @@ public sealed class ResidentAgent : IAsyncDisposable
         }
         finally
         {
-            _turnLock.Release();
+            // Letting go, or handing over to a turn of the agent's own that began after this turn's reply was read, is one
+            // act under _ownLock, as it is between two own turns (RunOwnTurnAsync): the agent is never free in between for
+            // an init to find it held by nobody, or for a stop to close its input mid-work.
+            lock (_ownLock)
+            {
+                _givenAwaiting = false;
+                _givenAnswered = false;
+
+                if (_ownQueue.Count > 0)
+                {
+                    _ownHolds = true;
+                    _ = _ownQueue.Dequeue().TrySetResult();
+                }
+                else
+                {
+                    _turnLock.Release();
+                }
+            }
         }
     }
 
@@ -699,6 +731,16 @@ public sealed class ResidentAgent : IAsyncDisposable
                 return true;
             }
 
+            // A given turn's reply, read here before the turn itself reads it and lets go.
+            lock (_ownLock)
+            {
+                if (_givenAwaiting)
+                {
+                    _givenAwaiting = false;
+                    _givenAnswered = true;
+                }
+            }
+
             _answeredOnce = true;
         }
 
@@ -730,9 +772,10 @@ public sealed class ResidentAgent : IAsyncDisposable
 
             if (!holds)
             {
-                // Held by a turn of the agent's own that is over and about to let go, and by nothing else: a given turn's
-                // own init, or a turn still running, is dropped as before.
-                if (!_ownHolds || _ownTurn is not { Task.IsCompleted: true })
+                // Held by a turn that is over and about to let go, and by nothing else: a turn of the agent's own whose
+                // result has come, or a given turn whose reply has been read. A given turn's own init, or a turn still
+                // running, is dropped as before.
+                if (!_givenAnswered && (!_ownHolds || _ownTurn is not { Task.IsCompleted: true }))
                 {
                     return;
                 }

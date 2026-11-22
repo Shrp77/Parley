@@ -792,9 +792,9 @@ Write-Note 'nothing is holding the tool store'
 # reports success -- so it has to stop. But it only has to stop for its own binary.
 #
 # **This is the whole point of the split, and it is one `if`.** A run that replaces only the
-# terminal unlinks a file the broker never opened, so there is nothing to stop: SPEC.md section 11.1
-# has the node telling every agent it started to quit, and each of those processes is what held
-# everything that agent had learned. Restarting a broker to change a terminal spends all of it.
+# terminal unlinks a file the broker never opened, so there is nothing to stop: stopping the broker
+# ends its node, which leaves every agent it started running as a process no node holds, taking no
+# turns until it is ended. Restarting a broker to change a terminal costs every one of them that.
 #
 # Decided above, where the holder check needed the same answer: the web UI is only excluded from
 # that check because this is about to stop it. Two computations of one thing agree until one is
@@ -803,10 +803,10 @@ Write-Note 'nothing is holding the tool store'
 if ($replacingBroker) {
     # **What stopping it will interrupt, said before it is stopped.**
     #
-    # SPEC.md section 11.1: the node stopping tells every agent it started to quit, and the process
-    # is what held everything each of them had learned. A Request already drained into an agent's
-    # inbox is marked delivered, and killing the agent that holds it leaves the exchange open and
-    # owed with nothing running to answer it; nothing times out, so it waits and is flagged.
+    # SPEC.md section 11.1: a process outlives the node that started it, so on Windows the agents the
+    # node started are left running with no node holding them and take no turns. A Request already
+    # drained into such an agent's inbox is marked delivered, and the exchange stays open and owed
+    # with nothing able to give the agent a turn; nothing times out, so it waits and is flagged.
     #
     # **Asked of the broker, never of the store.** Only the broker opens the database (section 4),
     # and reading it here for a progress message would break the one boundary this whole

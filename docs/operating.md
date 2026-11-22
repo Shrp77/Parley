@@ -258,8 +258,9 @@ Work stays open whatever happens; this only decides whether anybody is started t
 outside Parley, and the resume gate can decline an agent. To stop work, close its conversation: stopping an agent, or ending
 the broker, stops nothing for long.
 
-**An agent left running by a node that is gone.** Installing a new build ends the broker and its node, but not the
-agents the node started: those keep running, with nothing holding them. Such an agent reads *left running by a node
+**An agent left running by a node that is gone.** On Windows, installing a new build ends the broker and its node, but
+not the agents the node started: those keep running, with nothing holding them. On Linux and macOS the agents end with
+the node. Such an agent reads *left running by a node
 that is gone*, and an agent somebody opened in an editor reads *open outside Parley*. Nothing can stop a left process at the end of its turn, give it a
 turn, or report its status, and it ends by itself only once its work does. To end it now, press Enter on its row in the
 terminal, or open its page in the web console, and choose *Kill process*. The page says what is lost first: whatever it is
@@ -507,7 +508,8 @@ which is a different thing from having registered it.
 
 **The tools can be replaced separately.** The terminal and the web console are their own tools,
 so that changing one does not stop the broker. Windows cannot replace a running executable, and
-stopping a broker tells every agent it started to quit. `-Only parley-terminal` on Windows, or
+stopping the broker ends its node: on Windows the agents it started are left running with nothing holding them
+(see *An agent left running by a node that is gone*), and on Linux and macOS they end with it. `-Only parley-terminal` on Windows, or
 `--only parley-terminal` elsewhere, replaces just that tool. Nothing in flight is interrupted, and
 no autostart entry is re-registered.
 

@@ -388,6 +388,28 @@ public sealed class AgentHistoryBoundsTests : IDisposable
     }
 
     [Fact]
+    public async Task A_message_larger_than_a_reply_still_arrives_alone_and_the_cursor_moves_past_it()
+    {
+        // One reply carries about 64,000 characters and never fewer than one message (SPEC.md §10.1). A message may be far
+        // longer than that. Without the "never fewer than one" half the read returned no message and no cursor, so the agent
+        // could never read past it, and was charged for every try.
+        var id = await OpenAsync(new string('x', 70_000));
+
+        await _broker.ClarifyAsync(id, Billing, Requests.Model, Requests.Clarify("which one?"), T0.AddMinutes(2), Ct);
+
+        var first = await _broker.ReadExchangeAsync(Inventory, id, 0, T0.AddDays(1), Ct);
+
+        Assert.Single(first.Messages);
+        Assert.Equal(1, first.MessagesRemaining);
+        Assert.NotEqual(0, first.NextAfter);
+
+        var second = await _broker.ReadExchangeAsync(Inventory, id, first.NextAfter, T0.AddDays(1).AddMinutes(5), Ct);
+
+        Assert.Single(second.Messages);
+        Assert.Equal(0, second.MessagesRemaining);
+    }
+
+    [Fact]
     public async Task A_snippet_that_would_begin_inside_a_surrogate_pair_is_cut_whole()
     {
         await OpenAsync(string.Concat(Enumerable.Repeat(Chars(0x1F680), 200)) + " needle " + string.Concat(Enumerable.Repeat(Chars(0x1F680), 200)));

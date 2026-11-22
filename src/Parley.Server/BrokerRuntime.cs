@@ -179,6 +179,22 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     private readonly ConcurrentDictionary<string, bool> _unfrozenWhileUp = new(StringComparer.Ordinal);
 
+    /// <summary>The agents whose node has been asked to stop them and whose process has not gone yet (SPEC.md §11.1).</summary>
+    /// <remarks>
+    /// Kept so that a wake asked for in that time can be told apart (<see cref="_wokenWhileStopping"/>). A restart is not
+    /// kept: the node starts the agent again itself and gives it a turn.
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, bool> _stopSent = new(StringComparer.Ordinal);
+
+    /// <summary>The agents that were given a turn after their node was asked to stop them, until their process has gone.</summary>
+    /// <remarks>
+    /// While the stopped process is still attached, new work for it is a turn and not a start. Its node gives that turn to a
+    /// process the stop then ends, so the turn is lost: the sender was told a turn was coming, the claim held every later wake
+    /// for two minutes, and nothing started the agent, though "the next work for it starts it again" (SPEC.md §10.2
+    /// <c>stop</c>). The work is asked for again, as a start, when the last session of that process detaches.
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, bool> _wokenWhileStopping = new(StringComparer.Ordinal);
+
     /// <summary>The agents a person has frozen (SPEC.md §14), by name: what <see cref="Ask"/> reads, because it cannot wait on the store.</summary>
     /// <remarks>
     /// Loaded when the broker starts and changed only by <see cref="MarkFrozen"/>, which the operator operations call after the
@@ -1739,6 +1755,11 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         _ = _pending.TryRemove(agent.Value, out _);
 
+        if (!restart)
+        {
+            _stopSent[agent.Value] = true;
+        }
+
         return StopOutcome.Sent;
     }
 
@@ -1998,6 +2019,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
         }
 
         _pending[agent.Value] = Clock.GetUtcNow();
+
+        // A turn asked of a process its node is stopping is one the stop may take with it: noted, and asked for again as a
+        // start once the process has gone (ReleaseAsync).
+        if (running && _stopSent.ContainsKey(agent.Value))
+        {
+            _wokenWhileStopping[agent.Value] = true;
+        }
 
         return running ? WakeOutcome.AlreadyRunning : WakeOutcome.Started;
     }
@@ -2448,15 +2476,35 @@ public sealed class BrokerRuntime : IAsyncDisposable
             _gate.Release();
         }
 
-        // **Unfrozen while the freeze's stop was still waiting for its turn** (SPEC.md §14): the turn the unfreeze asked for went
-        // to the process that has just ended, so the claim it left is let go and what is waiting is asked for again, as a start.
-        if (last && _unfrozenWhileUp.TryRemove(attached.Name.Value, out _))
+        if (!last)
+        {
+            return;
+        }
+
+        // The process a stop was asked of has gone, so nothing is being stopped any more. Each mark is taken whatever the
+        // other says, so none is left behind for a later process.
+        _ = _stopSent.TryRemove(attached.Name.Value, out _);
+
+        var woken = _wokenWhileStopping.TryRemove(attached.Name.Value, out _);
+        var unfrozen = _unfrozenWhileUp.TryRemove(attached.Name.Value, out _);
+
+        // **Given a turn, or unfrozen, while a stop was still waiting for its turn** (SPEC.md §11.1, §14): that turn went to the
+        // process that has just ended, so the claim it left is let go and what is waiting is asked for again, as a start. A
+        // frozen agent is declined where every wake is, so a freeze made meanwhile still holds.
+        if (woken || unfrozen)
         {
             _ = _pending.TryRemove(attached.Name.Value, out _);
 
             try
             {
-                await WakeIfOwingAsync(attached.Name, CancellationToken.None).ConfigureAwait(false);
+                if (woken)
+                {
+                    _ = RequestAttentionForMail(attached.Name, "work arrived for it while it was being stopped");
+                }
+                else
+                {
+                    await WakeIfOwingAsync(attached.Name, CancellationToken.None).ConfigureAwait(false);
+                }
             }
             catch (Exception)
             {

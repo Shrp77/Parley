@@ -105,6 +105,68 @@ public sealed class BackgroundWorkTests : IDisposable
 
     [Fact]
     [Slow]
+    public async Task An_own_turn_that_begins_as_a_given_turn_ends_is_told_every_time()
+    {
+        // The background task finishes as the given turn ends, with no pause between: the agent's own init is read on the
+        // pump after the given turn's reply and before that turn has let go on its own thread. Held by a turn that was not an
+        // own turn, the init was dropped: the own turn was never told, so the agent read idle while it worked and the turn's
+        // cost was never recorded (review, lens 1 on 0.64.6: 2 rounds in 40). Many rounds, because it is a race.
+        for (var round = 0; round < 30; round++)
+        {
+            var workspace = Path.Combine(_workspace, "round" + round.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            Directory.CreateDirectory(workspace);
+
+            var template = StubRunner.Scripted(
+                workspace,
+                [OneTask, Started, Finished, NoTasks, Init, StubRunner.Pause(1), Done],
+                [Second]);
+
+            var began = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var ended = new TaskCompletionSource<TurnOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            await using var agent = ResidentAgent.Start(
+                AgentName.Create("billing@test"), InvocationCommand.Parse(template), workspace, TimeProvider.System);
+
+            agent.Watch(new OwnWork(
+                _ =>
+                {
+                    began.TrySetResult();
+                    return Task.CompletedTask;
+                },
+                (_, outcome) =>
+                {
+                    ended.TrySetResult(outcome);
+                    return Task.CompletedTask;
+                },
+                _ => Task.CompletedTask));
+
+            var first = await agent.TakeTurnAsync("1", Patience, Ct);
+
+            Assert.Equal("STARTED", first.Reply);
+
+            try
+            {
+                await began.Task.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+            }
+            catch (TimeoutException)
+            {
+                Assert.Fail($"round {round}: the agent's own turn was never told to have begun");
+            }
+
+            var own = await ended.Task.WaitAsync(Patience, Ct);
+
+            Assert.True(own.Succeeded, $"round {round}: {own.Describe()}");
+            Assert.Equal("DONE", own.Reply);
+
+            // And the given turn after it waits for it and reads its own reply.
+            var second = await agent.TakeTurnAsync("2", Patience, Ct);
+
+            Assert.Equal("SECOND", second.Reply);
+        }
+    }
+
+    [Fact]
+    [Slow]
     public async Task Own_turns_that_follow_each_other_closely_are_each_told_in_order()
     {
         // Review, quality lens (0.62.4 to 0.62.6): the result ends an own turn on the pump and the turn lets go of the agent a
