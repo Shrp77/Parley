@@ -34,10 +34,26 @@ public static class StoppingWords
     /// is doing now is lost. It is for a process left by a node that is gone, never one somebody opened in an editor.
     /// </remarks>
     public static string Killing(string agent) =>
-        $"'{agent}' was started by a node that is gone, so no node holds its process and it cannot be stopped at the end of "
-        + "its turn. This ends the process now, and whatever it is in the middle of is lost, along with what the session "
-        + "had learned. What it owes stays owed, and its conversations are untouched. The next work for it starts it again, under the node that is "
-        + "here; to keep it from being started, freeze it, or retire it for good.";
+        $"A process of '{agent}' was started by a node that is gone, so no node holds it and it cannot be stopped at the end "
+        + "of its turn. This ends the process now, and whatever it is in the middle of is lost, along with what the session "
+        + "had learned. A process of it that the node here started is left alone. What it owes stays owed, and its "
+        + "conversations are untouched. The next work for it starts it again, under the node that is here; to keep it from "
+        + "being started, freeze it, or retire it for good.";
+
+    /// <summary>What a person is told when there is no process a node that is gone left running to end (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent's name.</param>
+    /// <returns>The sentence.</returns>
+    /// <remarks>Said instead of <see cref="Killing"/>, with nothing to confirm, so a person is never told an untrue reason.</remarks>
+    public static string NothingToKill(string agent) =>
+        $"'{agent}' is not running as a process a node that is gone left behind, so there is nothing to end here. A process "
+        + "a node supervises is stopped, not killed, and one somebody opened in an editor is theirs to close.";
+
+    /// <summary>What a person is told when the broker refused to end a process.</summary>
+    /// <param name="agent">The agent's name.</param>
+    /// <param name="why">The broker's reason.</param>
+    /// <returns>The sentence, naming the act rather than calling it a read.</returns>
+    public static string KillRefused(string agent, string why) =>
+        $"Nothing was ended: the broker refused to end {agent}'s process. {why}";
 
     /// <summary>What a person is told after asking for such a process to be ended.</summary>
     /// <param name="agent">The agent's name.</param>

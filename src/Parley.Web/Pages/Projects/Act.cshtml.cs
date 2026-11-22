@@ -111,6 +111,9 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     /// </remarks>
     public string? Proposed { get; private set; }
 
+    /// <summary>Whether the act is offered at all, or only explained: false for a kill of a process no node that is gone left.</summary>
+    public bool Offered { get; private set; } = true;
+
     /// <summary>Describes what is about to happen. Nothing is done here.</summary>
     /// <returns>The confirmation page.</returns>
     public async Task<IActionResult> OnGetAsync()
@@ -142,6 +145,19 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                     .ConfigureAwait(false)).ConfigureAwait(false);
 
             Mentionable = [.. Parley.Client.Rendering.RoomRoster.NotInIt(roll.Value, [], PersonSeat.On(project.Name)).Select(agent => agent.Value)];
+        }
+
+        // Ending a process is described only for one a node that is gone left running (SPEC.md §11.1): for any other the
+        // description would be untrue and the broker refuses the act, so neither is offered. A registry that cannot be read
+        // leaves it offered, and the broker's own check decides.
+        if (string.Equals(Action, "kill", StringComparison.OrdinalIgnoreCase) && AgentName.TryCreate(Subject, out var killing))
+        {
+            var roll = await BrokerDirectory.ReadAsync(async () =>
+                await new BrokerClient(directory.ClientFor(project)).RegistryAsync(HttpContext.RequestAborted)
+                    .ConfigureAwait(false)).ConfigureAwait(false);
+
+            Offered = roll.Value is not { } rows
+                || rows.Any(row => row.Name == killing && row.Presence == AgentPresence.Running && row.Unsupervised);
         }
 
         // Freezing ends the one process that serves every project the agent is in, so the person is told which they are before
@@ -195,7 +211,9 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
             "unfreezeall" => (Parley.Client.Rendering.FreezingWords.UnfreezingAll(Project ?? string.Empty), false),
 
             // Ends a process now: not destructive of anything the agent owes, but what it is part-way through is lost, said.
-            "kill" => (Parley.Client.Rendering.StoppingWords.Killing(Subject), false),
+            "kill" => (Offered
+                ? Parley.Client.Rendering.StoppingWords.Killing(Subject)
+                : Parley.Client.Rendering.StoppingWords.NothingToKill(Subject), false),
 
             "purge" => (AgentWithdrawal.Purging + " Its name becomes free for another agent; retiring it instead "
                       + "achieves everything except freeing the name, and keeps its peers' side of those conversations. "
@@ -408,8 +426,19 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                 : string.Empty);
     }
 
-    private static async Task<string> DescribeKill(AgentName agent, Task<bool> asked) =>
-        Parley.Client.Rendering.StoppingWords.KillOutcome(agent.Value, await asked.ConfigureAwait(false));
+    // A refusal is said as the act that was refused, never as a read that failed, which is what the containment around every
+    // call would otherwise call it.
+    private static async Task<string> DescribeKill(AgentName agent, Task<bool> asked)
+    {
+        try
+        {
+            return Parley.Client.Rendering.StoppingWords.KillOutcome(agent.Value, await asked.ConfigureAwait(false));
+        }
+        catch (Grpc.Core.RpcException refused) when (refused.StatusCode == Grpc.Core.StatusCode.FailedPrecondition)
+        {
+            return Parley.Client.Rendering.StoppingWords.KillRefused(agent.Value, refused.Status.Detail);
+        }
+    }
 
     private static async Task<string> DescribeStop(AgentName agent, bool restart, Task<bool> asked) =>
         Parley.Client.Rendering.StoppingWords.Outcome(agent.Value, restart, await asked.ConfigureAwait(false));

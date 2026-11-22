@@ -64,6 +64,9 @@ public sealed class AJoinThatWakesAgentsNeverStrandsTheNodeTests
             BrokerOptions.Default with { ResumePolicy = ResumePolicy.Always, ResumeGate = gate },
             TimeProvider.System);
 
+        // At the join, as these tests are about what a wake does to the join and not about when it runs.
+        runtime.RestartWakeDelay = TimeSpan.Zero;
+
         _ = await runtime.UseConnectionAsync(
             async (connection, now, ct) =>
             {
@@ -85,11 +88,18 @@ public sealed class AJoinThatWakesAgentsNeverStrandsTheNodeTests
         return runtime;
     }
 
-    private static Task<JoinedNode> JoinAsync(BrokerRuntime runtime, CancellationToken token) =>
-        runtime.JoinNodeAsync(
+    // Waits for the restart wake the join scheduled, which runs beside the join rather than inside it.
+    private static async Task<JoinedNode> JoinAsync(BrokerRuntime runtime, CancellationToken token)
+    {
+        var joined = await runtime.JoinNodeAsync(
             new NodeRecord("probe", null, null, null, null, true, DateTimeOffset.UtcNow),
             ["orders", "billing"],
             token);
+
+        await runtime.RestartWakeOf("probe").WaitAsync(token);
+
+        return joined;
+    }
 
     private sealed class CountingGate(bool failFirst) : IResumeGate
     {

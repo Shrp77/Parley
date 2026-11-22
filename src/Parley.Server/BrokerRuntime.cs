@@ -164,6 +164,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     private readonly ConcurrentDictionary<string, bool> _resumedMachines = new(StringComparer.Ordinal);
 
+    /// <summary>The restart wake each machine's first join scheduled, until the broker stops (SPEC.md §14, §11.1).</summary>
+    /// <remarks>Kept so stopping the broker can wait for one in progress before it closes the store.</remarks>
+    private readonly ConcurrentDictionary<string, Task> _restartWakes = new(StringComparer.Ordinal);
+
+    /// <summary>Cancelled when the broker stops, which ends a restart wake still waiting.</summary>
+    private readonly CancellationTokenSource _stopping = new();
+
     /// <summary>The agents whose freeze lapsed when this broker started, until their machine's node first joins (SPEC.md §14).</summary>
     /// <remarks>
     /// A lapse is an unfreeze nobody was there to act on: no node had joined, so nothing could be started. The first join of the
@@ -362,6 +369,32 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </para>
     /// </remarks>
     internal static readonly TimeSpan WakeCeiling = TimeSpan.FromMinutes(2);
+
+    /// <summary>How long a machine's first join waits before the restart wake decides whom to start (SPEC.md §14, §11.1).</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Long enough for a process that outlived the broker to attach again.</b> A broker that was killed leaves the agents'
+    /// processes running, and their adapters try again every two seconds (<c>BrokerLink.RetryAfter</c> in Parley.Mcp). A node
+    /// rejoins faster than that, so a wake at the join found the agent detached and asked for a start: a second process in the
+    /// same checkout, collecting the same owed work. Once the old one is back it reads as left running, which the wake skips.
+    /// </para>
+    /// <para>
+    /// A constant, not a setting: nothing a deployment knows makes another number right, and the adapter's interval is
+    /// fixed in code beside it. An adapter slower than this is not waited for, and its agent is started again as before.
+    /// </para>
+    /// </remarks>
+    internal static readonly TimeSpan RestartWakeDelayDefault = TimeSpan.FromSeconds(5);
+
+    /// <summary>Gets or sets how long the restart wake waits after a machine's first join; a seam for tests.</summary>
+    /// <remarks>Set before a node joins. Nothing outside the tests sets it, so a broker always waits <see cref="RestartWakeDelayDefault"/>.</remarks>
+    internal TimeSpan RestartWakeDelay { get; set; } = RestartWakeDelayDefault;
+
+    /// <summary>Gets the restart wake a machine's first join scheduled, or a completed task when none was.</summary>
+    /// <param name="machine">The machine.</param>
+    /// <returns>A task that completes when the wake has asked for every start it will, or has given up.</returns>
+    /// <remarks>For tests, which wait on it rather than on a fixed time. It never faults: a failed wake is forgotten.</remarks>
+    internal Task RestartWakeOf(string machine) =>
+        _restartWakes.TryGetValue(machine, out var wake) ? wake : Task.CompletedTask;
 
     /// <summary>Gets the clock every operation is stamped from.</summary>
     public TimeProvider Clock { get; }
@@ -1030,20 +1063,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
             throw;
         }
 
+        // **Scheduled, not awaited**: it waits for processes that outlived the broker to attach again, and the join's reply
+        // must not wait with it. Recorded before the join returns, so a test can wait on it.
         if (_options.ResumePolicy == ResumePolicy.Always && _resumedMachines.TryAdd(node.Machine, true))
         {
-            try
-            {
-                await WakeForOutstandingWorkAsync(node.Machine, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception)
-            {
-                // The join has succeeded: the node is recorded and connected, and failing it here would leave it
-                // connected with nothing to remove it, so every retry would be refused as a second node. The wake is
-                // an extra, so it is forgotten and asked for again at the machine's next join. The work stays open
-                // and is flagged on the ordinary schedule meanwhile.
-                _ = _resumedMachines.TryRemove(node.Machine, out _);
-            }
+            var machine = node.Machine;
+
+            _restartWakes[machine] = Task.Run(() => WakeOnceReattachedAsync(machine), CancellationToken.None);
         }
 
         foreach (var name in _lapsed.Keys)
@@ -1117,6 +1143,56 @@ public sealed class BrokerRuntime : IAsyncDisposable
         await WakeIfOwingAsync(agent, CancellationToken.None).ConfigureAwait(false);
     }
 
+
+    /// <summary>
+    /// Waits for processes that outlived the broker to attach again, then wakes the machine's agents that owe work (§14).
+    /// </summary>
+    /// <param name="machine">The machine whose node first joined.</param>
+    /// <returns>A task that completes when the wake is done or given up; it never faults.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Why it waits</b> (SPEC.md §11.1: a process left running is not started again while it runs): a broker restarted
+    /// under its agents finds them detached until their adapters retry, and its node rejoins first. Woken at once, each agent
+    /// owing work was started a second time beside its old process, both collected the same work in one checkout, and the
+    /// old one could not be killed. After <see cref="RestartWakeDelay"/> the old process is attached again with a token no
+    /// node holds, and <see cref="Ask"/> leaves it alone.
+    /// </para>
+    /// <para>
+    /// <b>The wake is an extra</b>, so a failure, or the broker stopping, is forgotten and asked for again at the machine's
+    /// next join. The work stays open and is flagged on the ordinary schedule meanwhile.
+    /// </para>
+    /// </remarks>
+    private async Task WakeOnceReattachedAsync(string machine)
+    {
+        try
+        {
+            var delay = RestartWakeDelay;
+
+            if (delay > TimeSpan.Zero)
+            {
+                await Task.Delay(delay, Clock, _stopping.Token).ConfigureAwait(false);
+            }
+
+            // The node left while this waited, so there is nobody to ask: forgotten, for its next join to ask again.
+            while (!_nodes.ContainsKey(machine))
+            {
+                _ = _resumedMachines.TryRemove(machine, out _);
+
+                // A join between the look and the forgetting found the machine still claimed and scheduled nothing, so it
+                // is claimed again and woken for here. A join after the forgetting claims it itself.
+                if (!_nodes.ContainsKey(machine) || !_resumedMachines.TryAdd(machine, true))
+                {
+                    return;
+                }
+            }
+
+            await WakeForOutstandingWorkAsync(machine, _stopping.Token).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            _ = _resumedMachines.TryRemove(machine, out _);
+        }
+    }
 
     /// <summary>
     /// Wakes the agents on a machine that owe work outstanding from before the broker started (§14).
@@ -1522,7 +1598,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <summary>Whether an agent runs as a process a node started and a node that is gone still owns (SPEC.md §11.1).</summary>
     /// <param name="agent">The agent.</param>
     /// <returns>
-    /// True when it is attached, no attachment presented a token a node now holds, and at least one presented some token.
+    /// True when one of its attachments presented a token that no node now holds, whatever else is attached beside it.
     /// </returns>
     /// <remarks>
     /// <para>
@@ -1532,17 +1608,26 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// holds: read as "open outside Parley" it was blamed on somebody who never opened it.
     /// </para>
     /// <para>
-    /// <see cref="OpenOutside"/> is also true for it, because no node can give it a turn. A person's session that happens to
-    /// run beside it is not mistaken for it: that one has no token.
+    /// <see cref="OpenOutside"/> is also true for it, because no node can give it a turn, unless a process the current node
+    /// started is attached beside it. A person's session that happens to run beside it is not mistaken for it: that one has
+    /// no token.
+    /// </para>
+    /// <para>
+    /// <b>Read per attachment, not from the agent as a whole</b> (SPEC.md §11.1: an attachment that presents a token no node
+    /// holds is left running). A process left running beside one the current node started, which a broker restarted under
+    /// an agent that owed work could cause when the old adapter was slow to attach again, is still one nobody holds: read as
+    /// plain Running it was shown nowhere and could not be killed.
     /// </para>
     /// </remarks>
     public bool Unsupervised(AgentName agent) =>
         !PersonSeat.Is(agent)
         && !Facilitation.Is(agent)
         && _attached.TryGetValue(agent.Value, out var sessions)
-        && !sessions.IsEmpty
-        && sessions.All(session => !session.StartedByParley)
-        && sessions.Any(session => session.LaunchToken is { Length: > 0 });
+        && sessions.Any(Left);
+
+    /// <summary>Whether an attachment presented a launch token that no node now holds (SPEC.md §11.1, §11.7).</summary>
+    private static bool Left(AttachedAgent session) =>
+        !session.StartedByParley && session.LaunchToken is { Length: > 0 };
 
     /// <summary>Asks the node on an agent's machine to end a process a node that is gone left running (SPEC.md §11.1).</summary>
     /// <param name="agent">The agent.</param>
@@ -1566,7 +1651,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return KillOutcome.NotLeftRunning;
         }
 
-        var left = sessions.Where(session => !session.StartedByParley && session.LaunchToken is { Length: > 0 }).ToList();
+        // Only the left ones, so a process the current node started beside them is never named.
+        var left = sessions.Where(Left).ToList();
 
         if (left.Select(session => session.ProcessId).FirstOrDefault(id => id is > 0) is not { } process)
         {
@@ -2658,6 +2744,19 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <returns>A task that completes when it is closed.</returns>
     public async ValueTask DisposeAsync()
     {
+        // A restart wake still waiting for processes to attach again is ended, and one already reading is waited for while
+        // the store is open. Neither faults: a wake that cannot finish is forgotten.
+        try
+        {
+            await _stopping.CancelAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Disposed before: there is nothing left to end.
+        }
+
+        await Task.WhenAll(_restartWakes.Values).ConfigureAwait(false);
+
         // First, while the store is still open: a sweep in progress finishes the entry it is on and stops.
         await Sweeper.DisposeAsync().ConfigureAwait(false);
 
@@ -2666,6 +2765,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
         _attached.Clear();
         _nodes.Clear();
         _gate.Dispose();
+        _stopping.Dispose();
 
         if (_ownsConnection)
         {

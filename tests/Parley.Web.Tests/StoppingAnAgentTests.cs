@@ -137,10 +137,91 @@ public sealed class StoppingAnAgentTests
         Assert.DoesNotContain("Left running.", page, StringComparison.Ordinal);
     }
 
+    private static Wire.RegistryRow LeftRow(bool besideASupervisedOne)
+    {
+        var row = Row(Wire.AgentPresence.Running, openOutside: !besideASupervisedOne);
+
+        row.Unsupervised = true;
+
+        return row;
+    }
+
+    private static async Task<(string Said, string Outcome)> KillAsync(RoadmapConsole console)
+    {
+        using var client = console.CreateClient();
+        var path = $"/Projects/Act?project={RoadmapConsole.Project}&action=kill&subject={Agent}";
+
+        using var page = await client.GetAsync(new Uri(path, UriKind.Relative), Ct);
+        var html = await page.Content.ReadAsStringAsync(Ct);
+
+        var token = Regex.Match(
+            html, """name="__RequestVerificationToken"[^>]*value="([^"]+)""", RegexOptions.None, TimeSpan.FromSeconds(2))
+            .Groups[1].Value;
+
+        using var posting = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["__RequestVerificationToken"] = token }),
+        };
+
+        if (page.Headers.TryGetValues("Set-Cookie", out var cookies))
+        {
+            posting.Headers.Add("Cookie", string.Join("; ", cookies.Select(c => c.Split(';')[0])));
+        }
+
+        using var done = await client.SendAsync(posting, Ct);
+
+        return (WebUtility.HtmlDecode(html), WebUtility.HtmlDecode(await done.Content.ReadAsStringAsync(Ct)));
+    }
+
+    [Fact]
+    public async Task Kill_on_an_agent_a_live_node_supervises_says_there_is_nothing_to_end_and_offers_no_confirm()
+    {
+        // Security run on 0.64.19: the page said the process "was started by a node that is gone" of one the node here
+        // supervises, offered Confirm, and the broker's refusal came back as "refused the read".
+        using var console = new RoadmapConsole();
+        console.Broker.Registry.Add(Row(Wire.AgentPresence.Running, openOutside: false));
+
+        using var client = console.CreateClient();
+        var said = WebUtility.HtmlDecode(await client.GetStringAsync(
+            new Uri($"/Projects/Act?project={RoadmapConsole.Project}&action=kill&subject={Agent}", UriKind.Relative), Ct));
+
+        Assert.DoesNotContain("node that is gone, so no node holds it", said, StringComparison.Ordinal);
+        Assert.Contains("there is nothing to end here", said, StringComparison.Ordinal);
+        Assert.DoesNotContain("type=\"submit\"", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Kill_of_a_process_left_beside_one_the_node_supervises_is_offered_and_says_that_one_is_left_alone()
+    {
+        using var console = new RoadmapConsole();
+        console.Broker.Registry.Add(LeftRow(besideASupervisedOne: true));
+
+        var (said, outcome) = await KillAsync(console);
+
+        Assert.Contains("was started by a node that is gone", said, StringComparison.Ordinal);
+        Assert.Contains("that the node here started is left alone", said, StringComparison.Ordinal);
+        Assert.Contains("type=\"submit\"", said, StringComparison.Ordinal);
+        Assert.Contains("Asked the node to end", outcome, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_kill_the_broker_refuses_is_said_as_the_act_and_not_as_a_read()
+    {
+        using var console = new RoadmapConsole();
+        console.Broker.Registry.Add(LeftRow(besideASupervisedOne: false));
+        console.Broker.KillRefusal = "its adapter did not say which process hosts it";
+
+        var (_, outcome) = await KillAsync(console);
+
+        Assert.Contains($"the broker refused to end {Agent}'s process. its adapter did not say", outcome, StringComparison.Ordinal);
+        Assert.DoesNotContain("refused the read", outcome, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Kill_is_described_first_and_asked_only_on_a_post()
     {
         using var console = new RoadmapConsole();
+        console.Broker.Registry.Add(LeftRow(besideASupervisedOne: false));
         using var client = console.CreateClient();
         var path = $"/Projects/Act?project={RoadmapConsole.Project}&action=kill&subject={Agent}";
 

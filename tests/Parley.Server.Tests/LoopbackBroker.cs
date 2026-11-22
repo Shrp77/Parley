@@ -42,11 +42,16 @@ internal sealed class LoopbackBroker : IAsyncDisposable
     /// <param name="cancellationToken">Cancels startup.</param>
     /// <param name="clock">The clock to stamp from, or null for the system one.</param>
     /// <param name="options">The broker's options, or null for the defaults a test broker gets (which never wake on a restart).</param>
+    /// <param name="restartWakeDelay">
+    /// How long a machine's first join waits before the restart wake, or null for none: a test that is not about that wait
+    /// gets the wake at the join, and <see cref="JoinedNodeClient.JoinAsync"/> waits for it.
+    /// </param>
     /// <returns>The running broker.</returns>
     public static async Task<LoopbackBroker> StartAsync(
         CancellationToken cancellationToken,
         TimeProvider? clock = null,
-        BrokerOptions? options = null)
+        BrokerOptions? options = null,
+        TimeSpan? restartWakeDelay = null)
     {
         // **Settable for the same reason the patience above is.** The wake ceiling is two minutes,
         // and a test that waited it out would be deleted by whoever next ran the suite -- so the
@@ -55,6 +60,8 @@ internal sealed class LoopbackBroker : IAsyncDisposable
         clock ??= TimeProvider.System;
 
         var runtime = BrokerRuntime.OpenInMemory(options ?? BrokerOptions.Default, clock);
+
+        runtime.RestartWakeDelay = restartWakeDelay ?? TimeSpan.Zero;
 
         var server = await ParleyServer
             .StartAsync(runtime, "http://127.0.0.1:0", cancellationToken, Diagnostics())
@@ -543,6 +550,9 @@ internal sealed class JoinedNodeClient : IAsyncDisposable
     /// <param name="facts">What the node observed about itself.</param>
     /// <param name="reportsTurns">Whether this node says it reports the turns it gives (SPEC.md §11.6).</param>
     /// <param name="identities">The identifiers of the checkouts it can launch, which let it be asked for one by what it is.</param>
+    /// <param name="waitForRestartWake">
+    /// Whether to wait for the restart wake the join scheduled, so a test sees what the join woke before it goes on.
+    /// </param>
     /// <returns>The joined node.</returns>
     public static async Task<JoinedNodeClient> JoinAsync(
         LoopbackBroker broker,
@@ -551,7 +561,8 @@ internal sealed class JoinedNodeClient : IAsyncDisposable
         CancellationToken cancellationToken = default,
         Wire.NodeFacts? facts = null,
         bool reportsTurns = false,
-        IEnumerable<string>? identities = null)
+        IEnumerable<string>? identities = null,
+        bool waitForRestartWake = true)
     {
         var nodes = broker.ConnectAsNode();
 
@@ -577,6 +588,11 @@ internal sealed class JoinedNodeClient : IAsyncDisposable
         {
             throw new InvalidOperationException(
                 $"The first command on the join stream for '{machine}' was not an acknowledgement.");
+        }
+
+        if (waitForRestartWake)
+        {
+            await broker.Runtime.RestartWakeOf(machine).WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         return new JoinedNodeClient(nodes, machine, stream);

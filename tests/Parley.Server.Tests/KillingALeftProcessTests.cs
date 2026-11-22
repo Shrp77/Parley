@@ -88,6 +88,36 @@ public sealed class KillingALeftProcessTests
     }
 
     [Fact]
+    public async Task One_left_beside_a_process_the_node_started_still_reads_as_left_and_only_it_is_killed()
+    {
+        // Review with real processes, 0.64.19: a broker restarted under an agent that owed work started a second process
+        // before the old adapter attached again. The agent then read as plain Running, and the person's Kill was refused
+        // because a process the node started was attached beside the old one (SPEC.md §11.1: an attachment that presents a
+        // token no node holds is left running).
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
+        await using var supervised = await AttachedClient.AttachAsync(
+            broker, Agent, cancellationToken: Ct, startedBy: node, processId: 5151);
+        await using var left = await AttachedClient.AttachAsync(
+            broker, Agent, cancellationToken: Ct, launchToken: "from-a-node-that-is-gone", processId: 4242);
+
+        var row = await RowAsync(broker);
+
+        Assert.True(row.Unsupervised, "the old process should read as left running");
+        Assert.False(row.OpenOutside, "the process the node started is Parley's");
+
+        var reply = await broker.ConnectAsOperator().KillAsync(
+            new Wire.StopRequest { Agent = Agent, Because = "two in one checkout" }, cancellationToken: Ct);
+
+        Assert.True(reply.Changed);
+
+        var command = await node.WaitForCommandAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(Wire.NodeCommand.CommandOneofCase.Kill, command.CommandCase);
+        Assert.Equal(4242, command.Kill.ProcessId);
+    }
+
+    [Fact]
     public async Task A_process_opened_in_an_editor_is_never_killed_from_here()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);

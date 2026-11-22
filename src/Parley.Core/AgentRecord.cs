@@ -84,8 +84,8 @@ namespace Parley.Core;
 /// </param>
 /// <param name="Unsupervised">
 /// Running as a process a node started and a node that is gone still owns (SPEC.md §11.1): it presented a launch token no
-/// node now holds. <paramref name="OpenOutside"/> is also true for it. Observed from the attachments the broker holds; on
-/// the operator's registry only.
+/// node now holds. True even when a process the current node started is attached beside it; otherwise
+/// <paramref name="OpenOutside"/> is also true. Observed from the attachments the broker holds; on the operator's registry only.
 /// </param>
 /// <param name="KeepFrozen">Whether the person asked that the freeze outlast a logon (SPEC.md §14); false when it is not frozen.</param>
 /// <param name="FrozenUtc">When a person froze it in this project, or null when it is not frozen (SPEC.md §14).</param>

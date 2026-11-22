@@ -146,6 +146,9 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <summary>Every kill of a process a node that is gone left running it was asked for.</summary>
     public List<Wire.StopRequest> Killed { get; } = [];
 
+    /// <summary>When set, a kill is refused <c>FAILED_PRECONDITION</c> with this sentence, as the broker refuses one it will not send.</summary>
+    public string? KillRefusal { get; set; }
+
     /// <summary>Every freeze of an agent a person asked for, with whether it was to outlast a start of the broker.</summary>
     public List<Wire.FreezeRequest> Frozen { get; } = [];
 
@@ -464,7 +467,14 @@ public sealed class RoadmapBroker : HttpMessageHandler
 
         response.Content.Headers.ContentType = new MediaTypeHeaderValue("application/grpc");
 
-        if (StartRefusal is { } refusal && request.RequestUri!.AbsolutePath == "/parley.v1.Operators/Start")
+        var refusal = request.RequestUri!.AbsolutePath switch
+        {
+            "/parley.v1.Operators/Start" => StartRefusal,
+            "/parley.v1.Operators/Kill" => KillRefusal,
+            _ => null,
+        };
+
+        if (refusal is not null)
         {
             // A refusal carries no message: only the status and its sentence, which the wire sends percent-encoded. 9 is
             // FAILED_PRECONDITION.

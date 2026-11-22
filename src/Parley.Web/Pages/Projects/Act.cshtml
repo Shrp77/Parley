@@ -90,10 +90,15 @@ else
         }
 
         <p class="actions">
-            <button type="submit" class="@(Model.Destroys ? "danger act" : null)">
-                @(Model.Destroys ? "Yes, destroy it" : "Confirm")
-            </button>
-            <a class="button quiet" href="/Projects/Agents?project=@Model.Project">Cancel</a>
+            @* Not offered when the page has only explained why there is nothing to do (a kill of a process no node that is gone
+               left running): a Confirm under that would be refused. *@
+            @if (Model.Offered)
+            {
+                <button type="submit" class="@(Model.Destroys ? "danger act" : null)">
+                    @(Model.Destroys ? "Yes, destroy it" : "Confirm")
+                </button>
+            }
+            <a class="button quiet" href="/Projects/Agents?project=@Model.Project">@(Model.Offered ? "Cancel" : "Back")</a>
         </p>
     </form>
     <style>
