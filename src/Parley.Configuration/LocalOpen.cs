@@ -577,6 +577,11 @@ public static class LocalOpen
     // O_RDONLY, O_WRONLY and O_RDWR are 0, 1 and 2 everywhere; the rest differ. Linux: O_NONBLOCK 0x800 and O_CLOEXEC
     // 0x80000 on every architecture .NET runs on there, O_NOFOLLOW 0x8000 on Arm and PowerPC and 0x20000 on the rest
     // (x64, x86, s390x, RISC-V, LoongArch). macOS: 0x4, 0x1000000 and 0x100.
+    //
+    // O_NOCTTY (Linux 0x100, macOS 0x20000) always: a session leader with no controlling terminal that opens a terminal
+    // without it takes that terminal on, and `parley serve` under its autostart unit is one. An agent that pointed its launch
+    // file at a pseudo-terminal it held, and then closed its end, sent the broker SIGHUP and ended it for every agent on the
+    // machine (review, lens 2 run A on fc26cb8a, Linux). The read is refused as not an ordinary file either way.
     private static int OpenFlags(FileAccess access, bool followLink)
     {
         var mode = access switch
@@ -588,7 +593,7 @@ public static class LocalOpen
 
         if (OperatingSystem.IsMacOS())
         {
-            return mode | 0x4 | 0x1000000 | (followLink ? 0 : 0x100);
+            return mode | 0x4 | 0x1000000 | 0x20000 | (followLink ? 0 : 0x100);
         }
 
         var noFollow = RuntimeInformation.ProcessArchitecture
@@ -596,7 +601,7 @@ public static class LocalOpen
             ? 0x8000
             : 0x20000;
 
-        return mode | 0x800 | 0x80000 | (followLink ? 0 : noFollow);
+        return mode | 0x800 | 0x80000 | 0x100 | (followLink ? 0 : noFollow);
     }
 
     private static int KindOf(byte[] status) => BitConverter.ToInt32(status, 4) & KindMask;
