@@ -2181,7 +2181,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         // SPEC.md §11.1: nobody has a left process open, so nobody will prompt it; it is started once it has gone.
         Wire.WakeOutcome.LeftRunning =>
             "still finishing in a process left from before Parley restarted; it is started for your request once that " +
-            "process ends, unless the person ends it first",
+            "process ends, unless the person freezes or ends it first",
         _ => "unknown"
     };
 

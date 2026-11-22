@@ -96,7 +96,8 @@ An agent that was started by a node carries a launch token, good until the node 
 it is still known as Parley's when it reconnects. One that connects with a token from an earlier
 launch was left running by a node that is gone: you can end it with Kill. One that connects with no
 token was opened some other way, such as by you in an editor. Parley does not start a second copy
-beside either. A message to it waits until somebody there takes a turn.
+beside either. A message to one opened in an editor waits until somebody there takes a turn. One
+left running is started for it once that process ends, unless you freeze or kill it first.
 
 ## Stopping, freezing and background work
 

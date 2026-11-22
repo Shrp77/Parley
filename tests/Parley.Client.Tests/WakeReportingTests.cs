@@ -126,8 +126,8 @@ public sealed class WakeReportingTests
     [Fact]
     public void An_agent_open_outside_Parley_is_not_blamed_on_an_editor()
     {
-        // The broker answers OpenOutside alike for a session somebody opened and for a process a node that is gone left
-        // running (SPEC.md section 11.7), so the sentence may say only what is true of both.
+        // The broker answers OpenOutside for a session somebody opened, and LeftRunning for a process a node that is gone
+        // left running (SPEC.md sections 11.1 and 11.7), so this sentence is about an editor's session alone.
         var said = SeatVoice.Waking(Wire.WakeOutcome.OpenOutside, Orders);
 
         Assert.Contains(Orders.Value + " is open outside Parley, so Parley cannot give it a turn", said, StringComparison.Ordinal);

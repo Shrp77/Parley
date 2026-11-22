@@ -364,6 +364,12 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
             parts.Add($"{left} left running, started for it once that process ends");
         }
 
+        // SPEC.md §14: frozen by the person, so nothing starts them until they are unfrozen.
+        if (counted.GetValueOrDefault(Wire.WakeOutcome.Frozen) is > 0 and var frozen)
+        {
+            parts.Add($"{frozen} frozen, reading it once unfrozen");
+        }
+
         if (parts.Count > 0)
         {
             _ = said.Append(' ').Append(string.Join(", ", parts)).Append('.');
@@ -524,6 +530,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
 
     private const string NothingCanStart = "Nothing can start ";
     private const string OpenOutsideParley = " is open outside Parley";
+    private const string FrozenByYou = " is frozen, so nothing starts it";
 
     /// <summary>Whether a send's sentence says it went and the receiver will get to it without anybody doing anything.</summary>
     /// <param name="said">The sentence a send returned.</param>
@@ -539,7 +546,8 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
 
         return said.StartsWith("Sent.", StringComparison.Ordinal)
             && !said.Contains(NothingCanStart, StringComparison.Ordinal)
-            && !said.Contains(OpenOutsideParley, StringComparison.Ordinal);
+            && !said.Contains(OpenOutsideParley, StringComparison.Ordinal)
+            && !said.Contains(FrozenByYou, StringComparison.Ordinal);
     }
 
     /// <summary>What became of the receiver, in words.</summary>
@@ -569,7 +577,11 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         // SPEC.md §11.1: nobody has it open to prompt, and the broker starts it for this once that process has gone.
         Wire.WakeOutcome.LeftRunning =>
             $"{to.Value} is running as a process a node that is gone left behind, so Parley cannot give it a turn; it is " +
-            "started for this once that process ends, unless you kill it first.",
+            "started for this once that process ends, unless you freeze or kill it first.",
+
+        // SPEC.md §5, §14: the person froze it, so no answer comes until they unfreeze it. Said, never "not reported", and
+        // kept in front of them rather than put out of the way (review, lens 3 run B on 5de89187).
+        Wire.WakeOutcome.Frozen => $"{to.Value}{FrozenByYou}; it reads this once you unfreeze it.",
         _ => $"What became of {to.Value} was not reported.",
     };
 

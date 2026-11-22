@@ -355,7 +355,7 @@ Sometimes a node ends and the agents it started keep running, with nothing holdi
 Such an agent reads *left running by a node that is gone*. (An agent somebody opened in an editor
 reads *open outside Parley* instead.) Nothing can stop a left process at the end of its turn, give
 it a turn, or report its status. It ends by itself only once its work does. Work it owes, and
-messages sent to it while it ran, start it again once it has ended, unless you froze it or killed it.
+messages sent to it while it ran, start it again once it has ended, unless you froze, retired or killed it.
 
 To end it now, press Enter on its row in the terminal, or open its page in the web console, and
 choose **Kill process**. The page first says what is lost: whatever it is part-way through, and
