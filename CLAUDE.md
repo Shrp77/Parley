@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.64.15, protocol 0.20, schema 11. Nothing has been released, but **live stores hold work
+- Version 0.64.16, protocol 0.20, schema 11. Nothing has been released, but **live stores hold work
   in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
   `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
   upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
@@ -144,7 +144,8 @@ The command line keeps `serve`, `up`, `autostart`,
   one of those words fails it.
 - `EveryActionHasADoorTests` fails when an action is performed and unlinked, linked and not
   performed, or done on a POST and described on no GET.
-- The web UI answers only loopback host names and the host it binds (DNS rebinding defence).
+- The web UI answers only loopback host names, the host it binds, and whole names the person lists in the deployment's
+  `settings.json` (`webUi.hosts`, never a wildcard or an address) (DNS rebinding defence).
 - No page can be framed, except the conversation page the console's own roadmap page frames (`embed` and
   `Sec-Fetch-Dest: iframe`, same origin only; `ConsoleHost.Embedded`). Embedding hides the project's name, so no
   other page embeds.

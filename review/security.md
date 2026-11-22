@@ -21,7 +21,8 @@ the owner's own folders, a beacon that carries no credential.
 Check a change against each; a new page or a new path lookup must keep all of them.
 
 **The web console**
-- It answers only loopback host names and the host it binds (DNS rebinding).
+- It answers only loopback host names, the host it binds, and whole names the person lists in `settings.json`
+  (`webUi.hosts`, for a forwarder such as Tailscale's `serve`; no wildcard or address is taken) (DNS rebinding).
 - No page can be framed, except the conversation page the console's own roadmap page frames (`embed` and
   `Sec-Fetch-Dest: iframe`, same origin only).
 - A request whose `Sec-Fetch-Site` is `cross-site` or `same-site` is refused before any page runs, because pages act on

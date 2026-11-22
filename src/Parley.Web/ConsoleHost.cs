@@ -45,13 +45,18 @@ public static class ConsoleHost
     /// The broker to offer when this machine's manifest names no projects — what every other
     /// operator command would have connected to. Null to offer none.
     /// </param>
+    /// <param name="deploymentRoot">
+    /// The deployment root whose settings.json may list further host names (<c>webUi.hosts</c>), or null to answer only
+    /// this machine's own names. A seam: <see cref="RunAsync"/> passes the machine's root, and a test passes its own.
+    /// </param>
     /// <returns>The application, built and not yet running.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="args"/> is null.</exception>
     public static WebApplication Build(
         string[] args,
         string? address = null,
         TextWriter? warn = null,
-        string? fallbackBroker = null)
+        string? fallbackBroker = null,
+        string? deploymentRoot = null)
     {
         ArgumentNullException.ThrowIfNull(args);
 
@@ -114,7 +119,29 @@ public static class ConsoleHost
         // token and posts it back. Antiforgery is the only thing between a
         // browser and purge and every transcript, so the Host is checked before anything else. Set only when
         // the deployment has not chosen its own `AllowedHosts`.
-        builder.Configuration["AllowedHosts"] ??= AllowedHosts(chosen);
+        // The names the person listed in settings.json (webUi.hosts), for a forwarder such as Tailscale's serve that hands
+        // this loopback console a request under its own name. Read once: a change takes the console's next start.
+        IReadOnlyList<string> listed = [];
+        IReadOnlyList<string> leftOut = [];
+
+        if (deploymentRoot is { Length: > 0 })
+        {
+            listed = ParleySettings.ReadWebUiHosts(deploymentRoot, out leftOut);
+        }
+
+        foreach (var why in leftOut)
+        {
+            (warn ?? Console.Error).WriteLine("Parley console: " + why);
+        }
+
+        if (listed.Count > 0 && builder.Configuration["AllowedHosts"] is null)
+        {
+            (warn ?? Console.Error).WriteLine(
+                "Parley console: also answering to " + string.Join(", ", listed) + " (settings.json, webUi.hosts). "
+                + "Anyone who can reach those names acts as you: the console has no sign-in.");
+        }
+
+        builder.Configuration["AllowedHosts"] ??= AllowedHosts(chosen, listed);
 
         // The application part named rather than discovered. Razor Pages are found by walking the
         // entry assembly and its dependencies, and the entry assembly is not this one when a
@@ -319,6 +346,7 @@ public static class ConsoleHost
     /// The broker to offer when this machine's manifest names no projects. Null to offer none.
     /// </param>
     /// <param name="cancellationToken">Stops the console.</param>
+    /// <remarks>The machine's deployment root is found here, at the top, and handed to <see cref="Build"/>.</remarks>
     /// <returns>A task completing when the console stops.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="args"/> is null.</exception>
     public static async Task RunAsync(
@@ -328,7 +356,8 @@ public static class ConsoleHost
         string? fallbackBroker = null,
         CancellationToken cancellationToken = default)
     {
-        var app = Build(args, address, warn, fallbackBroker);
+        var app = Build(
+            args, address, warn, fallbackBroker, ProjectManifest.Locate(null, Environment.GetEnvironmentVariable));
 
         // Started and waited on separately rather than through RunAsync, which takes no token,
         // so the caller's cancellation stops the console: one that ignored the interrupt would
@@ -350,13 +379,14 @@ public static class ConsoleHost
 
     /// <summary>The Host names this console answers to, separated as <c>AllowedHosts</c> reads them.</summary>
     /// <param name="chosen">The address it binds, or null for the loopback default.</param>
-    /// <returns>The loopback names, and each host the bind address names.</returns>
+    /// <param name="listed">Further whole host names the person listed (settings.json, <c>webUi.hosts</c>).</param>
+    /// <returns>The loopback names, each host the bind address names, and the listed names.</returns>
     /// <remarks>
     /// A bind on every interface (<c>*</c>, <c>+</c>, <c>0.0.0.0</c>, <c>[::]</c>) names no host, so this machine's own
     /// name is allowed for it — what a person on the network types — and never a wildcard, which would be the rebinding
     /// hole again. Somebody who reaches it by an IP address sets <c>AllowedHosts</c> themselves, and the host keeps it.
     /// </remarks>
-    internal static string AllowedHosts(string? chosen)
+    internal static string AllowedHosts(string? chosen, IReadOnlyList<string>? listed = null)
     {
         var hosts = new List<string> { "localhost", "127.0.0.1", "[::1]" };
 
@@ -377,6 +407,8 @@ public static class ConsoleHost
                 hosts.Add(host);
             }
         }
+
+        hosts.AddRange(listed ?? []);
 
         return string.Join(';', hosts.Distinct(StringComparer.OrdinalIgnoreCase));
     }

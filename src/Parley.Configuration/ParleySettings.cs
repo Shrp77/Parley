@@ -36,6 +36,114 @@ public static class ParleySettings
 
     private const string ClosedDays = "closedDays";
 
+    private const string WebUi = "webUi";
+
+    private const string Hosts = "hosts";
+
+    /// <summary>The most host names the web console takes from the file.</summary>
+    public const int MostWebUiHosts = 16;
+
+    /// <summary>
+    /// The host names, beyond loopback and the address it binds, the web console answers to: <c>webUi.hosts</c>.
+    /// </summary>
+    /// <param name="root">The deployment root.</param>
+    /// <param name="refused">Each entry left out, and why, in words for the person.</param>
+    /// <returns>The names, lower case, each once; empty when nothing valid says.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>For a name another program forwards to this machine's loopback</b>, such as a Tailscale <c>serve</c> address
+    /// (owner, 2026-11-22). The console still binds loopback; the forwarder is the tunnel. What the list changes is only
+    /// which <c>Host</c> the console accepts, and that check is the DNS rebinding defence, so every entry is a whole name
+    /// written out: no wildcard, no IP address, nothing but letters, digits, hyphens and dots. A wildcard would let any
+    /// name an attacker points at 127.0.0.1 through, which is the hole the check closes.
+    /// </para>
+    /// <para>
+    /// Whoever can reach a listed name acts as the person: the console has no sign-in. Who can is the forwarder's to
+    /// decide (a tailnet's access rules), which is why nothing adds a name but the person editing this file.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<string> ReadWebUiHosts(string root, out IReadOnlyList<string> refused)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(root);
+
+        var names = new List<string>();
+        var left = new List<string>();
+        refused = left;
+
+        var path = Path.Combine(root, FileName);
+
+        try
+        {
+            if (LocalOpen.ReadText(path, json: true).Text is not { } text
+                || StrictJson.Parse(text) is not JsonObject document
+                || document[WebUi] is not JsonObject webUi
+                || webUi[Hosts] is not { } listed)
+            {
+                return names;
+            }
+
+            if (listed is not JsonArray entries)
+            {
+                left.Add($"\"{WebUi}.{Hosts}\" in {path} is not a list of names, so none was taken.");
+
+                return names;
+            }
+
+            foreach (var entry in entries)
+            {
+                var name = entry is JsonValue value && value.GetValueKind() == JsonValueKind.String
+                    ? value.GetValue<string>().Trim().ToLowerInvariant()
+                    : null;
+
+                if (name is null || !IsHostName(name))
+                {
+                    left.Add($"{entry?.ToJsonString() ?? "null"} in \"{WebUi}.{Hosts}\" is not a whole host name (letters, digits, hyphens and dots; no wildcard or address), so it was left out.");
+                }
+                else if (names.Count >= MostWebUiHosts)
+                {
+                    left.Add($"\"{name}\" was left out: \"{WebUi}.{Hosts}\" takes at most {MostWebUiHosts} names.");
+                }
+                else if (!names.Contains(name, StringComparer.Ordinal))
+                {
+                    names.Add(name);
+                }
+            }
+
+            return names;
+        }
+        catch (Exception unreadable) when (unreadable is JsonException or IOException or UnauthorizedAccessException or FormatException or InvalidOperationException)
+        {
+            left.Add($"{path} could not be read, so the web console answers only to this machine's own names: {unreadable.Message}");
+
+            return [];
+        }
+    }
+
+    /// <summary>Whether a name is a whole DNS host name: dot-separated labels of letters, digits and inner hyphens.</summary>
+    /// <param name="name">The name, already lower case.</param>
+    /// <returns>True for a name with at least one letter in its last label, so never an IP address or a wildcard.</returns>
+    internal static bool IsHostName(string name)
+    {
+        if (name.Length is 0 or > 253)
+        {
+            return false;
+        }
+
+        var labels = name.Split('.');
+
+        foreach (var label in labels)
+        {
+            if (label.Length is 0 or > 63 || label[0] == '-' || label[^1] == '-'
+                || !label.All(c => c is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-'))
+            {
+                return false;
+            }
+        }
+
+        // An all-digit last label is an IPv4 address; a name always ends in a label with a letter.
+        return labels[^1].Any(c => c is >= 'a' and <= 'z');
+    }
+
     /// <summary>How many days the Inbox's Closed view covers.</summary>
     /// <param name="root">The deployment root.</param>
     /// <returns>The window, or <see cref="DefaultClosedDays"/> when nothing valid says.</returns>

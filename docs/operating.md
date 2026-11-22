@@ -14,8 +14,9 @@ Both show the same projects, agents and conversations, and both let you take par
 person can do to a deployment is available in the terminal. The command line keeps only a few
 commands, listed [below](#the-command-line).
 
-The web console answers only loopback host names and the address it binds to, which protects it
-from DNS rebinding, and it refuses a request another site started, so a page you visit cannot act
+The web console answers only loopback host names, the address it binds to and any names you list
+in `settings.json` (see [Configuration](configuration.md#reaching-the-console-by-another-name)),
+which protects it from DNS rebinding, and it refuses a request another site started, so a page you visit cannot act
 through it. It binds to loopback unless you give it an address.
 
 ## Your seat

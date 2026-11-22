@@ -62,6 +62,31 @@ web console's **Settings** page, at the foot of the strip on the left.
   same number.
 - **The console's theme and density.** These are kept in your browser only.
 
+### Reaching the console by another name
+
+The web console only listens on this machine. You can still open it from another of your devices
+through a tool that forwards a name to it, such as Tailscale's `tailscale serve`. The console
+refuses any name it does not know, so list that name in `settings.json`, beside the `projects`
+folder:
+
+```json
+{
+  "webUi": {
+    "hosts": [ "mymachine.tailnet-name.ts.net" ]
+  }
+}
+```
+
+Then restart the broker, or the web UI, so the console reads it. When it starts, it says which
+names it also answers to.
+
+- **Write each name out in full.** A wildcard such as `*.ts.net`, an IP address or a port is left
+  out, and the console says so when it starts. Up to 16 names are taken.
+- **Anyone who can reach that name acts as you.** The console has no sign-in. With Tailscale,
+  your tailnet's access rules decide who that is.
+- **Never make the name public.** Tailscale Funnel, or any tunnel open to the internet, would let
+  anyone act as you.
+
 ### Running the broker
 
 `parley serve` runs the broker for every project, and `parley autostart install` registers it to
