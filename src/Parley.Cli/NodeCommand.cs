@@ -132,7 +132,7 @@ public static class NodeCommand
         // **Whoever makes this table is whoever stops it.** The table is shared across every project one
         // process hosts, so sweeping it whenever any node loop returns would send away every agent on the
         // machine, including the ones still serving other projects: `serve` stops and restarts a project
-        // whose store or endpoint changed, and `project remove` ends one outright. SPEC.md §12 says what
+        // whose store or endpoint changed, and `project remove` ends one outright. SPEC.md §11.1 says what
         // that costs — the process is what held everything each agent had learned.
         var ours = residents is null;
 
@@ -1728,7 +1728,7 @@ public static class NodeCommand
     /// <param name="output">Where to report.</param>
     /// <returns>A task that completes when they have all stopped.</returns>
     /// <remarks>
-    /// SPEC.md §11.1 gives a resident agent three ways to end, and this is one of them: the
+    /// SPEC.md §11.1 gives a resident agent four ways to end, and this is one of them: the
     /// supervisor that started it telling it to stop. Leaving them running would be worse than
     /// untidy — they would hold sessions the broker still counts, and nothing would be left that
     /// could stop them.
@@ -1742,7 +1742,7 @@ public static class NodeCommand
         // resident happens inside `Residency`, so without this a start already past that gate lands its
         // process in the table *after* the sweep has walked it — and this is the last thing the process
         // does, so nothing sweeps again. That is an agent still running with nothing left that would stop
-        // it, which breaks the promise SPEC.md §12 makes: stopping a node tells every agent it started
+        // it, which breaks the promise SPEC.md §11.1 makes: stopping a node tells every agent it started
         // to quit.
         await Residency.WaitAsync().ConfigureAwait(false);
 

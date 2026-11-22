@@ -101,6 +101,65 @@ public sealed class StopAndRestartTests
         Assert.Equal(Agent, command.Start.Agent);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Work_that_arrived_for_a_stopped_agent_does_not_start_it_once_a_person_has_retired_or_purged_it(bool purge)
+    {
+        // Retirement is a person's judgement. Work that arrived before it must not start the agent after it: the person's own
+        // Start is refused for a retired agent, and a peer's mail must not do what that refuses (review, lens 2 on 0.64.7).
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
+        await using var docs = await AttachedClient.AttachAsync(broker, "docs@m1", cancellationToken: Ct);
+
+        var operators = broker.ConnectAsOperator();
+
+        await using (var agent = await LaunchedAsync(broker, node))
+        {
+            _ = await operators.StopAsync(new Wire.StopRequest { Agent = Agent }, cancellationToken: Ct);
+            _ = await node.WaitForCommandAsync(TimeSpan.FromSeconds(5));
+
+            _ = await docs.Client.RequestAsync(Requests.Open("docs@m1", Agent, "after the stop", "c1"), cancellationToken: Ct);
+
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, (await node.WaitForCommandAsync(TimeSpan.FromSeconds(5))).CommandCase);
+
+            _ = await operators.RetireAsync(new Wire.AgentRequest { Agent = Agent }, cancellationToken: Ct);
+
+            if (purge)
+            {
+                _ = await operators.PurgeAsync(new Wire.AgentRequest { Agent = Agent }, cancellationToken: Ct);
+            }
+        }
+
+        await broker.WaitUntilDetachedAsync(Agent, TimeSpan.FromSeconds(5));
+        await Assert.ThrowsAsync<TimeoutException>(() => node.WaitForCommandAsync(Briefly));
+    }
+
+    [Fact]
+    public async Task Work_the_stopping_process_read_before_it_went_does_not_start_the_agent_again()
+    {
+        // The start is for work still waiting. What the stopping process collected is read, and a spare start for it would
+        // undo the person's stop for nothing.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
+        await using var docs = await AttachedClient.AttachAsync(broker, "docs@m1", cancellationToken: Ct);
+
+        await using (var agent = await LaunchedAsync(broker, node))
+        {
+            _ = await broker.ConnectAsOperator().StopAsync(new Wire.StopRequest { Agent = Agent }, cancellationToken: Ct);
+            _ = await node.WaitForCommandAsync(TimeSpan.FromSeconds(5));
+
+            _ = await docs.Client.RequestAsync(Requests.Open("docs@m1", Agent, "after the stop", "c1"), cancellationToken: Ct);
+
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, (await node.WaitForCommandAsync(TimeSpan.FromSeconds(5))).CommandCase);
+
+            Assert.Single((await agent.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Agent }, cancellationToken: Ct)).Messages);
+        }
+
+        await broker.WaitUntilDetachedAsync(Agent, TimeSpan.FromSeconds(5));
+        await Assert.ThrowsAsync<TimeoutException>(() => node.WaitForCommandAsync(Briefly));
+    }
+
     [Fact]
     public async Task A_stopped_agent_nothing_arrived_for_is_not_started_when_its_process_goes()
     {

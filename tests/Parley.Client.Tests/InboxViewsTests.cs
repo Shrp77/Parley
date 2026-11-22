@@ -235,6 +235,38 @@ public sealed class InboxViewsTests
         Assert.NotEqual(Parley.Client.Views.Standing.Ready, row.Standing);
     }
 
+    // SPEC.md §11.6: an agent is working for as long as a turn runs, and waiting on its background work only when no turn
+    // runs. Each place that decides it has its own case, so one that lets the background work win fails by name.
+    private static AgentRecord WorkingWithBackgroundTasks() =>
+        Agent(Orders, AgentPresence.Running, new TurnStanding(true, Now.AddMinutes(-5), Now.AddMinutes(-9), true, 0, BackgroundTasks: 2));
+
+    [Fact]
+    public void A_running_turn_outranks_background_work_on_the_Inbox_chip()
+    {
+        var standing = InFlightStanding.From(WorkingWithBackgroundTasks(), [], 1);
+
+        Assert.Equal(AgentState.Working, standing.State);
+    }
+
+    [Fact]
+    public void A_running_turn_outranks_background_work_in_the_agents_list()
+    {
+        var now = Parley.Client.Views.Activities.Now(WorkingWithBackgroundTasks(), Now);
+
+        Assert.True(now.Working);
+        Assert.StartsWith($"{Parley.Client.Views.Activities.WorkingMark} working", now.Words, StringComparison.Ordinal);
+        Assert.DoesNotContain("background", now.Words, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_running_turn_outranks_background_work_in_an_agents_standing()
+    {
+        var row = Assert.Single(Parley.Client.Views.Standing.Join(
+            [WorkingWithBackgroundTasks()], new HashSet<string>(StringComparer.Ordinal), "parley-console", Orders.Machine));
+
+        Assert.Equal(Parley.Client.Views.Standing.Working, row.Standing);
+    }
+
     [Fact]
     public void An_agent_left_running_by_a_node_that_is_gone_is_never_called_open_outside_Parley_anywhere()
     {

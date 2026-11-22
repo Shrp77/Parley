@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.64.7, protocol 0.20, schema 11. Nothing has been released, but **live stores hold work
+- Version 0.64.8, protocol 0.20, schema 11. Nothing has been released, but **live stores hold work
   in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
   `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
   upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
@@ -31,7 +31,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
   references), is built on the 035 branch: `specs/036-inbox-follows-exchanges/`.
 - Feature 038, a person stopping or restarting an agent its node started (SPEC.md §11.1's fourth way an agent ends), is
   built on the 035 branch: `specs/038-stop-and-restart-agents/`. The node waits for the turn; it ends a process, never work.
-- Feature 039, background work an agent starts and ends a turn with, shown as working (SPEC.md §11.6), is built on the 035 branch:
+- Feature 039, background work an agent starts and ends a turn with, shown as waiting on its background work (SPEC.md §11.6), is built on the 035 branch:
   `specs/039-background-work/`.
 - Feature 040, agents reading the exchange history (`read_exchange`, `search_history`, each read shown to the person), is
   built on the 035 branch: `specs/040-agent-history/`. It took migration 009; feature 027's moves to 012. A read is a

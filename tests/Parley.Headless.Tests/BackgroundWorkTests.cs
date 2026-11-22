@@ -166,6 +166,132 @@ public sealed class BackgroundWorkTests : IDisposable
     }
 
     [Fact]
+    public async Task An_own_turn_whose_init_is_read_before_the_given_turn_lets_go_is_told()
+    {
+        // The same gap as the many rounds above, held open instead of hoped for: the clock keeps the given turn from letting
+        // go, once its reply is read, until the pump has read the agent's own init and started accounting for its turn. With
+        // the init dropped the clock is never asked on the pump, so the hold runs out and the turn is never told.
+        using var clock = new HoldingClock(TimeSpan.FromSeconds(3));
+        var template = StubRunner.Scripted(
+            _workspace,
+            [OneTask, Started, Finished, NoTasks, Init, StubRunner.Pause(1), Done],
+            [Second]);
+
+        var began = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var ended = new TaskCompletionSource<TurnOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var agent = ResidentAgent.Start(
+            AgentName.Create("billing@test"), InvocationCommand.Parse(template), _workspace, clock);
+
+        try
+        {
+            agent.Watch(new OwnWork(
+                _ =>
+                {
+                    began.TrySetResult();
+                    return Task.CompletedTask;
+                },
+                (_, outcome) =>
+                {
+                    ended.TrySetResult(outcome);
+                    return Task.CompletedTask;
+                },
+                _ => Task.CompletedTask));
+
+            var first = await clock.HoldingItsEnd(() => agent.TakeTurnAsync("1", Patience, Ct));
+
+            Assert.Equal("STARTED", first.Reply);
+
+            try
+            {
+                await began.Task.WaitAsync(TimeSpan.FromSeconds(5), Ct);
+            }
+            catch (TimeoutException)
+            {
+                Assert.Fail(
+                    "the agent's own turn was never told to have begun" +
+                    (clock.Released ? ", though it was started while the given turn was held" : ": none was started while the given turn was held"));
+            }
+
+            var own = await ended.Task.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+
+            Assert.True(own.Succeeded, own.Describe());
+            Assert.Equal("DONE", own.Reply);
+
+            // The gap was the one meant: the pump started the own turn while the given turn was still held.
+            Assert.True(clock.Released, "the given turn let go before the agent's own init was read: the gap was not held");
+
+            // And the given turn after it waits for it and reads its own reply.
+            var second = await agent.TakeTurnAsync("2", TimeSpan.FromSeconds(10), Ct);
+
+            Assert.Equal("SECOND", second.Reply);
+        }
+        finally
+        {
+            // Bounded: a turn of its own that was never handed the agent is never over, and the agent's end waits for it.
+            try
+            {
+                await agent.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+            }
+            catch (TimeoutException)
+            {
+            }
+        }
+    }
+
+    /// <summary>The system clock, which holds one given turn at its end until the pump starts a turn of the agent's own.</summary>
+    /// <param name="patience">How long the given turn is held when no own turn starts.</param>
+    /// <remarks>
+    /// <para>
+    /// A given turn asks the clock twice: when it takes the agent, and when it has read its reply and works out how long
+    /// it took, just before it lets go. The pump asks only when it starts a turn of the agent's own, after that turn is
+    /// queued, and it alone asks for the time of day. The second question on the given turn's own flow is held until that.
+    /// </para>
+    /// <para>
+    /// The flow is told apart by an <see cref="AsyncLocal{T}"/> set around the turn: the pump was started with the agent,
+    /// before it was set, and a turn of the agent's own continues on the pump's flow.
+    /// </para>
+    /// </remarks>
+    private sealed class HoldingClock(TimeSpan patience) : TimeProvider, IDisposable
+    {
+        private readonly AsyncLocal<bool> _held = new();
+        private readonly ManualResetEventSlim _ownTurnStarted = new();
+        private int _asked;
+
+        /// <summary>Whether the pump started an own turn while the given turn was held.</summary>
+        public bool Released { get; private set; }
+
+        public void Dispose() => _ownTurnStarted.Dispose();
+
+        /// <summary>Runs a given turn whose end is held.</summary>
+        /// <param name="turn">The turn.</param>
+        /// <returns>What it returned.</returns>
+        public async Task<TurnOutcome> HoldingItsEnd(Func<Task<TurnOutcome>> turn)
+        {
+            _held.Value = true;
+
+            return await turn();
+        }
+
+        public override long GetTimestamp()
+        {
+            if (_held.Value && Interlocked.Increment(ref _asked) == 2)
+            {
+                Released = _ownTurnStarted.Wait(patience);
+            }
+
+            return System.GetTimestamp();
+        }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            _ownTurnStarted.Set();
+
+            return System.GetUtcNow();
+        }
+    }
+
+    [Fact]
     [Slow]
     public async Task Own_turns_that_follow_each_other_closely_are_each_told_in_order()
     {

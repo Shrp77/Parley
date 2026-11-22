@@ -605,8 +605,9 @@ note "nothing is holding the tool store"
 #
 # **This is the whole point of the split, and it is one `if`.** A run that replaces only the
 # terminal unlinks a file the broker never opened, so there is nothing to stop: stopping the broker
-# ends its node, and here the agents that node started end with it, each of them the process that
-# held everything that agent had learned. Restarting a broker to change a terminal spends all of it.
+# ends its node, and under systemd or launchd the agents that node started end with it, each of them
+# the process that held everything that agent had learned. Restarting a broker to change a terminal
+# spends all of it.
 replacing_broker=0
 
 for i in "${!commands[@]}"; do
@@ -668,9 +669,10 @@ if [ "$replacing_broker" = "1" ]; then
             count="$(printf '%s\n' "$in_flight" | grep -c . || true)"
 
             echo "warning: $count conversation(s) have an exchange still open. Installing ends the" >&2
-            echo "         broker and its node, and here the agents the node started end with it," >&2
-            echo "         part-way through a turn if one is running. An open exchange stays open" >&2
-            echo "         and is flagged to the person:" >&2
+            echo "         broker and its node. Under systemd or launchd the agents the node started end" >&2
+            echo "         with it, part-way through a turn if one is running; the agents of a broker" >&2
+            echo "         started by hand are left running with nothing holding them. An open" >&2
+            echo "         exchange stays open and is flagged to the person:" >&2
 
             printf '%s\n' "$in_flight" | while IFS= read -r line; do
                 [ -n "$line" ] && echo "      $line" >&2
@@ -849,7 +851,7 @@ done
 # **Skipped entirely when the broker is not being replaced, and this is the half that is easy to
 # miss.** Not stopping the broker earlier is worthless if the script re-registers the
 # autostart entry down here: `autostart install` replaces the unit or launch agent, which
-# restarts the process, which leaves every agent its node started running with nothing holding it.
+# restarts the process, and under systemd or launchd the agents its node started end with it.
 # The stop would have been avoided and the cost paid anyway, hundreds of lines later.
 #
 # Nothing here is needed for a surface: a terminal is not registered with a supervisor, does not

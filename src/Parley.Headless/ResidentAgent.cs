@@ -780,6 +780,13 @@ public sealed class ResidentAgent : IAsyncDisposable
                     return;
                 }
 
+                // One own turn waits behind a given turn, never more. A second init in that gap would replace the first's
+                // ending, which could then end only by running out of patience, with the agent held for each in turn.
+                if (_givenAnswered && _ownQueue.Count > 0)
+                {
+                    return;
+                }
+
                 handOver = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 _ownQueue.Enqueue(handOver);
             }

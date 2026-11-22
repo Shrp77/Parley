@@ -2439,6 +2439,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
         // last of them has gone.
         var last = false;
 
+        // Read before the session is taken out: a wake claimed after this moment found nobody attached, so it is a start
+        // already asked for, and must not be mistaken below for the claim a lost turn left behind.
+        var leaving = Clock.GetUtcNow();
+
         while (_attached.TryGetValue(attached.Name.Value, out var sessions))
         {
             var remaining = sessions.Remove(attached);
@@ -2493,13 +2497,35 @@ public sealed class BrokerRuntime : IAsyncDisposable
         // frozen agent is declined where every wake is, so a freeze made meanwhile still holds.
         if (woken || unfrozen)
         {
-            _ = _pending.TryRemove(attached.Name.Value, out _);
+            // **Only the claim the lost turn left**, by key and value: one made since the session began to leave is a start a
+            // newer message has already asked for, and dropping it bought a second start for one message.
+            if (_pending.TryGetValue(attached.Name.Value, out var claimed) && claimed <= leaving)
+            {
+                _ = ((ICollection<KeyValuePair<string, DateTimeOffset>>)_pending)
+                    .Remove(new KeyValuePair<string, DateTimeOffset>(attached.Name.Value, claimed));
+            }
 
             try
             {
                 if (woken)
                 {
-                    _ = RequestAttentionForMail(attached.Name, "work arrived for it while it was being stopped");
+                    // Only an agent still registered and not retired, as every wake the broker makes on its own account asks
+                    // (WakeIfOwingAsync): the person may have retired or purged it since the work arrived, and a start then
+                    // would run a process the person's own Start is refused, in a repository they had withdrawn. And only
+                    // when something is still waiting: work the stopping process read before it went needs no start, and
+                    // what the agent already owed does not undo a person's stop.
+                    var waiting = await UseConnectionAsync(
+                        async (connection, _, ct) =>
+                            (await new AgentRepository(connection).GetAllAsync(ct).ConfigureAwait(false))
+                                .Any(row => row.Name == attached.Name && row.Status == AgentStatus.Active)
+                            && await new MessageRepository(connection).CountPendingAsync(attached.Name, cancellationToken: ct).ConfigureAwait(false)
+                            + await new ConversationRepository(connection).CountOutstandingPollsAsync(attached.Name, ct).ConfigureAwait(false) > 0,
+                        CancellationToken.None).ConfigureAwait(false);
+
+                    if (waiting)
+                    {
+                        _ = RequestAttentionForMail(attached.Name, "work arrived for it while it was being stopped");
+                    }
                 }
                 else
                 {

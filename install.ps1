@@ -54,8 +54,8 @@
     That matters more than it sounds. SPEC.md section 11.1 says a process outlives the node that
     started it, and a node that is replaced knows none of the processes its predecessor started.
     Restarting a broker to change a terminal leaves every running agent on the machine as a
-    process no node holds: it reads as left running, takes no turns, and has to be ended with
-    Kill process before the next work can start it again.
+    process no node holds: it reads as left running, takes no turns, and is not started again
+    until it ends, by itself once its work does or with Kill process.
 
 .PARAMETER Force
     Ends whatever is holding Parley's files, rather than refusing and saying what to close.
