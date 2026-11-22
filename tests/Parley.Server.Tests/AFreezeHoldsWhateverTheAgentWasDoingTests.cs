@@ -316,6 +316,34 @@ public sealed class AFreezeHoldsWhateverTheAgentWasDoingTests
     }
 
     [Fact]
+    public async Task A_persons_start_after_an_unfreeze_that_found_nothing_to_pay_is_still_made_when_the_process_goes()
+    {
+        // Frozen, unfrozen with nothing owed, then the person presses Start while the freeze's stop is still waiting: the start
+        // goes out as a turn the stop takes. The detach paid the unfreeze, found nothing, and stopped there, so the start the
+        // person had been told was asked for was never made (review, lens 3 on 0.64.11).
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["orders"], Ct, reportsTurns: true);
+
+        var operators = broker.ConnectAsOperator();
+
+        await using (var orders = await LaunchedAsync(broker, node, "t-1"))
+        {
+            _ = await operators.FreezeAsync(Freeze(Orders), cancellationToken: Ct);
+
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Stop, (await node.WaitForCommandAsync(Patience)).CommandCase);
+
+            Assert.True((await operators.UnfreezeAsync(new Wire.AgentRequest { Agent = Orders }, cancellationToken: Ct)).Changed);
+            Assert.True((await operators.StartAsync(new Wire.StartRequest { Agent = Orders }, cancellationToken: Ct)).Changed);
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, (await node.WaitForCommandAsync(Patience)).CommandCase);
+        }
+
+        var command = await node.WaitForCommandAsync(Patience);
+
+        Assert.Equal(Wire.NodeCommand.CommandOneofCase.Start, command.CommandCase);
+        Assert.Equal(Orders, command.Start.Agent);
+    }
+
+    [Fact]
     public async Task An_agent_frozen_again_before_its_process_went_is_not_started_when_it_goes()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);

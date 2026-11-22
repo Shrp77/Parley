@@ -343,6 +343,14 @@ public sealed class ResidentAgent : IAsyncDisposable
 
         try
         {
+            // **A turn given to a process that has gone never began**, so it is not said to have. A turn queued behind a stop
+            // reaches here once the stop has ended the process; telling the broker it had begun read there as the asking
+            // answered, and a person's start of an agent that was still stopping was then forgotten.
+            if (!IsAlive)
+            {
+                return Died(started);
+            }
+
             await began().ConfigureAwait(false);
 
             if (!IsAlive)
@@ -609,7 +617,8 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// <para>
     /// <b>The turn is held across the stop.</b> Waiting for the lock and then releasing it before stopping would leave a
     /// window in which a queued turn starts and is then killed. A turn queued behind this finds the process gone and
-    /// reports it, as any turn given to a departed resident does; the mail it was for waits for the next wake.
+    /// reports it, as any turn given to a departed resident does; the broker asks for a start once the process has gone, if
+    /// the mail the turn was for is still uncollected (SPEC.md §11.1).
     /// </para>
     /// </remarks>
     public async Task<bool> ShutdownWhenIdleAsync(TimeSpan grace, CancellationToken cancellationToken = default)

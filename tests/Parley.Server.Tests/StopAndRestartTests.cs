@@ -209,7 +209,7 @@ public sealed class StopAndRestartTests
     {
         // The agent is still attached, so the start goes out as a turn, which the stop takes with it. The person was told its
         // node had been asked to start it, and with nothing waiting for the agent nothing did (review, lens 1 on 0.64.10).
-        // "A start asked for while the stopped process is still going is made once it has gone" (SPEC.md §11.1).
+        // A turn asked of a process that ends before taking it is not lost, a person's Start included (SPEC.md §11.1).
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
 
@@ -222,6 +222,61 @@ public sealed class StopAndRestartTests
             Assert.Equal(Wire.NodeCommand.CommandOneofCase.Stop, (await node.WaitForCommandAsync(TimeSpan.FromSeconds(5))).CommandCase);
 
             Assert.True((await operators.StartAsync(new Wire.StartRequest { Agent = Agent }, cancellationToken: Ct)).Changed);
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, (await node.WaitForCommandAsync(TimeSpan.FromSeconds(5))).CommandCase);
+        }
+
+        var command = await node.WaitForCommandAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(Wire.NodeCommand.CommandOneofCase.Start, command.CommandCase);
+        Assert.Equal(Agent, command.Start.Agent);
+    }
+
+    [Fact]
+    public async Task A_stop_forgets_a_persons_start_asked_before_it()
+    {
+        // Start, then Stop before the turn begins: the stop is the person's later word. Left remembered, the start was made
+        // when the process went, and the agent the person had just stopped came back with nothing waiting for it.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
+
+        var operators = broker.ConnectAsOperator();
+
+        await using (var agent = await LaunchedAsync(broker, node))
+        {
+            Assert.True((await operators.StartAsync(new Wire.StartRequest { Agent = Agent }, cancellationToken: Ct)).Changed);
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, (await node.WaitForCommandAsync(TimeSpan.FromSeconds(5))).CommandCase);
+
+            _ = await operators.StopAsync(new Wire.StopRequest { Agent = Agent }, cancellationToken: Ct);
+
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Stop, (await node.WaitForCommandAsync(TimeSpan.FromSeconds(5))).CommandCase);
+        }
+
+        await broker.WaitUntilDetachedAsync(Agent, TimeSpan.FromSeconds(5));
+        await Assert.ThrowsAsync<TimeoutException>(() => node.WaitForCommandAsync(Briefly));
+    }
+
+    [Fact]
+    public async Task A_stop_lets_go_of_the_claim_an_earlier_message_left_so_the_next_message_is_asked_for()
+    {
+        // An uncollected message's wake holds a claim for two minutes. Kept through a stop, the claim answered the next
+        // message "already coming": no turn was asked or noted for it, nothing started the agent when it went, and the mail sat.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
+        await using var docs = await AttachedClient.AttachAsync(broker, "docs@m1", cancellationToken: Ct);
+
+        await using (var agent = await LaunchedAsync(broker, node))
+        {
+            _ = await docs.Client.RequestAsync(Requests.Open("docs@m1", Agent, "before the stop", "c1"), cancellationToken: Ct);
+
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, (await node.WaitForCommandAsync(TimeSpan.FromSeconds(5))).CommandCase);
+
+            _ = await broker.ConnectAsOperator().StopAsync(new Wire.StopRequest { Agent = Agent }, cancellationToken: Ct);
+
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Stop, (await node.WaitForCommandAsync(TimeSpan.FromSeconds(5))).CommandCase);
+
+            var after = await docs.Client.RequestAsync(Requests.Open("docs@m1", Agent, "after the stop", "c2"), cancellationToken: Ct);
+
+            Assert.Equal(Wire.WakeOutcome.AlreadyRunning, Assert.Single(after.Outcomes).Wake);
             Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, (await node.WaitForCommandAsync(TimeSpan.FromSeconds(5))).CommandCase);
         }
 

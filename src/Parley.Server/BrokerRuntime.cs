@@ -211,9 +211,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <summary>The agents a person asked to start while they were attached, so that the asking went out as a turn, until that turn begins or their process has gone.</summary>
     /// <remarks>
     /// A person's start of an agent that is still attached is asked as a turn. If the process ends before the turn begins, the
-    /// start the person asked for is still owed, whether or not anything is waiting for the agent: "a start asked for while the
-    /// stopped process is still going is made once it has gone" (SPEC.md §11.1). Cleared when the node reports a turn begun, which
-    /// is the asking answered, and by a stop, which is the person's later word.
+    /// start the person asked for is still owed, whether or not anything is waiting for the agent: a turn asked of a process
+    /// that ends before taking it is not lost, whatever it was for (SPEC.md §11.1). Cleared when the node reports a turn begun,
+    /// which is the asking answered, and by a stop, which is the person's later word. A node never reports a turn begun for a
+    /// process that had already gone (<c>ResidentAgent.TakeTurnAsync</c>), or a turn the stop took would clear this.
     /// </remarks>
     private readonly ConcurrentDictionary<string, bool> _startWanted = new(StringComparer.Ordinal);
 
@@ -1761,8 +1762,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <b>Only a process Parley started.</b> One opened in somebody's editor is theirs (§11.7), and no node holds it.
     /// </para>
     /// <para>
-    /// <b>The pending wake is let go when the command is sent</b>, so the next work for the agent starts it again rather
-    /// than being suppressed by a turn the stop is about to end.
+    /// <b>The pending wake is let go before the command is sent</b>, with the notes of what was asked of the agent so far,
+    /// so the next work for the agent is asked for afresh rather than being suppressed by a turn the stop is about to end.
     /// </para>
     /// </remarks>
     public StopOutcome RequestStop(AgentName agent, bool restart, string because)
@@ -2585,7 +2586,12 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 // left stopped with the work it had already collected.
                 await WakeIfOwingAsync(attached.Name, CancellationToken.None).ConfigureAwait(false);
 
-                return;
+                // A person's start asked meanwhile is still owed when the unfreeze found nothing to pay. If the unfreeze did
+                // ask, its claim answers the asking below as already coming, so nothing is started twice.
+                if (!wanted)
+                {
+                    return;
+                }
             }
 
             // Only an agent still registered and not retired, as every wake the broker makes on its own account asks

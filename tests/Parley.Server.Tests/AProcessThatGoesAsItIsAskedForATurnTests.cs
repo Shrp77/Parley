@@ -4,7 +4,7 @@ using Wire = Parley.Transport;
 namespace Parley.Server.Tests;
 
 /// <summary>
-/// That work which reaches a stopped agent in the instant its process goes is still started for (SPEC.md §11.1).
+/// That work which reaches an agent in the instant its process goes is still started for (SPEC.md §11.1).
 /// </summary>
 /// <remarks>
 /// <para>

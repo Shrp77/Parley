@@ -119,9 +119,9 @@ public sealed class AMessageThatArrivesAsTheStopIsPressedTests
 
             Assert.All(behind, name => Assert.Equal(["Start"], after.GetValueOrDefault(name, [])));
 
-            // And nobody is started twice. A turn that reached the node ahead of the stop may be followed by a start too: the
-            // stop was already noted when it was asked, and its mail is still uncollected, so the broker cannot know the turn
-            // was taken.
+            // And nobody is started twice. A turn that reached the node ahead of the stop may be followed by a start too: its
+            // note may have been written after the stop's clearing, and its mail is still uncollected, so the broker cannot
+            // know the turn was taken.
             Assert.All(names, name => Assert.True(after.GetValueOrDefault(name, []).Count <= 1, $"{name} was started more than once"));
         }
         finally

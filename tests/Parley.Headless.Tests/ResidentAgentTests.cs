@@ -49,6 +49,33 @@ public sealed class ResidentAgentTests : IDisposable
             TimeProvider.System);
 
     [Fact]
+    public async Task A_turn_given_to_a_process_that_has_been_stopped_is_never_said_to_have_begun()
+    {
+        // A turn queued behind a stop reaches the agent once the stop has ended its process. It used to say it had begun
+        // before it looked, and the broker took a turn begun as a person's start answered: the start the person asked for
+        // while the agent was still stopping was forgotten, and nothing started it (review, lenses 1 and 3 on 0.64.11).
+        await using var agent = Start(StubRunner.Answering(_workspace));
+
+        Assert.True((await agent.TakeTurnAsync("first", Patience, Ct)).Succeeded);
+        Assert.True(await agent.ShutdownWhenIdleAsync(TimeSpan.FromSeconds(10), Ct), "the stand-in did not stop when asked");
+
+        var began = false;
+
+        var turn = await agent.TakeTurnAsync(
+            "after the stop",
+            Patience,
+            () =>
+            {
+                began = true;
+                return Task.CompletedTask;
+            },
+            Ct);
+
+        Assert.True(turn.ProcessDied, turn.Describe());
+        Assert.False(began, "a turn given to a process that had gone said it had begun");
+    }
+
+    [Fact]
     public async Task It_survives_a_turn_and_takes_another()
     {
         // The whole reason this type exists. A one-shot process could answer the first question
