@@ -128,6 +128,107 @@ public sealed class TheLastEndingAskedIsTheOneDoneTests : IDisposable
         }
     }
 
+    // `parley serve` keeps one residents table for every project, each with its own node loop. Review, lens 1 run B on
+    // 5de89187, 2 of 2: the waiter ran on the first asker's token, so when that project's node stopped, a later ending from
+    // another project was dropped after the node had said it was what is done, and the old process ran on.
+    [Fact]
+    public async Task A_later_ending_from_another_project_is_done_when_the_first_askers_node_stops()
+    {
+        var (catalogue, identity, residents, old, turn, said) = await HoldingATurnAsync();
+
+        try
+        {
+            using var projectA = new CancellationTokenSource();   // the first asker's node loop, which then stops
+            await NodeCommand.StopAsync(
+                new Wire.StopAgent { Agent = Agent, Because = "stuck" }, catalogue, "alpha", residents, said.Writer, projectA.Token);
+            await NodeCommand.StopAsync(
+                new Wire.StopAgent { Agent = Agent, Because = "stuck", Restart = true }, catalogue, "alpha", residents, said.Writer, Ct);
+            await projectA.CancelAsync();
+
+            _ = await turn;
+
+            await UntilAsync(() => !old.IsAlive
+                && residents.TryGetValue(identity, out var now) && now.IsAlive && !ReferenceEquals(now, old));
+
+            Assert.False(old.IsAlive, $"the old process still runs. The node said: {said.Text}");
+            Assert.True(
+                residents.TryGetValue(identity, out var restarted) && restarted.IsAlive && !ReferenceEquals(restarted, old),
+                $"nothing new is running. The node said: {said.Text}");
+            Assert.Single(residents);
+            Assert.Contains("restarted once its turn was over, as a person asked", said.Text, StringComparison.Ordinal);
+        }
+        finally
+        {
+            await DisposeAllAsync(residents);
+        }
+    }
+
+    [Fact]
+    public async Task A_later_stop_from_another_project_is_done_when_the_first_askers_node_stops()
+    {
+        var (catalogue, _, residents, old, turn, said) = await HoldingATurnAsync();
+
+        try
+        {
+            using var projectA = new CancellationTokenSource();   // the first asker's node loop, which then stops
+            await NodeCommand.StopAsync(
+                new Wire.StopAgent { Agent = Agent, Because = "stuck", Restart = true }, catalogue, "alpha", residents, said.Writer, projectA.Token);
+            await NodeCommand.StopAsync(
+                new Wire.StopAgent { Agent = Agent, Because = "stuck" }, catalogue, "alpha", residents, said.Writer, Ct);
+            await projectA.CancelAsync();
+
+            _ = await turn;
+
+            await UntilAsync(() => !old.IsAlive && residents.IsEmpty
+                && said.Text.Contains("stopped once its turn was over", StringComparison.Ordinal));
+
+            Assert.False(old.IsAlive, $"the old process still runs. The node said: {said.Text}");
+            Assert.True(residents.IsEmpty, $"something is running. The node said: {said.Text}");
+            Assert.Contains("stopped once its turn was over, as a person asked", said.Text, StringComparison.Ordinal);
+        }
+        finally
+        {
+            await DisposeAllAsync(residents);
+        }
+    }
+
+    // Starts the agent and begins a three-second turn, returning once the turn is under way.
+    private async Task<(NodeCatalogue Catalogue, AgentIdentity Identity, ConcurrentDictionary<AgentIdentity, ResidentAgent> Residents, ResidentAgent Old, Task<TurnOutcome> Turn, Said Said)>
+        HoldingATurnAsync()
+    {
+        var (catalogue, identity, command) = Catalogued("docs");
+        var residents = new ConcurrentDictionary<AgentIdentity, ResidentAgent>();
+        var old = ResidentAgent.Start(
+            AgentName.Create(Agent), InvocationCommand.Parse(command), _workspace, TimeProvider.System);
+        residents[identity] = old;
+
+        var holding = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var turn = old.TakeTurnAsync(
+            "do the work",
+            TimeSpan.FromSeconds(30),
+            () =>
+            {
+                holding.TrySetResult();
+                return Task.CompletedTask;
+            },
+            Ct);
+
+        await holding.Task.WaitAsync(TimeSpan.FromSeconds(20), Ct);
+
+        return (catalogue, identity, residents, old, turn, new Said());
+    }
+
+    // Polls until the condition holds or twenty seconds pass; the assertions that follow say what was not so.
+    private static async Task UntilAsync(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
+
+        while (!condition() && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(100, Ct);
+        }
+    }
+
     private delegate Task Asking(
         NodeCatalogue catalogue, ConcurrentDictionary<AgentIdentity, ResidentAgent> residents, TextWriter output);
 

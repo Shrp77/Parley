@@ -1564,6 +1564,7 @@ public static class NodeCommand
         // so the two cannot miss each other, and a process that has already exited but not yet been taken still counts.
         string? said = null;
         ResidentAgent? resident = null;
+        var asker = new Asker(agent, catalogue, output, reporter, cancellationToken);
 
         await Residency.WaitAsync(cancellationToken).ConfigureAwait(false);
 
@@ -1571,7 +1572,7 @@ public static class NodeCommand
         {
             if (residents.TryGetValue(identity, out var held) && EndingsAsked.TryGetValue(held, out var asked))
             {
-                said = Supersede(asked, ending);
+                said = Supersede(asked, ending, asker);
             }
             else if (held is null || !held.IsAlive)
             {
@@ -1579,7 +1580,7 @@ public static class NodeCommand
             }
             else
             {
-                EndingsAsked.Add(held, new EndingAsked(ending));
+                EndingsAsked.Add(held, new EndingAsked(ending, asker));
                 resident = held;
             }
         }
@@ -1595,24 +1596,45 @@ public static class NodeCommand
             return;
         }
 
-        _ = Observed(RefreshWhenIdleAsync(
-            agent, identity, resident, ending, catalogue, residents, output, cancellationToken, reporter));
-
-#pragma warning disable CA1031 // Do not catch general exception types
-        static async Task Observed(Task refreshing)
-        {
-            try
-            {
-                await refreshing.ConfigureAwait(false);
-            }
-            catch
-            {
-                // The same boundary DispatchTurn's Observe is, for the same reason: nothing awaits this, and a node must
-                // not be taken off the air by the reporting of one agent's refresh.
-            }
-        }
-#pragma warning restore CA1031
+        _ = Observed(RefreshWhenIdleAsync(identity, resident, ending, asker, residents));
     }
+
+    /// <summary>Awaits an ending's waiter that nothing else awaits.</summary>
+    /// <param name="refreshing">The waiter.</param>
+    /// <returns>A task that completes when the waiter has, whatever it threw.</returns>
+#pragma warning disable CA1031 // Do not catch general exception types
+    private static async Task Observed(Task refreshing)
+    {
+        try
+        {
+            await refreshing.ConfigureAwait(false);
+        }
+        catch
+        {
+            // The same boundary DispatchTurn's Observe is, for the same reason: nothing awaits this, and a node must
+            // not be taken off the air by the reporting of one agent's refresh.
+        }
+    }
+#pragma warning restore CA1031
+
+    /// <summary>Who asked for an ending: the node loop it is done for, and what that loop reports and starts with.</summary>
+    /// <param name="Agent">The agent's name, as that node resolved it.</param>
+    /// <param name="Catalogue">What that node's machine can start.</param>
+    /// <param name="Output">Where that node reports.</param>
+    /// <param name="Reporter">Reports a restarted agent's first turn to that node's broker, when there is one to tell.</param>
+    /// <param name="Token">Stops that node.</param>
+    /// <remarks>
+    /// <b>One residents table serves every project <c>parley serve</c> runs, each with its own node loop</b>, so the asker
+    /// of the ending a waiter does need not be the one whose loop started the waiter. The waiter does the ending in its
+    /// asker's name, and when the loop it runs on stops, it is handed to the latest asker's (review, lens 1 run B on
+    /// 5de89187: a later ending from another project was dropped when the first project's node stopped).
+    /// </remarks>
+    private sealed record Asker(
+        AgentName Agent,
+        NodeCatalogue Catalogue,
+        TextWriter Output,
+        TurnReporter? Reporter,
+        CancellationToken Token);
 
     /// <summary>What ending a resident is for, and how each step of it is said.</summary>
     /// <param name="NotRunning">Said when this node holds no live process for it.</param>
@@ -1649,11 +1671,15 @@ public static class NodeCommand
 
     /// <summary>The ending a resident's one waiter will do once its turn is over: the latest asked.</summary>
     /// <param name="latest">The ending asked first.</param>
+    /// <param name="asker">Who asked it.</param>
     /// <remarks>Read and written only under <see cref="Residency"/>.</remarks>
-    private sealed class EndingAsked(Ending latest)
+    private sealed class EndingAsked(Ending latest, Asker asker)
     {
         /// <summary>Gets or sets the ending the waiter does.</summary>
         public Ending Latest { get; set; } = latest;
+
+        /// <summary>Gets or sets who asked the ending the waiter does, in whose name it is done.</summary>
+        public Asker Asker { get; set; } = asker;
     }
 
     /// <summary>The resident each waiting ending is for; a resident with none has no waiter.</summary>
@@ -1663,13 +1689,15 @@ public static class NodeCommand
     /// <summary>Records an ending asked while another waits for the same resident's turn, and says what will be done.</summary>
     /// <param name="asked">What the waiter will do.</param>
     /// <param name="ending">The ending asked now.</param>
+    /// <param name="asker">Who asked it.</param>
     /// <returns>The line to report.</returns>
     /// <remarks>
-    /// <b>The latest wins, except a refresh.</b> A person's later word replaces their earlier one or the broker's refresh. A
-    /// refresh needs only that the process end before the agent next starts, which any ending already waiting gives it, so it
-    /// never undoes a person's stop.
+    /// <b>The latest wins, except a refresh.</b> A person's later word replaces their earlier one or the broker's refresh, and
+    /// its asker becomes the one it is done for: that node's catalogue starts a restart, and that node's loop keeps the
+    /// waiter going if the first asker's stops. A refresh needs only that the process end before the agent next starts,
+    /// which any ending already waiting gives it, so it never undoes a person's stop and replaces nothing.
     /// </remarks>
-    private static string Supersede(EndingAsked asked, Ending ending)
+    private static string Supersede(EndingAsked asked, Ending ending, Asker asker)
     {
         var earlier = asked.Latest;
 
@@ -1680,6 +1708,7 @@ public static class NodeCommand
         }
 
         asked.Latest = ending;
+        asked.Asker = asker;
 
         return ReferenceEquals(earlier, ending)
             ? $"{ending.For} was asked again; it is still waiting for its turn to end."
@@ -1689,21 +1718,27 @@ public static class NodeCommand
     /// <summary>Waits for an agent's turn to end, stops it, and starts it again unless it was only stopped.</summary>
     /// <returns>A task that completes when the new process is running, or it was stopped and left.</returns>
     private static async Task RefreshWhenIdleAsync(
-        AgentName agent,
         AgentIdentity identity,
         ResidentAgent resident,
         Ending ending,
-        NodeCatalogue catalogue,
-        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents,
-        TextWriter output,
-        CancellationToken cancellationToken,
-        TurnReporter? reporter)
+        Asker asker,
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents)
     {
         try
         {
-            _ = await resident.ShutdownWhenIdleAsync(ShutdownGrace, cancellationToken).ConfigureAwait(false);
+            _ = await resident.ShutdownWhenIdleAsync(ShutdownGrace, asker.Token).ConfigureAwait(false);
 
-            await Residency.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await Residency.WaitAsync(asker.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (asker.Token.IsCancellationRequested)
+        {
+            // The node loop this waiter ran on has stopped. A later asker's may not have, and the waiter goes on in its name.
+            if (await HandedOnAsync(identity, resident, residents).ConfigureAwait(false))
+            {
+                return;
+            }
+
+            throw;
         }
         catch
         {
@@ -1715,13 +1750,16 @@ public static class NodeCommand
 
         try
         {
-            // **The latest ending asked, taken under the gate it was written under** (Supersede), so one asked after this
-            // finds the resident gone and says so rather than being handed to a waiter that has already read.
+            // **The latest ending asked, and its asker, taken under the gate they were written under** (Supersede), so one
+            // asked after this finds the resident gone and says so rather than being handed to a waiter that has already read.
             if (EndingsAsked.TryGetValue(resident, out var asked))
             {
                 ending = asked.Latest;
+                asker = asked.Asker;
                 _ = EndingsAsked.Remove(resident);
             }
+
+            var (agent, catalogue, output, reporter, cancellationToken) = asker;
 
             // A start that got here first found the process gone and replaced it, which already reads the launch
             // configuration afresh — so there is nothing left to do, and the corpse is the start's to dispose.
@@ -1809,6 +1847,65 @@ public static class NodeCommand
         {
             _ = Residency.Release();
         }
+    }
+
+    /// <summary>Hands a waiter whose node loop has stopped to the latest asker's, or ends it.</summary>
+    /// <param name="identity">The agent.</param>
+    /// <param name="resident">The process the waiter was waiting to end.</param>
+    /// <param name="residents">The agents running here.</param>
+    /// <returns>True when a new waiter goes on in the latest asker's name; false when there is no waiter now.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The last ending asked during one turn is done</b> (SPEC.md §11.1), and the loop that started the waiter is not
+    /// always the latest asker's: <c>parley serve</c> keeps one residents table for every project, and a project's node
+    /// stops when the project is removed or its broker is restarted. Without this the later ending was dropped after the
+    /// node had said it was what is done, and the old process ran on, a frozen one included.
+    /// </para>
+    /// <para>
+    /// <b>Taken with no token</b>, since the one the waiter had is the one that has just been cancelled, and under the gate
+    /// <see cref="Supersede"/> writes under, so an ending asked meanwhile is either read here or finds no waiter and starts
+    /// its own. A waiter is handed on only while its resident is still the one in the table and the latest asker's loop is
+    /// still running; anything else ends it, as a stopping node always did.
+    /// </para>
+    /// </remarks>
+    private static async Task<bool> HandedOnAsync(
+        AgentIdentity identity,
+        ResidentAgent resident,
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents)
+    {
+        Ending? ending = null;
+        Asker? next = null;
+
+        await Residency.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+
+        try
+        {
+            if (EndingsAsked.TryGetValue(resident, out var asked)
+                && !asked.Asker.Token.IsCancellationRequested
+                && residents.TryGetValue(identity, out var current)
+                && ReferenceEquals(current, resident))
+            {
+                ending = asked.Latest;
+                next = asked.Asker;
+            }
+            else
+            {
+                _ = EndingsAsked.Remove(resident);
+            }
+        }
+        finally
+        {
+            _ = Residency.Release();
+        }
+
+        if (ending is null || next is null)
+        {
+            return false;
+        }
+
+        _ = Observed(RefreshWhenIdleAsync(identity, resident, ending, next, residents));
+
+        return true;
     }
 
     /// <summary>Ends one resident and says so.</summary>
