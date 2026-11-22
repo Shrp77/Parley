@@ -51,7 +51,6 @@ public sealed class ResidentAgent : IAsyncDisposable
     private const int DiagnosticsLimit = 4000;
 
     private readonly Process _process;
-    private readonly Channel<RunnerEvent> _events;
     private readonly SemaphoreSlim _turnLock = new(1, 1);
     private readonly StringBuilder _diagnostics = new();
     private readonly Lock _diagnosticsLock = new();
@@ -59,7 +58,6 @@ public sealed class ResidentAgent : IAsyncDisposable
     private readonly Task _outputPump;
     private readonly Task _errorPump;
 
-    private int _abandonedResults;
     private volatile string? _sessionId;
     private volatile bool _stopping;
     private volatile bool _startAskedWhileStopping;
@@ -82,12 +80,26 @@ public sealed class ResidentAgent : IAsyncDisposable
     private bool _ownHolds;
     private readonly Queue<TaskCompletionSource> _ownQueue = new();
 
-    // Where a given turn stands, both under _ownLock: whether its prompt has been written and its reply not yet read off the
-    // process, and whether that reply has been read while the turn still holds the agent. Between the reply being read on the
-    // pump and the turn letting go on another thread, an init is a turn of the agent's own and not the given turn's: it
-    // queues behind the given turn, which hands it the agent, where it used to be dropped and never reported.
-    private bool _givenAwaiting;
+    // Where a given turn stands, all under _ownLock. _reply is the turn's reply, set from when its prompt is written until a
+    // reply is read off the process or the turn stops waiting: a result is paired with the turn waiting for one, never
+    // queued for whichever turn comes next. _givenAnswered says the reply has been read while the turn still holds the
+    // agent: between that on the pump and the turn letting go on another thread, an init is a turn of the agent's own, and
+    // it queues behind the given turn, which hands it the agent. _initWhileHeld says an init was read while a turn held the
+    // agent and was not counted as a turn of the agent's own: a turn the runner began as the given turn's prompt arrived,
+    // into which it folds that prompt and answers both with one result, tagged with the turn's origin.
+    private TaskCompletionSource<RunnerEvent?>? _reply;
     private bool _givenAnswered;
+    private bool _initWhileHeld;
+
+    // Replies owed to nobody, all under _ownLock: how many prompts were written whose turns gave up waiting before a reply
+    // came, signalled each time one is paid or the output ends; and, so a reply that will never come is told apart from one
+    // that is slow, how many results had been read when the last prompt was written. Lines read is read without the lock.
+    private int _owed;
+    private TaskCompletionSource _owedChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private long _results;
+    private long _resultsAtLastPrompt;
+    private long _lines;
+    private bool _outputEnded;
 
     private ResidentAgent(
         AgentName name, string workspace, Process process, TimeProvider clock)
@@ -96,8 +108,6 @@ public sealed class ResidentAgent : IAsyncDisposable
         Workspace = workspace;
         _process = process;
         _clock = clock;
-        _events = Channel.CreateUnbounded<RunnerEvent>(
-            new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
 
         _noticePump = Task.Run(PumpNoticesAsync);
         _outputPump = Task.Run(PumpOutputAsync);
@@ -391,10 +401,18 @@ public sealed class ResidentAgent : IAsyncDisposable
 
             // From here the next reply that is not the agent's own business is this turn's: replies owed to nobody were
             // drained above, before anything was said.
+            var reply = new TaskCompletionSource<RunnerEvent?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
             lock (_ownLock)
             {
-                _givenAwaiting = true;
+                if (_outputEnded)
+                {
+                    return Died(started);
+                }
+
+                _reply = reply;
                 _givenAnswered = false;
+                _resultsAtLastPrompt = _results;
             }
 
             var sending = SendAsync(message.ToJsonString());
@@ -432,36 +450,24 @@ public sealed class ResidentAgent : IAsyncDisposable
             if (cancellationToken.IsCancellationRequested)
             {
                 // The caller's, while the line went: it is said, so its reply is owed to nobody, as below.
-                Interlocked.Increment(ref _abandonedResults);
+                _ = StopWaiting(reply);
                 cancellationToken.ThrowIfCancellationRequested();
             }
 
-            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            deadline.CancelAfter(timeout);
-
             try
             {
-                while (await _events.Reader.WaitToReadAsync(deadline.Token).ConfigureAwait(false))
-                {
-                    while (_events.Reader.TryRead(out var evt))
-                    {
-                        Observe(evt);
-
-                        if (TypeOf(evt) == "result")
-                        {
-                            return Completed(evt, started);
-                        }
-                    }
-                }
-
-                // The channel completed, which only happens when the pump reached end of stream.
-                return Died(started);
+                return await reply.Task.WaitAsync(timeout, cancellationToken).ConfigureAwait(false) is { } evt
+                    ? Completed(evt, started)
+                    : Died(started);
             }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            catch (TimeoutException)
             {
-                // Ours, not the caller's: this turn ran past its timeout. The agent is left alive
-                // deliberately -- see the remarks -- and its eventual result is owed to nobody.
-                Interlocked.Increment(ref _abandonedResults);
+                // This turn ran past its timeout. The agent is left alive deliberately -- see the remarks -- and its
+                // eventual result is owed to nobody, unless it was read in the moment the wait ran out.
+                if (StopWaiting(reply))
+                {
+                    return await reply.Task.ConfigureAwait(false) is { } late ? Completed(late, started) : Died(started);
+                }
 
                 return new TurnOutcome(
                     Completed: false, IsError: false, StopReason: null,
@@ -473,7 +479,7 @@ public sealed class ResidentAgent : IAsyncDisposable
                 // The caller's, after the prompt was written: a node stopping while the process lives on, as a project
                 // restarted under `serve` does. The agent still answers, and that answer is owed to nobody either.
                 // Uncounted, it was read as the next turn's, and every turn after stayed one reply behind (lens 1 run 101).
-                Interlocked.Increment(ref _abandonedResults);
+                _ = StopWaiting(reply);
 
                 throw;
             }
@@ -485,8 +491,9 @@ public sealed class ResidentAgent : IAsyncDisposable
             // an init to find it held by nobody, or for a stop to close its input mid-work.
             lock (_ownLock)
             {
-                _givenAwaiting = false;
+                _reply = null;
                 _givenAnswered = false;
+                _initWhileHeld = false;
 
                 if (_ownQueue.Count > 0)
                 {
@@ -599,6 +606,33 @@ public sealed class ResidentAgent : IAsyncDisposable
         await _process.StandardInput.FlushAsync(CancellationToken.None).ConfigureAwait(false);
     }
 
+    /// <summary>Stops a given turn waiting for its reply, counting the reply owed to nobody unless it has come.</summary>
+    /// <param name="reply">The turn's reply.</param>
+    /// <returns><see langword="true"/> when the reply came, or the output ended, before the turn stopped waiting.</returns>
+    /// <remarks>
+    /// One act under <c>_ownLock</c>, as the pump pairs a result with the waiting turn: a result read as the wait runs out
+    /// is either this turn's or owed to nobody, never both and never neither.
+    /// </remarks>
+    private bool StopWaiting(TaskCompletionSource<RunnerEvent?> reply)
+    {
+        lock (_ownLock)
+        {
+            if (ReferenceEquals(_reply, reply))
+            {
+                _reply = null;
+            }
+
+            if (reply.Task.IsCompleted)
+            {
+                return true;
+            }
+
+            _owed++;
+
+            return false;
+        }
+    }
+
     /// <summary>
     /// Waits until no turn is in progress, then tells the agent to quit while still holding the turn, so none can begin
     /// between the two (SPEC.md §11.1's third way a resident ends, the refresh).
@@ -663,6 +697,9 @@ public sealed class ResidentAgent : IAsyncDisposable
         {
             while (await _process.StandardOutput.ReadLineAsync().ConfigureAwait(false) is { } line)
             {
+                // Any line at all says the runner is not idle, whether or not it is a protocol event.
+                _ = Interlocked.Increment(ref _lines);
+
                 if (line.Length == 0 || line[0] != '{')
                 {
                     continue;
@@ -670,9 +707,9 @@ public sealed class ResidentAgent : IAsyncDisposable
 
                 // A runner is free to write things that are not protocol events. Skipping is right:
                 // refusing would let one stray line end an otherwise healthy agent.
-                if (RunnerEvent.Read(line) is { } evt && !OnItsOwn(evt))
+                if (RunnerEvent.Read(line) is { } evt)
                 {
-                    await _events.Writer.WriteAsync(evt).ConfigureAwait(false);
+                    Take(evt);
                 }
             }
         }
@@ -681,34 +718,46 @@ public sealed class ResidentAgent : IAsyncDisposable
         }
         finally
         {
-            _events.Writer.TryComplete();
-
-            // A turn the agent began on its own ends with its process.
+            // A given turn waiting for its reply, a drain waiting for a reply owed, and a turn the agent began on its own
+            // all end with the process.
             lock (_ownLock)
             {
+                _outputEnded = true;
+                _ = _reply?.TrySetResult(null);
+                _reply = null;
+                OwedChanged();
                 _ = _ownTurn?.TrySetResult(null);
             }
         }
     }
 
-    /// <summary>Notes what an event says the agent is doing on its own, and whether a turn the node gave may read it.</summary>
-    /// <param name="evt">The event, as it arrives.</param>
-    /// <returns><see langword="true"/> when the event is the agent's own business and no given turn's.</returns>
+    /// <summary>Wakes whoever waits on the replies owed to nobody. Called under <c>_ownLock</c>.</summary>
+    private void OwedChanged()
+    {
+        var changed = _owedChanged;
+        _owedChanged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _ = changed.TrySetResult();
+    }
+
+    /// <summary>Takes one event as it arrives: notes what it says the agent is doing, and pairs a result with its turn.</summary>
+    /// <param name="evt">The event.</param>
     /// <remarks>
     /// <para>
     /// <b>Read as it arrives, turn or no turn</b> (SPEC.md §11.6). An agent that starts sub-agents or commands in the
     /// background ends its turn with its reply while they run; when they finish, the runner begins a turn of its own,
-    /// with nobody's prompt, and ends it with a result tagged <c>task-notification</c>. Read only inside given turns, that
-    /// result waited for the next one, which took it as its own reply at once: the agent read as idle while it worked on
-    /// the person's message, and every turn after was one reply behind.
+    /// with nobody's prompt, and ends it with a result whose <c>origin</c> says why: <c>task-notification</c> for finished
+    /// work, <c>peer</c> for a sub-agent handing back its report, and whatever kind a later runner adds. Read only inside
+    /// given turns, that result waited for the next one, which took it as its own reply at once: the agent read as idle
+    /// while it worked on the person's message, and every turn after was one reply behind.
     /// </para>
     /// <para>
-    /// <b>A turn of its own begins at its <c>init</c>, held like a given turn</b>, so one given meanwhile queues behind it,
-    /// as the runner would queue the prompt. Only once the agent has answered something, so a runner announcing itself at
-    /// launch is not a turn; and only when no given turn holds the agent, whose own <c>init</c> this would be.
+    /// <b>A turn of its own begins at its <c>init</c>, held like a given turn</b>, so one given meanwhile queues behind it
+    /// and its prompt is not written while the runner works. Only once the agent has answered something, so a runner
+    /// announcing itself at launch is not a turn; and only when no given turn holds the agent, whose own <c>init</c> this
+    /// would be.
     /// </para>
     /// </remarks>
-    private bool OnItsOwn(RunnerEvent evt)
+    private void Take(RunnerEvent evt)
     {
         Observe(evt);
 
@@ -720,7 +769,7 @@ public sealed class ResidentAgent : IAsyncDisposable
                 Notify(w => w.BackgroundChanged(tasks));
             }
 
-            return true;
+            return;
         }
 
         if (evt is { Type: "system", Subtype: "init" } && _answeredOnce)
@@ -730,30 +779,57 @@ public sealed class ResidentAgent : IAsyncDisposable
 
         if (evt.Type == "result")
         {
-            if (evt.OriginKind == "task-notification")
-            {
-                lock (_ownLock)
-                {
-                    _ = _ownTurn?.TrySetResult(evt);
-                }
-
-                return true;
-            }
-
-            // A given turn's reply, read here before the turn itself reads it and lets go.
-            lock (_ownLock)
-            {
-                if (_givenAwaiting)
-                {
-                    _givenAwaiting = false;
-                    _givenAnswered = true;
-                }
-            }
-
+            Pair(evt);
             _answeredOnce = true;
         }
+    }
 
-        return false;
+    /// <summary>Gives a result to the turn it ends, or discards it when no turn waits for it.</summary>
+    /// <param name="result">The result.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>Paired by where the turns stand, never by counting.</b> A result with an origin of any kind ends a turn the
+    /// runner began itself, and one without ends a prompt's turn. But the runner folds a prompt that arrives while it is
+    /// starting or running a turn of its own into that turn, and answers both with the one tagged result: a prompt written
+    /// as a turn of its own began, which the node could not count while the given turn held the agent, was never answered,
+    /// and the given turn waited out its time, after which every later turn waited the same for that reply and said
+    /// nothing. So while a given turn waits, a tagged result answers it too when an init was read while it held the agent,
+    /// which is the turn the prompt was folded into; a tagged result whose turn began before then is the agent's own.
+    /// </para>
+    /// <para>
+    /// <b>A result no turn waits for is discarded</b>, paying a reply owed to nobody when it is a prompt's. Queued for the
+    /// next given turn, it was read as that turn's reply at once, and every reply after went to the turn after its own.
+    /// </para>
+    /// </remarks>
+    private void Pair(RunnerEvent result)
+    {
+        var own = result.OriginKind is not null;
+
+        lock (_ownLock)
+        {
+            _results++;
+
+            if (_reply is { } reply && (!own || _initWhileHeld))
+            {
+                // The waiting given turn's reply, or the turn of the agent's own its prompt was folded into. Read here
+                // before the turn itself reads it and lets go.
+                _reply = null;
+                _givenAnswered = true;
+                _ = reply.TrySetResult(result);
+
+                return;
+            }
+
+            // A turn of the agent's own ends at its result; with no given turn waiting, an untagged one is the turn of a
+            // prompt nobody waits for any more, which began when the agent was free and was taken for one of its own.
+            _ = _ownTurn?.TrySetResult(result);
+
+            if (!own && _owed > 0)
+            {
+                _owed--;
+                OwedChanged();
+            }
+        }
     }
 
     /// <summary>Starts accounting for a turn the agent began on its own, unless a given turn holds the agent.</summary>
@@ -783,9 +859,12 @@ public sealed class ResidentAgent : IAsyncDisposable
             {
                 // Held by a turn that is over and about to let go, and by nothing else: a turn of the agent's own whose
                 // result has come, or a given turn whose reply has been read. A given turn's own init, or a turn still
-                // running, is dropped as before.
+                // running, is dropped as before, and noted: it may be a turn of the agent's own that the given turn's
+                // prompt is folded into, whose one tagged result then answers that turn too (Pair).
                 if (!_givenAnswered && (!_ownHolds || _ownTurn is not { Task.IsCompleted: true }))
                 {
+                    _initWhileHeld = true;
+
                     return;
                 }
 
@@ -849,6 +928,8 @@ public sealed class ResidentAgent : IAsyncDisposable
         {
             lock (_ownLock)
             {
+                _initWhileHeld = false;
+
                 if (_ownQueue.Count > 0)
                 {
                     // The next own turn already has its result: it is handed the agent as it stands, still held.
@@ -938,49 +1019,79 @@ public sealed class ResidentAgent : IAsyncDisposable
         Died,
     }
 
-    /// <summary>Discards results owed to turns that already gave up waiting.</summary>
+    /// <summary>Waits for the replies owed to turns that already gave up waiting, which the pump discards as they come.</summary>
     /// <param name="timeout">How long the turn waiting on them may take.</param>
-    /// <param name="cancellationToken">Cancels the drain.</param>
+    /// <param name="cancellationToken">Cancels the wait.</param>
     /// <returns>Whether the stream is back in step, still owed a reply, or ended.</returns>
     /// <remarks>
-    /// <b>Never given up while the agent lives.</b> The count is what keeps every later turn from reading the reply
+    /// <para>
+    /// <b>Never given up while the agent works.</b> The count is what keeps every later turn from reading the reply
     /// before its own; set to zero while a reply was still coming, every turn after stayed one reply behind for good
-    /// (lens 1 run 102). An agent that has wedged rather than run long is the turn timeout's to show, turn after turn,
-    /// and the node's to restart; reading its stale replies as answers would hide it.
+    /// (lens 1 run 102), and quiet is no sign it is not coming: a runner says nothing while one long command runs.
+    /// </para>
+    /// <para>
+    /// <b>Given up when it will never come.</b> A prompt folded into a turn the runner began itself is answered by that
+    /// turn's tagged result and never on its own, so a count kept for it waited for ever, and every later turn waited its
+    /// whole time and said nothing. When the runner has ended a turn since the last prompt was written and has said
+    /// nothing at all for the whole of this wait, it has taken every prompt it was given and is idle: what is owed is
+    /// forgotten, and the turn goes on. A runner that worked through the wait, or has not ended a turn since, is still
+    /// owed, as before.
+    /// </para>
     /// </remarks>
     private async Task<Drained> DiscardAbandonedResultsAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        if (Volatile.Read(ref _abandonedResults) == 0)
-        {
-            return Drained.InStep;
-        }
-
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(timeout);
 
-        try
+        var heard = Interlocked.Read(ref _lines);
+
+        while (true)
         {
-            while (Volatile.Read(ref _abandonedResults) > 0)
+            Task changed;
+
+            lock (_ownLock)
             {
-                var evt = await _events.Reader.ReadAsync(deadline.Token).ConfigureAwait(false);
-
-                Observe(evt);
-
-                if (TypeOf(evt) == "result")
+                if (_owed == 0)
                 {
-                    Interlocked.Decrement(ref _abandonedResults);
+                    return Drained.InStep;
                 }
+
+                if (_outputEnded)
+                {
+                    return Drained.Died;
+                }
+
+                changed = _owedChanged.Task;
             }
 
-            return Drained.InStep;
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return Drained.StillOwed;
-        }
-        catch (ChannelClosedException)
-        {
-            return Drained.Died;
+            try
+            {
+                await changed.WaitAsync(deadline.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                lock (_ownLock)
+                {
+                    if (_owed == 0)
+                    {
+                        return Drained.InStep;
+                    }
+
+                    if (_outputEnded)
+                    {
+                        return Drained.Died;
+                    }
+
+                    if (Interlocked.Read(ref _lines) == heard && _results > _resultsAtLastPrompt)
+                    {
+                        _owed = 0;
+
+                        return Drained.InStep;
+                    }
+                }
+
+                return Drained.StillOwed;
+            }
         }
     }
 
@@ -995,8 +1106,6 @@ public sealed class ResidentAgent : IAsyncDisposable
             _sessionId = id;
         }
     }
-
-    private static string? TypeOf(RunnerEvent evt) => evt.Type;
 
     /// <summary>Builds the outcome from a result event.</summary>
     /// <param name="evt">The result.</param>
@@ -1051,7 +1160,8 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// </param>
     /// <param name="OriginKind">
     /// What started the turn a result ends, when the runner says: <c>task-notification</c> for a turn the agent began on
-    /// its own because background work it started finished.
+    /// its own because background work it started finished, <c>peer</c> for one a sub-agent began by handing back its
+    /// report, or any other kind: a result with one ends a turn the runner began itself.
     /// </param>
     internal sealed record RunnerEvent(
         string? Type, string? Subtype, string? SessionId, bool IsError, string? StopReason, double CostUsd,

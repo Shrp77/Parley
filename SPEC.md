@@ -3962,18 +3962,26 @@ last reported for that name describes a different process.
 
 **A turn's end is not the end of the agent's work.** A runner can start sub-agents or commands in the
 background and end its turn with its reply while they run; Claude Code does this by default for a sub-agent
-started headless. When one finishes, the runner begins a turn of its own, with nobody's prompt, and ends it with
-a result marked as answering that work. So a node reads its agent's output as it arrives, turn or no turn, and:
+started headless. When one finishes, or a sub-agent hands back its report, the runner begins a turn of its own,
+with nobody's prompt, and ends it with a result marked with what began it; a node takes any such mark, not only the
+kinds it knows. A prompt that reaches the runner while it works is folded into the turn it is in, and the one result
+answers both. So a node reads its agent's output as it arrives, turn or no turn, and:
 
 - **reports how many background tasks the agent has running**, whenever that changes, held by the broker in
   memory with the node that said it, like a running turn, and cleared when that node leaves or a new process is
   launched under the name;
 - **reports a turn the agent begins on its own as a turn**, begun and ended like any other, so the agent reads as
   working while it takes up what its background work found. A turn the node is asked to give meanwhile waits
-  for it, as the runner would make the prompt wait;
-- **never takes the result of a turn the agent began on its own as the reply to one the node gave.** Read only
-  inside given turns, that result waited for the next one, which took it as its own reply at once: the agent read
-  as idle while it worked on the person's message, and every reply after went to the turn after its own.
+  for it, so its prompt is not written while the agent works;
+- **never takes the result of a turn the agent began on its own as the reply to one the node gave**, unless the
+  node's prompt was folded into it: a turn the runner began as a given turn's prompt reached it, which the node
+  could not yet tell from that turn's own, ends with one result that answers the given turn too. Read only inside
+  given turns, an own turn's result waited for the next one, which took it as its own reply at once: the agent read
+  as idle while it worked on the person's message, and every reply after went to the turn after its own. So a
+  result is paired with the turn waiting for it, and **one no turn waits for is discarded**, never kept for the next;
+- **does not write a prompt while a reply is still owed** to a given turn that stopped waiting for it, unless the
+  runner has ended a turn since that prompt and said nothing for the whole of a turn's time: a prompt folded into a
+  turn of its own is never answered on its own, and waiting for that reply held every later turn for good.
 
 These reach every project whose node starts the agent's checkout, because they are the process's, not one
 project's.
