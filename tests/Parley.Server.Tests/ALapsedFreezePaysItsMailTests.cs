@@ -65,6 +65,9 @@ public sealed class ALapsedFreezePaysItsMailTests : IDisposable
 
         Assert.Equal(Wire.NodeCommand.CommandOneofCase.Start, command.CommandCase);
         Assert.Equal(Orders, command.Start.Agent);
+
+        // Nobody unfroze it: the broker's start lifted the freeze, and the node's log says so (review, lens 1 run 2 on 6fde4ef3).
+        Assert.Contains("freeze lapsed", command.Start.Because, StringComparison.Ordinal);
     }
 
     [Fact]

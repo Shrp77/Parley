@@ -1504,10 +1504,19 @@ public static class NodeCommand
                     ? $"ended process {id} ({Inert.Line(asked.Because)})."
                     : $"asked process {id} to end ({Inert.Line(asked.Because)}); it has not yet.";
             }
+            catch (AggregateException incomplete)
+            {
+                // Off Windows, a tree holding a process this account cannot signal (a child sudo runs as another user) throws
+                // this after ending what it could. Uncaught, it ended the node's loop: nothing on the machine was started again,
+                // or every agent the node ran was stopped (review, lens 2 run 1 on 6fde4ef3, Linux).
+                return process.WaitForExit(TimeSpan.FromSeconds(5))
+                    ? $"ended process {id} ({Inert.Line(asked.Because)}), but not every process it started: {Inert.Line(incomplete.InnerExceptions[0].Message)}."
+                    : $"not ended: process {id}: {Inert.Line(incomplete.Message)}";
+            }
             catch (Exception failure) when (failure is InvalidOperationException
                 or System.ComponentModel.Win32Exception or NotSupportedException)
             {
-                return $"not ended: process {id}: {failure.Message}";
+                return $"not ended: process {id}: {Inert.Line(failure.Message)}";
             }
         }
     }

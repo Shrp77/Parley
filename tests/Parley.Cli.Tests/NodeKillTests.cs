@@ -245,4 +245,111 @@ public sealed class NodeKillTests : IDisposable
             End(other);
         }
     }
+
+
+    /// <summary>
+    /// A process whose tree the node cannot wholly end (a child running as another user, which <c>sudo</c> leaves) made
+    /// <see cref="Process.Kill(bool)"/> throw an <see cref="AggregateException"/> that nothing caught, and the node's loop
+    /// ended with it: under <c>serve --with-node</c> nothing on the machine was started again until the broker restarted,
+    /// and under <c>parley up</c> every agent the node ran was stopped (review, lens 2 on 6fde4ef3, Linux).
+    /// </summary>
+    [Fact]
+    public async Task A_tree_the_node_cannot_wholly_end_is_said_and_the_node_goes_on()
+    {
+        if (OperatingSystem.IsWindows() || string.Equals(Environment.UserName, "root", StringComparison.Ordinal)
+            || !File.Exists("/usr/bin/sudo"))
+        {
+            Assert.Skip("Needs a user other than root who may run sudo without a password, as CI's Linux runners are.");
+        }
+
+        var loop = Path.Combine(_folder, "tree.sh");
+
+        File.WriteAllLines(loop, ["sudo -n -u nobody sleep 37 &", "n=0", "while [ $n -lt 120 ]; do sleep 1; n=$((n+1)); done"]);
+
+        var copy = Path.Combine(_folder, "claude");
+
+        File.Copy("/bin/sh", copy);
+
+        using var left = Process.Start(new ProcessStartInfo(copy) { ArgumentList = { loop }, UseShellExecute = false })
+            ?? throw new InvalidOperationException("The stand-in did not start.");
+
+        try
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+
+            while (!HasAChildOfAnotherUser(left.Id))
+            {
+                if (DateTime.UtcNow > deadline)
+                {
+                    Assert.Skip("sudo -n started no process as another user here.");
+                }
+
+                await Task.Delay(50, Ct);
+            }
+
+            var said = await KillAsync(left.Id);
+
+            Assert.Contains($"process {left.Id}", said, StringComparison.Ordinal);
+            Assert.DoesNotContain(said.TrimEnd().EnumerateRunes(), Parley.Core.PrintableLine.Breaks);
+        }
+        finally
+        {
+            // Not the whole tree: the other user's child is exactly what cannot be ended from here.
+            try
+            {
+                left.Kill();
+            }
+            catch (InvalidOperationException)
+            {
+                // It had already gone, which is what a passing run leaves.
+            }
+
+            using var sweep = Process.Start(new ProcessStartInfo("sudo") { ArgumentList = { "-n", "pkill", "-f", "sleep 37" } });
+            sweep?.WaitForExit(10_000);
+        }
+    }
+
+    // Whether a process below the given one runs with another real user, which this account cannot signal. sudo itself
+    // keeps the caller's real user; the command it runs does not.
+    private static bool HasAChildOfAnotherUser(int parent)
+    {
+        static string? Field(string[] status, string name) =>
+            status.FirstOrDefault(line => line.StartsWith(name, StringComparison.Ordinal))
+                ?.Split('\t', StringSplitOptions.RemoveEmptyEntries)[1];
+
+        var own = Field(File.ReadAllLines("/proc/self/status"), "Uid:");
+        var table = new List<(string Pid, string? Parent, string? Uid)>();
+
+        foreach (var folder in Directory.EnumerateDirectories("/proc"))
+        {
+            try
+            {
+                var status = File.ReadAllLines(Path.Combine(folder, "status"));
+
+                table.Add((Path.GetFileName(folder), Field(status, "PPid:"), Field(status, "Uid:")));
+            }
+            catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+            {
+                // A process that went, or one this account may not read.
+            }
+        }
+
+        var below = new HashSet<string>(StringComparer.Ordinal) { parent.ToString(System.Globalization.CultureInfo.InvariantCulture) };
+        var grew = true;
+
+        while (grew)
+        {
+            grew = false;
+
+            foreach (var (pid, up, _) in table)
+            {
+                if (up is not null && below.Contains(up) && below.Add(pid))
+                {
+                    grew = true;
+                }
+            }
+        }
+
+        return table.Any(row => below.Contains(row.Pid) && row.Uid is not null && row.Uid != own);
+    }
 }

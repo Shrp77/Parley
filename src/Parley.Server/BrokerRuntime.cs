@@ -1095,13 +1095,15 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </summary>
     /// <param name="agent">The agent.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>A task that completes when it has been asked, or found to have nothing to do.</returns>
+    /// <param name="because">Why it is asked, as the node's log says it.</param>
+    /// <returns>What came of asking, or null when it had nothing to do.</returns>
     /// <remarks>
     /// Wider than the restart wake, which asks only about open work owed. Every wake for a frozen agent was declined, so a
     /// Result to its own question, or a closure poll waiting on its vote, arrived with no turn coming and its sender was told
     /// nothing is lost. The unfreeze is the one moment that debt can be paid, so mail and polls count here too.
     /// </remarks>
-    internal async Task WakeIfOwingAsync(AgentName agent, CancellationToken cancellationToken)
+    internal async Task<WakeOutcome?> WakeIfOwingAsync(
+        AgentName agent, CancellationToken cancellationToken, string because = "a person unfroze it and work or mail is waiting for it")
     {
         var owes = await UseConnectionAsync(
             async (connection, _, ct) =>
@@ -1114,10 +1116,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 + await new ConversationRepository(connection).CountOutstandingPollsAsync(agent, ct).ConfigureAwait(false) > 0),
             cancellationToken).ConfigureAwait(false);
 
-        if (owes)
-        {
-            _ = RequestAttentionForMail(agent, "a person unfroze it and work or mail is waiting for it");
-        }
+        return owes ? RequestAttentionForMail(agent, because) : null;
     }
 
     /// <summary>Pays what a freeze put off, once a person has cleared it (SPEC.md §14).</summary>
@@ -1135,7 +1134,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
             _unfrozenWhileUp[agent.Value] = true;
         }
 
-        await WakeIfOwingAsync(agent, CancellationToken.None).ConfigureAwait(false);
+        _ = await WakeIfOwingAsync(agent, CancellationToken.None).ConfigureAwait(false);
     }
 
 
@@ -1224,7 +1223,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
         {
             try
             {
-                await WakeIfOwingAsync(agent, _stopping.Token).ConfigureAwait(false);
+                // Nobody to ask after all (the node left as this asked): kept for the next join, never lost (review, lens 1
+                // run 2 on 6fde4ef3).
+                if (await WakeIfOwingAsync(agent, _stopping.Token, "its freeze lapsed when the broker started, and work or mail is waiting for it")
+                        .ConfigureAwait(false) == WakeOutcome.Unreachable)
+                {
+                    _lapsed[agent.Value] = true;
+                }
             }
             catch (Exception)
             {
@@ -2737,7 +2742,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 // An unfreeze pays what the freeze put off, whatever else was asked: open work the agent owes as well as
                 // anything uncollected. Gated on the turn's mail alone, an agent unfrozen before its turn had ended was
                 // left stopped with the work it had already collected.
-                await WakeIfOwingAsync(attached.Name, CancellationToken.None).ConfigureAwait(false);
+                _ = await WakeIfOwingAsync(attached.Name, CancellationToken.None).ConfigureAwait(false);
 
                 // A person's start asked meanwhile is still owed when the unfreeze found nothing to pay. If the unfreeze did
                 // ask, its claim answers the asking below as already coming, so nothing is started twice.
