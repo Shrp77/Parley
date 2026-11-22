@@ -15,7 +15,7 @@ wakes it until a person unfreezes it or, unless they asked it to stay frozen, th
   them, a spin-off's parent, which agents are working, idle or waiting on background work, and how many background tasks
   each has (SPEC.md §11.6). A turn report does not say which conversation a turn is for.
 - Work is already durable. An open exchange lives in the store, and a restart wakes every agent that owes one
-  (SPEC.md §11.1, the owner's decision of 2026-11-18). Stopping an agent ends its process and never its work.
+  (SPEC.md §14, the owner's decision of 2026-11-18). Stopping an agent ends its process and never its work.
 - **What is missing is a freeze.** Stop does not keep an agent stopped: the next restart or the next message starts it
   again. And nothing shows the whole picture on one screen.
 
@@ -49,27 +49,31 @@ read from it alone which agent is working in which conversation of which project
 ### User Story 2 - Freeze an agent from the graph, and unfreeze it (Priority: P2)
 
 From an agent's node the person chooses *Freeze*. The node lets the agent finish its current turn, then ends its process.
-The agent reads as *frozen* everywhere. Nothing starts it: not a restart of the broker or of the computer, not a new message
-to it. Messages for it wait. Its open exchanges stay open. Later the person chooses *Unfreeze*, and the agent is started
-if it owes work, as it would be after any restart.
+The agent reads as *frozen* everywhere. Nothing starts it: not a new message to it, not a Start, not a Restart. Messages for
+it wait. Its open exchanges stay open. The freeze ends when the person chooses *Unfreeze*, or when the broker next starts (a
+logon or a restart of the computer) unless the person asked that the freeze outlast one. Either way the agent is then started
+if it owes work, or if anything arrived for it while it was frozen.
 
 **Why this priority**: it is the pause the person asked for. It needs a stored state, so it follows the read-only graph.
 
-**Independent Test**: freeze an agent that owes an open exchange, restart the broker, and confirm the agent is not started and
-the exchange is still open; unfreeze it and confirm it is started and collects the exchange.
+**Independent Test**: freeze an agent that owes an open exchange, asking that the freeze outlast a logon; restart the broker,
+and confirm the agent is not started and the exchange is still open; unfreeze it and confirm it is started and collects the
+exchange. Freeze another without asking that, restart the broker, and confirm that one is started.
 
 **Acceptance Scenarios**:
 
 1. **Given** an agent in the middle of a turn, **When** the person freezes it, **Then** the turn finishes and is recorded, and
    then the process ends. The turn is never cut off.
-2. **Given** a frozen agent with an open exchange, **When** the broker or the computer restarts, **Then** the agent is not
-   started and the exchange is still open.
+2. **Given** a frozen agent with an open exchange, **When** the broker or the computer restarts, **Then** the freeze is lifted
+   and the agent is started, unless the person asked that the freeze outlast a logon, in which case it is not started. The
+   exchange is still open either way.
 3. **Given** a frozen agent, **When** somebody sends it a request, **Then** the request is stored and shown as waiting on a
    frozen agent, and nothing starts the agent.
-4. **Given** a frozen agent, **When** the person unfreezes it, **Then** it is started if it owes work, and not otherwise.
+4. **Given** a frozen agent, **When** the person unfreezes it, **Then** it is started if it owes work or anything is waiting
+   for it that arrived while it was frozen, and not otherwise.
 5. **Given** a freeze made on one machine, **When** the console is open on another, **Then** both show the agent as frozen.
-6. **Given** an agent open outside Parley, **When** the person looks at its node, **Then** Freeze is not offered, because no node
-   can end it (SPEC.md §11.7). The graph says so.
+6. **Given** an agent open outside Parley, **When** the person freezes it, **Then** nothing will start it again, and the person
+   is told that Parley cannot end the session somebody opened (SPEC.md §11.7): it stays until it is closed there.
 
 ---
 
@@ -120,14 +124,18 @@ returns them.
 - **FR-005**: The graph MUST NOT show anything an agent is not allowed to see. It is a person's view, and nothing in it
   is reachable by an agent operation.
 - **FR-006**: A person MUST be able to freeze and unfreeze an agent from its node, and a freeze MUST be stored by the broker so that
-  every surface shows it and it survives a restart of the broker and of the computer. A freeze covers the agent in every
+  every surface shows it. It survives a restart of the broker and of the computer only when the person asks that it does;
+  otherwise the broker's next start lifts it. A freeze covers the agent in every
   project on its machine that it serves, and the act names those projects before it is done.
 - **FR-007**: A freeze MUST let the current turn finish, and MUST NOT interrupt or kill a turn.
-- **FR-008**: While an agent is frozen, nothing MUST start it: not the restart wake (SPEC.md §11.1), not a new message, not a
-  person's Start. Unfreeze is the only way back.
+- **FR-008**: While an agent is frozen, nothing MUST start it: not a new message, not a person's Start or Restart, and for a
+  freeze the person asked to outlast a logon, not the restart wake (SPEC.md §14) either. The ways back are Unfreeze and, for a
+  freeze not kept, the broker's next start. When a freeze ends, what it put off MUST be paid: the agent is started if it owes
+  work or if a message or a closing vote is waiting for it.
 - **FR-009**: Freezing MUST NOT close, move, answer or discard any exchange, and MUST NOT change what any agent is owed.
-- **FR-010**: A message to a frozen agent MUST be stored and shown as waiting on a frozen agent. No agent is told the other is
-  frozen beyond what the roster already shows of state; the person's freeze is not an instruction to anyone.
+- **FR-010**: A message to a frozen agent MUST be stored and shown as waiting on a frozen agent. Its sender is told the
+  receiver is frozen and that the message waits, as it is told any other reason a receiver was not started; the person's
+  freeze is not an instruction to anyone.
 - **FR-011**: Freeze and unfreeze MUST be operator operations only, on a surface for a person, listed in SPEC.md §10.2, and MUST
   NOT be available on any agent operation (`Agents` service). Freeze and unfreeze of one agent and of a whole project are the same
   implementation on the CLI, the terminal and the web console.

@@ -7,7 +7,7 @@ Written after the build, in the order it was done; every task is built and has a
 - [x] T002 `AgentRecord.FrozenUtc`/`Frozen`; `AgentRepository` reads it, `FreezeAsync`/`UnfreezeAsync` write it guarded on the current value and refuse the person seat and the facilitator. (`AgentFreezeTests`)
 - [x] T003 `OperatorConsole.FreezeAsync`/`UnfreezeAsync`; `Operators.Freeze`/`Unfreeze` in the proto, `FreezeReply`, `frozen_utc` on `RegistryRow`.
 - [x] T004 `BrokerRuntime.Ask` refuses a frozen agent with `WakeOutcome.Frozen` (`WAKE_OUTCOME_FROZEN`); `_frozen` seeded from the store at start. `Start` refuses a frozen agent in words. (`FreezingAnAgentTests`)
-- [x] T005 `Freeze` records, then `RequestStop`; `Unfreeze` clears, then wakes if the agent owes work under the resume policy. (`FreezingAnAgentTests`)
+- [x] T005 `Freeze` records, then `RequestStop`; `Unfreeze` clears, then wakes if the agent owes work under the resume policy, or has mail or a closure poll waiting under any. (`FreezingAnAgentTests`)
 - [x] T006 Existing migration tests that rewind a store learn the new column. (`MigrationSixTests`, `HistoryReadsSchemaTests`, `AFailedMigration…`, `MigrationDiscoveryTests`)
 
 ## Phase 2: client and the freeze on every surface

@@ -78,7 +78,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     /// <summary>Whether a freeze outlasts a logon: the box that says not to unfreeze on logon.</summary>
     /// <remarks>
     /// Without it, a start of the broker, which a logon or a reboot brings, lets the freeze lapse and the agent is started if it owes
-    /// work (SPEC.md §11.1). Posted with the confirmation, never read from the link, so a followed link cannot choose it.
+    /// work (SPEC.md §14). Posted with the confirmation, never read from the link, so a followed link cannot choose it.
     /// </remarks>
     [BindProperty, FromForm]
     public bool KeepFrozen { get; set; }
@@ -145,7 +145,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
         }
 
         // Freezing ends the one process that serves every project the agent is in, so the person is told which they are before
-        // they agree (SPEC.md §11.1): freezing it for one project's sake stops its work for the rest.
+        // they agree (SPEC.md §14): freezing it for one project's sake stops its work for the rest.
         if (Action?.ToLowerInvariant() is "freeze" or "unfreeze" && AgentName.TryCreate(Subject, out var reached))
         {
             var (serving, unreachable) = await AgentFreezing.ServedByAsync(directory, reached, HttpContext.RequestAborted)
@@ -381,18 +381,27 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     {
         var all = await AgentFreezing.AllAsync(directory, Project ?? string.Empty, freeze, KeepFrozen, token).ConfigureAwait(false);
 
-        if (all.Count == 0)
+        // Said apart from "nothing to do": a person freezing everything before a restart who is told the agents are already frozen
+        // goes away, and a broker that could not be read froze nobody.
+        if (all.Problem is { } problem)
+        {
+            return $"'{Project}' could not be read, so nothing was {(freeze ? "frozen" : "unfrozen")}. {problem}";
+        }
+
+        if (all.Agents.Count == 0)
         {
             return freeze
                 ? $"Nothing to freeze: every agent in '{Project}' is already frozen, or none is registered."
                 : $"Nothing to unfreeze: no agent in '{Project}' is frozen.";
         }
 
-        var incomplete = all.Count(o => !o.Complete);
+        // Counted by what was done, never by what was tried.
+        var incomplete = all.Agents.Count - all.Done;
 
-        return $"{all.Count} {(all.Count == 1 ? "agent" : "agents")} {(freeze ? "frozen" : "unfrozen")} in '{Project}'."
+        return $"{all.Done} of {all.Agents.Count} {(all.Agents.Count == 1 ? "agent" : "agents")} {(freeze ? "frozen" : "unfrozen")} in '{Project}'."
             + (incomplete > 0
-                ? $" {incomplete} could not be reached in every project that serves it: " + string.Join(' ', all.Where(o => !o.Complete).Select(AgentFreezing.Describe))
+                ? $" {incomplete} {(incomplete == 1 ? "was" : "were")} not, or not in every project that serves {(incomplete == 1 ? "it" : "them")}: "
+                  + string.Join(' ', all.Agents.Where(o => !o.Complete).Select(AgentFreezing.Describe))
                 : string.Empty);
     }
 

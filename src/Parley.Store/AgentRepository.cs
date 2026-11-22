@@ -1087,7 +1087,7 @@ public sealed class AgentRepository(SqliteConnection connection)
                 new { Name = name.Value },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-    /// <summary>Records that a person has frozen an agent, so nothing starts it until they unfreeze it or, unless kept, the broker next starts (SPEC.md §11.1).</summary>
+    /// <summary>Records that a person has frozen an agent, so nothing starts it until they unfreeze it or, unless kept, the broker next starts (SPEC.md §14).</summary>
     /// <param name="name">The agent.</param>
     /// <param name="nowUtc">When it was frozen.</param>
     /// <param name="cancellationToken">Cancels the write.</param>

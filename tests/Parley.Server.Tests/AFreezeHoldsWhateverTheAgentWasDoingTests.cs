@@ -6,7 +6,7 @@ namespace Parley.Server.Tests;
 
 /// <summary>
 /// That a freeze holds an agent that is running, starting or waiting on an answer, and that unfreezing it pays what the
-/// freeze put off (SPEC.md §11.1).
+/// freeze put off (SPEC.md §14).
 /// </summary>
 /// <remarks>
 /// <c>FreezingAnAgentTests</c> freezes an agent that is at rest. Each case here was found by review of 0.64.3 with the agent
@@ -163,6 +163,104 @@ public sealed class AFreezeHoldsWhateverTheAgentWasDoingTests
 
         Assert.Equal(Wire.NodeCommand.CommandOneofCase.Start, command.CommandCase);
         Assert.Equal(Orders, command.Start.Agent);
+    }
+
+    [Fact]
+    public async Task An_unfreeze_before_the_frozen_agents_turn_has_ended_is_paid_when_its_process_goes()
+    {
+        // The freeze's stop waits for the turn. Unfrozen before the turn ends, the agent is still attached, so the unfreeze's
+        // wake is a turn, which its node gives to a process the stop then ends. Nothing asked again: the agent was left unfrozen
+        // and stopped with its answer unread, and the next message was told a turn was already coming (review, lens 1 on 0.64.4).
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["orders"], Ct, reportsTurns: true);
+        await using var billing = await AttachedClient.AttachAsync(broker, "billing@alpha", cancellationToken: Ct);
+
+        var operators = broker.ConnectAsOperator();
+
+        await using (var orders = await LaunchedAsync(broker, node, "t-1"))
+        {
+            var asked = Assert.Single((await orders.Client.RequestAsync(
+                Requests.Open(Orders, "billing@alpha", "which ledger?", "c1"), cancellationToken: Ct)).Outcomes);
+
+            _ = await operators.FreezeAsync(Freeze(Orders), cancellationToken: Ct);
+
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Stop, (await node.WaitForCommandAsync(Patience)).CommandCase);
+
+            _ = await billing.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = "billing@alpha" }, cancellationToken: Ct);
+            _ = await billing.Client.ResultAsync(Requests.Result("billing@alpha", asked.ExchangeId), cancellationToken: Ct);
+
+            Assert.True((await operators.UnfreezeAsync(new Wire.AgentRequest { Agent = Orders }, cancellationToken: Ct)).Changed);
+
+            // Still attached, so what the unfreeze asks for is a turn, of the process the stop is about to end.
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, (await node.WaitForCommandAsync(Patience)).CommandCase);
+        }
+
+        // The stop has taken the process. Its answer is still unread, so it is started for it.
+        var command = await node.WaitForCommandAsync(Patience);
+
+        Assert.Equal(Wire.NodeCommand.CommandOneofCase.Start, command.CommandCase);
+        Assert.Equal(Orders, command.Start.Agent);
+    }
+
+    [Fact]
+    public async Task An_agent_frozen_again_before_its_process_went_is_not_started_when_it_goes()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["orders"], Ct, reportsTurns: true);
+        await using var billing = await AttachedClient.AttachAsync(broker, "billing@alpha", cancellationToken: Ct);
+
+        var operators = broker.ConnectAsOperator();
+
+        await using (var orders = await LaunchedAsync(broker, node, "t-1"))
+        {
+            var asked = Assert.Single((await orders.Client.RequestAsync(
+                Requests.Open(Orders, "billing@alpha", "which ledger?", "c1"), cancellationToken: Ct)).Outcomes);
+
+            _ = await operators.FreezeAsync(Freeze(Orders), cancellationToken: Ct);
+            _ = await node.WaitForCommandAsync(Patience);
+
+            _ = await billing.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = "billing@alpha" }, cancellationToken: Ct);
+            _ = await billing.Client.ResultAsync(Requests.Result("billing@alpha", asked.ExchangeId), cancellationToken: Ct);
+
+            _ = await operators.UnfreezeAsync(new Wire.AgentRequest { Agent = Orders }, cancellationToken: Ct);
+            _ = await node.WaitForCommandAsync(Patience);
+            _ = await operators.FreezeAsync(Freeze(Orders), cancellationToken: Ct);
+
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Stop, (await node.WaitForCommandAsync(Patience)).CommandCase);
+        }
+
+        await broker.WaitUntilDetachedAsync(Orders, Patience);
+        await Assert.ThrowsAsync<TimeoutException>(() => node.WaitForCommandAsync(Briefly));
+    }
+
+    [Fact]
+    public async Task Unfreezing_a_retired_agent_starts_nothing_whatever_is_waiting_for_it()
+    {
+        // Retirement is a person's judgement, and a freeze ending is not evidence against it.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["orders"], Ct, reportsTurns: true);
+        await using var billing = await AttachedClient.AttachAsync(broker, "billing@alpha", cancellationToken: Ct);
+
+        long exchange;
+
+        await using (var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct))
+        {
+            exchange = Assert.Single((await orders.Client.RequestAsync(
+                Requests.Open(Orders, "billing@alpha", "which ledger?", "c1"), cancellationToken: Ct)).Outcomes).ExchangeId;
+        }
+
+        await broker.WaitUntilDetachedAsync(Orders, Patience);
+
+        var operators = broker.ConnectAsOperator();
+        _ = await operators.FreezeAsync(Freeze(Orders), cancellationToken: Ct);
+
+        _ = await billing.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = "billing@alpha" }, cancellationToken: Ct);
+        _ = await billing.Client.ResultAsync(Requests.Result("billing@alpha", exchange), cancellationToken: Ct);
+
+        _ = await operators.RetireAsync(new Wire.AgentRequest { Agent = Orders }, cancellationToken: Ct);
+        _ = await operators.UnfreezeAsync(new Wire.AgentRequest { Agent = Orders }, cancellationToken: Ct);
+
+        await Assert.ThrowsAsync<TimeoutException>(() => node.WaitForCommandAsync(Briefly));
     }
 
     [Fact]

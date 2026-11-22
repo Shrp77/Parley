@@ -1,6 +1,6 @@
 namespace Parley.Client.Rendering;
 
-/// <summary>What freezing and unfreezing an agent cost, in the words both surfaces use (SPEC.md §11.1).</summary>
+/// <summary>What freezing and unfreezing an agent cost, in the words both surfaces use (SPEC.md §14).</summary>
 /// <remarks>
 /// One place, as <see cref="StoppingWords"/> is, so the web console, the terminal and the graph cannot describe the same act in
 /// different words.

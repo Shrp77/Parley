@@ -117,6 +117,12 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <summary>What a start is answered with: false for a node that was not asked.</summary>
     public bool StartAccepted { get; set; } = true;
 
+    /// <summary>
+    /// When set, a start is refused as the broker refuses one it will not ask for (a frozen agent, or one open outside
+    /// Parley): the call ends <c>FAILED_PRECONDITION</c> with this sentence as its detail.
+    /// </summary>
+    public string? StartRefusal { get; set; }
+
     /// <summary>Every restart a person asked for.</summary>
     public List<Wire.StopRequest> Restarted { get; } = [];
 
@@ -433,6 +439,18 @@ public sealed class RoadmapBroker : HttpMessageHandler
         };
 
         response.Content.Headers.ContentType = new MediaTypeHeaderValue("application/grpc");
+
+        if (StartRefusal is { } refusal && request.RequestUri!.AbsolutePath == "/parley.v1.Operators/Start")
+        {
+            // A refusal carries no message: only the status and its sentence, which the wire sends percent-encoded. 9 is
+            // FAILED_PRECONDITION.
+            response.Content = new ByteArrayContent([]);
+            response.Content.Headers.ContentType = new MediaTypeHeaderValue("application/grpc");
+            response.TrailingHeaders.Add("grpc-status", "9");
+            response.TrailingHeaders.Add("grpc-message", Uri.EscapeDataString(refusal));
+
+            return response;
+        }
 
         // 12 is UNIMPLEMENTED.
         response.TrailingHeaders.Add("grpc-status", (reply is null ? 12 : 0).ToString(CultureInfo.InvariantCulture));

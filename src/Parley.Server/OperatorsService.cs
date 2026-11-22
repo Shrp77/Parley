@@ -293,7 +293,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             return new Wire.DidItReply { Changed = false };
         }
 
-        // SPEC.md §11.1: nothing starts a frozen agent, a person's Start included. Said, not silently declined.
+        // SPEC.md §14: nothing starts a frozen agent, a person's Start included. Said, not silently declined.
         if (_runtime.IsFrozen(agent))
         {
             throw new RpcException(new Status(
@@ -310,7 +310,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     /// <inheritdoc/>
     /// <remarks>
     /// The node waits for the current turn to end, so this says only that it was asked (SPEC.md §11.1). The agent is
-    /// started again by the next work for it, as any agent is: retirement, not this, keeps one out.
+    /// started again by the next work for it, as any agent is: a freeze or retirement, not this, keeps one out.
     /// </remarks>
     public override Task<Wire.DidItReply> Stop(Wire.StopRequest request, ServerCallContext context) =>
         StopOrRestart(request, context, restart: false);
@@ -331,7 +331,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         var agent = Acted(request.Agent);
         var because = string.IsNullOrWhiteSpace(request.Because) ? "the person asked for it" : request.Because;
 
-        // SPEC.md §11.1: nothing starts a frozen agent, and a restart starts it again. One still finishing its turn is already
+        // SPEC.md §14: nothing starts a frozen agent, and a restart starts it again. One still finishing its turn is already
         // being stopped by the freeze, so there is nothing a stop would add either.
         if (restart && _runtime.IsFrozen(agent))
         {
@@ -394,7 +394,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     /// <inheritdoc/>
     /// <remarks>
     /// Recorded before the node is asked, so a turn that ends and a message that arrives in between both find the freeze
-    /// (SPEC.md §11.1). The process is ended by the existing stop, which waits for the turn and never ends one a node did not start.
+    /// (SPEC.md §14). The process is ended by the existing stop, which waits for the turn and never ends one a node did not start.
     /// </remarks>
     public override async Task<Wire.FreezeReply> Freeze(Wire.FreezeRequest request, ServerCallContext context)
     {
@@ -440,8 +440,8 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Then, as after a restart, the agent is asked to start if it owes open work (SPEC.md §11.1); one that owes nothing stays
-    /// as it is until work arrives.
+    /// Then the agent is asked to start if it owes open work, as after a restart, or if anything arrived for it while it was
+    /// frozen, whose wake was declined (SPEC.md §14); one with nothing to do stays as it is until work arrives.
     /// </remarks>
     public override async Task<Wire.DidItReply> Unfreeze(Wire.AgentRequest request, ServerCallContext context)
     {
@@ -463,7 +463,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
         if (changed)
         {
-            await _runtime.WakeIfOwingAsync(agent, context.CancellationToken).ConfigureAwait(false);
+            await _runtime.UnfrozenAsync(agent).ConfigureAwait(false);
         }
 
         return new Wire.DidItReply { Changed = changed };

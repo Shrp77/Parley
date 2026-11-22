@@ -1,6 +1,6 @@
 namespace Parley.Core;
 
-/// <summary>What became of an agent's process when a person froze it (SPEC.md §11.1).</summary>
+/// <summary>What became of an agent's process when a person froze it (SPEC.md §14).</summary>
 public enum FreezeProcess
 {
     /// <summary>Its node was asked to stop it once its current turn is over.</summary>

@@ -6,7 +6,7 @@ namespace Parley.Terminal.Tests;
 
 /// <summary>
 /// That an agent's row offers the freeze its standing calls for, describes it with the projects it reaches, and does
-/// nothing until the second choice is taken (SPEC.md §11.1, §10.2 <c>freeze</c>, <c>unfreeze</c>).
+/// nothing until the second choice is taken (SPEC.md §14, §10.2 <c>freeze</c>, <c>unfreeze</c>).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -140,6 +140,37 @@ public sealed class FreezingFromARowTests
 
         // And nobody else.
         Assert.False((await seated.Operators.RegistryAsync(Ct)).Single(agent => agent.Name == Seated.Billing).Frozen);
+    }
+
+    [Fact]
+    public async Task The_description_does_not_open_over_a_project_the_person_moved_to_while_it_was_being_read()
+    {
+        // The description opens from the work queue, after each project is read. The queue is held here as a slow read holds
+        // it, the person goes to the other project meanwhile, and the description then has no agent in view to be about.
+        await using var seated = await OnAgentsAsync(withBeta: true);
+
+        var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        seated.Shell.Queued(_ => held.Task);
+
+        // Enter on the entry closes the menu and queues the read behind what is held, so nothing is drawn from the pool yet.
+        var offered = Open(seated, Seated.Orders.Value);
+        var menu = (ChoiceDialog)seated.Session.Find(Seated.Orders.Value);
+
+        menu.Choices.SelectedItem = offered.ToList().IndexOf(Freeze);
+        Assert.Equal(Freeze, menu.Chosen);
+        seated.Session.Enter();
+
+        Assert.False(seated.Session.Has(Freeze), "the description opened before its read, so this test holds nothing back");
+
+        await seated.Shell.GoAsync(ViewPlace.Into(Seated.Beta));
+
+        held.SetResult();
+        await seated.Shell.Settled;
+
+        Assert.False(seated.Session.Has(Freeze), "the freeze was described over a project the person had moved to");
+        Assert.False(await FrozenAsync(seated.Operators));
+        Assert.False(await FrozenAsync(seated.BetaOperators));
     }
 
     [Fact]

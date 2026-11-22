@@ -7,7 +7,7 @@ using Wire = Parley.Transport;
 namespace Parley.Server.Tests;
 
 /// <summary>
-/// That a person's freeze on an agent keeps it from being started by anything, and that unfreezing it undoes only that (SPEC.md §11.1).
+/// That a person's freeze on an agent keeps it from being started by anything, and that unfreezing it undoes only that (SPEC.md §14).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -148,6 +148,162 @@ public sealed class FreezingAnAgentTests
         _ = await console.UnfreezeAsync(Agent("orders@alpha"), cancellationToken: token);
 
         Assert.Equal(1, await node.CountCommandsAsync(1, TimeSpan.FromMilliseconds(500), Patience));
+    }
+
+    [Fact]
+    public async Task Unfreezing_an_agent_that_collected_its_work_before_it_was_frozen_starts_it()
+    {
+        // The Request was collected, so it is work owed and no longer mail waiting: the half of the unfreeze's wake that asks
+        // about open work is the only one that can see it.
+        var token = TestContext.Current.CancellationToken;
+
+        await using var broker = await LoopbackBroker.StartAsync(
+            token, options: BrokerOptions.Default with { ResumePolicy = ResumePolicy.Always });
+        await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["orders"], token);
+        await using var docs = await AttachedClient.AttachAsync(broker, "docs@alpha", cancellationToken: token);
+
+        await using (var orders = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token))
+        {
+            var sent = Assert.Single((await docs.Client.RequestAsync(
+                Requests.Open("docs@alpha", "orders@alpha", "collected, then frozen", "c1"), cancellationToken: token)).Outcomes);
+
+            Assert.True(sent.Ok, sent.Rejection.ToString());
+
+            // Collected and acknowledged, as an agent that read it and went away before answering.
+            var collected = await orders.Client.DrainInboxAsync(
+                new Wire.DrainInboxRequest { Agent = "orders@alpha" }, cancellationToken: token);
+
+            Assert.Single(collected.Messages);
+        }
+
+        await broker.WaitUntilDetachedAsync("orders@alpha", Patience);
+
+        var console = broker.ConnectAsOperator();
+
+        Assert.True((await console.FreezeAsync(Freeze("orders@alpha"), cancellationToken: token)).Changed);
+        Assert.Equal(0, await node.CountCommandsAsync(TimeSpan.FromMilliseconds(300)));
+
+        Assert.True((await console.UnfreezeAsync(Agent("orders@alpha"), cancellationToken: token)).Changed);
+
+        Assert.Equal(1, await node.CountCommandsAsync(1, TimeSpan.FromMilliseconds(500), Patience));
+
+        var command = await node.WaitForCommandAsync(Patience);
+
+        Assert.Equal(Wire.NodeCommand.CommandOneofCase.Start, command.CommandCase);
+        Assert.Equal("orders@alpha", command.Start.Agent);
+    }
+
+    [Fact]
+    public async Task Unfreezing_an_agent_a_closure_poll_waits_on_for_nothing_but_its_vote_starts_it()
+    {
+        // The agent answered what it was asked and went away without voting, and was then frozen. It has no mail and owes no
+        // work, so the poll is the only thing the unfreeze's wake can find; the broker's default policy wakes nobody for
+        // open work, so nothing else could start it either.
+        var token = TestContext.Current.CancellationToken;
+
+        var clock = new StubClock(DateTimeOffset.UtcNow);
+        await using var broker = await LoopbackBroker.StartAsync(token, clock);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["orders"], token);
+        await using var docs = await AttachedClient.AttachAsync(broker, "docs@alpha", cancellationToken: token);
+
+        await using (var orders = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token))
+        {
+            var sent = Assert.Single((await docs.Client.RequestAsync(
+                Requests.Open("docs@alpha", "orders@alpha", "is it still read?", "c1"), cancellationToken: token)).Outcomes);
+
+            Assert.True(sent.Ok, sent.Rejection.ToString());
+
+            _ = await orders.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = "orders@alpha" }, cancellationToken: token);
+
+            // Proposed while the agent holds the work, so the agent is polled.
+            var proposed = await docs.Client.ConcludeAsync(
+                new Wire.ConcludeRequest { From = "docs@alpha", ConversationId = "c1", Vote = Wire.Vote.Done },
+                cancellationToken: token);
+
+            Assert.True(proposed.Ok);
+            Assert.False(proposed.Concluded, "the conversation closed, so no poll waits on anybody");
+
+            Assert.True((await orders.Client.ResultAsync(Requests.Result("orders@alpha", sent.ExchangeId), cancellationToken: token)).Ok);
+        }
+
+        // The Result asked for the silent voter once, while it was open outside Parley, and that asking holds the bound on
+        // waking it until the ceiling passes. Moved past it, so the unfreeze below is asking about the poll and nothing else.
+        clock.Advance(TimeSpan.FromMinutes(3));
+
+        await broker.WaitUntilDetachedAsync("orders@alpha", Patience);
+
+        var console = broker.ConnectAsOperator();
+
+        Assert.True((await console.FreezeAsync(Freeze("orders@alpha"), cancellationToken: token)).Changed);
+
+        // It was open outside Parley until it went, and frozen since: nothing has been asked of the node.
+        Assert.Equal(0, await node.CountCommandsAsync(TimeSpan.FromMilliseconds(300)));
+
+        Assert.True((await console.UnfreezeAsync(Agent("orders@alpha"), cancellationToken: token)).Changed);
+
+        Assert.Equal(1, await node.CountCommandsAsync(1, TimeSpan.FromMilliseconds(500), Patience));
+
+        var command = await node.WaitForCommandAsync(Patience);
+
+        Assert.Equal(Wire.NodeCommand.CommandOneofCase.Start, command.CommandCase);
+        Assert.Equal("orders@alpha", command.Start.Agent);
+    }
+
+    [Fact]
+    public async Task Mail_that_arrived_while_the_agent_was_open_outside_Parley_is_paid_by_an_unfreeze_soon_after()
+    {
+        // The agent was open in somebody's editor when the Request arrived, so no node was asked and nothing was coming. It
+        // went away without collecting, and was frozen and unfrozen. The mail is still waiting, so the unfreeze owes it a
+        // start, however soon after the Request it comes.
+        var token = TestContext.Current.CancellationToken;
+
+        await using var broker = await LoopbackBroker.StartAsync(token);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["orders"], token);
+        await using var docs = await AttachedClient.AttachAsync(broker, "docs@alpha", cancellationToken: token);
+
+        await using (await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token))
+        {
+            var sent = Assert.Single((await docs.Client.RequestAsync(
+                Requests.Open("docs@alpha", "orders@alpha", "sent while you were open outside", "c1"), cancellationToken: token)).Outcomes);
+
+            Assert.Equal(Wire.WakeOutcome.OpenOutside, sent.Wake);
+        }
+
+        await broker.WaitUntilDetachedAsync("orders@alpha", Patience);
+
+        var console = broker.ConnectAsOperator();
+
+        Assert.True((await console.FreezeAsync(Freeze("orders@alpha"), cancellationToken: token)).Changed);
+        Assert.True((await console.UnfreezeAsync(Agent("orders@alpha"), cancellationToken: token)).Changed);
+
+        Assert.Equal(1, await node.CountCommandsAsync(1, TimeSpan.FromMilliseconds(500), Patience));
+        Assert.Equal(Wire.NodeCommand.CommandOneofCase.Start, (await node.WaitForCommandAsync(Patience)).CommandCase);
+    }
+
+    [Fact]
+    public async Task Unfreezing_an_agent_that_was_not_frozen_starts_nobody_even_with_mail_waiting_for_it()
+    {
+        // The mail arrived before any node had joined, so nothing was asked for it. An unfreeze that lifted nothing is not a
+        // reason to ask now: only a freeze that was lifted has a debt to pay.
+        var token = TestContext.Current.CancellationToken;
+
+        await using var broker = await LoopbackBroker.StartAsync(token);
+
+        await RegisterAndCloseAsync(broker, "orders@alpha", token);
+
+        await using var docs = await AttachedClient.AttachAsync(broker, "docs@alpha", cancellationToken: token);
+
+        var sent = Assert.Single((await docs.Client.RequestAsync(
+            Requests.Open("docs@alpha", "orders@alpha", "waiting, and you were never frozen", "c1"), cancellationToken: token)).Outcomes);
+
+        Assert.True(sent.Ok, sent.Rejection.ToString());
+
+        await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["orders"], token);
+
+        var unfrozen = await broker.ConnectAsOperator().UnfreezeAsync(Agent("orders@alpha"), cancellationToken: token);
+
+        Assert.False(unfrozen.Changed);
+        Assert.Equal(0, await node.CountCommandsAsync(TimeSpan.FromMilliseconds(400)));
     }
 
     [Fact]

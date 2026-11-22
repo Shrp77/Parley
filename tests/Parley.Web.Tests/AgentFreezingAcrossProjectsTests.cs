@@ -9,7 +9,7 @@ namespace Parley.Web.Tests;
 
 /// <summary>
 /// That freezing an agent reaches every project that serves it and only those, that freezing a whole project leaves out who
-/// cannot be frozen and who already is, and that the person is told which projects an act reaches (SPEC.md §11.1).
+/// cannot be frozen and who already is, and that the person is told which projects an act reaches (SPEC.md §14).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -133,7 +133,7 @@ public sealed class AgentFreezingAcrossProjectsTests
         deployment["alpha"].Registry.Add(Row(Orders));
         deployment["alpha"].Registry.Add(Row(AgentName.Create($"{Facilitation.Role}@alpha"), adapter: Facilitation.Adapter));
 
-        var outcomes = await AgentFreezing.AllAsync(deployment.Directory, "alpha", freeze: true, cancellationToken: Ct);
+        var outcomes = (await AgentFreezing.AllAsync(deployment.Directory, "alpha", freeze: true, cancellationToken: Ct)).Agents;
 
         Assert.Equal([Orders], outcomes.Select(o => o.Agent));
         Assert.Equal([Orders.Value], deployment["alpha"].Frozen.Select(f => f.Agent));
@@ -147,7 +147,7 @@ public sealed class AgentFreezingAcrossProjectsTests
         deployment["alpha"].Registry.Add(Row(Orders));
         deployment["alpha"].Registry.Add(Row(AgentName.Create($"{PersonSeat.Role}@alpha"), adapter: PersonSeat.Adapter));
 
-        var outcomes = await AgentFreezing.AllAsync(deployment.Directory, "alpha", freeze: true, cancellationToken: Ct);
+        var outcomes = (await AgentFreezing.AllAsync(deployment.Directory, "alpha", freeze: true, cancellationToken: Ct)).Agents;
 
         Assert.Equal([Orders], outcomes.Select(o => o.Agent));
         Assert.Equal([Orders.Value], deployment["alpha"].Frozen.Select(f => f.Agent));
@@ -164,7 +164,7 @@ public sealed class AgentFreezingAcrossProjectsTests
         deployment["alpha"].Registry.Add(Row(Orders, frozen: !freeze));
         deployment["alpha"].Registry.Add(Row(Billing, Wire.AgentStatus.Retired, frozen: !freeze));
 
-        var outcomes = await AgentFreezing.AllAsync(deployment.Directory, "alpha", freeze, cancellationToken: Ct);
+        var outcomes = (await AgentFreezing.AllAsync(deployment.Directory, "alpha", freeze, cancellationToken: Ct)).Agents;
 
         Assert.Equal([Orders], outcomes.Select(o => o.Agent));
         Assert.DoesNotContain(deployment["alpha"].Frozen, f => f.Agent == Billing.Value);
@@ -183,7 +183,7 @@ public sealed class AgentFreezingAcrossProjectsTests
         deployment["beta"].Registry.Add(Row(Orders));
         deployment["beta"].Registry.Add(Row(Billing));
 
-        var outcomes = await AgentFreezing.AllAsync(deployment.Directory, "alpha", freeze: true, keep, Ct);
+        var outcomes = (await AgentFreezing.AllAsync(deployment.Directory, "alpha", freeze: true, keep, Ct)).Agents;
 
         Assert.Equal([Orders], outcomes.Select(o => o.Agent));
 
@@ -207,7 +207,7 @@ public sealed class AgentFreezingAcrossProjectsTests
         deployment["alpha"].Registry.Add(Row(Orders));
         deployment["alpha"].Registry.Add(Row(Billing, frozen: true));
 
-        var outcomes = await AgentFreezing.AllAsync(deployment.Directory, "alpha", freeze: false, cancellationToken: Ct);
+        var outcomes = (await AgentFreezing.AllAsync(deployment.Directory, "alpha", freeze: false, cancellationToken: Ct)).Agents;
 
         Assert.Equal([Billing], outcomes.Select(o => o.Agent));
         Assert.Equal([Billing.Value], deployment["alpha"].Unfrozen.Select(f => f.Agent));
@@ -221,7 +221,10 @@ public sealed class AgentFreezingAcrossProjectsTests
 
         deployment["alpha"].Registry.Add(Row(Orders));
 
-        Assert.Empty(await AgentFreezing.AllAsync(deployment.Directory, "elsewhere", freeze: true, cancellationToken: Ct));
+        var none = await AgentFreezing.AllAsync(deployment.Directory, "elsewhere", freeze: true, cancellationToken: Ct);
+
+        Assert.Empty(none.Agents);
+        Assert.Contains("no project named 'elsewhere'", none.Problem, StringComparison.Ordinal);
         Assert.Equal(0, deployment["alpha"].Calls);
     }
 

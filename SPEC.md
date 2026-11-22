@@ -800,7 +800,7 @@ it, which a message expecting nothing back never told anybody (principle 2.7).
 running is given a turn, by the machine that holds it (§4). What the sender is told alongside
 the exchange identifier is what became of the receiver: started, already running, already being
 seen to, not reachable from here, **open outside Parley** (§11.7) — it reads the message when somebody
-prompts it — **frozen** by the person (§11.1) — it reads the message once it is unfrozen — or **with the
+prompts it — **frozen** by the person (§14) — it reads the message once it is unfrozen — or **with the
 person**. **None of these is a refusal.** The
 Request is stored before any of it is decided, and an unreachable receiver is flagged to the person
 running the deployment rather than written off (principle 2.8).
@@ -1607,12 +1607,12 @@ CREATE TABLE agents (
   -- When its node was first asked to refresh it after a line accepted automatically (§11.1), kept here for the
   -- same reason. Set by tr_refreshing_marks_the_agent.
   refreshed_utc   TEXT    CHECK (refreshed_utc IS NULL OR unixepoch(refreshed_utc) IS NOT NULL),
-  -- When a person froze this agent (§11.1); NULL when it is not frozen. Nothing starts a frozen agent: not new
+  -- When a person froze this agent (§14); NULL when it is not frozen. Nothing starts a frozen agent: not new
   -- work, not a person's Start or Restart. Only a person writes it. `unfreeze` clears it, and so does the broker's
   -- next start unless `keep_frozen`. On the agent's row rather than a table of its own, so a purge removes it with
   -- the row and a rename carries it to the new name.
   frozen_utc        TEXT    CHECK (frozen_utc IS NULL OR unixepoch(frozen_utc) IS NOT NULL),
-  -- The run of the broker the person froze it under (§11.1): a number the broker gives itself at every start, so a later start,
+  -- The run of the broker the person froze it under (§14): a number the broker gives itself at every start, so a later start,
   -- which is what a logon or a reboot brings, lets the freeze lapse unless `keep_frozen`.
   frozen_run      TEXT    CHECK (frozen_run IS NULL OR (frozen_utc IS NOT NULL AND length(frozen_run) = 36)),
   -- The person's choice that this freeze outlasts a start of the broker; cleared with the freeze.
@@ -3587,10 +3587,10 @@ other could.
 | `archive(conversation)` | Put a conversation out of the way. It stops appearing in `conversations()` unless the caller asks for archived ones, and nothing else about it changes: messages are still delivered, exchanges still open and close, and no agent is told. A view decision, made durable so every operator and every client sees the same one. |
 | `unarchive(conversation)` | Reverse it. |
 | `destroy(conversation)` | Delete a conversation and every message, exchange and file belonging to it, and the record of who read those exchanges (§5.8), for every participant. Destroys its peers' side too and cannot be undone. Leaves the record of §14, which holds facts and no content. Named apart from `purge`, which takes an agent: two operations on different subjects sharing one name is how the wrong one gets bound. |
-| `start(agent)` | Ask a node that can resolve this agent's name to a catalogued checkout (§12) to launch it now, rather than waiting for a question to arrive. Returns whether a node accepted the request. The agent registers itself on attaching, exactly as §12.3 permits — this operation causes a launch and never a registration. Refused for the person seat: nothing starts a person. Refused for an agent open outside Parley (§11.7): a second process in one checkout is two models editing it. Refused for a frozen agent (§11.1), with a sentence saying to unfreeze it first. |
+| `start(agent)` | Ask a node that can resolve this agent's name to a catalogued checkout (§12) to launch it now, rather than waiting for a question to arrive. Returns whether a node accepted the request. The agent registers itself on attaching, exactly as §12.3 permits — this operation causes a launch and never a registration. Refused for the person seat: nothing starts a person. Refused for an agent open outside Parley (§11.7): a second process in one checkout is two models editing it. Refused for a frozen agent (§14), with a sentence saying to unfreeze it first. |
 | `stop(agent)` | Ask the node that started this agent to stop it once its current turn is over (§11.1). Returns whether a node was asked: false when nothing is running under the name. It ends a process and never work: what the agent owes stays owed, and the next work for it starts it again, because only retirement gates routing (§14). Refused for the person seat and the facilitator, for an agent open outside Parley (§11.7), which is not a process any node holds: an editor's session belongs to whoever opened it, and one a node that is gone left running is ended with `kill`; and for one whose machine has no node joined that can start it. |
-| `restart(agent)` | As `stop`, then started again with its launch configuration read afresh. False, and nothing started, when it is not running: that is `start`'s. Refused where `stop` is, and for a frozen agent (§11.1), which nothing starts again: a frozen agent whose turn has not ended is already being stopped. |
-| `freeze(agent)` | Put a person's freeze on an agent in this project (§11.1). Recorded first, in the agent's row (`frozen_utc`, §9), then the node that started it is asked to stop it once its turn is over, as `stop` does. Returns whether it was newly frozen and what became of its process: asked to stop, not running, open outside Parley, or no node joined. An agent a node had already been asked to start is not running yet; it is stopped when it attaches. While frozen, nothing starts the agent: not new work, not `start`, not `restart`, and for a freeze kept across a start of the broker not the restart wake (§11.1) either. What it owes stays open, and a message for it is stored and its sender told the receiver is frozen. Takes `keep_frozen`: without it, the next start of the broker lifts the freeze (§11.1). Never closes, moves or answers anything. Refused for the person seat and the facilitator, and for a name nothing has registered under. It freezes the agent in this project only; a surface that serves several projects freezes it in each project that lists it, because the one process serves them all (§11.6). The person's alone: the `Agents` service carries no such operation. |
+| `restart(agent)` | As `stop`, then started again with its launch configuration read afresh. False, and nothing started, when it is not running: that is `start`'s. Refused where `stop` is, and for a frozen agent (§14), which nothing starts again: a frozen agent whose turn has not ended is already being stopped. |
+| `freeze(agent)` | Put a person's freeze on an agent in this project (§14). Recorded first, in the agent's row (`frozen_utc`, §9), then the node that started it is asked to stop it once its turn is over, as `stop` does. Returns whether it was newly frozen and what became of its process: asked to stop, not running, open outside Parley, or no node joined. An agent a node had already been asked to start is not running yet; it is stopped when it attaches. While frozen, nothing starts the agent: not new work, not `start`, not `restart`, and for a freeze kept across a start of the broker not the restart wake (§14) either. What it owes stays open, and a message for it is stored and its sender told the receiver is frozen. Takes `keep_frozen`: without it, the next start of the broker lifts the freeze (§14). Never closes, moves or answers anything. Refused for the person seat and the facilitator, and for a name nothing has registered under. It freezes the agent in this project only; a surface that serves several projects freezes it in each project that lists it, because the one process serves them all (§11.6). The person's alone: the `Agents` service carries no such operation. |
 | `unfreeze(agent)` | Clear a freeze. Returns whether there was one. The agent is then asked to start if it owes open work and the resume policy allows (§14), as after a restart, or if anything is waiting for it that it has not collected (a message, or a closure poll waiting on its vote), whatever the policy: each of those had its wake declined while the agent was frozen. One with nothing to do stays as it is until work arrives. |
 | `kill(agent)` | Ask the node on this agent's machine to end, now, the process a node that is gone left running (§11.1). Returns whether a node was asked. Only for an agent whose attachment presented a launch token no node now holds (§11.7). Refused, with a sentence, for one open in somebody's editor, which has no token, for one a node holds, which `stop` ends once its turn is over, for an adapter that did not say which process hosts it, for the person seat and the facilitator, and where its machine has no node joined. It does not wait for a turn, so what the process was part-way through is lost; what the agent owes stays owed and the next work for it starts it again, because only retirement gates routing (§14). The node checks what it is told to end and ends only a running process named for an agent's own kind (`claude`), never itself and never one it hosts. |
 | `place_persons_file(conversation_id, name, bytes)` | Place a file as the person, into a conversation that exists, under §9.5's rules for a placement: renamed for its characters, refused when the name already holds other content or a file nothing placed, and already current when it is the person's own with the same content. The file is the person's. Named apart from §10.1's `file_place`, which is an agent's. |
@@ -3791,7 +3791,8 @@ that an agent is stuck, is running a session they no longer trust, or should rea
 they just changed. It ends a process and nothing else. What the agent owes stays owed and its
 conversations are untouched, so it is not a way to end work (§6) and is never a timeout: the broker
 never stops an agent on its own account. A stopped agent is started again by the next work for it, as
-any agent is, because only retirement gates routing (§14); a person who wants it kept out retires it.
+any agent is, because only retirement gates routing (§14); a person who wants it kept stopped freezes it (§14), and one who wants it out
+for good retires it.
 It waits for the turn rather than cutting it short, and a turn is bounded by the node's patience, so the
 wait is bounded too.
 
@@ -4568,10 +4569,12 @@ it to the new name, and a purge ends it with the row, so a name registered again
 **A start of the broker lifts it, unless the person said not to.** Every start gives the broker a number of its own (a GUID, new each
 time), and a freeze is stored with the number of the run that made it. When the broker starts and finds a freeze made under a
 different number, that is a logon or a reboot, because a start is what either brings: the freeze lapses, and the agent is started if it
-owes open work, as the restart wake does (below). **An unfreeze pays what the freeze put off.** A message or a closure poll that
+owes open work, as the restart wake does (above). **An unfreeze pays what the freeze put off.** A message or a closure poll that
 reached a frozen agent had its wake declined, so when the freeze ends, by `unfreeze` or by a lapse, the agent is asked to start if
 anything is waiting for it that it has not collected, whatever the resume policy; after a lapse that is at the first join of its
-machine's node, the first moment it can be started. A freeze made with `keep_frozen` (the person's choice, "do not unfreeze on logon")
+machine's node, the first moment it can be started. An agent unfrozen while the freeze's stop is still waiting for its turn to end
+is asked again once that process has gone, because the turn asked for at the unfreeze went to a process the stop then ended. An
+agent that has been retired is not started by a freeze ending. A freeze made with `keep_frozen` (the person's choice, "do not unfreeze on logon")
 is not lifted by a start and stays until the person unfreezes it. Unfreezing forgets the choice. A broker restart that is not a
 logon, an install or a crash, lifts a freeze the same way, because the broker cannot tell them apart and does not try; the person
 who wants a freeze to outlast it sets `keep_frozen`. Because one process serves every

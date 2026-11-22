@@ -972,7 +972,7 @@ service Operators {
   // token no node now holds; never for one open in somebody's editor, which has no token, and never for a supervised one.
   rpc Kill(StopRequest) returns (DidItReply);
 
-  // A person's freeze on an agent (section 11.1): recorded in this project's store, then the agent's node is asked to stop it after
+  // A person's freeze on an agent (section 14): recorded in this project's store, then the agent's node is asked to stop it after
   // its current turn. While frozen nothing starts it -- not new work, not a person's Start or Restart -- and its open work stays
   // open. Unfreeze clears it, and so does the broker's next start unless the freeze was made with keep_frozen. A freeze is the
   // person's alone: the Agents service carries neither.
@@ -1006,7 +1006,7 @@ message AgentRequest {
 }
 
 // A person's freeze of an agent. `keep_frozen` asks that the freeze outlast a start of the broker: without it, a later start (what a
-// logon or a reboot brings) lets the freeze lapse and the agent is started again if it owes work (section 11.1).
+// logon or a reboot brings) lets the freeze lapse and the agent is started again if it owes work (section 14).
 message FreezeRequest {
   string agent = 1;
   bool keep_frozen = 2;
@@ -1194,7 +1194,7 @@ message RegistryRow {
   // node now holds. `open_outside` is also true, since no node can give it a turn, but it was not opened by somebody.
   bool unsupervised = 20;
 
-  // When a person froze the agent in this project (section 11.1); empty when it is not frozen.
+  // When a person froze the agent in this project (section 14); empty when it is not frozen.
   string frozen_utc = 21;
 
   // Whether the person asked that the freeze outlast a start of the broker; false when it is not frozen.
@@ -1575,7 +1575,7 @@ enum WakeOutcome {
   // The receiver is running only as a process Parley did not start (section 11.7): nobody was asked, and it reads
   // the message when somebody prompts it.
   WAKE_OUTCOME_OPEN_OUTSIDE = 6;
-  // A person has frozen the receiver (section 11.1): nobody was asked to start it, and the work waits until it is unfrozen, by them or by the broker's next start.
+  // A person has frozen the receiver (section 14): nobody was asked to start it, and the work waits until it is unfrozen.
   WAKE_OUTCOME_FROZEN = 7;
 }
 

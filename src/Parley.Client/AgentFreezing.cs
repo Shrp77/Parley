@@ -21,9 +21,22 @@ public sealed record FreezeOutcome(AgentName Agent, IReadOnlyList<FrozenIn> Proj
     public bool AnyChanged => Projects.Any(p => p.Changed);
 }
 
+/// <summary>What freezing or unfreezing every agent of a project did.</summary>
+/// <param name="Agents">One outcome per agent that was acted on.</param>
+/// <param name="Problem">Why the project's agents could not be read, so nothing was done, or null when they were read.</param>
+/// <remarks>
+/// The problem is kept apart from an empty list because they mean opposite things to a person about to restart the machine:
+/// "nobody needed freezing" and "nobody was frozen".
+/// </remarks>
+public sealed record FreezeAllOutcome(IReadOnlyList<FreezeOutcome> Agents, string? Problem)
+{
+    /// <summary>How many agents it worked for in every project that serves them.</summary>
+    public int Done => Agents.Count(agent => agent.Complete);
+}
+
 /// <summary>
 /// Freezes and unfreezes an agent in every project that serves it, so one act freezes the agent whichever project's work would wake it
-/// (SPEC.md §11.1).
+/// (SPEC.md §14).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -74,7 +87,7 @@ public static class AgentFreezing
         return (serving, unreachable);
     }
 
-    /// <summary>Says which projects a freeze or an unfreeze of an agent reaches, for the person to read before agreeing (SPEC.md §11.1).</summary>
+    /// <summary>Says which projects a freeze or an unfreeze of an agent reaches, for the person to read before agreeing (SPEC.md §14).</summary>
     /// <param name="agent">The agent.</param>
     /// <param name="serving">The projects that list it.</param>
     /// <param name="unreachable">The projects that could not be asked.</param>
@@ -148,12 +161,12 @@ public static class AgentFreezing
     /// <param name="freeze"><see langword="true"/> to freeze them, <see langword="false"/> to unfreeze them.</param>
     /// <param name="keepFrozen">For a freeze, whether it outlasts a start of the broker.</param>
     /// <param name="cancellationToken">Cancels the acts.</param>
-    /// <returns>One outcome per agent, or none when the project is unknown or could not be read.</returns>
+    /// <returns>One outcome per agent, and why the project could not be read when it could not.</returns>
     /// <remarks>
     /// The person's seat and the facilitator are left out: neither is started by a node, and storage refuses to freeze either.
     /// A retired agent is left out too, since nothing wakes it.
     /// </remarks>
-    public static async Task<IReadOnlyList<FreezeOutcome>> AllAsync(
+    public static async Task<FreezeAllOutcome> AllAsync(
         BrokerDirectory directory, string project, bool freeze, bool keepFrozen = false, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(directory);
@@ -162,16 +175,21 @@ public static class AgentFreezing
 
         if (settings is null)
         {
-            return [];
+            return new FreezeAllOutcome([], $"This console has no project named '{project}'.");
         }
 
         var read = await BrokerDirectory.ReadAsync(async () =>
             await new BrokerClient(directory.ClientFor(settings)).RegistryAsync(cancellationToken).ConfigureAwait(false))
             .ConfigureAwait(false);
 
+        if (read.Value is not { } registry)
+        {
+            return new FreezeAllOutcome([], read.Problem ?? "This project's broker did not answer.");
+        }
+
         var outcomes = new List<FreezeOutcome>();
 
-        foreach (var agent in (read.Value ?? [])
+        foreach (var agent in registry
             .Where(a => a.Status == AgentStatus.Active && !a.Facilitator && !PersonSeat.Is(a.Name))
             .Where(a => freeze ? !a.Frozen : a.Frozen)
             .Select(a => a.Name))
@@ -179,7 +197,7 @@ public static class AgentFreezing
             outcomes.Add(await ActAsync(directory, agent, freeze, keepFrozen, cancellationToken).ConfigureAwait(false));
         }
 
-        return outcomes;
+        return new FreezeAllOutcome(outcomes, null);
     }
 
     /// <summary>Says what freezing did, in a few sentences a person can act on.</summary>

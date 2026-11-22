@@ -462,6 +462,27 @@ public sealed partial class InboxFollowsExchangesTests
     }
 
     [Fact]
+    public async Task A_start_the_broker_refuses_is_said_in_the_brokers_own_sentence_and_not_claimed()
+    {
+        // A frozen agent: the broker refuses the start with a failed precondition whose detail says what to do about it.
+        const string Why = "orders is frozen, so nothing starts it. Unfreeze it first.";
+
+        using var console = Console();
+        console.Broker.StartRefusal = Why;
+
+        WaitingOn(console, Orders, 40);
+
+        var after = await NudgeAsync(console, Orders);
+
+        // The page did ask, so the sentence below is the broker's answer and not a start that was never tried.
+        Assert.Equal(Orders, Assert.Single(console.Broker.Started).Agent);
+        Assert.Contains($"role=\"status\">{Why}<", after, StringComparison.Ordinal);
+        Assert.DoesNotContain("was asked to look", after, StringComparison.Ordinal);
+        Assert.DoesNotContain("was not asked:", after, StringComparison.Ordinal);
+        Assert.DoesNotContain("Nothing was asked of", after, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task The_facilitator_and_the_person_are_never_asked_to_look_even_by_a_forged_form()
     {
         using var console = Console();

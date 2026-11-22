@@ -6,7 +6,7 @@ namespace Parley.Client.Tests.Views;
 
 /// <summary>
 /// That a person's freeze on an agent reads as the one of three phrases it is, that a surface asking whether a row is
-/// frozen is told so for all three and for nothing else, and that a retired agent never reads as frozen (SPEC.md §11.1).
+/// frozen is told so for all three and for nothing else, and that a retired agent never reads as frozen (SPEC.md §14).
 /// </summary>
 /// <remarks>
 /// A surface offers Unfreeze on a row by asking <see cref="Standing.IsFrozen"/>. A phrase left out of it is a frozen agent

@@ -2,11 +2,13 @@
 
 ## Operators service (proto/parley.proto)
 
-- `rpc Freeze(AgentRequest) returns (FreezeReply)`: records the freeze, then asks the agent's node to stop it after its turn.
+- `rpc Freeze(FreezeRequest) returns (FreezeReply)`: records the freeze, then asks the agent's node to stop it after its turn.
+  `FreezeRequest { string agent = 1; bool keep_frozen = 2; }`: without `keep_frozen` the broker's next start lifts the freeze.
   `FreezeReply { bool changed = 1; string process = 2; }` where `changed` is false when it was already frozen and `process` is one
   of `stopping`, `not_running`, `open_outside`, `no_node`. Refuses the facilitator, the person seat, and an unknown agent.
-- `rpc Unfreeze(AgentRequest) returns (DidItReply)`: clears it; `changed` false when it was not frozen. Then, as after a restart,
-  the agent is asked to start if it owes work.
+- `rpc Unfreeze(AgentRequest) returns (DidItReply)`: clears it; `changed` false when it was not frozen. Then the agent is asked to start if it owes work, as after a restart, or if a
+  message or a closure poll is waiting for it.
+- `Restart` of a frozen agent is `FailedPrecondition`, as `Start` is.
 - `Start` on a frozen agent is `FailedPrecondition`: "frozen; unfreeze it first".
 - `ListAgentsReply`'s agent row gains `frozen_utc` (string, empty when not frozen).
 - `Agents` service: **no** Freeze or Unfreeze (`AgentsCannotSetTheirOwnLineTests` matches by word).

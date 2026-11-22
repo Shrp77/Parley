@@ -17,7 +17,7 @@ public static class StoppingWords
     /// <returns>The description.</returns>
     public static string Stopping(string agent) =>
         $"'{agent}' is stopped once its current turn is over. " + WhatItKeeps + " The next work for it starts it "
-        + "again, as any agent is started; to keep it from being started, retire it.";
+        + "again, as any agent is started; to keep it from being started, freeze it, or retire it for good.";
 
     /// <summary>Describes a restart before the person confirms it.</summary>
     /// <param name="agent">The agent.</param>
@@ -37,7 +37,7 @@ public static class StoppingWords
         $"'{agent}' was started by a node that is gone, so no node holds its process and it cannot be stopped at the end of "
         + "its turn. This ends the process now, and whatever it is in the middle of is lost, along with what the session "
         + "had learned. What it owes stays owed, and its conversations are untouched. The next work for it starts it again, under the node that is "
-        + "here; to keep it from being started, retire it.";
+        + "here; to keep it from being started, freeze it, or retire it for good.";
 
     /// <summary>What a person is told after asking for such a process to be ended.</summary>
     /// <param name="agent">The agent's name.</param>

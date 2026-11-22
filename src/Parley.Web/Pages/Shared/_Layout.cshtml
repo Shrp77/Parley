@@ -3334,7 +3334,8 @@
                 <button type="button" id="pg-pin" class="tonal" aria-pressed="false">Pin</button>
                 <button type="button" id="pg-close" class="quiet">Close</button>
             </div>
-            <div class="pg-body" id="pg-body" aria-live="polite"></div>
+            @* Not a live region: the whole graph is swapped on a timer, and a screen reader would be read all of it again each time. *@
+            <div class="pg-body" id="pg-body"></div>
         </aside>
         <script>
             (function () {
@@ -3350,11 +3351,52 @@
                 function load() { try { var s = JSON.parse(localStorage.getItem(key) || "{}"); if (s && s.pinned) { state.pinned = true; state.open = !!s.open; } if (s && s.hideClosed) { state.hideClosed = true; } } catch (e) { } }
                 function save() { try { localStorage.setItem(key, JSON.stringify(state)); } catch (e) { } }
 
+                var drawn = null;
+                var asked = 0;
+
+                // Refreshed in place. The answer is swapped in only when it differs from what is drawn (its stamp aside), and what
+                // the person had done to the panel is put back: the list they opened stays open, the link they were on keeps the
+                // focus, and the panel stays where it was scrolled. The list is the picture's equal, so it must be readable for
+                // longer than one refresh.
                 function read() {
+                    var mine = ++asked;
+
                     fetch("/Graph", { credentials: "same-origin", cache: "no-store", headers: { "Accept": "text/html" } })
                         .then(function (r) { if (!r.ok) { throw new Error(String(r.status)); } return r.text(); })
-                        .then(function (html) { body.innerHTML = html; })
-                        .catch(function () { body.textContent = "The graph could not be read. Close the panel and open it again to retry."; });
+                        .then(function (html) {
+                            // An older answer that lands after a newer one is dropped.
+                            if (mine !== asked) { return; }
+
+                            var same = html.replace(/data-asof="[^"]*"/, "");
+
+                            if (same === drawn) { return; }
+
+                            var list = body.querySelector(".pg-list");
+                            var open = !!(list && list.open);
+                            var on = document.activeElement;
+                            var href = on && body.contains(on) ? on.getAttribute("href") : null;
+                            var top = body.scrollTop;
+
+                            body.innerHTML = html;
+                            drawn = same;
+
+                            if (open) { var again = body.querySelector(".pg-list"); if (again) { again.open = true; } }
+
+                            if (href) {
+                                var links = body.querySelectorAll("a[href]");
+                                for (var i = 0; i < links.length; i++) {
+                                    if (links[i].getAttribute("href") === href) { links[i].focus(); break; }
+                                }
+                            }
+
+                            body.scrollTop = top;
+                        })
+                        .catch(function () {
+                            if (mine !== asked) { return; }
+
+                            // A graph already drawn stays: it is tried again on the timer, and one failed read is not worth losing it.
+                            if (drawn === null) { body.textContent = "The graph could not be read. It is tried again every fifteen seconds while the panel is open."; }
+                        });
                 }
 
                 function draw() {

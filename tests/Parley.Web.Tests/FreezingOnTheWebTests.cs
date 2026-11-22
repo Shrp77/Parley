@@ -9,7 +9,7 @@ namespace Parley.Web.Tests;
 
 /// <summary>
 /// Freezing and unfreezing from the web console: what the agent's page offers, and what each confirmation asks the broker
-/// for (SPEC.md §10.2 <c>freeze</c>, <c>unfreeze</c>; §11.1).
+/// for (SPEC.md §10.2 <c>freeze</c>, <c>unfreeze</c>; §14).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -90,7 +90,7 @@ public sealed partial class FreezingOnTheWebTests
         Assert.Equal(ticked, asked.KeepFrozen);
         Assert.Empty(console.Broker.Unfrozen);
         Assert.Equal(0, Asked(console, UnfreezePath));
-        Assert.Contains("1 agent frozen", after, StringComparison.Ordinal);
+        Assert.Contains("1 of 1 agent frozen", after, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -103,7 +103,40 @@ public sealed partial class FreezingOnTheWebTests
         Assert.Equal(Billing, Assert.Single(console.Broker.Unfrozen).Agent);
         Assert.Empty(console.Broker.Frozen);
         Assert.Equal(0, Asked(console, FreezePath));
-        Assert.Contains("1 agent unfrozen", after, StringComparison.Ordinal);
+        Assert.Contains("1 of 1 agent unfrozen", after, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("freezeall", "nothing was frozen")]
+    [InlineData("unfreezeall", "nothing was unfrozen")]
+    public async Task A_project_whose_agents_cannot_be_read_is_said_to_have_had_nothing_done_and_never_nothing_to_do(string action, string said)
+    {
+        // A failed read came back as no agents, and the page read no agents as "every agent is already frozen": a person
+        // freezing everything before a restart was told so while nobody was frozen (review, lens 2 run 1 on 0.64.4).
+        using var console = Everyone();
+
+        var after = await ConfirmAsync(console, action, RoadmapConsole.Project, [], failsOn: "DescribeRegistry");
+
+        Assert.Contains(said, after, StringComparison.Ordinal);
+        Assert.Contains("could not be read", after, StringComparison.Ordinal);
+        Assert.DoesNotContain("Nothing to", after, StringComparison.Ordinal);
+        Assert.Empty(console.Broker.Frozen);
+        Assert.Empty(console.Broker.Unfrozen);
+    }
+
+    [Theory]
+    [InlineData("freezeall", "Operators/Freeze", "0 of 1 agent frozen")]
+    [InlineData("unfreezeall", "Operators/Unfreeze", "0 of 1 agent unfrozen")]
+    public async Task Agents_the_broker_would_not_freeze_are_counted_as_not_done(string action, string failsOn, string said)
+    {
+        // The count was of what was tried, so two refusals read "2 agents frozen".
+        using var console = Everyone();
+
+        var after = await ConfirmAsync(console, action, RoadmapConsole.Project, [], failsOn: failsOn);
+
+        Assert.Contains(said, after, StringComparison.Ordinal);
+        Assert.Contains("1 was not", after, StringComparison.Ordinal);
+        Assert.Contains("not done", after, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -218,11 +251,15 @@ public sealed partial class FreezingOnTheWebTests
         string action,
         string subject,
         IEnumerable<KeyValuePair<string, string>> fields,
-        string query = "")
+        string query = "",
+        string failsOn = "")
     {
         using var client = console.CreateClient();
 
         var described = await client.GetStringAsync(Address(action, subject, string.Empty), Ct);
+
+        // After the description is read, so it is the act that meets the broker's failure.
+        console.Broker.FailsOn = failsOn;
 
         using var form = new FormUrlEncodedContent(
         [

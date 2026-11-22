@@ -248,7 +248,7 @@ logon as well, check *Do not unfreeze on logon* when you freeze it (on the confi
 terminal's row menu); it then stays frozen until you unfreeze it yourself. Anything that restarts the broker, such as installing a
 new build or a crash, lifts a freeze the same way, because the broker cannot tell that from a logon. One agent process serves every project whose
 repository is enrolled, so a freeze covers the agent in each project that lists it, and the page names them before you agree: freezing
-it for one project's sake stops its work for the others too. A project that cannot be reached is named and left unfrozen. An agent
+it for one project's sake stops its work for the others too. A project that cannot be reached is named and left unfrozen. *Freeze all* says how many agents it froze out of how many it tried, and when a project's agents cannot be read it says that nothing was frozen. An agent
 somebody opened in an editor can be frozen, so that nothing starts it again, but Parley cannot end that session.
 
 **A restart starts the agents that owe work.** When a machine's node joins a broker that has just started (after an

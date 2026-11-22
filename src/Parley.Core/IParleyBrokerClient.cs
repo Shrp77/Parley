@@ -335,7 +335,7 @@ public interface IParleyBrokerClient
     /// <remarks>
     /// <para>
     /// <b>It ends a process, not the agent.</b> What it owes stays owed, and the next work for it starts it again, as any
-    /// agent is started: only retirement keeps one out. What the process had learned is lost, which is the cost a person
+    /// agent is started: only a freeze or retirement keeps one from being started. What the process had learned is lost, which is the cost a person
     /// is told before doing it.
     /// </para>
     /// <para>
@@ -377,7 +377,7 @@ public interface IParleyBrokerClient
     Task<bool> KillAsync(
         AgentName agent, string because, CancellationToken cancellationToken = default);
 
-    /// <summary>Freeze an agent in this project: nothing starts it until a person unfreezes it, or the broker next starts unless the freeze is kept (SPEC.md §10.2 <c>freeze</c>, §11.1).</summary>
+    /// <summary>Freeze an agent in this project: nothing starts it until a person unfreezes it, or the broker next starts unless the freeze is kept (SPEC.md §10.2 <c>freeze</c>, §14).</summary>
     /// <param name="agent">The agent.</param>
     /// <param name="keepFrozen">
     /// Whether the freeze outlasts a start of the broker. Without it a later start, which is what a logon or a reboot brings,

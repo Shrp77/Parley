@@ -17,7 +17,7 @@ dependency graph rules in CLAUDE.md. **Scale**: tens of agents, hundreds of conv
 
 ## Constitution Check
 
-- *The specification is the product*: SPEC.md gains the freeze (§9 schema, §10.2 operations, §11.1 restart wake, §11.6 state
+- *The specification is the product*: SPEC.md gains the freeze (§9 schema, §10.2 operations, §14 restart wake, §11.6 state
   wording) in the same change. Code and spec move together.
 - *No agent has authority over another*: Freeze and Unfreeze are on `Operators` only; a test fails if `Agents` gains either.
 - *Nothing times out; work stays open*: a freeze closes, moves and answers nothing. It is a recorded reduction of the 2026-11-18
@@ -36,7 +36,7 @@ No gate is violated; the one standing rule narrowed is named above.
 | Store | `011_agent_hold.sql`: `ALTER TABLE agents ADD COLUMN frozen_utc TEXT` with a CHECK; `AgentRepository` reads and sets it. |
 | Core | `AgentRecord.FrozenUtc`; `FreezeResult`/`FreezeProcess`; `IParleyBrokerClient.FreezeAsync`/`UnfreezeAsync`. |
 | Broker | `OperatorConsole.FreezeAsync`/`UnfreezeAsync` (the store writes). |
-| Server | `Ask` refuses a frozen agent (`WakeOutcome.Frozen`); `Operators.Freeze` records then `RequestStop`; `Unfreeze` clears then asks it to start if it owes work; `Start` refuses a frozen agent; `frozen_utc` on the agent row. |
+| Server | `Ask` refuses a frozen agent (`WakeOutcome.Frozen`); `Operators.Freeze` records then `RequestStop`; `Unfreeze` clears then asks it to start if it owes work or anything is waiting for it; `Start` refuses a frozen agent; `frozen_utc` on the agent row. |
 | Transport | `Freeze`, `Unfreeze`, `FreezeReply`, `frozen_utc`. |
 | Client | `BrokerClient` calls; `AgentFreezing` (every project the agent serves, one result); `AgentGraph` (derivation and layout); frozen in agent wording. |
 | Web | `Pages/Graph` fragment; layout tab, pin and script; `Act` arms `freeze`, `unfreeze`, `freezeall`, `unfreezeall`; the agent page and the graph link them. |

@@ -170,7 +170,7 @@ public sealed class SurfaceBoundaryTests
             nameof(OperatorConsole.SetConversationArchivedAsync),
             nameof(OperatorConsole.CountArchivedConversationsAsync),
 
-            // A person's freeze on an agent (§11.1), and clearing it. An operator operation because an agent able to freeze a peer
+            // A person's freeze on an agent (§14), and clearing it. An operator operation because an agent able to freeze a peer
             // would be deciding that nothing starts it, and one able to unfreeze a frozen agent would undo a person's decision:
             // the authority Principle II says no agent has. Named apart from the facilitator's own `HoldAsync`.
             nameof(OperatorConsole.FreezeAgentAsync),

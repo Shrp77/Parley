@@ -5,7 +5,7 @@ using Wire = Parley.Transport;
 namespace Parley.Server.Tests;
 
 /// <summary>
-/// What a start of the broker does to a person's freeze: lifts it, unless the person asked that it outlast one (SPEC.md §11.1).
+/// What a start of the broker does to a person's freeze: lifts it, unless the person asked that it outlast one (SPEC.md §14).
 /// </summary>
 /// <remarks>
 /// <para>

@@ -2712,10 +2712,17 @@ internal sealed partial class Shell : Window
         var act = (freeze ? FreezeThisTitle : UnfreezeThisTitle) + agent.Value + (freeze && keepFrozen ? KeepFrozenSuffix : string.Empty);
 
         // One process serves every project the agent is in, so the person is told which a freeze reaches before they agree
-        // (SPEC.md §11.1). That is a read of each project, so the description opens after it, from the queue.
+        // (SPEC.md §14). That is a read of each project, so the description opens after it, from the queue.
         Queue(async token =>
         {
             var (serving, unreachable) = await AgentFreezing.ServedByAsync(_directory, agent, token).ConfigureAwait(false);
+
+            // The read can land after the person has moved on: a description that opened over another project would be about
+            // an agent no longer in view.
+            if (Current?.Name != project.Name)
+            {
+                return;
+            }
 
             var menu = Prompting.Choose(
                 act,

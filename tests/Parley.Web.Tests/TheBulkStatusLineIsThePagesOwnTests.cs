@@ -54,4 +54,22 @@ public sealed class TheBulkStatusLineIsThePagesOwnTests
         Assert.DoesNotContain("2000000000 could not", page, StringComparison.Ordinal);
         Assert.DoesNotContain("-7 conversation", page, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task A_count_of_changes_above_the_bound_is_shown_as_the_bound()
+    {
+        var page = await GetAsync("filed=2000000000&did=archived");
+
+        Assert.Contains("<strong>500 conversations archived.</strong>", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("2000000000 conversation", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_count_of_failures_below_nothing_says_nothing_about_failures()
+    {
+        var page = await GetAsync("filed=2&failed=-3&did=archived");
+
+        Assert.Contains("<strong>2 conversations archived.</strong></p>", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("could not be changed", page, StringComparison.Ordinal);
+    }
 }

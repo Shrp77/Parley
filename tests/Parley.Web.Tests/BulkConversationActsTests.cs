@@ -107,6 +107,22 @@ public sealed partial class BulkConversationActsTests
     }
 
     [Fact]
+    public async Task Archiving_all_closed_never_takes_a_closed_conversation_that_holds_open_work()
+    {
+        // A conversation a person ended can still hold an exchange somebody owes. Filing it would take that work off the list.
+        using var console = Console();
+
+        console.Broker.Conversations.Add(
+            new Wire.ConversationSummary { ConversationId = "closed-owing", Closed = true, HasOpenExchange = true });
+
+        using var response = await BulkAsync(console, "archiveclosed");
+
+        // Only the fixture's one closed conversation that holds nothing.
+        Assert.Equal(1, Asked(console, Archive));
+        Assert.Equal(0, Asked(console, Unarchive));
+    }
+
+    [Fact]
     public async Task A_bulk_act_changes_no_more_than_its_bound_however_many_are_ticked()
     {
         using var console = Console();

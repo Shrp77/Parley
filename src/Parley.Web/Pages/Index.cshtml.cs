@@ -217,6 +217,16 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
         ManifestProblem = directory.ManifestProblem;
         AsOf = DateTimeOffset.Now;
 
+        ScopeToTheProjectItIsIn();
+    }
+
+    /// <summary>Holds the agents tab to the project it was opened inside, when the address names one.</summary>
+    /// <remarks>
+    /// Run by the page and by the answer that fills its grid alike. The grid's answer is a named handler, which does not run
+    /// <see cref="OnGet"/>, so "Agents in alpha" once listed every project's agents and reported other projects' failures.
+    /// </remarks>
+    private void ScopeToTheProjectItIsIn()
+    {
         if (AgentsTab && directory.Find(Request.Query["project"].ToString()) is { } inside)
         {
             InProject = inside;
@@ -407,6 +417,8 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
     public async Task<IActionResult> OnGetAgentTableAsync()
     {
         var token = HttpContext.RequestAborted;
+
+        ScopeToTheProjectItIsIn();
 
         var scoped = directory.Projects.Where(project => string.IsNullOrEmpty(Scope) || Scope == project.Name.Value);
 

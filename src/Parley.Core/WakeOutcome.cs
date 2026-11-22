@@ -91,8 +91,8 @@ public enum WakeOutcome
     OpenOutside = 5,
 
     /// <summary>
-    /// A person has frozen the recipient (SPEC.md §11.1): nobody was asked to start it, and the work waits in its mail until the
-    /// person unfreezes it.
+    /// A person has frozen the recipient (SPEC.md §14): nobody was asked to start it, and the work waits in its mail until it
+    /// is unfrozen.
     /// </summary>
     /// <remarks>
     /// Not <see cref="Unreachable"/>, which says nothing can run it now and the machine may be off: this is a decision a
