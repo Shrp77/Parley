@@ -25,12 +25,20 @@ public sealed partial class BulkConversationActsTests
     [GeneratedRegex("""name="__RequestVerificationToken"[^>]*value="([^"]+)""")]
     private static partial Regex Token();
 
-    /// <summary>A console whose project has one open, one closed and one closed-and-archived conversation.</summary>
+    /// <summary>
+    /// A console whose project has one conversation with work open, one idle and never ended, one closed and one
+    /// closed-and-archived.
+    /// </summary>
+    /// <remarks>
+    /// The idle one is what tells "closed" from "holds nothing open": without it a page that filed every conversation
+    /// nobody ended would pass every count here.
+    /// </remarks>
     private static RoadmapConsole Console()
     {
         var console = new RoadmapConsole();
 
         console.Broker.Conversations.Add(new Wire.ConversationSummary { ConversationId = "open", HasOpenExchange = true });
+        console.Broker.Conversations.Add(new Wire.ConversationSummary { ConversationId = "idle" });
         console.Broker.Conversations.Add(new Wire.ConversationSummary { ConversationId = "closed", Closed = true });
         console.Broker.Conversations.Add(new Wire.ConversationSummary { ConversationId = "filed", Closed = true, Archived = true });
 
