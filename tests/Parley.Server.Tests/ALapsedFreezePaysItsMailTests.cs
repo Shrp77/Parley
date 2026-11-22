@@ -20,6 +20,7 @@ namespace Parley.Server.Tests;
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class ALapsedFreezePaysItsMailTests : IDisposable
 {
     private const string Here = "alpha";

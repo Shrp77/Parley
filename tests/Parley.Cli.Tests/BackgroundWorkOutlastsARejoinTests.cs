@@ -21,6 +21,7 @@ namespace Parley.Cli.Tests;
 /// re-announces the process but not its background tasks, so the agent read as idle until the work ended.
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class BackgroundWorkOutlastsARejoinTests : IAsyncDisposable
 {
     private const string OneTask = """{"type":"system","subtype":"background_tasks_changed","tasks":[{"id":"b1"}]}""";

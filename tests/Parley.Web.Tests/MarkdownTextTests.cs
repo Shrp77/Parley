@@ -5,7 +5,7 @@ using Xunit;
 namespace Parley.Web.Tests;
 
 /// <summary>An agent's Markdown is formatted, and a peer's text can do nothing else to the page.</summary>
-[Unit]
+[Integration]
 public sealed class MarkdownTextTests
 {
     private static string Html(string text)
