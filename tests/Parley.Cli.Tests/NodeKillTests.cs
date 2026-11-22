@@ -219,4 +219,30 @@ public sealed class NodeKillTests : IDisposable
 
         Assert.Contains($"process {id} is not running", said, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// The name of the process an adapter named is the agent's choice: it can run its adapter under a copy of any program,
+    /// named anything a file may be. Printed as it is, a line separator, a next-line or a bidirectional override in it
+    /// forges a line of the node's log or reorders the one it is in (review, lens 2 run B on d99806d9).
+    /// </summary>
+    [Fact]
+    public async Task The_name_of_a_process_left_alone_is_printed_inert()
+    {
+        var hostile = "zz" + (char)0x2028 + "forged" + (char)0x0085 + "x" + (char)0x202E + "y";
+
+        using var other = Sleeper(hostile);
+
+        try
+        {
+            var said = await KillAsync(other.Id);
+
+            Assert.Contains("not an agent's own kind of process", said, StringComparison.Ordinal);
+            Assert.DoesNotContain(said.TrimEnd().EnumerateRunes(), Parley.Core.PrintableLine.Breaks);
+            Assert.False(other.HasExited, "it was ended");
+        }
+        finally
+        {
+            End(other);
+        }
+    }
 }

@@ -1495,7 +1495,7 @@ public static class NodeCommand
             {
                 if (!string.Equals(process.ProcessName, "claude", StringComparison.OrdinalIgnoreCase))
                 {
-                    return $"not ended: process {id} is '{process.ProcessName}', not an agent's own kind of process.";
+                    return $"not ended: process {id} is '{Inert.Line(process.ProcessName)}', not an agent's own kind of process.";
                 }
 
                 process.Kill(entireProcessTree: true);
