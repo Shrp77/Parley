@@ -298,6 +298,44 @@ public sealed partial class FreezingOnTheWebTests
         return WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync(Ct));
     }
 
+    [Fact]
+    public async Task A_frozen_agent_still_running_is_offered_neither_stop_nor_restart_on_its_page()
+    {
+        // Its node already stops it once its turn ends, and the broker refuses a restart; offered, Stop's words said new work
+        // starts it again, which a freeze prevents (review, lens 3 run B on 6257cf80). The terminal leaves both out too.
+        using var console = Everyone();
+        var row = Row(Orders, frozen: true);
+        row.Presence = Wire.AgentPresence.Running;
+        console.Broker.Registry.RemoveAll(r => r.Name == Orders);
+        console.Broker.Registry.Add(row);
+
+        var page = await AgentPageAsync(console, Orders);
+
+        Assert.DoesNotContain("action=stop&subject=", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("action=restart&subject=", page, StringComparison.Ordinal);
+        Assert.Contains("action=unfreeze&subject=", page, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(true, "end it with Kill")]
+    [InlineData(false, "whoever opened it closes it")]
+    public async Task The_words_before_a_freeze_promise_no_stop_for_a_process_no_node_holds(bool left, string said)
+    {
+        using var console = Everyone();
+        var row = Row(Orders);
+        row.Presence = Wire.AgentPresence.Running;
+        row.OpenOutside = true;
+        row.Unsupervised = left;
+        console.Broker.Registry.RemoveAll(r => r.Name == Orders);
+        console.Broker.Registry.Add(row);
+
+        using var client = console.CreateClient();
+        var page = WebUtility.HtmlDecode(await client.GetStringAsync(Address("freeze", Orders, string.Empty), Ct));
+
+        Assert.Contains(said, page, StringComparison.Ordinal);
+        Assert.DoesNotContain("will be stopped once its current turn ends", page, StringComparison.Ordinal);
+    }
+
     private static async Task<string> AgentPageAsync(RoadmapConsole console, string agent)
     {
         using var client = console.CreateClient();

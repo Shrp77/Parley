@@ -2451,7 +2451,7 @@ internal sealed partial class Shell : Window
     private const string FreezeThisTitle = "Freeze ";
 
     /// <summary>What follows the name when the freeze is the one a logon does not lift.</summary>
-    private const string KeepFrozenSuffix = ", and keep it frozen after a logon";
+    private const string KeepFrozenSuffix = ", and keep it frozen when the broker starts again";
 
     /// <summary>What the row menu offers on a frozen agent, to unfreeze it, before the name.</summary>
     private const string UnfreezeThisTitle = "Unfreeze ";
@@ -2713,6 +2713,9 @@ internal sealed partial class Shell : Window
         }
 
         var act = (freeze ? FreezeThisTitle : UnfreezeThisTitle) + agent.Value + (freeze && keepFrozen ? KeepFrozenSuffix : string.Empty);
+        var standing = Agents.SelectedStanding?.Standing;
+        var leftRunning = standing is Standing.Left or Standing.FrozenLeft;
+        var openOutside = standing is Standing.Outside or Standing.FrozenOutside;
 
         // One process serves every project the agent is in, so the person is told which a freeze reaches before they agree
         // (SPEC.md §14). That is a read of each project, so the description opens after it, from the queue.
@@ -2729,7 +2732,7 @@ internal sealed partial class Shell : Window
 
             var menu = Prompting.Choose(
                 act,
-                (freeze ? FreezingWords.Freezing(agent.Value, keepFrozen) : FreezingWords.Unfreezing(agent.Value))
+                (freeze ? FreezingWords.Freezing(agent.Value, keepFrozen, leftRunning, openOutside) : FreezingWords.Unfreezing(agent.Value))
                 + " " + AgentFreezing.Reach(agent, serving, unreachable),
                 [freeze ? KeepItRunning : LeaveItFrozen, act]);
             var opened = Prompting.Open(app, menu);

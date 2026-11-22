@@ -75,10 +75,10 @@ public static class Standing
     /// A person has frozen it and its process has ended (SPEC.md §14): nothing starts it until they unfreeze it or the broker
     /// next starts, which a logon brings.
     /// </summary>
-    public const string Frozen = "frozen by you; nothing starts it until you unfreeze it or log on again";
+    public const string Frozen = "frozen by you; nothing starts it until you unfreeze it or the broker next starts";
 
     /// <summary>As <see cref="Frozen"/>, and the person asked that a logon not lift it (SPEC.md §14).</summary>
-    public const string FrozenKept = "frozen by you, and stays frozen after a logon; nothing starts it until you unfreeze it";
+    public const string FrozenKept = "frozen by you, and stays frozen when the broker starts again; nothing starts it until you unfreeze it";
 
     /// <summary>A person has frozen it and its process has not ended yet: its node waits for the turn (SPEC.md §14).</summary>
     public const string Freezing = "frozen by you, stopping once its turn ends";

@@ -234,10 +234,18 @@ public sealed class AgentGraphTests
     public void Freezing_words_name_what_is_kept_and_what_stays_open()
     {
         Assert.Contains("stays open", FreezingWords.Freezing("orders@pc"), StringComparison.Ordinal);
-        Assert.Contains("restart", FreezingWords.Freezing("orders@pc"), StringComparison.Ordinal);
+        Assert.Contains("next start", FreezingWords.Freezing("orders@pc"), StringComparison.Ordinal);
         Assert.Contains("other projects", FreezingWords.FreezingAll("alpha"), StringComparison.Ordinal);
         Assert.Contains("unfreezes it", FreezingWords.Freezing("orders@pc"), StringComparison.Ordinal);
-        Assert.Contains("stays frozen after a logon", FreezingWords.Freezing("orders@pc", keepFrozen: true), StringComparison.Ordinal);
+        Assert.Contains("stays frozen when the broker starts again", FreezingWords.Freezing("orders@pc", keepFrozen: true), StringComparison.Ordinal);
+
+        // Any start of the broker lifts an ordinary freeze, not a logon alone, and a freeze promises a stop only where a node
+        // holds the process (review, lens 3 run B on 6257cf80).
+        Assert.Contains("installing a new build", FreezingWords.Freezing("orders@pc"), StringComparison.Ordinal);
+        Assert.Contains("end it with Kill", FreezingWords.Freezing("orders@pc", leftRunning: true), StringComparison.Ordinal);
+        Assert.DoesNotContain("will be stopped", FreezingWords.Freezing("orders@pc", leftRunning: true), StringComparison.Ordinal);
+        Assert.Contains("whoever opened it closes it", FreezingWords.Freezing("orders@pc", openOutside: true), StringComparison.Ordinal);
+        Assert.DoesNotContain("will be stopped", FreezingWords.Freezing("orders@pc", openOutside: true), StringComparison.Ordinal);
     }
 
     [Fact]

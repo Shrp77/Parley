@@ -99,6 +99,11 @@ else
             <a class="button tonal" href="/Projects/Act?project=@Model.Project&amp;action=kill&amp;subject=@agent.Name.Value"
                title="End its process now. What it is part-way through is lost. Unless it is frozen, the next work for it starts it again.">Kill process</a>
         }
+        else if (agent.Presence == AgentPresence.Running && !agent.OpenOutside && agent.Frozen)
+        {
+            @* Frozen, so its node already stops it once its turn ends, and the broker refuses a restart: neither is offered, as in
+               the terminal. Unfreeze is below. *@
+        }
         else if (agent.Presence == AgentPresence.Running && !agent.OpenOutside)
         {
             @* Only a process Parley started: one open outside Parley belongs to whoever opened it, and no node holds it. *@
@@ -119,7 +124,7 @@ else
         else if (agent.Status != AgentStatus.Retired)
         {
             <a class="button tonal" href="/Projects/Act?project=@Model.Project&amp;action=freeze&amp;subject=@agent.Name.Value"
-               title="Stop it once its turn ends and keep anything from starting it until you unfreeze it, or until the broker next starts (a logon or a restart of the computer) unless you ask it to stay frozen through one. What it owes stays open.">Freeze</a>
+               title="Stop it once its turn ends and keep anything from starting it until you unfreeze it, or until the broker next starts (a logon, a reboot, installing a new build, or a crash) unless you ask it to stay frozen through one. What it owes stays open.">Freeze</a>
         }
         @if (agent.Status == AgentStatus.Retired)
         {

@@ -30,7 +30,7 @@ public sealed class FreezingFromARowTests
     private const string LeaveItFrozen = "Leave it frozen";
 
     private static readonly string Freeze = "Freeze " + Seated.Orders.Value;
-    private static readonly string FreezeAndKeep = Freeze + ", and keep it frozen after a logon";
+    private static readonly string FreezeAndKeep = Freeze + ", and keep it frozen when the broker starts again";
     private static readonly string Unfreeze = "Unfreeze " + Seated.Orders.Value;
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

@@ -114,6 +114,12 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     /// <summary>Whether the act is offered at all, or only explained: false for a kill of a process no node that is gone left.</summary>
     public bool Offered { get; private set; } = true;
 
+    /// <summary>Whether the agent a freeze names runs as a process a node that is gone left, which the freeze does not end.</summary>
+    public bool FreezingLeft { get; private set; }
+
+    /// <summary>Whether the agent a freeze names is open in an editor Parley did not start, which the freeze does not end.</summary>
+    public bool FreezingOutside { get; private set; }
+
     /// <summary>Whether the agent a kill names is frozen, so it is not told new work starts it again.</summary>
     public bool KillingFrozen { get; private set; }
 
@@ -172,6 +178,17 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                 .ConfigureAwait(false);
 
             Reaches = AgentFreezing.Reach(reached, serving, unreachable);
+
+            // What holds its process, so the words before a freeze promise only the stop that can happen.
+            var held = await BrokerDirectory.ReadAsync(async () =>
+                await new BrokerClient(directory.ClientFor(project)).RegistryAsync(HttpContext.RequestAborted)
+                    .ConfigureAwait(false)).ConfigureAwait(false);
+
+            if (held.Value?.FirstOrDefault(row => row.Name == reached && row.Presence == AgentPresence.Running) is { } running)
+            {
+                FreezingLeft = running.Unsupervised;
+                FreezingOutside = !running.Unsupervised && running.OpenOutside;
+            }
         }
 
         // What it owes, as the terminal's dialog says it: the debt is what makes the difference between retiring and
@@ -206,7 +223,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
             // Not destructive: nothing it owes is closed, moved or answered, and Unfreeze undoes it. What is lost is only what its
             // process was doing once its turn has ended, which is said.
-            "freeze" => (Parley.Client.Rendering.FreezingWords.Freezing(Subject) + " " + FreezeReach(), false),
+            "freeze" => (Parley.Client.Rendering.FreezingWords.Freezing(Subject, leftRunning: FreezingLeft, openOutside: FreezingOutside) + " " + FreezeReach(), false),
 
             "unfreeze" => (Parley.Client.Rendering.FreezingWords.Unfreezing(Subject) + " " + FreezeReach(), false),
 

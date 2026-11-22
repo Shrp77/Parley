@@ -3782,7 +3782,7 @@ left process is shown as such on every surface and a person may end it: nothing 
 turn, give it one, or stop it, and it is not started again while it runs. The adapter says which process hosts it, as a
 label and never as authority; the node ends it only after checking it is a running process named for an agent's own kind,
 that it is neither the node nor one the node hosts. It does not wait, so what the process was part-way through is lost, which
-a person is told before doing it. What the agent owes stays owed, and the next work for it starts it again.
+a person is told before doing it. What the agent owes stays owed, and the next work for it starts it again unless it is frozen (§14).
 
 The third is argued rather than slipped in, because the paragraph below is the reason this list is
 short. The process holds what the agent has learned. The question is asked just after the agent first
