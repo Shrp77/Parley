@@ -37,6 +37,10 @@ internal static class Media
     /// <param name="launcher">Opens files on this machine.</param>
     /// <param name="queue">Runs work, so the caller can wait for it.</param>
     /// <param name="done">Told what to say when something is over.</param>
+    /// <param name="inView">
+    /// Whether the project read is still the one in view when the read lands, or null for always. Conversation names repeat
+    /// across projects, so a list opened over another project reads as that one's.
+    /// </param>
     /// <returns>When the read is queued.</returns>
     internal static Task OpenAsync(
         IApplication app,
@@ -44,7 +48,8 @@ internal static class Media
         string conversation,
         LocalLauncher launcher,
         Action<Func<CancellationToken, Task>> queue,
-        Func<string, Task> done)
+        Func<string, Task> done,
+        Func<bool>? inView = null)
     {
         ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(client);
@@ -60,6 +65,11 @@ internal static class Media
             if (!read.Reachable)
             {
                 await done(read.Problem!).ConfigureAwait(false);
+                return;
+            }
+
+            if (inView is not null && !inView())
+            {
                 return;
             }
 

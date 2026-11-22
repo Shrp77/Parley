@@ -4852,6 +4852,14 @@ internal sealed partial class Shell : Window
             var says = StillOpen.Says(round);
 
             Said = says;
+
+            // The round has gone out, so it is said; but its list is this project's, and opened over another project it
+            // would read as that one's (review, lens 1 run C3 on ae1d0e0f).
+            if (Current?.Name != project.Name)
+            {
+                return;
+            }
+
             (StillOpenShown, StillOpenSession) = StillOpenView.Open(app, says, standing);
         });
 
@@ -5055,6 +5063,12 @@ internal sealed partial class Shell : Window
                 return;
             }
 
+            // Exchange numbers are per project: opened over another project, alpha's exchange reads as that project's.
+            if (Current?.Name != project.Name)
+            {
+                return;
+            }
+
             (ExchangeShown, ExchangeSession) = ExchangeView.Open(app, details);
         });
 
@@ -5173,7 +5187,8 @@ internal sealed partial class Shell : Window
                 Said = said;
 
                 return Task.CompletedTask;
-            });
+            },
+            () => (Current ?? Projects.Selected)?.Name == project.Name);
 
         return Settled;
     }
