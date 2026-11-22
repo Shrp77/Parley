@@ -3945,7 +3945,7 @@ internal sealed partial class Shell : Window
             if (!string.Equals(says, _agentsSaid, StringComparison.Ordinal))
             {
                 _agentsSaid = says;
-                Agents.Show(agents, Catalogue(), null);
+                Agents.Show(agents, Catalogue(), null, project.Name.Value);
             }
         }
         finally
@@ -4555,7 +4555,7 @@ internal sealed partial class Shell : Window
             _archivedOmitted = page.ArchivedOmitted;
         }
 
-        Agents.Show(registry.Value, Catalogue(), registry.Problem);
+        Agents.Show(registry.Value, Catalogue(), registry.Problem, project.Name.Value);
         Conversations.Show(
             Ordered(conversations.Value?.Items)?.Where(c => ConversationsOf is not { } only || c.Participants.Contains(only))
                 .ToList(),
