@@ -359,6 +359,24 @@ public sealed partial class FreezingOnTheWebTests
         Assert.Contains(said, after, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("one a node holds is stopped once its turn ends")]
+    [InlineData("one a node that is gone left running keeps running until you end it with Kill")]
+    [InlineData("one open in an editor stays open until whoever opened it closes it")]
+    [InlineData("None is started again until unfrozen")]
+    public async Task The_words_before_freezing_everyone_say_what_happens_to_each_kind_of_process(string said)
+    {
+        // Each clause is a promise the person acts on: with any one gone the page still asked and still froze, and the person
+        // read a stop, a Kill or an editor left out, or no word that nothing starts them again (review, lens 3 sweep A on
+        // 44c8e1e6).
+        using var console = new RoadmapConsole();
+        using var client = console.CreateClient();
+
+        var before = WebUtility.HtmlDecode(await client.GetStringAsync(Address("freezeall", RoadmapConsole.Project, string.Empty), Ct));
+
+        Assert.Contains(said, before, StringComparison.Ordinal);
+    }
+
     private static async Task<string> AgentPageAsync(RoadmapConsole console, string agent)
     {
         using var client = console.CreateClient();

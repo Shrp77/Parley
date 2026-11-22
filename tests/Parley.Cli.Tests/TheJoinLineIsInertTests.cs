@@ -46,6 +46,67 @@ public sealed class TheJoinLineIsInertTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task A_hostile_name_added_to_a_running_nodes_catalogue_is_printed_inert_on_the_rejoin_line()
+    {
+        // The rejoin line names what the node now offers, from the same launch files, on every catalogue change: printed raw,
+        // a checkout enrolled while the node runs forged a line of its log (review, lens 3 sweep A on 44c8e1e6).
+        var ct = TestContext.Current.CancellationToken;
+        var hostile = "inv" + (char)0x1B + "[2J" + (char)0x2029 + "FORGED rejoin";
+        var first = (AgentIdentity.Mint(), Workspace("one", "orders"));
+        var path = Catalogue(first);
+
+        using var store = Parley.Store.ParleyDatabase.OpenInMemory();
+        await using var broker = LoopbackOperator.Start(store);
+        using var channel = Grpc.Net.Client.GrpcChannel.ForAddress(broker.Address);
+        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        var inner = new StringWriter();
+        var output = TextWriter.Synchronized(inner);
+        string Said() { lock (output) { return inner.ToString(); } }
+
+        var node = NodeCommand.RunAsync(channel, broker.Address, path, output, cancellationToken: stopping.Token);
+
+        try
+        {
+            await UntilAsync(() => Said().Contains("Can start:", StringComparison.Ordinal), "the node never joined: " + Said());
+
+            _ = Catalogue(first, (AgentIdentity.Mint(), Workspace("two", hostile)));
+
+            await UntilAsync(() => Said().Contains("Rejoining with:", StringComparison.Ordinal), "the node never rejoined: " + Said());
+        }
+        finally
+        {
+            await stopping.CancelAsync();
+
+            try
+            {
+                _ = await node;
+            }
+            catch (Grpc.Core.RpcException ended) when (ended.StatusCode == Grpc.Core.StatusCode.Cancelled)
+            {
+                // Stopped by the test, which is how a node's loop ends.
+            }
+        }
+
+        var rejoin = Said().Split(Environment.NewLine).Single(line => line.Contains("Rejoining with:", StringComparison.Ordinal));
+
+        Assert.Contains("inv", rejoin, StringComparison.Ordinal);
+        Assert.Contains("FORGED rejoin", rejoin, StringComparison.Ordinal);
+        Assert.DoesNotContain(rejoin.EnumerateRunes(), PrintableLine.Breaks);
+    }
+
+    private static async Task UntilAsync(Func<bool> condition, string because)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+
+        while (!condition())
+        {
+            Assert.True(DateTime.UtcNow < deadline, because);
+            await Task.Delay(50, TestContext.Current.CancellationToken);
+        }
+    }
+
     private string Workspace(string folder, string agent)
     {
         var workspace = _root.CreateSubdirectory(folder).FullName;

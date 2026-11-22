@@ -41,8 +41,10 @@ public sealed class AnAgentInTwoProjectsCanBeStartedTests : IDisposable
 
     public void Dispose() => _root.Delete(recursive: true);
 
-    [Fact]
-    public async Task A_checkout_enrolled_in_two_projects_reads_startable_and_offers_Start()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_checkout_enrolled_in_two_projects_reads_startable_and_offers_Start(bool afterTheListIsReadAgain)
     {
         var catalogue = Catalogue(Workspace());
 
@@ -85,6 +87,7 @@ public sealed class AnAgentInTwoProjectsCanBeStartedTests : IDisposable
         using var shell = new Shell(directory)
         {
             Seats = seats, FollowEvery = null, Addressing = new AddressBook(null), CataloguePath = catalogue,
+            MailEvery = afterTheListIsReadAgain ? TimeSpan.FromMilliseconds(100) : null,
         };
 
         session.Show(shell);
@@ -93,6 +96,27 @@ public sealed class AnAgentInTwoProjectsCanBeStartedTests : IDisposable
         await shell.RefreshAsync(Ct);
         await shell.Settled;
         await Walking.GoAsync(shell, Viewing.Project);
+
+        if (afterTheListIsReadAgain)
+        {
+            // The list is read again on the mail watch's interval and drawn when what it says has changed: that draw named no
+            // project either (review, lens 3 sweep A on 44c8e1e6). What it last said is set to something it never says, as an
+            // agent starting or ending a turn changes it, so the next read draws over the list the project's opening drew. The
+            // field is touched only to cause that draw and know it happened; the row is still read from the screen.
+            const string Stale = "a list from before something changed";
+            var said = typeof(Shell).GetField("_agentsSaid", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+
+            said.SetValue(shell, Stale);
+
+            while (said.GetValue(shell) is Stale)
+            {
+                Assert.True(DateTime.UtcNow < deadline, "the agents list was never read again on the mail watch");
+                await Task.Delay(50, Ct);
+            }
+
+            await shell.Settled;
+        }
 
         shell.Focus(shell.Panes.ToList().FindIndex(pane => pane is AgentsRegion));
         Assert.IsType<AgentsRegion>(shell.Panes[shell.FocusedRegion]);

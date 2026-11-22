@@ -79,4 +79,54 @@ public sealed partial class FreezeAllCountsWhatWasDoneHereTests
         Assert.Contains("'billing@test': ", after, StringComparison.Ordinal);
         Assert.Contains("beta: not done.", after, StringComparison.Ordinal);
     }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task An_agent_left_running_in_one_project_is_named_once_whatever_another_project_did(bool betaDown)
+    {
+        // A left process runs on until Kill whatever the other project answered: named when the other project stopped it, and
+        // named once when the other project could not be reached and the agent is already named as not frozen everywhere
+        // (review, lens 3 sweep A on 44c8e1e6).
+        using var console = new RoadmapConsole();
+        using var beta = new RoadmapBroker();
+
+        console.Broker.Registry.Add(Row("orders@test"));
+        beta.Registry.Add(Row("orders@test"));
+        console.Broker.FreezeProcess = "left_running";
+        beta.FreezeProcess = "stopping";
+
+        if (betaDown)
+        {
+            beta.FailsOn = "DescribeRegistry";
+        }
+
+        using var client = console.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<BrokerDirectory>();
+            services.AddSingleton(_ => new BrokerDirectory(
+                [
+                    new ProjectSettings(ProjectName.Create("alpha"), "alpha.db", "http://127.0.0.1:5407", null),
+                    new ProjectSettings(ProjectName.Create("beta"), "beta.db", "http://127.0.0.1:5408", null),
+                ],
+                address => GrpcChannel.ForAddress(
+                    address,
+                    new GrpcChannelOptions
+                    {
+                        HttpHandler = address.EndsWith("5408", StringComparison.Ordinal) ? beta : console.Broker,
+                        DisposeHttpClient = false,
+                    })));
+        })).CreateClient();
+
+        var address = new Uri("/Projects/Act?project=alpha&action=freezeall&subject=alpha", UriKind.Relative);
+        var described = await client.GetStringAsync(address, Ct);
+
+        using var form = new FormUrlEncodedContent([new("__RequestVerificationToken", Token().Match(described).Groups[1].Value)]);
+        using var response = await client.PostAsync(address, form, Ct);
+
+        var after = WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync(Ct));
+
+        Assert.Equal(betaDown ? 1 : 2, console.Broker.Frozen.Count + beta.Frozen.Count);
+        Assert.Equal(1, Regex.Count(after, Regex.Escape("so it runs until you end it with Kill")));
+    }
 }

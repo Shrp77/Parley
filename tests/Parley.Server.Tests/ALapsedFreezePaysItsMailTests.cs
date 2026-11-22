@@ -353,6 +353,69 @@ public sealed class ALapsedFreezePaysItsMailTests : IDisposable
         Assert.False(started.Changed);
     }
 
+    [Fact]
+    public async Task A_lapse_owing_nothing_yet_is_kept_for_its_own_machine_when_another_machine_joins_first()
+    {
+        // Taken by another machine's wake, the lapse was paid with nothing owed and cleared, so the answer that arrived before
+        // the agent's own node joined started nobody (review, lens 3 sweep A on 44c8e1e6).
+        await AnsweredWhileFrozenAsync(keep: false, answer: false);
+
+        await using var second = await LoopbackBroker.StartOnAsync(Store, Ct);
+        await using var elsewhere = await JoinedNodeClient.JoinAsync(second, "beta", ["orders"], Ct, reportsTurns: true);
+
+        await second.Runtime.RestartWakeOf("beta").WaitAsync(Patience, Ct);
+        await AnswerAsync(second);
+
+        await using var node = await JoinedNodeClient.JoinAsync(second, Here, ["orders"], Ct, reportsTurns: true);
+
+        Assert.Equal(1, await node.CountCommandsAsync(1, Briefly, Patience));
+
+        var command = await node.WaitForCommandAsync(Patience);
+
+        Assert.Equal(Wire.NodeCommand.CommandOneofCase.Start, command.CommandCase);
+        Assert.Equal(Orders, command.Start.Agent);
+        Assert.Equal(0, await elsewhere.CountCommandsAsync(Briefly));
+    }
+
+    [Fact]
+    public async Task A_lapse_owing_nothing_yet_whose_node_leaves_inside_the_wait_is_kept_for_its_next_join()
+    {
+        // Taken with nobody to ask, the lapse was paid with nothing owed and cleared, so the answer that arrived while the node
+        // was away started nobody when it came back (review, lens 3 sweep A on 44c8e1e6).
+        await AnsweredWhileFrozenAsync(keep: false, answer: false);
+
+        await using var second = await LoopbackBroker.StartOnAsync(Store, Ct, restartWakeDelay: TimeSpan.FromSeconds(1));
+
+        await using (await JoinedNodeClient.JoinAsync(second, Here, ["orders"], Ct, reportsTurns: true, waitForRestartWake: false))
+        {
+        }
+
+        await second.WaitUntilNodeGoneAsync(Here, Patience);
+        await second.Runtime.RestartWakeOf(Here).WaitAsync(Patience, Ct);
+        await AnswerAsync(second);
+
+        await using var node = await JoinedNodeClient.JoinAsync(second, Here, ["orders"], Ct, reportsTurns: true);
+
+        Assert.Equal(1, await node.CountCommandsAsync(1, Briefly, Patience));
+
+        var command = await node.WaitForCommandAsync(Patience);
+
+        Assert.Equal(Wire.NodeCommand.CommandOneofCase.Start, command.CommandCase);
+        Assert.Equal(Orders, command.Start.Agent);
+    }
+
+    /// <summary>Billing answers the frozen agent's question on a later run, while no node of the asker's machine is joined.</summary>
+    private static async Task AnswerAsync(LoopbackBroker broker)
+    {
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+
+        var drained = await billing.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Billing }, cancellationToken: Ct);
+        var answered = await billing.Client.ResultAsync(
+            Requests.Result(Billing, drained.Messages[0].Message.ExchangeId), cancellationToken: Ct);
+
+        Assert.True(answered.Ok, "the answer was refused");
+    }
+
     /// <summary>
     /// The first run of the broker: one agent asks another a question and is frozen, and the other answers or does not. No node
     /// is joined, so nothing is started and nothing is collected.
