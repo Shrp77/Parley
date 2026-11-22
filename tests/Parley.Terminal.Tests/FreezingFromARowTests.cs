@@ -126,6 +126,7 @@ public sealed class FreezingFromARowTests
         var describing = (ChoiceDialog)seated.Session.Find(act);
 
         Assert.Equal([KeepItRunning, act], Choices(describing));
+        Assert.StartsWith(Parley.Client.Rendering.FreezingWords.Freezing(Seated.Orders.Value, keep), describing.Described, StringComparison.Ordinal);
 
         seated.Session.Row(describing.Choices, act);
         await seated.Session.PressThenSettleAsync(Key.Enter, () => seated.Shell.Settled);

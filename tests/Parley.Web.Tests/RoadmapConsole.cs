@@ -116,6 +116,9 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <summary>Every Result the person sent, in order. Each one taken closes its exchange, as the broker does.</summary>
     public List<Wire.ResultRequest> Resulted { get; } = [];
 
+    /// <summary>Every Clarify sent as the person.</summary>
+    public List<Wire.ClarifyRequest> Clarified { get; } = [];
+
     /// <summary>Every stop a person asked for.</summary>
     public List<Wire.StopRequest> Stopped { get; } = [];
 
@@ -383,6 +386,11 @@ public sealed class RoadmapBroker : HttpMessageHandler
                 Requested.Add(open);
             }
 
+            if (Seats && request.RequestUri!.AbsolutePath == "/parley.v1.Agents/Clarify")
+            {
+                Clarified.Add(Wire.ClarifyRequest.Parser.ParseFrom(payload));
+            }
+
             if (Seats && request.RequestUri!.AbsolutePath == "/parley.v1.Agents/Result")
             {
                 var result = Wire.ResultRequest.Parser.ParseFrom(payload);
@@ -433,6 +441,7 @@ public sealed class RoadmapBroker : HttpMessageHandler
                 },
                 "/parley.v1.Agents/Waiting" when Seats => new Wire.Notice { MessagesWaiting = MessagesWaiting },
                 "/parley.v1.Agents/Result" when Seats => new Wire.SayReply { Ok = true, MessageId = 900 },
+                "/parley.v1.Agents/Clarify" when Seats => new Wire.SayReply { Ok = true, MessageId = 901 },
                 "/parley.v1.Operators/DescribeFlags" => new Wire.FlagsReply { Flags = { Flags } },
                 "/parley.v1.Operators/LocateExchange" => new Wire.LocateExchangeReply
                 {

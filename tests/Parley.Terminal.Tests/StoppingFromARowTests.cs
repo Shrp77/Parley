@@ -62,6 +62,11 @@ public sealed class StoppingFromARowTests
         var describing = (ChoiceDialog)seated.Session.Find(act);
 
         Assert.Equal([KeepItRunning, act], Choices(describing));
+        Assert.Equal(
+            restart
+                ? Parley.Client.Rendering.StoppingWords.Restarting(Seated.Orders.Value)
+                : Parley.Client.Rendering.StoppingWords.Stopping(Seated.Orders.Value),
+            describing.Described);
         Assert.Contains(KeepItRunning, seated.Session.Text(), StringComparison.Ordinal);
 
         // The first choice is the one the cursor opens on, and it is the one that does nothing.
@@ -98,6 +103,7 @@ public sealed class StoppingFromARowTests
         Assert.Equal(Wire.NodeCommand.CommandOneofCase.Stop, command.CommandCase);
         Assert.Equal(Seated.Orders.Value, command.Stop.Agent);
         Assert.Equal(restart, command.Stop.Restart);
+        Assert.Equal(Parley.Client.Rendering.StoppingWords.Outcome(Seated.Orders.Value, restart, asked: true), seated.Shell.Said);
     }
 
     [Fact]
@@ -152,6 +158,7 @@ public sealed class StoppingFromARowTests
         Assert.Equal(Wire.NodeCommand.CommandOneofCase.Kill, command.CommandCase);
         Assert.Equal(Seated.Orders.Value, command.Kill.Agent);
         Assert.Equal(ProcessId, command.Kill.ProcessId);
+        Assert.Equal(Parley.Client.Rendering.StoppingWords.KillOutcome(Seated.Orders.Value, asked: true), seated.Shell.Said);
     }
 
     /// <summary>Holds that the node has been sent nothing, by asking it for something else and reading that first.</summary>

@@ -278,6 +278,17 @@ public sealed class TheInboxOnTheTerminalTests
         Assert.True(seated.Shell.Transcript.Reach(naming.Id));
         Assert.Equal(2, seated.Shell.ReferencesUnder.Select(found => found.Exchange).Distinct().Count());
         Assert.Equal(Shell.ReferenceTitle, seated.Shell.ReferenceSays);
+
+        // And the key opens both, as its name says.
+        seated.Focus<TranscriptRegion>();
+        await seated.Session.PressThenSettleAsync(new Key(Shell.ReferenceKey).WithAlt, () => seated.Shell.Settled);
+
+        var lines = Assert.IsType<ExchangeView>(seated.Shell.ExchangeShown).Shown;
+
+        Prompting.Close(seated.Session.App, seated.Shell.ExchangeSession);
+
+        Assert.Contains(lines, line => line.StartsWith($"Exchange #{first} in ledgers.", StringComparison.Ordinal));
+        Assert.Contains(lines, line => line.StartsWith($"Exchange #{second} in periods.", StringComparison.Ordinal));
     }
 
     [Fact]
