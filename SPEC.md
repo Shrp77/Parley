@@ -827,6 +827,9 @@ again for what it left.
 - **An outstanding asking MUST expire.** A wake that never leads to a collection — a node that
   has gone, a launch that fails — would otherwise silence waking for that agent for good. Expiry
   ends the asking, not the Request: the Request stays open and owed.
+- **A stop, and the end of the process an asking was made of, end the asking too** (§11.1): a
+  person's stop forgets what was asked before it, and a turn asked of a process that ends before
+  taking it is asked for again as a start.
 
 **A Request identical to one still open between the same two participants is refused** (§7.1's
 distinctness), and the sender is handed the exchange already carrying it. Once that exchange has

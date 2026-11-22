@@ -62,6 +62,14 @@
     <Compile Include="$(MSBuildThisFileDirectory)..\..\src\FilePlacement.cs" Link="FilePlacement.cs" />
   </ItemGroup>
 
+  <!--
+    Shared, not copied: the scripted runner the resident agent's own tests use, so the node's reports of what an agent
+    does on its own are driven by the same lines (TheNodeReportsWhatAnAgentDoesOnItsOwnTests).
+  -->
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)..\Parley.Headless.Tests\StubRunner.cs" Link="StubRunner.cs" />
+  </ItemGroup>
+
   <!-- Every test class says whether it is a unit or an integration test (TestCategories.cs, scripts/test.ps1). -->
   <ItemGroup>
     <Compile Include="$(MSBuildThisFileDirectory)..\TestCategories.cs" Link="TestCategories.cs" />

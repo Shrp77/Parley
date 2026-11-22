@@ -360,6 +360,124 @@ public sealed class SpinOffAndMovePagesTests
         Assert.Empty(console.Broker.Abandoned);
     }
 
+    private static readonly byte[] Png = [0x89, 0x50, 0x4E, 0x47, 1, 2, 3];
+
+    /// <summary>Posts the spin-off form as a browser does with a file in the box: multipart, the file under <c>Attachments</c>.</summary>
+    private static async Task<(HttpResponseMessage Response, string Body)> PostWithAFileAsync(
+        HttpClient client, string fileName, byte[] bytes, params (string Name, string Value)[] fields)
+    {
+        var form = await client.GetStringAsync(At(Spin()), Ct);
+        using var content = new MultipartFormDataContent
+        {
+            { new StringContent(Token(form)), "__RequestVerificationToken" },
+        };
+
+        foreach (var (name, value) in fields)
+        {
+            content.Add(new StringContent(value, System.Text.Encoding.UTF8), name);
+        }
+
+        var part = new ByteArrayContent(bytes);
+
+        part.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+        content.Add(part, "Attachments", fileName);
+
+        var response = await client.PostAsync(At(Spin()), content, Ct);
+
+        return (response, await response.Content.ReadAsStringAsync(Ct));
+    }
+
+    private static string AskOf(Wire.OpenRequest sent) =>
+        System.Text.Json.JsonDocument.Parse(sent.PayloadJson).RootElement.GetProperty("ask").GetString()!;
+
+    [Fact]
+    public async Task A_spin_off_with_a_file_sends_the_words_first_then_places_the_file_there_and_names_it_to_whoever_took_them()
+    {
+        // The new conversation does not exist until its first Request is sent, so it has nowhere to hold a file: the words
+        // go first, then the file is placed in it and a second message names it (SPEC.md §9.5). Billing refused the words,
+        // so the files are named to orders alone. Nothing held this: with the files never sent, every test passed.
+        using var console = Seated();
+        console.Broker.RefusesRequestsTo.Add(Billing);
+
+        var requestedWhenPlaced = -1;
+
+        console.Broker.Placing = (header, bytes) =>
+        {
+            requestedWhenPlaced = console.Broker.Requested.Count;
+
+            return new Wire.PlaceFileReply
+            {
+                Outcome = Wire.PlaceOutcome.Placed,
+                Rejection = Wire.FileRejection.None,
+                ConversationId = header.ConversationId,
+                Name = header.Name,
+                SizeBytes = bytes.Length,
+                Sha256 = Parley.Core.ContentHash.Of(bytes).Value,
+            };
+        };
+
+        using var client = NoRedirects(console);
+
+        var (response, _) = await PostWithAFileAsync(client, "shot.png", Png, Spinning(Orders, Billing));
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Contains("id=disk-cleanup", response.Headers.Location!.ToString(), StringComparison.Ordinal);
+
+        // The file is placed once, in the new conversation, as sent, and only after the words that started it.
+        var (header, bytes) = Assert.Single(console.Broker.Placed);
+
+        Assert.Equal(("disk-cleanup", "shot.png"), (header.ConversationId, header.Name));
+        Assert.Equal(Png, bytes);
+        Assert.Equal(2, requestedWhenPlaced);
+
+        // The words to orders, the words billing refused, then the files, to orders alone.
+        Assert.Equal(3, console.Broker.Requested.Count);
+
+        var words = console.Broker.Requested[0];
+        var files = console.Broker.Requested[2];
+
+        Assert.Equal(Billing, console.Broker.Requested[1].To);
+        Assert.Equal(("disk-cleanup", Orders), (words.ConversationId, words.To));
+        Assert.Contains("my own words", AskOf(words), StringComparison.Ordinal);
+        Assert.DoesNotContain("shot.png", AskOf(words), StringComparison.Ordinal);
+
+        Assert.Equal(("disk-cleanup", Orders), (files.ConversationId, files.To));
+        Assert.Contains($"shot.png (sha256: {Parley.Core.ContentHash.Of(Png).Value})", AskOf(files), StringComparison.Ordinal);
+        Assert.Empty(console.Broker.Abandoned);
+    }
+
+    [Fact]
+    public async Task A_spin_off_nobody_took_places_none_of_its_files_and_says_to_attach_them_again()
+    {
+        // Every recipient refused, so the conversation was never started and its files had nowhere to go. A browser cannot
+        // fill a file field again, so a page that said nothing would send the retry without them.
+        using var console = Seated();
+        console.Broker.RefusesRequestsTo.Add(Orders);
+        using var client = console.CreateClient();
+
+        var (_, body) = await PostWithAFileAsync(client, "shot.png", Png, Spinning(Orders));
+
+        Assert.Empty(console.Broker.Placed);
+
+        // The one Request is the words orders refused: no second message names a file nobody holds.
+        Assert.DoesNotContain("shot.png", AskOf(Assert.Single(console.Broker.Requested)), StringComparison.Ordinal);
+        Assert.Equal("disk-cleanup", Assert.Single(console.Broker.Abandoned).Child);
+        Assert.Matches("role=\"alert\">[^<]*the files you attached were not placed\\. Attach them again when you send\\.", body);
+        Assert.Contains("my own words", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_spin_off_nobody_took_with_no_file_says_nothing_about_files()
+    {
+        using var console = Seated();
+        console.Broker.RefusesRequestsTo.Add(Orders);
+        using var client = console.CreateClient();
+
+        var (_, body) = await PostAsync(client, Spin(), Spinning(Orders));
+
+        Assert.DoesNotContain("Attach them again", body, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task A_link_refused_sends_nothing_and_keeps_everything()
     {
