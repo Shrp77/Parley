@@ -286,6 +286,19 @@ public sealed class EnrollmentPlanTests
     }
 
     [Fact]
+    public void A_refused_name_is_quoted_with_nothing_a_terminal_acts_on()
+    {
+        // The name is a repository's own launch configuration, which its agent or a clone's author wrote; repeated raw, an
+        // escape sequence cleared the screen and a line separator forged a line (review, lens 2 run C on fc26cb8a).
+        var hostile = "a" + (char)0x1B + "[2Jx" + (char)0x2028 + "FORGED agent";
+
+        var problem = Assert.Single(Validate(Entry(agent: hostile)));
+
+        Assert.Contains("must be lowercase letters", problem, StringComparison.Ordinal);
+        Assert.DoesNotContain(problem.EnumerateRunes(), Parley.Core.PrintableLine.Breaks);
+    }
+
+    [Fact]
     public void A_workspace_that_is_not_there_is_refused()
     {
         var problems = EnrollmentPlan.Validate([Entry()], _ => false);

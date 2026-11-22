@@ -250,7 +250,9 @@ public static class EnrollmentPlan
             if (!IsWellFormedName(entry.Agent))
             {
                 problems.Add(
-                    $"{where}: agent '{entry.Agent}' must be lowercase letters, digits and hyphens, " +
+                    // The name is a repository's own launch configuration, which its agent or a clone's author wrote: quoted
+                    // flat, so an escape sequence or a line separator in it reaches no terminal (review, lens 2 run C on fc26cb8a).
+                    $"{where}: agent '{Quoting.Flat(entry.Agent)}' must be lowercase letters, digits and hyphens, " +
                     $"starting with a letter, at most {NameLimit} characters");
             }
             else if (Facilitation.IsReserved(entry.Agent))

@@ -522,8 +522,13 @@ public static class NodeCommand
     /// <summary>The names a node offers, in a stable order, for a report.</summary>
     /// <param name="names">What it announced.</param>
     /// <returns>The names, or a phrase saying there are none.</returns>
+    /// <remarks>
+    /// Inert: a name is taken from a repository's launch configuration, which its agent can edit, and is not held to the name
+    /// grammar there, so an escape sequence or a line separator in it forged a line of the node's log (review, lens 2 run C
+    /// on fc26cb8a).
+    /// </remarks>
     private static string Listed(IReadOnlyList<string> names) =>
-        names.Count == 0 ? "nothing" : string.Join(", ", names);
+        names.Count == 0 ? "nothing" : Inert.Line(string.Join(", ", names));
 
     /// <summary>Reports what the broker knows about this machine.</summary>
     /// <param name="joined">The acknowledgement.</param>
@@ -547,7 +552,7 @@ public static class NodeCommand
     /// like a machine nobody has listed any agents on yet.
     /// </para>
     /// </remarks>
-    private static async Task ReportJoinedAsync(
+    internal static async Task ReportJoinedAsync(
         Wire.Joined joined,
         NodeCatalogue catalogue,
         string? project,
@@ -559,7 +564,7 @@ public static class NodeCommand
 
         var startable = announceable.Names.Count == 0
             ? string.Create(CultureInfo.InvariantCulture, $"nothing (no agents in {catalogueFile})")
-            : string.Join(", ", announceable.Names);
+            : Inert.Line(string.Join(", ", announceable.Names));
 
         await output.WriteLineAsync(string.Create(
             CultureInfo.InvariantCulture,
@@ -572,7 +577,7 @@ public static class NodeCommand
         foreach (var contested in announceable.Contested)
         {
             await output.WriteLineAsync(
-                $"  {contested}: claimed by more than one catalogued workspace, so nothing answers to it "
+                $"  {Inert.Line(contested)}: claimed by more than one catalogued workspace, so nothing answers to it "
                 + "here. Enrol one of them under another name, or re-mint its identity.")
                 .ConfigureAwait(false);
         }
