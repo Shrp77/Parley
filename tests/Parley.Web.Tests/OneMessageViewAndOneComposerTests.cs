@@ -46,7 +46,7 @@ public sealed class OneMessageViewAndOneComposerTests
     [Fact]
     public void Every_page_that_shows_a_message_uses_the_message_partial()
     {
-        foreach (var name in new[] { "_Conversation.cshtml", "Inbox.cshtml" })
+        foreach (var name in new[] { "_Conversation.cshtml", "Inbox.cshtml", "_InboxRows.cshtml", "Panel.cshtml" })
         {
             var text = Pages().Single(page => page.Name == name).Text;
 

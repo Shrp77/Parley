@@ -2316,8 +2316,8 @@ CREATE TABLE shared_files (
   -- Windows and macOS.
   name_key        TEXT    NOT NULL CHECK (name_key = upper(name)),
   -- As placed, after renaming. Made of letters A to Z, digits, '.', '_' and '-', which every disk on
-  -- the three platforms accepts and which carries no text of the placer's beyond a word, ending .md
-  -- or .txt so that nothing placed has a handler that runs a program (§13). The folder, a separator
+  -- the three platforms accepts and which carries no text of the placer's beyond a word, ending in an
+  -- extension no handler runs a program for (§13). The folder, a separator
   -- and the name together are bounded by tr_shared_file_path_fits.
   name            TEXT    NOT NULL
                   CHECK (length(name) BETWEEN 4 AND 254
@@ -3794,8 +3794,9 @@ never stops an agent on its own account. A stopped agent is started again by the
 any agent is, because only retirement gates routing (§14); a person who wants it kept stopped freezes it (§14), and one who wants it out
 for good retires it. A start asked for while the stopped process is still going is made once it has gone, never given to the
 process that is ending, and work that arrives while that process is still attached, and that it has not collected by the time it
-has gone, is asked for again, as a start, unless the person has retired the agent meanwhile. Only work that arrived meanwhile does
-this: what the agent already owed does not start it.
+has gone, is asked for again, as a start, unless the person has retired the agent meanwhile. Only a wake asked for meanwhile does it: for new work, or for mail the stopping process left uncollected when its turn ran
+out of time or its collection stopped short. Work it had already collected does not start it, and neither does mail that nothing
+asked a turn for after the stop.
 It waits for the turn rather than cutting it short, and a turn is bounded by the node's patience, so the
 wait is bounded too.
 

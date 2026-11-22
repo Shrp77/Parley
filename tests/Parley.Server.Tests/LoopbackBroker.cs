@@ -653,6 +653,19 @@ internal sealed class JoinedNodeClient : IAsyncDisposable
         return await CountCommandsAsync(settle).ConfigureAwait(false);
     }
 
+    /// <summary>Gets every command that has reached the node so far, in the order they came.</summary>
+    /// <remarks>For a test that sends many at once and needs each agent's own order, which the latest alone cannot give.</remarks>
+    public IReadOnlyList<Wire.NodeCommand> Commands
+    {
+        get
+        {
+            lock (_commands)
+            {
+                return [.. _commands];
+            }
+        }
+    }
+
     /// <summary>Waits for a command to arrive.</summary>
     /// <param name="within">How long to wait before giving up.</param>
     /// <returns>The command.</returns>

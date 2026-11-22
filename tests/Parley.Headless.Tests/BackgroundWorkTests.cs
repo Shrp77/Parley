@@ -418,6 +418,7 @@ public sealed class BackgroundWorkTests : IDisposable
     }
 
     [Fact]
+    [Slow]
     public async Task A_given_turn_queued_behind_two_own_turns_is_not_mistaken_for_a_third()
     {
         // Review, quality lens (0.62.5): the second own turn queued behind the first had its result, and the given turn took
@@ -466,6 +467,7 @@ public sealed class BackgroundWorkTests : IDisposable
     }
 
     [Fact]
+    [Slow]
     public async Task A_turn_given_while_the_agent_works_on_its_own_waits_for_it_and_reads_its_own_reply()
     {
         // The second prompt arrives while the agent's own turn runs, as the probe sent it: the runner answers its own turn

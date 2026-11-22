@@ -204,6 +204,14 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     private readonly ConcurrentDictionary<string, DateTimeOffset> _wokenWhileStopping = new(StringComparer.Ordinal);
 
+    /// <summary>Makes a wake's claim and its note of a turn asked of a stopping process one step among wakes.</summary>
+    /// <remarks>
+    /// Two wakes for one stopping agent, a person's Start crossing a message's, could each write its claim and then its note,
+    /// in an order that left the note holding one wake's claim and the claim table the other's. The detach then removed
+    /// nothing and found a live claim, so it asked for nothing. Nothing inside the lock waits on anything.
+    /// </remarks>
+    private readonly Lock _claimAndNote = new();
+
     /// <summary>The agents a person has frozen (SPEC.md §14), by name: what <see cref="Ask"/> reads, because it cannot wait on the store.</summary>
     /// <remarks>
     /// Loaded when the broker starts and changed only by <see cref="MarkFrozen"/>, which the operator operations call after the
@@ -1756,18 +1764,24 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return StopOutcome.OpenOutside;
         }
 
+        // **Noted before the node is asked, never after.** A wake that reads this between the asking and a later note finds
+        // "not stopping", and its turn then queues on the node behind the stop with nothing to say it was lost: the message
+        // sat unread and its sender was told the agent was running. Taken back only if this call made the note and the
+        // node could not be asked.
+        var noted = !restart && _stopSent.TryAdd(agent.Value, true);
+
         if (!_nodes.TryGetValue(agent.Machine, out var node)
             || !node.RequestStop(agent, IdentityOf(agent), restart, because))
         {
+            if (noted)
+            {
+                _ = _stopSent.TryRemove(agent.Value, out _);
+            }
+
             return StopOutcome.NoNode;
         }
 
         _ = _pending.TryRemove(agent.Value, out _);
-
-        if (!restart)
-        {
-            _stopSent[agent.Value] = true;
-        }
 
         return StopOutcome.Sent;
     }
@@ -2031,15 +2045,28 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return WakeOutcome.Unreachable;
         }
 
-        var claimed = Clock.GetUtcNow();
+        // Read again now the node has been asked: a stop noted since the first look was sent to the node before this turn
+        // or will be dealt with behind it, and either way the turn may be one it takes.
+        stopping |= _stopSent.ContainsKey(agent.Value);
 
-        _pending[agent.Value] = claimed;
+        DateTimeOffset claimed;
 
         // A turn asked of a process its node is stopping is one the stop may take with it: noted with the claim it left, and
-        // asked for again as a start once the process has gone (ReleaseAsync).
+        // asked for again as a start once the process has gone (ReleaseAsync). The claim and the note are written as one
+        // step, so the note always holds the claim that is in the table.
+        lock (_claimAndNote)
+        {
+            claimed = Clock.GetUtcNow();
+            _pending[agent.Value] = claimed;
+
+            if (running && stopping)
+            {
+                _wokenWhileStopping[agent.Value] = claimed;
+            }
+        }
+
         if (running && stopping)
         {
-            _wokenWhileStopping[agent.Value] = claimed;
 
             // **The process went between the look and the asking.** Its detach has taken its marks already, or is about to:
             // whichever of the two takes this one acts on it. Taken here, the turn just asked for went to nobody, so its
