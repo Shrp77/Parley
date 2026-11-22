@@ -320,6 +320,8 @@ public static class Enrolment
                     throw new InvalidDataException(LinkRefusal(path, UnreadableTarget));
                 case LocalOpenStatus.OffThisMachine:
                     throw new InvalidDataException($"{path} leads to another machine, and Parley does not look up a path there");
+                case LocalOpenStatus.NotAFile:
+                    throw new IOException(LocalOpen.NotAFileProblem(path));
                 case LocalOpenStatus.Busy when attempt < 40:
                     await Task.Delay(50, cancellationToken).ConfigureAwait(false);
                     break;

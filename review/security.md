@@ -78,6 +78,9 @@ Check a change against each; a new page or a new path lookup must keep all of th
   so a short (8.3) spelling is judged as the folder it is. Off Windows a share is a
   mount and following a link to one offers no sign-in, so the walk is kept and the open is ordinary, except that a file
   about to be written is still refused when it is itself a link.
+  Off Windows that open, and the open of a file the person places, is libc's with `O_NONBLOCK` (and `O_NOFOLLOW`
+  where a link is refused) and keeps only a regular file by the open handle's kind, so a pipe, a socket or a device,
+  or a link to one, is refused as not an ordinary file and never waited on (`NothingWaitsOnAPipeTests`).
 - Enrolment treats any reparse point as a link, whatever its target reads as, and never writes through one.
 - **Only local storage** (the owner's rule): a repository, a deployment's root and an agent's workspace are refused on a
   synced cloud folder (OneDrive, Google Drive, Dropbox, iCloud Drive, Box), a network drive or a virtual file system

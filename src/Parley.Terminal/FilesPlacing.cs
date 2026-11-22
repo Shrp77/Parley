@@ -217,7 +217,8 @@ internal static class FilesPlacing
 
         try
         {
-            content = File.OpenRead(path);
+            // Through the placement's own open, which refuses a pipe off Windows rather than waiting on it.
+            content = Parley.Configuration.PlaceableFile.OpenRead(path);
         }
         catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
         {

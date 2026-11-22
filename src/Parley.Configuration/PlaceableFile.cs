@@ -49,9 +49,52 @@ public static class PlaceableFile
             return null;
         }
 
-        return file.Exists && file.Attributes.HasFlag(FileAttributes.ReparsePoint)
-            ? $"{typed} is a link to another file. Place the file itself, not a link to it."
-            : null;
+        if (file.Exists && file.Attributes.HasFlag(FileAttributes.ReparsePoint))
+        {
+            return $"{typed} is a link to another file. Place the file itself, not a link to it.";
+        }
+
+        // A pipe read for placing waited for a writer for ever, and the place command or dialog with it (review, lens 2,
+        // Linux). Asked here to say so before anything is sent; OpenRead refuses it again through its own open.
+        return LocalOpen.NotAFile(typed) ? $"{LocalOpen.NotAFileProblem(typed)} Place an ordinary file." : null;
+    }
+
+    /// <summary>Opens a file the person names for placing, after <see cref="Problem"/> found nothing wrong with it.</summary>
+    /// <param name="path">The file, as <see cref="Typed"/> returned it.</param>
+    /// <returns>The file, open for reading; the caller disposes it.</returns>
+    /// <exception cref="IOException">It is not there, is not an ordinary file, is a link, leads off this machine, or could
+    /// not be opened; the message says which.</exception>
+    /// <exception cref="UnauthorizedAccessException">This account may not read it (Windows).</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>Off Windows, a pipe, a socket or a device is refused through the open itself</b>, never waited on: a pipe the
+    /// path held when <see cref="Problem"/> asked, or one swapped in after, made an ordinary open wait for a writer that
+    /// never came (review, lens 2, Linux). A link is refused the same way, as <see cref="Problem"/> refuses one.
+    /// </para>
+    /// <para>On Windows no such thing has a path in a folder, and the open is the ordinary one it always was.</para>
+    /// </remarks>
+    public static FileStream OpenRead(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+
+        if (OperatingSystem.IsWindows())
+        {
+            return File.OpenRead(path);
+        }
+
+        var (status, stream) = LocalOpen.File(path, FileAccess.Read, FileShare.Read, followLink: false);
+
+        return status switch
+        {
+            LocalOpenStatus.Opened => stream!,
+            LocalOpenStatus.Missing => throw new FileNotFoundException($"There is no file at {path}.", path),
+            LocalOpenStatus.NotAFile => throw new IOException(LocalOpen.NotAFileProblem(path)),
+            LocalOpenStatus.Changed => throw new IOException($"{path} is a link to another file. Place the file itself, not a link to it."),
+            LocalOpenStatus.OffThisMachine => throw new IOException(
+                $"{path} is on another machine, or reached through a link to one, and Parley does not look up a path there."),
+            LocalOpenStatus.Busy => throw new IOException($"{path} is held by another program."),
+            _ => throw new IOException($"{path} could not be opened."),
+        };
     }
 
     /// <summary>A path as a person typed it, with only the blanks typing adds taken off its ends: what is checked.</summary>

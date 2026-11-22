@@ -95,6 +95,11 @@ public sealed record LaunchConfiguration
                 problem = $"{path} leads to another machine, and Parley does not look up a path there.";
 
                 return false;
+            case LocalOpenStatus.NotAFile:
+                // A pipe here waited for ever, and the node reads every repository's file in turn (review, lens 2, Linux).
+                problem = LocalOpen.NotAFileProblem(path);
+
+                return false;
             case not LocalOpenStatus.Opened:
                 problem = $"{path} could not be read.";
 

@@ -25,6 +25,10 @@ public enum LocalOpenStatus
 
     /// <summary>It could not be opened for another reason.</summary>
     Unreadable,
+
+    /// <summary>Something is there that is neither a file nor a folder: a pipe, a socket or a device. It was not read,
+    /// since opening or reading one can wait for ever.</summary>
+    NotAFile,
 }
 
 /// <summary>
@@ -51,6 +55,12 @@ public enum LocalOpenStatus
 /// <para>
 /// Elsewhere a share is a mount, already connected, so following a link to it offers no sign-in: the walk is kept and the
 /// open is an ordinary one, except that a file about to be written is still refused when it is itself a link.
+/// </para>
+/// <para>
+/// <b>Elsewhere only an ordinary file is opened, and the open never waits.</b> An agent can make its <c>.mcp.json</c>, or
+/// a link to one, a named pipe; an ordinary open of a pipe waits for a writer, cannot be cancelled, and the node reads
+/// every catalogued repository's file one after another, so one agent froze its machine's node for every agent (review,
+/// lens 2, Linux). See <see cref="NotAFile"/>.
 /// </para>
 /// </remarks>
 public static class LocalOpen
@@ -124,7 +134,7 @@ public static class LocalOpen
                 }
             }
 
-            return Ordinary(reached, access, share);
+            return Ordinary(reached, access, share, followLink);
         }
 
         var wanted = Synchronize | ReadAttributes
@@ -252,13 +262,19 @@ public static class LocalOpen
     /// <returns>What came of it, and the text when it was read; no text when nothing is there or it leads elsewhere.</returns>
     /// <exception cref="System.Text.Json.JsonException">JSON longer than the bound.</exception>
     /// <exception cref="IOException">Something is there and could not be read: held by another program, or denied. Thrown
-    /// rather than answered as no text, which would read as no file (a plan saying <i>create</i> for one that exists).</exception>
+    /// rather than answered as no text, which would read as no file (a plan saying <i>create</i> for one that exists). A
+    /// pipe, a socket or a device is refused this way too, saying so (<see cref="NotAFileProblem"/>).</exception>
     public static (LocalOpenStatus Status, string? Text) ReadText(string path, bool json)
     {
         var (status, stream) = File(path, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, followLink: true);
 
         using (stream)
         {
+            if (status == LocalOpenStatus.NotAFile)
+            {
+                throw new IOException(NotAFileProblem(path));
+            }
+
             if (status is LocalOpenStatus.Busy or LocalOpenStatus.Unreadable)
             {
                 throw new IOException($"{path} is there and could not be read.");
@@ -404,7 +420,9 @@ public static class LocalOpen
         // Something there that this account cannot open, or another holds, is still there: a `.git` folder nobody may list
         // is a repository all the same, as Directory.Exists said.
         static LocalOpenStatus There(LocalOpenStatus status) =>
-            status is LocalOpenStatus.Busy or LocalOpenStatus.Unreadable ? LocalOpenStatus.Opened : status;
+            status is LocalOpenStatus.Busy or LocalOpenStatus.Unreadable or LocalOpenStatus.NotAFile
+                ? LocalOpenStatus.Opened
+                : status;
 
         var folder = There(Folder(path));
 
@@ -419,6 +437,210 @@ public static class LocalOpen
 
         return There(status);
     }
+
+    /// <summary>Whether something at a path is there and is neither a file nor a folder: a pipe, a socket or a device.</summary>
+    /// <param name="path">The path; a link is followed, as reading it would.</param>
+    /// <returns><see langword="true"/> only when something is there and is of none of the ordinary kinds. Always
+    /// <see langword="false"/> on Windows, where no such thing has a path in a folder.</returns>
+    /// <remarks>
+    /// A question asked of a path, so it is only a description to show the person before anything is read; the read itself
+    /// is refused again through its own open (<see cref="File"/>), since the path can change in between.
+    /// </remarks>
+    public static bool NotAFile(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+
+        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsMacOS())
+        {
+            return false;
+        }
+
+        var status = new byte[StatusBytes];
+
+        try
+        {
+            return Stat(path, status) == 0 && KindOf(status) is not (RegularKind or FolderKind);
+        }
+        catch (Exception missing) when (missing is DllNotFoundException or EntryPointNotFoundException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>The sentence a refused pipe, socket or device is reported with.</summary>
+    /// <param name="path">The path that was not read.</param>
+    /// <returns>One sentence the person can act on.</returns>
+    public static string NotAFileProblem(string path) =>
+        $"{path} is not an ordinary file (it is a pipe, a socket or a device), so Parley did not read it.";
+
+    // Off Windows: only an ordinary file, opened without ever waiting (the class's remarks).
+    //
+    // .NET says nothing of a file's kind: FileAttributes reads Normal for a pipe and for /dev/null alike, by path and by
+    // handle, and its open of a pipe waits for a writer with no way to cancel it. So the open is libc's own, with
+    // O_NONBLOCK, which returns at once for a pipe; the kind is then read from the open handle, so a pipe swapped in after
+    // any check by path is still the thing refused. A socket refuses the open itself (ENXIO).
+    //
+    // The kind is read through .NET's own native shim (SystemNative_FStat), not libc's fstat: its FileStatus is the one
+    // structure .NET itself reads to refuse a folder, laid out the same on every platform .NET ships, where libc's struct
+    // stat differs between Linux x64, Linux arm64 and macOS (and macOS x64 has two), and glibc before 2.33 exports no
+    // fstat at all. The shim ships in the runtime this runs on, so its layout is the runtime's own; a runtime without it
+    // throws, which is refused as unreadable rather than read. The flag values are the only per-platform knowledge here,
+    // and only Linux and macOS are listed; any other system keeps the ordinary open.
+    //
+    // FileShare is kept as .NET keeps it off Windows: an advisory flock, exclusive for FileShare.None and shared otherwise,
+    // and a file another holds exclusively is Busy, so the read-modify-write in enrolment still excludes these readers.
+    private static (LocalOpenStatus, FileStream?) Ordinary(string reached, FileAccess access, FileShare share, bool followLink)
+    {
+        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsMacOS())
+        {
+            return Ordinary(reached, access, share);
+        }
+
+        int descriptor;
+        int error;
+
+        try
+        {
+            do
+            {
+                descriptor = OpenNative(reached, OpenFlags(access, followLink));
+                error = descriptor < 0 ? Marshal.GetLastPInvokeError() : 0;
+            }
+            while (descriptor < 0 && error == Interrupted);
+        }
+        catch (Exception missing) when (missing is DllNotFoundException or EntryPointNotFoundException)
+        {
+            return (LocalOpenStatus.Unreadable, null);
+        }
+
+        if (descriptor < 0)
+        {
+            return (error switch
+            {
+                NoSuchEntry or NotAFolder or IsAFolder => LocalOpenStatus.Missing,
+                NoDevice => LocalOpenStatus.NotAFile,
+                TextBusy => LocalOpenStatus.Busy,
+                _ when error == TooManyLinks && !followLink => LocalOpenStatus.Changed,
+                _ => LocalOpenStatus.Unreadable,
+            }, null);
+        }
+
+        var handle = new SafeFileHandle(descriptor, ownsHandle: true);
+
+        try
+        {
+            var status = new byte[StatusBytes];
+
+            if (FStat(handle, status) != 0)
+            {
+                handle.Dispose();
+
+                return (LocalOpenStatus.Unreadable, null);
+            }
+
+            switch (KindOf(status))
+            {
+                case FolderKind:
+                    // A folder where a file was asked for is no file, as on Windows.
+                    handle.Dispose();
+
+                    return (LocalOpenStatus.Missing, null);
+                case not RegularKind:
+                    handle.Dispose();
+
+                    return (LocalOpenStatus.NotAFile, null);
+            }
+
+            if (Flock(handle, (share == FileShare.None ? LockExclusive : LockShared) | LockNoWait) != 0
+                && Marshal.GetLastPInvokeError() == WouldBlock)
+            {
+                handle.Dispose();
+
+                return (LocalOpenStatus.Busy, null);
+            }
+
+            return (LocalOpenStatus.Opened, new FileStream(handle, access, 4096, isAsync: false));
+        }
+        catch (Exception missing) when (missing is DllNotFoundException or EntryPointNotFoundException)
+        {
+            handle.Dispose();
+
+            return (LocalOpenStatus.Unreadable, null);
+        }
+        catch
+        {
+            handle.Dispose();
+            throw;
+        }
+    }
+
+    // O_RDONLY, O_WRONLY and O_RDWR are 0, 1 and 2 everywhere; the rest differ. Linux: O_NONBLOCK 0x800 and O_CLOEXEC
+    // 0x80000 on every architecture .NET runs on there, O_NOFOLLOW 0x8000 on Arm and PowerPC and 0x20000 on the rest
+    // (x64, x86, s390x, RISC-V, LoongArch). macOS: 0x4, 0x1000000 and 0x100.
+    private static int OpenFlags(FileAccess access, bool followLink)
+    {
+        var mode = access switch
+        {
+            FileAccess.Read => 0,
+            FileAccess.Write => 1,
+            _ => 2,
+        };
+
+        if (OperatingSystem.IsMacOS())
+        {
+            return mode | 0x4 | 0x1000000 | (followLink ? 0 : 0x100);
+        }
+
+        var noFollow = RuntimeInformation.ProcessArchitecture
+            is Architecture.Arm or Architecture.Arm64 or Architecture.Armv6 or Architecture.Ppc64le
+            ? 0x8000
+            : 0x20000;
+
+        return mode | 0x800 | 0x80000 | (followLink ? 0 : noFollow);
+    }
+
+    private static int KindOf(byte[] status) => BitConverter.ToInt32(status, 4) & KindMask;
+
+    // The errno values that are the same on Linux and macOS, and the two that are not.
+    private const int NoSuchEntry = 2;
+    private const int Interrupted = 4;
+    private const int NoDevice = 6;
+    private const int NotAFolder = 20;
+    private const int IsAFolder = 21;
+    private const int TextBusy = 26;
+
+    private static int TooManyLinks => OperatingSystem.IsMacOS() ? 62 : 40;
+
+    private static int WouldBlock => OperatingSystem.IsMacOS() ? 35 : 11;
+
+    private const int LockShared = 1;
+    private const int LockExclusive = 2;
+    private const int LockNoWait = 4;
+
+    // The shim's FileStatus: Flags, then Mode with the kind in its S_IFMT bits, which are POSIX's everywhere. Its whole
+    // size is under 128 bytes; the buffer is larger so a field added at its end is never written past.
+    private const int StatusBytes = 512;
+    private const int KindMask = 0xF000;
+    private const int RegularKind = 0x8000;
+    private const int FolderKind = 0x4000;
+
+    // `open` is variadic, but only the mode after the flags is, and it is never passed (nothing is created here), so the
+    // two fixed arguments are passed as fixed on every ABI, Apple's Arm64 included.
+    [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
+    [DllImport("libc", EntryPoint = "open", SetLastError = true)]
+    private static extern int OpenNative([MarshalAs(UnmanagedType.LPUTF8Str)] string path, int flags);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
+    [DllImport("libc", EntryPoint = "flock", SetLastError = true)]
+    private static extern int Flock(SafeFileHandle handle, int operation);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
+    [DllImport("libSystem.Native", EntryPoint = "SystemNative_FStat", SetLastError = true)]
+    private static extern int FStat(SafeFileHandle handle, [Out] byte[] status);
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
+    [DllImport("libSystem.Native", EntryPoint = "SystemNative_Stat", SetLastError = true)]
+    private static extern int Stat([MarshalAs(UnmanagedType.LPUTF8Str)] string path, [Out] byte[] status);
 
     private static (LocalOpenStatus, FileStream?) Ordinary(string reached, FileAccess access, FileShare share)
     {

@@ -118,6 +118,10 @@ its folder (a first `.mcp.json` or `CLAUDE.md`), the node starting or restarting
 and the enrolment scan listing a folder, placing a file you name by its path, and a `parley` command typed in a
 repository finding its `.git`. Closing those is planned work.
 
+**A file that never finishes opening.** On Linux and macOS an agent could turn its `.mcp.json`, or a file you place, into
+a named pipe, which an ordinary open waits on for ever, so Parley opens only ordinary files there, without waiting, and
+tells you it skipped one that is not.
+
 **Silent damage to your files.** Project files are written atomically, preserve what they do not
 understand, and refuse to write when anything was left out of a read. Nothing is kept on a synced cloud
 folder, a network drive or a virtual file system (a FUSE mount such as rclone or sshfs on Linux and macOS; on Windows, any drive that is not a
