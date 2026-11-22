@@ -1063,33 +1063,28 @@ public sealed class BrokerRuntime : IAsyncDisposable
             throw;
         }
 
-        // **Scheduled, not awaited**: it waits for processes that outlived the broker to attach again, and the join's reply
-        // must not wait with it. Recorded before the join returns, so a test can wait on it.
-        if (_options.ResumePolicy == ResumePolicy.Always && _resumedMachines.TryAdd(node.Machine, true))
-        {
-            var machine = node.Machine;
-
-            _restartWakes[machine] = Task.Run(() => WakeOnceReattachedAsync(machine), CancellationToken.None);
-        }
+        // **Scheduled, not awaited**: both wakes wait for processes that outlived the broker to attach again, and the join's
+        // reply must not wait with them. The agents whose freeze lapsed at this start are taken here, so a second join does
+        // not take them twice. Recorded before the join returns, so a test can wait on it.
+        var restart = _options.ResumePolicy == ResumePolicy.Always && _resumedMachines.TryAdd(node.Machine, true);
+        var lapsedHere = new List<AgentName>();
 
         foreach (var name in _lapsed.Keys)
         {
-            if (!AgentName.TryCreate(name, out var lapsed)
-                || !string.Equals(lapsed.Machine, node.Machine, StringComparison.Ordinal)
-                || !_lapsed.TryRemove(name, out _))
+            if (AgentName.TryCreate(name, out var lapsed)
+                && string.Equals(lapsed.Machine, node.Machine, StringComparison.Ordinal)
+                && _lapsed.TryRemove(name, out _))
             {
-                continue;
+                lapsedHere.Add(lapsed);
             }
+        }
 
-            try
-            {
-                await WakeIfOwingAsync(lapsed, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception)
-            {
-                // As above: the join stands, and the wake is asked for again at the machine's next join.
-                _lapsed[name] = true;
-            }
+        if (restart || lapsedHere.Count > 0)
+        {
+            var machine = node.Machine;
+            var wake = Task.Run(() => WakeOnceReattachedAsync(machine, restart, lapsedHere), CancellationToken.None);
+
+            _ = _restartWakes.AddOrUpdate(machine, wake, (_, earlier) => Task.WhenAll(earlier, wake));
         }
 
         return joined;
@@ -1148,6 +1143,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// Waits for processes that outlived the broker to attach again, then wakes the machine's agents that owe work (§14).
     /// </summary>
     /// <param name="machine">The machine whose node first joined.</param>
+    /// <param name="restart">Whether to wake every agent that owes work (the resume policy's restart wake).</param>
+    /// <param name="lapsed">The agents on this machine whose freeze lapsed at this broker's start, each to be woken if owed.</param>
     /// <returns>A task that completes when the wake is done or given up; it never faults.</returns>
     /// <remarks>
     /// <para>
@@ -1161,8 +1158,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <b>The wake is an extra</b>, so a failure, or the broker stopping, is forgotten and asked for again at the machine's
     /// next join. The work stays open and is flagged on the ordinary schedule meanwhile.
     /// </para>
+    /// <para>
+    /// <b>A lapsed freeze waits too</b>, whatever the resume policy: the broker lifted it at its start, and woken at the join
+    /// it started an agent whose editor session or left process had not attached again yet, two sessions in one checkout
+    /// (review, lens 3 run B on d99806d9).
+    /// </para>
     /// </remarks>
-    private async Task WakeOnceReattachedAsync(string machine)
+    private async Task WakeOnceReattachedAsync(string machine, bool restart, IReadOnlyList<AgentName> lapsed)
     {
         try
         {
@@ -1172,25 +1174,80 @@ public sealed class BrokerRuntime : IAsyncDisposable
             {
                 await Task.Delay(delay, Clock, _stopping.Token).ConfigureAwait(false);
             }
-
-            // The node left while this waited, so there is nobody to ask: forgotten, for its next join to ask again.
-            while (!_nodes.ContainsKey(machine))
-            {
-                _ = _resumedMachines.TryRemove(machine, out _);
-
-                // A join between the look and the forgetting found the machine still claimed and scheduled nothing, so it
-                // is claimed again and woken for here. A join after the forgetting claims it itself.
-                if (!_nodes.ContainsKey(machine) || !_resumedMachines.TryAdd(machine, true))
-                {
-                    return;
-                }
-            }
-
-            await WakeForOutstandingWorkAsync(machine, _stopping.Token).ConfigureAwait(false);
         }
         catch (Exception)
         {
+            Forget(machine, restart, lapsed);
+
+            return;
+        }
+
+        if (!_nodes.ContainsKey(machine))
+        {
+            // The node left while this waited, so there is nobody to ask: kept for its next join.
+            foreach (var agent in lapsed)
+            {
+                _lapsed[agent.Value] = true;
+            }
+
+            lapsed = [];
+        }
+
+        if (restart)
+        {
+            try
+            {
+                // The node left while this waited, so there is nobody to ask: forgotten, for its next join to ask again.
+                var asking = true;
+
+                while (asking && !_nodes.ContainsKey(machine))
+                {
+                    _ = _resumedMachines.TryRemove(machine, out _);
+
+                    // A join between the look and the forgetting found the machine still claimed and scheduled no restart
+                    // wake, so it is claimed again and woken for here. A join after the forgetting claims it itself.
+                    asking = _nodes.ContainsKey(machine) && _resumedMachines.TryAdd(machine, true);
+                }
+
+                if (asking)
+                {
+                    await WakeForOutstandingWorkAsync(machine, _stopping.Token).ConfigureAwait(false);
+                }
+            }
+            catch (Exception)
+            {
+                _ = _resumedMachines.TryRemove(machine, out _);
+            }
+        }
+
+        foreach (var agent in lapsed)
+        {
+            try
+            {
+                await WakeIfOwingAsync(agent, _stopping.Token).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // As the restart wake: asked for again at the machine's next join.
+                _lapsed[agent.Value] = true;
+            }
+        }
+    }
+
+    /// <summary>Gives a scheduled wake back, so the machine's next join asks for it again.</summary>
+    /// <param name="machine">The machine.</param>
+    /// <param name="restart">Whether the restart wake was part of it.</param>
+    /// <param name="lapsed">The lapsed agents it held.</param>
+    private void Forget(string machine, bool restart, IReadOnlyList<AgentName> lapsed)
+    {
+        if (restart)
+        {
             _ = _resumedMachines.TryRemove(machine, out _);
+        }
+
+        foreach (var agent in lapsed)
+        {
+            _lapsed[agent.Value] = true;
         }
     }
 

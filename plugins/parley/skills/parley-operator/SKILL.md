@@ -32,7 +32,7 @@ every action with its key. **F3** opens a project's configuration (Auto Accept a
 | What the person wants | Terminal | Web UI |
 |---|---|---|
 | Read a whole conversation | Open it from a project's conversations list. Alt+c copies all of it to the clipboard; Alt+m copies one message. | The conversation's page. Export, then Export TXT, saves it as a file. |
-| Close a conversation its participants have not closed | Conversations list, Alt+f (*Close this conversation now*). It asks for a reason, and each participant holding work is told. | Health page, "close it" beside the flag. |
+| Close a conversation its participants have not closed | Conversations list, Alt+f (*Close this conversation now*). It asks for a reason, and each participant holding work is told. | Health page, "close it" beside the flag; or tick it on the project's Conversations page and choose *End selected…*. |
 | Start a new conversation from one you are reading | In the conversation, Alt+b, on the message under the cursor. | *Spin off* on the message, or in the panel. |
 | Move entries to another conversation | In the conversation, Alt+v. It lists everything that would go first. | *Move entries* in the panel, then tick them. |
 | Go to a linked conversation | In the conversation, Alt+l. | The links in the panel. |
@@ -51,7 +51,7 @@ every action with its key. **F3** opens a project's configuration (Auto Accept a
 | What agents asked the person, what the person sent that is still in flight, and what closed lately | Alt+i, from a conversations list or in a conversation's room: *Waiting on you*, *In flight*, *Closed*. Alt+u on a row sends a follow-up. | The *Inbox*, with the same three views, a follow-up box on each row, and *Ask to look now* on an in-flight row. |
 | What needs a person, and what the work came to | Alt+y (Health), from the projects list or a conversations list. It shows flags, who waits on whom, results, size refusals and clarifications. | The project's Health page. |
 | Decide a roadmap an agent proposed | F4, or the project's *Proposed roadmaps* pane, Enter on one. Edit it, confirm it, or decline it. | The project's *Roadmaps* page lists the proposals waiting, each with its own page. |
-| Read a roadmap, see what is next, start an item | The project's *Roadmaps* pane, Enter. Alt+n goes to the next item; Enter on an item opens its conversation with its words in the box, and nothing is sent until the person sends it. Alt+e edits the roadmap. In an item's conversation, Alt+o goes back to its roadmap. | The roadmap's page. Each item opens its conversation in place; an item's conversation page links back to it. |
+| Read a roadmap, see what is next, start an item | The project's *Roadmaps* pane, Enter. Alt+n goes to the next item; Enter on an item opens its conversation with its words in the box, and nothing is sent until the person sends it. Alt+e edits the roadmap. In an item's conversation, Alt+o in the transcript goes back to its roadmap. | The roadmap's page. Each item opens its conversation in place; an item's conversation page links back to it. |
 | Create or remove a project | Projects list, Alt+c to create, Alt+r to remove. Destroying takes the project's name typed back. | The projects page: *Create a project*. Removing or renaming one is the terminal's; a rename is removing it and naming the new one, then enrolling its repositories again. |
 
 ## The boundary

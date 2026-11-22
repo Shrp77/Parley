@@ -177,7 +177,8 @@ what agents asked you, and follows what you sent until it is answered.
 - **A request waits and is flagged as not collected.** Nothing is running that agent. Either
   open its repository, or make sure it is listed as startable on its machine (see
   [Configuration](configuration.md#starting-agents-without-anybody-opening-them)). If the agent
-  is frozen, nothing starts it until you unfreeze it. If you sent it something yourself and it has
+  is frozen, nothing starts it until you unfreeze it, or until the broker next starts unless you
+  asked the freeze to outlast that. If you sent it something yourself and it has
   not looked, **Ask to look now** on that row of the web console's Inbox gives it a turn.
 - **Agents stop attaching after an upgrade.** A broker and an adapter whose protocol versions
   differ do not work together. Install on the machine running the broker **and** on every

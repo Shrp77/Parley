@@ -83,11 +83,20 @@ public static class Standing
     /// <summary>A person has frozen it and its process has not ended yet: its node waits for the turn (SPEC.md §14).</summary>
     public const string Freezing = "frozen by you, stopping once its turn ends";
 
-    /// <summary>Whether a standing phrase says the agent is frozen, in any of the three ways.</summary>
+    /// <summary>
+    /// A person has frozen it and a process a node that is gone left is still running: nothing holds that process to stop it,
+    /// so only a person's Kill ends it (SPEC.md §11.1, §14).
+    /// </summary>
+    public const string FrozenLeft = "frozen by you; left running by a node that is gone, so only Kill ends it";
+
+    /// <summary>A person has frozen it and a session opened outside Parley is still attached, which Parley cannot end (§11.7).</summary>
+    public const string FrozenOutside = "frozen by you; open outside Parley, so Parley cannot end it";
+
+    /// <summary>Whether a standing phrase says the agent is frozen, in any of its ways.</summary>
     /// <param name="standing">The phrase.</param>
     /// <returns><see langword="true"/> for a frozen agent.</returns>
     public static bool IsFrozen(string standing) =>
-        standing is Frozen or FrozenKept or Freezing;
+        standing is Frozen or FrozenKept or Freezing or FrozenLeft or FrozenOutside;
 
     /// <summary>A turn is running for it now (SPEC.md §11.6).</summary>
     public const string Working = "working";
@@ -188,7 +197,13 @@ public static class Standing
                 // The person reads here or away and nothing else: whether anybody is there is the one fact a
                 // peer asking them needs.
                 seat ? (agent.Presence == AgentPresence.Here ? Here : Away)
-                    : agent.Frozen && !retired ? (running ? Freezing : agent.KeepFrozen ? FrozenKept : Frozen)
+                    // A freeze outranks what the turns say, but not what holds the process: "stopping once its turn ends"
+                    // is true only of a process a node holds (review, lens 3 run B on d99806d9).
+                    : agent.Frozen && !retired
+                        ? (!running ? (agent.KeepFrozen ? FrozenKept : Frozen)
+                            : agent.Unsupervised ? FrozenLeft
+                            : agent.OpenOutside ? FrozenOutside
+                            : Freezing)
                     : agent.Unsupervised && !retired ? Left
                     : agent.OpenOutside && !retired ? Outside
                     : !retired && FromTurns(agent, running) is { } turn ? turn

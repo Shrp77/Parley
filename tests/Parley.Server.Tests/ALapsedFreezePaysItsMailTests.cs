@@ -1,4 +1,4 @@
-using Xunit;
+﻿using Xunit;
 using Wire = Parley.Transport;
 
 namespace Parley.Server.Tests;
@@ -65,6 +65,27 @@ public sealed class ALapsedFreezePaysItsMailTests : IDisposable
 
         Assert.Equal(Wire.NodeCommand.CommandOneofCase.Start, command.CommandCase);
         Assert.Equal(Orders, command.Start.Agent);
+    }
+
+    [Fact]
+    public async Task A_session_that_attaches_again_inside_the_wait_is_not_started_a_second_time_by_the_lapse()
+    {
+        // The lapse's start waits as the restart wake does: an editor session that outlived the broker attaches again inside
+        // the wait, and the agent is then open outside Parley, which nobody starts beside (SPEC.md §11.7, §14). Woken at the
+        // join it was started 28 ms in, two sessions in one checkout (review, lens 3 run B on d99806d9).
+        await AnsweredWhileFrozenAsync(keep: false, answer: true);
+
+        await using var second = await LoopbackBroker.StartOnAsync(Store, Ct, restartWakeDelay: TimeSpan.FromSeconds(2));
+
+        Assert.False(await FrozenAsync(second), "the restart did not lift the freeze");
+
+        // Not waiting for the wake at the join, which is the wait the editor attaches inside.
+        await using var node = await JoinedNodeClient.JoinAsync(second, Here, ["orders"], Ct, reportsTurns: true, waitForRestartWake: false);
+        await using var editor = await AttachedClient.AttachAsync(second, Orders, cancellationToken: Ct);
+
+        await second.Runtime.RestartWakeOf(Here).WaitAsync(Patience, Ct);
+
+        Assert.Equal(0, await node.CountCommandsAsync(Briefly));
     }
 
     [Fact]

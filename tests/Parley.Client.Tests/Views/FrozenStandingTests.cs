@@ -38,20 +38,21 @@ public sealed class FrozenStandingTests
 
     [Theory]
     [MemberData(nameof(EveryPhrase))]
-    public void Only_the_three_frozen_phrases_read_as_frozen(string name, string phrase)
+    public void Only_the_frozen_phrases_read_as_frozen(string name, string phrase)
     {
-        var frozen = name is nameof(Standing.Frozen) or nameof(Standing.FrozenKept) or nameof(Standing.Freezing);
+        var frozen = name is nameof(Standing.Frozen) or nameof(Standing.FrozenKept) or nameof(Standing.Freezing)
+            or nameof(Standing.FrozenLeft) or nameof(Standing.FrozenOutside);
 
         Assert.Equal(frozen, Standing.IsFrozen(phrase));
     }
 
     [Fact]
-    public void The_three_frozen_phrases_are_declared_and_differ()
+    public void The_frozen_phrases_are_declared_and_differ()
     {
         // The theory above reads the constants by reflection, so it would pass with one of them gone. This is what it rests on.
-        string[] phrases = [Standing.Frozen, Standing.FrozenKept, Standing.Freezing];
+        string[] phrases = [Standing.Frozen, Standing.FrozenKept, Standing.Freezing, Standing.FrozenLeft, Standing.FrozenOutside];
 
-        Assert.Equal(3, phrases.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(5, phrases.Distinct(StringComparer.Ordinal).Count());
         Assert.All(phrases, phrase => Assert.True(Standing.IsFrozen(phrase), phrase));
         Assert.False(Standing.IsFrozen("frozen"));
         Assert.False(Standing.IsFrozen(string.Empty));
@@ -101,16 +102,19 @@ public sealed class FrozenStandingTests
     [Fact]
     public void A_freeze_outranks_what_its_turns_and_its_process_say()
     {
-        // Working, open outside Parley and left by a node that is gone each have a phrase of their own; a freeze is said first.
+        // Working, open outside Parley and left by a node that is gone each have a phrase of their own; a freeze is said first,
+        // but "stopping once its turn ends" only of a process a node holds: nothing stops one open outside or left running.
         var working = Agent(AgentPresence.Running, AgentStatus.Active, Then, false) with
         {
             Turns = new TurnStanding(true, Then, null, true, 0),
         };
         var outside = Agent(AgentPresence.Running, AgentStatus.Active, Then, false) with { OpenOutside = true };
         var left = Agent(AgentPresence.Stranded, AgentStatus.Active, Then, true) with { Unsupervised = true };
+        var leftRunning = Agent(AgentPresence.Running, AgentStatus.Active, Then, false) with { Unsupervised = true, OpenOutside = true };
 
         Assert.Equal(Standing.Freezing, Assert.Single(Standing.Join([working], Roles(), SeatAdapter, Machine)).Standing);
-        Assert.Equal(Standing.Freezing, Assert.Single(Standing.Join([outside], Roles(), SeatAdapter, Machine)).Standing);
+        Assert.Equal(Standing.FrozenOutside, Assert.Single(Standing.Join([outside], Roles(), SeatAdapter, Machine)).Standing);
+        Assert.Equal(Standing.FrozenLeft, Assert.Single(Standing.Join([leftRunning], Roles(), SeatAdapter, Machine)).Standing);
         Assert.Equal(Standing.FrozenKept, Assert.Single(Standing.Join([left], Roles(), SeatAdapter, Machine)).Standing);
     }
 

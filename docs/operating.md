@@ -132,8 +132,8 @@ in the same conversation. The facilitator's rows have none.
 A row in *In flight* also has **Ask to look now**. It starts that agent, or gives it a turn if it
 is already running, so that it collects what is waiting for it. Use it when an agent has not
 picked something up. It writes no message and changes nothing the agent owes. It costs the agent
-a turn. If the agent is frozen, or open in an editor Parley did not start, the page says so
-instead.
+a turn. If the agent is frozen, open in an editor Parley did not start, or left running by a node
+that is gone, the page says so instead.
 
 **Ask which are still open** sends each agent that has questions waiting on you one request per
 conversation, listing them. The agent can then say which ones a later message already answered.
@@ -239,8 +239,8 @@ The web console says the same things on a conversation's page.
   The page refreshes itself every 10 seconds without reloading, and a line you opened stays open.
 
 *Idle* means attached with no turn and no background work running. *Running* on its own means
-attached, and nobody reports whether it is in a turn, so Parley will not guess. *Frozen by you*
-means you froze it. These lists show who is working and for how long, not on which conversation:
+attached, and nobody reports whether it is in a turn, so Parley will not guess. *Frozen* means you
+froze it (the terminal says *frozen by you*, the web lists say *frozen*). These lists show who is working and for how long, not on which conversation:
 Parley does not record which conversation a turn is for.
 
 **A stop caused by a refused permission is flagged at once,** in Health (`Alt+y`) and on the
@@ -306,7 +306,7 @@ yourself. To keep it stopped through a logon or a reboot, see the last point in 
   or *Freeze* on it in the graph. *Freeze all* in the graph freezes a whole project.
 - **What happens:** the agent stops once its current turn ends. Then nothing starts it: not new
   work, not a Start, not a Restart. What it owes stays open and waits. Anybody who sends it a
-  message is told it is frozen. It reads *frozen by you* in the agents list.
+  message is told it is frozen. It reads as frozen in the agents lists.
 - **How it ends:** *Unfreeze* ends it by hand. The next start of the broker also ends it, and a
   logon or a reboot starts the broker. Either way, the agent is then started if it owes work, or if
   a message or a closing vote reached it while it was frozen.
@@ -331,8 +331,9 @@ that session.
 When a machine's node joins a broker that has just started (after an install, a reboot, or
 `parley serve` run again), each active agent on that machine that owes an open exchange is started,
 once. So an unattended machine that takes a forced update gets its work going again with nobody
-there. It does not start an agent you froze with *Do not unfreeze on logon*, or one open outside
-Parley.
+there. It does not start an agent you froze with *Do not unfreeze on logon*, one open outside
+Parley, or one left running by a node that is gone. It waits five seconds after the node joins, so
+such a process can connect again first.
 
 Work stays open whatever happens. Stopping an agent, or ending the broker, decides only whether
 anybody is working on it right now. To end work, close its conversation.
@@ -400,7 +401,8 @@ timezone, sortable either way.
   read:
   - Under an exchange's first message, a *Read by* line says who read it, when, and how often.
   - Beside the conversation, *Searched the history* has a line for each agent that searched, with
-    how many searches it made and its newest words.
+    how many searches it made and its newest words. It shows up to eight agents, then says how many
+    more searched.
   - The same lines are in the exported text.
 
   Reads change nothing. No message is marked delivered, nobody is woken, and the reader does not
@@ -471,7 +473,7 @@ conversation is closed reads closed, not blocked, because nobody can ask in it a
 blocked it says so, with the blocker.
 
 An item's conversation is marked with its item in every conversation list, and leads back to its
-roadmap: Alt+o in the terminal, the link under its name on the web. Removing an item leaves its
+roadmap: Alt+o in the terminal's transcript, the link under its name on the web. Removing an item leaves its
 conversation where it is, marked *formerly*. A proposal confirmed as a revision replaces the
 roadmap's items with its own, except a line you gave `| item: n`, which keeps that item and its conversation; the rest
 are removed. It also settles the other proposals waiting to revise that roadmap, and the choice says so, with how many when it could

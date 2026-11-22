@@ -118,9 +118,13 @@ public sealed class RowMenuTests
         Assert.DoesNotContain(Shell.KillThisTitle + orders.Value, offered);
     }
 
-    [Fact]
-    public async Task One_a_node_that_is_gone_left_running_offers_kill_and_neither_stop_nor_restart()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task One_a_node_that_is_gone_left_running_offers_kill_and_neither_stop_nor_restart(bool frozen)
     {
+        // Frozen too: a freeze does not make a left process anybody's to stop, and its row once offered Stop and Restart and
+        // no Kill (review, lens 3 run B on d99806d9).
         // SPEC.md §11.1. It carries a launch token no node now holds: nothing holds its process to wait for a turn, so
         // the menu offers the one thing that can be done, and not what the broker would refuse.
         await using var seated = await OnAgentsAsync();
@@ -154,6 +158,11 @@ public sealed class RowMenuTests
             cancellationToken: Ct);
 
         Assert.True(await attached.ResponseStream.MoveNext(Ct), "the attach stream said nothing");
+
+        if (frozen)
+        {
+            Assert.True((await seated.Operators.FreezeAsync(orders, cancellationToken: Ct)).Changed);
+        }
 
         await seated.Shell.RefreshAsync(Ct);
         await seated.Shell.Settled;

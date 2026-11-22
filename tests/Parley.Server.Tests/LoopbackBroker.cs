@@ -73,10 +73,13 @@ internal sealed class LoopbackBroker : IAsyncDisposable
     /// <summary>Starts a broker over a store file, so a second one over the same file is a restart.</summary>
     /// <param name="store">The store's path.</param>
     /// <param name="cancellationToken">Cancels startup.</param>
+    /// <param name="restartWakeDelay">How long a machine's first join waits before its wakes, or null for none, as for <see cref="StartAsync"/>.</param>
     /// <returns>The running broker.</returns>
-    public static async Task<LoopbackBroker> StartOnAsync(string store, CancellationToken cancellationToken)
+    public static async Task<LoopbackBroker> StartOnAsync(string store, CancellationToken cancellationToken, TimeSpan? restartWakeDelay = null)
     {
         var runtime = BrokerRuntime.Open(Parley.Core.ProjectName.Create("test"), store, BrokerOptions.Default, TimeProvider.System);
+
+        runtime.RestartWakeDelay = restartWakeDelay ?? TimeSpan.Zero;
 
         var server = await ParleyServer
             .StartAsync(runtime, "http://127.0.0.1:0", cancellationToken, Diagnostics())

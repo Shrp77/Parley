@@ -93,9 +93,10 @@ listed as startable, the node starts it, and the message is there when it arrive
 always a response to something waiting. An idle agent is never started to invent work.
 
 An agent that was started by a node carries a launch token, good until the node starts it again, so
-it is still known as Parley's when it reconnects. One that connects without it, or with one from an
-earlier launch, was opened some other way, such as by you in an editor. Parley does not start a second copy beside
-it. A message to it waits until somebody there takes a turn.
+it is still known as Parley's when it reconnects. One that connects with a token from an earlier
+launch was left running by a node that is gone: you can end it with Kill. One that connects with no
+token was opened some other way, such as by you in an editor. Parley does not start a second copy
+beside either. A message to it waits until somebody there takes a turn.
 
 ## Stopping, freezing and background work
 

@@ -2536,15 +2536,18 @@ internal sealed partial class Shell : Window
             }
 
             // One a node that is gone left running can be ended, not stopped: nothing holds it to wait for its turn.
+            // Frozen or not: a freeze does not make a left process anybody's to stop (review, lens 3 run B on d99806d9).
             if (Agents.SelectedStanding is { Running: true } left
-                && string.Equals(left.Standing, Standing.Left, StringComparison.Ordinal))
+                && left.Standing is Standing.Left or Standing.FrozenLeft)
             {
                 entries.Add((KillThisTitle + name.Value, KillSelected));
             }
 
-            // Only a process Parley started: one open outside Parley is whoever opened it's, and no node holds it.
+            // Only a process Parley started: one open outside Parley is whoever opened it's, and no node holds it. A frozen
+            // one is neither restarted (the broker refuses it) nor stopped (the freeze already stops it at its turn's end).
             else if (Agents.SelectedStanding is { Running: true } running
-                && !string.Equals(running.Standing, Standing.Outside, StringComparison.Ordinal))
+                && running.Standing is not (Standing.Outside or Standing.FrozenOutside)
+                && !Standing.IsFrozen(running.Standing))
             {
                 entries.Add((RestartThisTitle + name.Value, () => StopSelected(restart: true)));
                 entries.Add((StopThisTitle + name.Value, () => StopSelected(restart: false)));

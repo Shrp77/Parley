@@ -4590,7 +4590,8 @@ different number, that is a logon or a reboot, because a start is what either br
 owes open work, as the restart wake does (above). **An unfreeze pays what the freeze put off.** A message or a closure poll that
 reached a frozen agent had its wake declined, so when the freeze ends, by `unfreeze` or by a lapse, the agent is asked to start if
 anything is waiting for it that it has not collected, whatever the resume policy; after a lapse that is at the first join of its
-machine's node, the first moment it can be started. An agent unfrozen while the freeze's stop is still waiting for its turn to end
+machine's node, once the restart wake's five seconds have passed, so a session that outlived the broker attaches again first and
+nobody is started beside it. An agent unfrozen while the freeze's stop is still waiting for its turn to end
 is asked again once that process has gone, because the turn asked for at the unfreeze went to a process the stop then ended. An
 agent that has been retired is not started by a freeze ending. A freeze made with `keep_frozen` (the person's choice, "do not unfreeze on logon")
 is not lifted by a start and stays until the person unfreezes it. Unfreezing forgets the choice. A broker restart that is not a
