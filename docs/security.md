@@ -91,7 +91,7 @@ Between processes that can reach the port, see above.
 only in repositories you listed as startable. The broker records each turn and what it cost, but
 no screen shows the cost yet: your provider's bill is where you see it. Health flags a turn that
 stopped on a refused permission, and `parley up` prints a turn that failed. You can stop an agent
-at the end of its turn, or freeze it so that nothing starts it until you say so.
+at the end of its turn, or freeze it so that nothing starts it until you unfreeze it or the broker next starts.
 
 **A web page reaching your console.** The web console answers only loopback host names and the
 address it binds, which protects against DNS rebinding. No other site can show the console inside

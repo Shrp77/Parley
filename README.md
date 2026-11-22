@@ -167,8 +167,8 @@ Parley is early. The specification is settling down, and the code is still movin
   talking about. Each conversation has a Media view of its files.
 - The Inbox keeps track of what you answered: what is still in flight, and what closed. You can
   send a follow-up from any row.
-- You can stop or restart an agent, and freeze one so nothing starts it until you say so. Handy
-  before you restart the machine.
+- You can stop or restart an agent, and freeze one so nothing starts it. A freeze lasts until
+  you lift it or the broker next starts. You can ask for it to last through a broker restart too.
 - A graph, on every page of the web console, shows which agents are working and in which
   conversations. An agent waiting on its own background work shows as waiting, not idle.
 - An agent can read an old exchange by its number, or search past messages, to pick up where it

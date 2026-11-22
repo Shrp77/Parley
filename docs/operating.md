@@ -298,8 +298,8 @@ so it cannot stop it.
 
 ### Freezing an agent, to keep it stopped
 
-Freeze an agent when you want it to stay stopped: for example, before you restart the machine or
-log off.
+Freeze an agent when you want it to stay stopped: for example, while you work in its repository
+yourself. To keep it stopped through a logon or a reboot, see the last point in the list below.
 
 - **Where:** Enter on its row in the terminal, the *Freeze* button on its page in the web console,
   or *Freeze* on it in the graph. *Freeze all* in the graph freezes a whole project.
