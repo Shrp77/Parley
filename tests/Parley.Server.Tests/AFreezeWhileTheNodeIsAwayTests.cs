@@ -38,8 +38,10 @@ public sealed class AFreezeWhileTheNodeIsAwayTests
 
         var frozen = await broker.ConnectAsOperator().FreezeAsync(new Wire.FreezeRequest { Agent = Agent }, cancellationToken: Ct);
 
+        // Its token went with the node, so no node holds the process and it reads as left running (SPEC.md §11.1) until the
+        // node announces it again.
         Assert.True(frozen.Changed);
-        Assert.Equal("no_node", frozen.Process);
+        Assert.Equal("left_running", frozen.Process);
 
         // The node joins again and announces the process it still runs, as TurnReporter.ReannounceAsync does.
         await using var again = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);

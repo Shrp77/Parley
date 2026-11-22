@@ -389,13 +389,14 @@ public sealed class StopAndRestartTests
     }
 
     [Fact]
-    public async Task An_agent_whose_machine_has_no_node_is_refused_with_what_to_do()
+    public async Task An_agent_whose_node_has_gone_is_refused_with_what_to_do()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
         await using var agent = await LaunchedAsync(broker, node);
 
-        // The node goes, as it did when a dropped stream ended a hosted node; the agent's own connection stays.
+        // The node goes, as it did when a dropped stream ended a hosted node; the agent's own connection stays. Its token
+        // went with the node, so the process is left running and only a kill ends it (SPEC.md §11.1).
         await node.DisposeAsync();
 
         RpcException? refused = null;
@@ -415,7 +416,8 @@ public sealed class StopAndRestartTests
 
         Assert.NotNull(refused);
         Assert.Equal(StatusCode.FailedPrecondition, refused.StatusCode);
-        Assert.Contains("parley up", refused.Status.Detail, StringComparison.Ordinal);
+        Assert.Contains("left by a node that is gone", refused.Status.Detail, StringComparison.Ordinal);
+        Assert.Contains("kill", refused.Status.Detail, StringComparison.Ordinal);
     }
 
     [Theory]

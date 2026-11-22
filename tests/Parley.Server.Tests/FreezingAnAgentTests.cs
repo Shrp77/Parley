@@ -477,11 +477,12 @@ public sealed class FreezingAnAgentTests
     }
 
     [Fact]
-    public async Task Freezing_an_agent_whose_node_has_gone_says_no_node_is_joined_to_stop_it()
+    public async Task Freezing_an_agent_whose_node_has_gone_says_it_was_left_running()
     {
-        // The node that started it has left, and the broker still knows the launch as that node's: nothing can be asked to
-        // stop the process, so the freeze says so (SPEC.md §10.2, "no node joined"). Answered as "not running", the person
-        // was told nothing of a process still up, and every test passed.
+        // The node that started it has left and its token went with it, so the process is left running (SPEC.md §11.1) and
+        // only a person's kill ends it: the freeze says so. Answered as "not running", the person was told nothing of a
+        // process still up; answered "no_node", the token was still read as held by a node that had gone (review, lens 1 run
+        // C on 5de89187).
         var token = TestContext.Current.CancellationToken;
 
         await using var broker = await LoopbackBroker.StartAsync(token);
@@ -494,7 +495,7 @@ public sealed class FreezingAnAgentTests
         var frozen = await broker.ConnectAsOperator().FreezeAsync(Freeze("orders@alpha"), cancellationToken: token);
 
         Assert.True(frozen.Changed);
-        Assert.Equal("no_node", frozen.Process);
+        Assert.Equal("left_running", frozen.Process);
     }
 
     [Fact]

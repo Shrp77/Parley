@@ -58,8 +58,14 @@ public sealed class BrokerRuntime : IAsyncDisposable
     // Immutable arrays under AddOrUpdate rather than a lock around a list. Nudging reads this on
     // every write to any inbox, and a reader that had to take a lock would be contending with
     // attach and detach for the privilege of sending a notice that is disposable anyway.
-    /// <summary>The token each node said it gave the agent it is starting, until that agent attaches (SPEC.md §11.7).</summary>
-    private readonly ConcurrentDictionary<AgentName, string> _launches = new();
+    /// <summary>The token each node said it gave the agent it is starting, and the node connection that said so (SPEC.md §11.7).</summary>
+    /// <remarks>
+    /// <b>A token goes with the connection that reported it</b> (SPEC.md §11.1; review, lens 1 run C on 5de89187). Kept after
+    /// its node left, every process that node started still read as one a node supervises: a sender was told a turn was coming
+    /// that no node would give, and a person's kill was refused. The connection, not the machine, is compared, so a node that
+    /// rejoined and announced the process again before the old connection's release keeps the token.
+    /// </remarks>
+    private readonly ConcurrentDictionary<AgentName, (string Token, JoinedNode Node)> _launches = new();
 
     /// <summary>The last stop (not a restart) asked of each agent: the launch it was asked of and the node connection that took it.</summary>
     /// <remarks>
@@ -1024,9 +1030,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
         _ = await agents.RenameAsync(holder.Name, registration.Name, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
-        if (_launches.TryRemove(holder.Name, out var token))
+        if (_launches.TryRemove(holder.Name, out var launched))
         {
-            _launches[registration.Name] = token;
+            _launches[registration.Name] = launched;
         }
 
         // The stored freeze went with the row to the new name, so the freeze the broker honours goes with it. Left under the old
@@ -1623,7 +1629,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
             || Facilitation.Is(agent)
             || string.IsNullOrWhiteSpace(token)
             || token.Length > 128
-            || !_nodes.ContainsKey(machine)
+            || !_nodes.TryGetValue(machine, out var reporter)
             || !string.Equals(agent.Machine, machine, StringComparison.Ordinal))
         {
             return false;
@@ -1631,12 +1637,14 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         // A new process has no background work yet: what the last one had running went with it. The same token again is a
         // node telling a broker about a process it already runs, whose count stands.
-        if (!_launches.TryGetValue(agent, out var was) || !string.Equals(was, token, StringComparison.Ordinal))
+        if (!_launches.TryGetValue(agent, out var was) || !string.Equals(was.Token, token, StringComparison.Ordinal))
         {
             _ = _background.TryRemove(agent, out _);
         }
 
-        _launches[agent] = token;
+        // Held with the connection that holds the machine now, so that connection's release takes the token with it
+        // (ReleaseNodeAsync), and a node that rejoins and announces the process again puts it back.
+        _launches[agent] = (token, reporter);
 
         // A freeze made while its node was away asked nobody, and the node's return announces the process again: it is asked
         // to stop now, as the freeze would have (SPEC.md §14). Otherwise it ran on, frozen and given no turns, read on every
@@ -1820,7 +1828,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     internal bool IsCurrentLaunch(AgentName agent, string? token) =>
         token is { Length: > 0 }
         && _launches.TryGetValue(agent, out var launched)
-        && string.Equals(launched, token, StringComparison.Ordinal);
+        && string.Equals(launched.Token, token, StringComparison.Ordinal);
 
     /// <summary>Whether an agent is running only as processes Parley did not start (SPEC.md §11.7).</summary>
     /// <param name="agent">The agent.</param>
@@ -1988,6 +1996,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
         JoinedNode joined,
         CancellationToken cancellationToken = default)
     {
+        // Its tokens go before it leaves the list as well as after, so nobody who sees the machine without it still reads a
+        // process it started as one it supervises; the pass after catches a launch it reported in between.
+        ForgetLaunchesOf(joined);
+
         _ = _nodes.TryRemove(new KeyValuePair<string, JoinedNode>(joined.Machine, joined));
 
         // **Nothing a departed node said is running is claimed to be running any more** (§11.6). A turn
@@ -2002,7 +2014,32 @@ public sealed class BrokerRuntime : IAsyncDisposable
             _ = _background.TryRemove(work);
         }
 
+        ForgetLaunchesOf(joined);
+
         await LeaveIfUnheldAsync(joined.Machine, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Forgets the launch tokens a node connection reported, as it leaves (SPEC.md §11.1).</summary>
+    /// <param name="joined">The connection that is going.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>A process a departed node started is not claimed to be supervised</b> (review, lens 1 run C on 5de89187). Kept, its
+    /// token still read as held: a sender was told a turn was coming that no node would give, a person's kill was refused,
+    /// and the stop it was pointed to reached a node that was not running it. Gone, each such process still attached reads
+    /// as left running, a wake passes it over to its detach, and a person may kill it.
+    /// </para>
+    /// <para>
+    /// <b>Only the tokens this connection reported, by key and value</b>, so a node that has already rejoined and announced
+    /// a process again keeps it. One that rejoins later announces it then (<see cref="LaunchReported"/>), which takes back
+    /// what a wake passed over meanwhile (<see cref="TakenBack"/>) as a turn rather than a second process.
+    /// </para>
+    /// </remarks>
+    private void ForgetLaunchesOf(JoinedNode joined)
+    {
+        foreach (var launch in _launches.Where(entry => ReferenceEquals(entry.Value.Node, joined)).ToList())
+        {
+            _ = _launches.TryRemove(launch);
+        }
     }
 
     /// <summary>Records a machine's node as gone, unless a node holds the machine now.</summary>
@@ -2151,7 +2188,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         if (!restart)
         {
-            _stopAsked[agent.Value] = (_launches.TryGetValue(agent, out var launch) ? launch : null, node);
+            _stopAsked[agent.Value] = (_launches.TryGetValue(agent, out var launch) ? launch.Token : null, node);
         }
 
         return StopOutcome.Sent;
