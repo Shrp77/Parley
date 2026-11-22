@@ -363,6 +363,7 @@ public sealed partial class FreezingOnTheWebTests
     [InlineData("one a node holds is stopped once its turn ends")]
     [InlineData("one a node that is gone left running keeps running until you end it with Kill")]
     [InlineData("one open in an editor stays open until whoever opened it closes it")]
+    [InlineData("one whose node is not joined runs until a node returns to stop it")]
     [InlineData("None is started again until unfrozen")]
     public async Task The_words_before_freezing_everyone_say_what_happens_to_each_kind_of_process(string said)
     {
