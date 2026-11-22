@@ -218,6 +218,13 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
             {
                 await ReportRunningAsync(identity, role, token, resident.Workspace, () => Current(resident, token))
                     .ConfigureAwait(false);
+
+                // A rejoin clears the broker's count of background work; work still running would read as idle until it
+                // ended, which has no bound (review, lens 1 run 2 on ae1d0e0f).
+                if (resident.BackgroundTasks is var tasks and > 0 && Parley.Core.AgentName.TryJoin(role, machine, out var named))
+                {
+                    await BackgroundAsync(named, tasks).ConfigureAwait(false);
+                }
             }
         }
     }
