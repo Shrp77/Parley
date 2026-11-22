@@ -236,7 +236,8 @@ public sealed class InboxViewsTests
     }
 
     // SPEC.md §11.6: an agent is working for as long as a turn runs, and waiting on its background work only when no turn
-    // runs. Each place that decides it has its own case, so one that lets the background work win fails by name.
+    // runs. Four places decide it (the Inbox chip, the agents list, an agent's standing, a conversation's participants), and
+    // each has its own case below, so one that lets the background work win fails by name.
     private static AgentRecord WorkingWithBackgroundTasks() =>
         Agent(Orders, AgentPresence.Running, new TurnStanding(true, Now.AddMinutes(-5), Now.AddMinutes(-9), true, 0, BackgroundTasks: 2));
 
@@ -265,6 +266,20 @@ public sealed class InboxViewsTests
             [WorkingWithBackgroundTasks()], new HashSet<string>(StringComparer.Ordinal), "parley-console", Orders.Machine));
 
         Assert.Equal(Parley.Client.Views.Standing.Working, row.Standing);
+    }
+
+    [Fact]
+    public void A_running_turn_outranks_background_work_among_a_conversations_participants()
+    {
+        var agent = WorkingWithBackgroundTasks();
+        var export = new ConversationExport([Said(1, 7, MessageType.Request, Me, Orders)], [Open(7)]);
+
+        var activity = Parley.Client.Views.Activities.Of(export, [], [agent])[Orders];
+
+        Assert.Equal(Parley.Client.Views.Doing.Working, activity.Doing);
+        Assert.Equal(agent.Turns!.RunningSince, activity.Since);
+        Assert.Equal(0, activity.BackgroundTasks);
+        Assert.Equal("working 5m", Parley.Client.Views.Activities.Says(activity, Now));
     }
 
     [Fact]

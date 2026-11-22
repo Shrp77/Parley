@@ -178,6 +178,131 @@ public sealed class HistoryToolTests
     }
 
     [Fact]
+    public async Task A_search_with_more_matches_than_a_page_says_so_and_carries_on_from_its_cursor_until_they_end()
+    {
+        // Through the adapter and the wire: the count of what is not shown and the cursor reach the agent, and the cursor it
+        // sends back reaches the broker.
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new ServerFixture(T0);
+        var (_, docs) = await fixture.LaunchAsync("docs@test", ct);
+        var (_, fresh) = await fixture.LaunchAsync("billing@test", ct);
+        _ = await fixture.LaunchAsync("infra@alpha", ct);
+
+        const int Sent = 25;
+
+        for (var i = 0; i < Sent; i++)
+        {
+            var sent = await docs.RequestAsync(
+                "infra@alpha", $"ledger entry {i.ToString(System.Globalization.CultureInfo.InvariantCulture)}", cancellationToken: ct);
+
+            Assert.True(sent["exchange_id"]!.GetValue<long>() > 0, sent.ToJsonString());
+        }
+
+        var first = await fresh.SearchHistoryAsync("ledger", cancellationToken: ct);
+
+        Assert.True(first["ok"]!.GetValue<bool>(), first.ToJsonString());
+
+        var firstIds = first["matches"]!.AsArray().Select(m => m!["message_id"]!.GetValue<long>()).ToList();
+
+        Assert.Equal(20, firstIds.Count);
+        Assert.Equal(Sent - 20, first["not_shown"]!.GetValue<int>());
+
+        var cursor = first["continue_after"]!.GetValue<long>();
+
+        Assert.NotEqual(0, cursor);
+
+        var second = await fresh.SearchHistoryAsync("ledger", continue_after: cursor, cancellationToken: ct);
+
+        Assert.True(second["ok"]!.GetValue<bool>(), second.ToJsonString());
+
+        var secondIds = second["matches"]!.AsArray().Select(m => m!["message_id"]!.GetValue<long>()).ToList();
+
+        // A different page, and the last: every message was shown once, and nothing more is offered.
+        Assert.Equal(Sent - 20, secondIds.Count);
+        Assert.Empty(firstIds.Intersect(secondIds));
+        Assert.Equal(Sent, firstIds.Concat(secondIds).Distinct().Count());
+        Assert.Null(second["not_shown"]);
+        Assert.Null(second["continue_after"]);
+    }
+
+    [Fact]
+    public async Task A_search_for_one_kind_of_message_returns_no_other_kind()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new ServerFixture(T0);
+        var (_, docs) = await fixture.LaunchAsync("docs@test", ct);
+        var (_, infra) = await fixture.LaunchAsync("infra@alpha", ct);
+        var (_, fresh) = await fixture.LaunchAsync("billing@test", ct);
+
+        var sent = await docs.RequestAsync("infra@alpha", "Is the ledger closed for March?", cancellationToken: ct);
+        var exchange = sent["exchange_id"]!.GetValue<long>();
+        _ = await infra.InboxAsync(cancellationToken: ct);
+        var answered = await infra.ResultAsync(exchange, "answered", "The ledger closed on the second.", cancellationToken: ct);
+
+        Assert.True(answered["ok"]!.GetValue<bool>(), answered.ToJsonString());
+
+        // Both say the word, so only the kind asked for tells them apart.
+        Assert.Equal(2, (await fresh.SearchHistoryAsync("ledger", cancellationToken: ct))["matches"]!.AsArray().Count);
+
+        var results = await fresh.SearchHistoryAsync("ledger", type: "result", cancellationToken: ct);
+        var result = Assert.Single(results["matches"]!.AsArray())!;
+
+        Assert.Equal("result", result["type"]!.GetValue<string>());
+        Assert.Equal("infra@alpha", result["from"]!.GetValue<string>());
+
+        var requests = await fresh.SearchHistoryAsync("ledger", type: "request", cancellationToken: ct);
+
+        Assert.Equal("request", Assert.Single(requests["matches"]!.AsArray())!["type"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task A_search_until_a_time_leaves_out_what_was_said_after_it()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new ServerFixture(T0);
+        var (_, docs) = await fixture.LaunchAsync("docs@test", ct);
+        var (_, fresh) = await fixture.LaunchAsync("billing@test", ct);
+        _ = await fixture.LaunchAsync("infra@alpha", ct);
+
+        var early = await docs.RequestAsync("infra@alpha", "ledger, asked early", cancellationToken: ct);
+
+        fixture.Clock.Advance(TimeSpan.FromDays(1));
+
+        _ = await docs.RequestAsync("infra@alpha", "ledger, asked late", cancellationToken: ct);
+
+        Assert.Equal(2, (await fresh.SearchHistoryAsync("ledger", cancellationToken: ct))["matches"]!.AsArray().Count);
+
+        var found = await fresh.SearchHistoryAsync("ledger", until: "2026-03-01T12:00:00Z", cancellationToken: ct);
+
+        Assert.True(found["ok"]!.GetValue<bool>(), found.ToJsonString());
+        Assert.Equal(
+            early["exchange_id"]!.GetValue<long>(),
+            Assert.Single(found["matches"]!.AsArray())!["exchange_id"]!.GetValue<long>());
+    }
+
+    [Fact]
+    public async Task A_time_that_is_not_one_is_refused_in_words_and_nothing_is_searched()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new ServerFixture(T0);
+        var (_, docs) = await fixture.LaunchAsync("docs@test", ct);
+        var (_, fresh) = await fixture.LaunchAsync("billing@test", ct);
+        _ = await fixture.LaunchAsync("infra@alpha", ct);
+        _ = await docs.RequestAsync("infra@alpha", "ledger", cancellationToken: ct);
+
+        foreach (var refused in new[]
+        {
+            await fresh.SearchHistoryAsync("ledger", since: "last tuesday", cancellationToken: ct),
+            await fresh.SearchHistoryAsync("ledger", until: "soon", cancellationToken: ct),
+        })
+        {
+            Assert.False(refused["ok"]!.GetValue<bool>(), refused.ToJsonString());
+            Assert.Equal("A time is written as 2026-11-17T09:30:00Z.", refused["why"]!.GetValue<string>());
+            Assert.Null(refused["matches"]);
+        }
+    }
+
+    [Fact]
     public async Task A_long_exchange_gives_the_cursor_to_carry_on_with_and_the_arguments_reach_the_broker()
     {
         var ct = TestContext.Current.CancellationToken;

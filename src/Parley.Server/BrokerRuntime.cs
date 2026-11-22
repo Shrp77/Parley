@@ -186,14 +186,23 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     private readonly ConcurrentDictionary<string, bool> _stopSent = new(StringComparer.Ordinal);
 
-    /// <summary>The agents that were given a turn after their node was asked to stop them, until their process has gone.</summary>
+    /// <summary>
+    /// The agents that were given a turn after their node was asked to stop them, each with the wake claim that turn left, until
+    /// their process has gone.
+    /// </summary>
     /// <remarks>
     /// While the stopped process is still attached, new work for it is a turn and not a start. Its node gives that turn to a
     /// process the stop then ends, so the turn is lost: the sender was told a turn was coming, the claim held every later wake
     /// for two minutes, and nothing started the agent, though "the next work for it starts it again" (SPEC.md §10.2
     /// <c>stop</c>). The work is asked for again, as a start, when the last session of that process detaches.
+    /// <para>
+    /// <b>The claim is kept with the mark, and whoever takes the mark acts on it.</b> The asking and the detach run on different
+    /// threads, so the claim a lost turn left is told from a start already asked for by being this exact claim, never by when it
+    /// was made: a turn can be asked of the dying process a moment after its session began to leave. And the mark is taken once,
+    /// by the detach or by the asking that finds the session already gone, so the start is asked for once.
+    /// </para>
     /// </remarks>
-    private readonly ConcurrentDictionary<string, bool> _wokenWhileStopping = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _wokenWhileStopping = new(StringComparer.Ordinal);
 
     /// <summary>The agents a person has frozen (SPEC.md §14), by name: what <see cref="Ask"/> reads, because it cannot wait on the store.</summary>
     /// <remarks>
@@ -1997,6 +2006,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return WakeOutcome.Unreachable;
         }
 
+        // Read before the sessions are: a detach takes the session out first and this mark after, so a mark gone by now
+        // means the session went before it, and the look below finds nobody attached.
+        var stopping = _stopSent.ContainsKey(agent.Value);
+
         // Attached already, so a start would duplicate a process. What the traffic needs is a turn. The node
         // gives the turn only to a resident of its own, so an agent attached through somebody's editor window
         // is left alone rather than duplicated.
@@ -2018,13 +2031,35 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return WakeOutcome.Unreachable;
         }
 
-        _pending[agent.Value] = Clock.GetUtcNow();
+        var claimed = Clock.GetUtcNow();
 
-        // A turn asked of a process its node is stopping is one the stop may take with it: noted, and asked for again as a
-        // start once the process has gone (ReleaseAsync).
-        if (running && _stopSent.ContainsKey(agent.Value))
+        _pending[agent.Value] = claimed;
+
+        // A turn asked of a process its node is stopping is one the stop may take with it: noted with the claim it left, and
+        // asked for again as a start once the process has gone (ReleaseAsync).
+        if (running && stopping)
         {
-            _wokenWhileStopping[agent.Value] = true;
+            _wokenWhileStopping[agent.Value] = claimed;
+
+            // **The process went between the look and the asking.** Its detach has taken its marks already, or is about to:
+            // whichever of the two takes this one acts on it. Taken here, the turn just asked for went to nobody, so its
+            // claim is let go and the work is asked for as the start it should have been.
+            if (!(_attached.TryGetValue(agent.Value, out var still) && !still.IsEmpty)
+                && ((ICollection<KeyValuePair<string, DateTimeOffset>>)_wokenWhileStopping)
+                    .Remove(new KeyValuePair<string, DateTimeOffset>(agent.Value, claimed)))
+            {
+                _ = ((ICollection<KeyValuePair<string, DateTimeOffset>>)_pending)
+                    .Remove(new KeyValuePair<string, DateTimeOffset>(agent.Value, claimed));
+
+                if (!node.RequestStart(agent, IdentityOf(agent), because))
+                {
+                    return WakeOutcome.Unreachable;
+                }
+
+                _pending[agent.Value] = Clock.GetUtcNow();
+
+                return WakeOutcome.Started;
+            }
         }
 
         return running ? WakeOutcome.AlreadyRunning : WakeOutcome.Started;
@@ -2439,10 +2474,6 @@ public sealed class BrokerRuntime : IAsyncDisposable
         // last of them has gone.
         var last = false;
 
-        // Read before the session is taken out: a wake claimed after this moment found nobody attached, so it is a start
-        // already asked for, and must not be mistaken below for the claim a lost turn left behind.
-        var leaving = Clock.GetUtcNow();
-
         while (_attached.TryGetValue(attached.Name.Value, out var sessions))
         {
             var remaining = sessions.Remove(attached);
@@ -2489,7 +2520,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
         // other says, so none is left behind for a later process.
         _ = _stopSent.TryRemove(attached.Name.Value, out _);
 
-        var woken = _wokenWhileStopping.TryRemove(attached.Name.Value, out _);
+        var woken = _wokenWhileStopping.TryRemove(attached.Name.Value, out var lost);
         var unfrozen = _unfrozenWhileUp.TryRemove(attached.Name.Value, out _);
 
         // **Given a turn, or unfrozen, while a stop was still waiting for its turn** (SPEC.md §11.1, §14): that turn went to the
@@ -2497,12 +2528,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
         // frozen agent is declined where every wake is, so a freeze made meanwhile still holds.
         if (woken || unfrozen)
         {
-            // **Only the claim the lost turn left**, by key and value: one made since the session began to leave is a start a
-            // newer message has already asked for, and dropping it bought a second start for one message.
-            if (_pending.TryGetValue(attached.Name.Value, out var claimed) && claimed <= leaving)
+            // **Only the claim the lost turn left**, by key and value. Any other claim is a start a newer message has already
+            // asked for, and dropping it bought a second start for one message; telling them apart by time left a turn asked
+            // a moment after the session began to leave looking like such a start, with its message unread and nothing coming.
+            if (woken)
             {
                 _ = ((ICollection<KeyValuePair<string, DateTimeOffset>>)_pending)
-                    .Remove(new KeyValuePair<string, DateTimeOffset>(attached.Name.Value, claimed));
+                    .Remove(new KeyValuePair<string, DateTimeOffset>(attached.Name.Value, lost));
             }
 
             try

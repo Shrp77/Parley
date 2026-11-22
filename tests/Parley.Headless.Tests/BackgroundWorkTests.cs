@@ -239,8 +239,86 @@ public sealed class BackgroundWorkTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task A_second_init_read_before_the_given_turn_lets_go_does_not_take_the_queued_own_turns_ending()
+    {
+        // The same held gap, with two inits read in it. Only one own turn queues behind a given turn: a second would replace
+        // the first's ending, so the first could end only by running out of patience, with the agent held meanwhile. The
+        // given turn is held until the pump has read past both inits, which the task count read after them says.
+        var ownPatience = TimeSpan.FromSeconds(6);
+        using var bothInitsRead = new ManualResetEventSlim();
+        using var clock = new HoldingClock(TimeSpan.FromSeconds(3), bothInitsRead);
+        var template = StubRunner.Scripted(
+            _workspace,
+            [OneTask, Started, Finished, Init, Init, NoTasks, StubRunner.Pause(1), Done],
+            [Second]);
+
+        var ended = new ConcurrentQueue<TurnOutcome>();
+        var firstEnded = new TaskCompletionSource<TurnOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var agent = ResidentAgent.Start(
+            AgentName.Create("billing@test"), InvocationCommand.Parse(template), _workspace, clock);
+
+        agent.OwnTurnPatience = ownPatience;
+
+        try
+        {
+            agent.Watch(new OwnWork(
+                _ => Task.CompletedTask,
+                (_, outcome) =>
+                {
+                    ended.Enqueue(outcome);
+                    firstEnded.TrySetResult(outcome);
+                    return Task.CompletedTask;
+                },
+                tasks =>
+                {
+                    if (tasks == 0)
+                    {
+                        bothInitsRead.Set();
+                    }
+
+                    return Task.CompletedTask;
+                }));
+
+            var first = await clock.HoldingItsEnd(() => agent.TakeTurnAsync("1", Patience, Ct));
+
+            Assert.Equal("STARTED", first.Reply);
+            Assert.True(clock.Released, "the given turn let go before both inits were read: the gap was not held");
+
+            var own = await firstEnded.Task.WaitAsync(ownPatience + TimeSpan.FromSeconds(10), Ct);
+
+            Assert.False(own.TimedOut, "the queued own turn lost its ending to the second init and ran out of patience");
+            Assert.True(own.Succeeded, own.Describe());
+            Assert.Equal("DONE", own.Reply);
+
+            // The agent is not held for a turn that will never end: the next given turn is answered well inside the patience.
+            var asked = System.Diagnostics.Stopwatch.StartNew();
+            var second = await agent.TakeTurnAsync("2", Patience, Ct);
+
+            Assert.Equal("SECOND", second.Reply);
+            Assert.True(
+                asked.Elapsed < ownPatience / 2,
+                $"the next given turn waited {asked.Elapsed.TotalSeconds:F1}s, as if behind an own turn that never ended");
+
+            // One own turn was told, once.
+            Assert.Single(ended);
+        }
+        finally
+        {
+            try
+            {
+                await agent.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+            }
+            catch (TimeoutException)
+            {
+            }
+        }
+    }
+
     /// <summary>The system clock, which holds one given turn at its end until the pump starts a turn of the agent's own.</summary>
     /// <param name="patience">How long the given turn is held when no own turn starts.</param>
+    /// <param name="andUntil">Something more the held turn waits for once an own turn has started, or <see langword="null"/>.</param>
     /// <remarks>
     /// <para>
     /// A given turn asks the clock twice: when it takes the agent, and when it has read its reply and works out how long
@@ -252,7 +330,7 @@ public sealed class BackgroundWorkTests : IDisposable
     /// before it was set, and a turn of the agent's own continues on the pump's flow.
     /// </para>
     /// </remarks>
-    private sealed class HoldingClock(TimeSpan patience) : TimeProvider, IDisposable
+    private sealed class HoldingClock(TimeSpan patience, ManualResetEventSlim? andUntil = null) : TimeProvider, IDisposable
     {
         private readonly AsyncLocal<bool> _held = new();
         private readonly ManualResetEventSlim _ownTurnStarted = new();
@@ -277,7 +355,7 @@ public sealed class BackgroundWorkTests : IDisposable
         {
             if (_held.Value && Interlocked.Increment(ref _asked) == 2)
             {
-                Released = _ownTurnStarted.Wait(patience);
+                Released = _ownTurnStarted.Wait(patience) && (andUntil is null || andUntil.Wait(patience));
             }
 
             return System.GetTimestamp();

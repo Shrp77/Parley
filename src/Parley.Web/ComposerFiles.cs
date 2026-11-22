@@ -19,7 +19,7 @@ namespace Parley.Web;
 /// </remarks>
 public static class ComposerFiles
 {
-    /// <summary>Places each attachment in a conversation, stopping at the first that cannot be placed.</summary>
+    /// <summary>Places each attachment in a conversation, and names every one that could not be placed.</summary>
     /// <param name="broker">The project's broker.</param>
     /// <param name="conversation">The conversation the message goes in.</param>
     /// <param name="attachments">What the browser sent; each placed file is taken out.</param>
@@ -27,6 +27,11 @@ public static class ComposerFiles
     /// <param name="token">Cancels the work.</param>
     /// <returns>Why nothing may be sent, or nothing; and whether the conversation does not exist yet.</returns>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <b>Every file is tried, and every refusal is named.</b> Stopping at the first refusal left the files after it neither
+    /// placed nor mentioned, and a browser cannot fill a file field a second time: the person was told to attach one file
+    /// again and lost the others without a word.
+    /// </remarks>
     public static async Task<(string? Problem, bool ConversationNotStarted)> PlaceAsync(
         BrokerClient broker,
         string conversation,
@@ -38,6 +43,8 @@ public static class ComposerFiles
         ArgumentNullException.ThrowIfNull(conversation);
         ArgumentNullException.ThrowIfNull(attachments);
         ArgumentNullException.ThrowIfNull(attached);
+
+        var refused = new List<string>();
 
         foreach (var file in attachments.ToList())
         {
@@ -64,11 +71,11 @@ public static class ComposerFiles
                     ? PlacementSaid.Of(placed.Value!, file.FileName, bytes => $"{bytes} bytes")
                     : placed.Problem;
 
-                return ($"Nothing was sent. {file.FileName} could not be attached, so attach it again: {why}", false);
+                refused.Add($"{file.FileName} could not be attached, so attach it again: {why}");
             }
         }
 
-        return (null, false);
+        return (refused.Count > 0 ? "Nothing was sent. " + string.Join(' ', refused) : null, false);
     }
 
     /// <summary>Places the attached files in a conversation the words have just gone to, then names them to everybody reached.</summary>

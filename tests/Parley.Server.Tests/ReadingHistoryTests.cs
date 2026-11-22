@@ -136,6 +136,112 @@ public sealed class ReadingHistoryTests
         Assert.Equal(1, search.Matches);
     }
 
+    [Theory]
+    [InlineData("last tuesday", "")]
+    [InlineData("", "soon")]
+    public async Task A_search_with_a_time_that_is_not_one_is_refused_and_leaves_no_record(string since, string until)
+    {
+        var (broker, orders, billing, inventory, exchange) = await SetUpAsync();
+        await using var _b = broker;
+        await using var _o = orders;
+        await using var _i = billing;
+        await using var _n = inventory;
+
+        var refused = await Assert.ThrowsAsync<Grpc.Core.RpcException>(async () =>
+            await inventory.Client.SearchHistoryAsync(
+                new Wire.SearchHistoryRequest { AskingAs = Inventory, Words = "invoice", SinceUtc = since, UntilUtc = until },
+                cancellationToken: Ct));
+
+        Assert.Equal(Grpc.Core.StatusCode.InvalidArgument, refused.StatusCode);
+        Assert.Equal("A time is written as 2026-11-17T09:30:00Z.", refused.Status.Detail);
+
+        // Nothing was searched, so the person is shown no search.
+        var conversation = (await broker.ConnectAsOperator().LocateExchangeAsync(
+            new Wire.LocateExchangeRequest { ExchangeId = exchange }, cancellationToken: Ct)).ConversationId;
+        var export = await broker.ConnectAsOperator().ExportAsync(
+            new Wire.ExportRequest { ConversationId = conversation }, cancellationToken: Ct);
+
+        Assert.Empty(export.Reads);
+    }
+
+    [Fact]
+    public async Task A_search_over_the_wire_pages_and_keeps_to_its_kind_and_its_times()
+    {
+        // The broker's own tests hold paging and the filters; these hold that the service passes each of them both ways.
+        var clock = new StubClock(new DateTimeOffset(2026, 3, 1, 9, 0, 0, TimeSpan.Zero));
+        await using var broker = await LoopbackBroker.StartAsync(Ct, clock);
+        await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+        await using var inventory = await AttachedClient.AttachAsync(broker, Inventory, cancellationToken: Ct);
+
+        const int Early = 22;
+
+        for (var i = 0; i < Early; i++)
+        {
+            var sent = Assert.Single((await orders.Client.RequestAsync(
+                Requests.Open(Orders, Billing, $"ledger entry {i.ToString(System.Globalization.CultureInfo.InvariantCulture)}"),
+                cancellationToken: Ct)).Outcomes);
+
+            Assert.True(sent.Ok, sent.Rejection.ToString());
+        }
+
+        clock.Advance(TimeSpan.FromDays(1));
+
+        var late = Assert.Single((await orders.Client.RequestAsync(
+            Requests.Open(Orders, Billing, "ledger, asked late"), cancellationToken: Ct)).Outcomes);
+
+        _ = await billing.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Billing }, cancellationToken: Ct);
+
+        Assert.True((await billing.Client.ResultAsync(Requests.Result(Billing, late.ExchangeId), cancellationToken: Ct)).Ok);
+
+        // Until: the late request and its result are left out, and what is left is more than a page.
+        var first = await inventory.Client.SearchHistoryAsync(
+            new Wire.SearchHistoryRequest { AskingAs = Inventory, Words = "ledger", UntilUtc = "2026-03-01T12:00:00Z" },
+            cancellationToken: Ct);
+
+        Assert.Equal(string.Empty, first.Refusal);
+        Assert.Equal(20, first.Matches.Count);
+        Assert.Equal(Early - 20, first.NotShown);
+        Assert.NotEqual(0, first.ContinueAfter);
+        Assert.DoesNotContain(first.Matches, m => m.ExchangeId == late.ExchangeId);
+
+        var second = await inventory.Client.SearchHistoryAsync(
+            new Wire.SearchHistoryRequest
+            {
+                AskingAs = Inventory, Words = "ledger", UntilUtc = "2026-03-01T12:00:00Z", ContinueAfter = first.ContinueAfter
+            },
+            cancellationToken: Ct);
+
+        Assert.Equal(Early - 20, second.Matches.Count);
+        Assert.Empty(first.Matches.Select(m => m.MessageId).Intersect(second.Matches.Select(m => m.MessageId)));
+        Assert.DoesNotContain(second.Matches, m => m.ExchangeId == late.ExchangeId);
+        Assert.Equal(0, second.NotShown);
+        Assert.Equal(0, second.ContinueAfter);
+
+        // Since: only the late request.
+        var since = await inventory.Client.SearchHistoryAsync(
+            new Wire.SearchHistoryRequest
+            {
+                AskingAs = Inventory, Words = "ledger", SinceUtc = "2026-03-02T00:00:00Z", Type = Wire.MessageType.Request
+            },
+            cancellationToken: Ct);
+
+        Assert.Equal(late.ExchangeId, Assert.Single(since.Matches).ExchangeId);
+
+        // A kind: the result's words are found among results and not among requests.
+        var results = await inventory.Client.SearchHistoryAsync(
+            new Wire.SearchHistoryRequest { AskingAs = Inventory, Words = "billing owns", Type = Wire.MessageType.Result },
+            cancellationToken: Ct);
+
+        Assert.Equal(Wire.MessageType.Result, Assert.Single(results.Matches).Type);
+
+        var requests = await inventory.Client.SearchHistoryAsync(
+            new Wire.SearchHistoryRequest { AskingAs = Inventory, Words = "billing owns", Type = Wire.MessageType.Request },
+            cancellationToken: Ct);
+
+        Assert.Empty(requests.Matches);
+    }
+
     [Fact]
     public async Task A_refused_search_says_why_and_leaves_no_record()
     {

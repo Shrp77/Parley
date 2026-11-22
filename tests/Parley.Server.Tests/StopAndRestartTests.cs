@@ -161,6 +161,50 @@ public sealed class StopAndRestartTests
     }
 
     [Fact]
+    public async Task A_vote_asked_of_a_stopped_agent_while_it_is_still_attached_starts_it_once_its_process_has_gone()
+    {
+        // A closure poll is work too, and it is no mail: the agent has collected everything sent to it, so the poll is the
+        // only thing still waiting when its process goes. The turn asked for the vote went to the process the stop ended.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
+        await using var docs = await AttachedClient.AttachAsync(broker, "docs@m1", cancellationToken: Ct);
+
+        await using (var agent = await LaunchedAsync(broker, node))
+        {
+            var sent = Assert.Single((await docs.Client.RequestAsync(
+                Requests.Open("docs@m1", Agent, "before the stop", "c1"), cancellationToken: Ct)).Outcomes);
+
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, (await node.WaitForCommandAsync(TimeSpan.FromSeconds(5))).CommandCase);
+            Assert.Single((await agent.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Agent }, cancellationToken: Ct)).Messages);
+
+            _ = await broker.ConnectAsOperator().StopAsync(new Wire.StopRequest { Agent = Agent }, cancellationToken: Ct);
+
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Stop, (await node.WaitForCommandAsync(TimeSpan.FromSeconds(5))).CommandCase);
+
+            // Proposed after the stop, while the agent holds the work, so the agent is polled; nobody is asked for a vote
+            // while it still owes the answer.
+            var proposed = await docs.Client.ConcludeAsync(
+                new Wire.ConcludeRequest { From = "docs@m1", ConversationId = "c1", Vote = Wire.Vote.Done }, cancellationToken: Ct);
+
+            Assert.True(proposed.Ok);
+            Assert.False(proposed.Concluded, "the conversation closed, so no poll waits on anybody");
+            await Assert.ThrowsAsync<TimeoutException>(() => node.WaitForCommandAsync(Briefly));
+
+            // Its answer leaves the conversation waiting on nothing but its vote, and a turn is asked for that.
+            Assert.True((await agent.Client.ResultAsync(Requests.Result(Agent, sent.ExchangeId), cancellationToken: Ct)).Ok);
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, (await node.WaitForCommandAsync(TimeSpan.FromSeconds(5))).CommandCase);
+
+            // Nothing sent to it is uncollected: the poll alone waits.
+            Assert.Empty((await agent.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Agent }, cancellationToken: Ct)).Messages);
+        }
+
+        var command = await node.WaitForCommandAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(Wire.NodeCommand.CommandOneofCase.Start, command.CommandCase);
+        Assert.Equal(Agent, command.Start.Agent);
+    }
+
+    [Fact]
     public async Task A_stopped_agent_nothing_arrived_for_is_not_started_when_its_process_goes()
     {
         // A stop is a stop: only work that arrived meanwhile starts it again, never the work it already owed.

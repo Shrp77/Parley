@@ -128,6 +128,30 @@ public sealed partial class AttachingToTheComposerTests
     }
 
     [Fact]
+    public async Task A_file_refused_among_several_does_not_cost_the_files_after_it()
+    {
+        // Placing stopped at the first refusal, so a file after it was neither placed nor mentioned, and a browser cannot fill
+        // a file field a second time: the person was told to attach one file again and lost another without a word (review,
+        // lens 1 on 0.64.8). Every file is tried, the placed ones are kept, and every refused one is named.
+        using var console = Seated();
+        var placed = console.Broker.Placing;
+
+        console.Broker.Placing = (header, bytes) => header.Name is "b.exe" or "d.exe"
+            ? new Wire.PlaceFileReply { Rejection = Wire.FileRejection.ExtensionNotAllowed, ConversationId = header.ConversationId, Name = header.Name }
+            : placed(header, bytes);
+
+        var page = await SendAsync(console, "Look.", ("a.png", Png), ("b.exe", Png), ("c.png", Png), ("d.exe", Png));
+
+        Assert.Empty(console.Broker.Requested);
+        Assert.Contains("Nothing was sent. b.exe could not be attached", page, StringComparison.Ordinal);
+        Assert.Contains("d.exe could not be attached", page, StringComparison.Ordinal);
+
+        // Both files that could be placed were, the one after the first refusal included, and the page keeps them for the retry.
+        Assert.Equal(["a.png", "c.png"], console.Broker.Placed.Select(p => p.Header.Name).Where(n => n.EndsWith(".png", StringComparison.Ordinal)).Order(StringComparer.Ordinal));
+        Assert.Contains("c.png", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_file_refused_sends_nothing_and_says_which()
     {
         using var console = Seated();
