@@ -667,9 +667,10 @@ if [ "$replacing_broker" = "1" ]; then
         if [ -n "$in_flight" ]; then
             count="$(printf '%s\n' "$in_flight" | grep -c . || true)"
 
-            echo "warning: $count conversation(s) have an exchange still open. Stopping the broker" >&2
-            echo "         ends every agent it started. When an agent's turn ends its open exchange" >&2
-            echo "         stays open and is flagged to the person:" >&2
+            echo "warning: $count conversation(s) have an exchange still open. Installing ends the" >&2
+            echo "         broker and its node. Agents the node started keep running with nothing" >&2
+            echo "         holding them: they read as left running and can be ended with Kill process." >&2
+            echo "         An open exchange stays open and is flagged to the person:" >&2
 
             printf '%s\n' "$in_flight" | while IFS= read -r line; do
                 [ -n "$line" ] && echo "      $line" >&2
@@ -848,8 +849,8 @@ done
 # **Skipped entirely when the broker is not being replaced, and this is the half that is easy to
 # miss.** Not stopping the broker earlier is worthless if the script re-registers the
 # autostart entry down here: `autostart install` replaces the unit or launch agent, which
-# restarts the process, which ends every resident agent on the machine along with everything each
-# had learned. The stop would have been avoided and the cost paid anyway, hundreds of lines later.
+# restarts the process, which leaves every agent its node started running with nothing holding it.
+# The stop would have been avoided and the cost paid anyway, hundreds of lines later.
 #
 # Nothing here is needed for a surface: a terminal is not registered with a supervisor, does not
 # listen on a port, and has no store. There is nothing to configure and nothing to prove.

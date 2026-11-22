@@ -38,8 +38,8 @@
     Windows and to web-ui elsewhere.
 
     The surfaces are separate tools so that changing one does not stop the broker: Windows
-    cannot replace a running executable, and stopping the broker ends every resident agent
-    on the machine along with everything each had learned. Being separate, they are also
+    cannot replace a running executable, and stopping the broker ends its node, which leaves
+    every agent that node started running with nothing holding it. Being separate, they are also
     skippable, and a machine that only runs agents has no reason for either.
 
     A surface not named here is not removed. It is left at whatever version it already had,
@@ -51,10 +51,11 @@
     -Only parley-terminal replaces the terminal and does not stop the broker, because
     the broker's binary is not among the files being unlinked.
 
-    That matters more than it sounds. SPEC.md section 11.1 says three things end a resident agent,
-    and the first is the node stopping and telling every agent it started to quit -- and the
-    process is what held everything the agent had learned. Restarting a broker to change a
-    terminal costs every agent's accumulated context on the machine.
+    That matters more than it sounds. SPEC.md section 11.1 says a process outlives the node that
+    started it, and a node that is replaced knows none of the processes its predecessor started.
+    Restarting a broker to change a terminal leaves every running agent on the machine as a
+    process no node holds: it reads as left running, takes no turns, and has to be ended with
+    Kill process before the next work can start it again.
 
 .PARAMETER Force
     Ends whatever is holding Parley's files, rather than refusing and saying what to close.
@@ -859,7 +860,7 @@ if ($replacingBroker) {
         $lines = @($inFlight | Where-Object { $_ -is [string] -and $_.Trim() })
 
         if ($lines.Count -gt 0) {
-            Write-Warning "$($lines.Count) conversation(s) have an exchange still open. Stopping the broker ends every agent it started. When an agent's turn ends its open exchange stays open and is flagged to the person:"
+            Write-Warning "$($lines.Count) conversation(s) have an exchange still open. Installing ends the broker and its node. Agents the node started keep running with nothing holding them: they read as left running and can be ended with Kill process. An open exchange stays open and is flagged to the person:"
 
             foreach ($line in $lines) {
                 Write-Host "      $line" -ForegroundColor DarkGray
@@ -1022,8 +1023,8 @@ foreach ($says in $reported) {
 # **Skipped entirely when the broker is not being replaced, and this is the half that is easy to
 # miss.** Not stopping the broker earlier is worthless if the script re-registers the
 # autostart entry down here: `autostart install` replaces the scheduled task, which restarts the
-# process, which ends every resident agent on the machine along with everything each had
-# learned. The stop would have been avoided and the cost paid anyway, hundreds of lines later.
+# process, which leaves every agent its node started running with nothing holding it. The stop
+# would have been avoided and the cost paid anyway, hundreds of lines later.
 #
 # Nothing here is needed for a surface: a terminal is not registered with a supervisor, does not
 # listen on a port, and has no store. There is nothing to configure and nothing to prove.

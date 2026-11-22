@@ -203,6 +203,84 @@ public sealed class AFreezeHoldsWhateverTheAgentWasDoingTests
     }
 
     [Fact]
+    public async Task With_a_second_session_open_what_the_unfreeze_owes_is_asked_for_when_the_last_one_goes_and_not_before()
+    {
+        // Two sessions for one agent are legitimate: the node's process and somebody's editor. The editor leaving first must
+        // not spend what the unfreeze owes, because the process the stop is ending is still there to take the turn and lose it.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["orders"], Ct, reportsTurns: true);
+        await using var billing = await AttachedClient.AttachAsync(broker, "billing@alpha", cancellationToken: Ct);
+
+        var operators = broker.ConnectAsOperator();
+        var launched = await LaunchedAsync(broker, node, "t-1");
+        var editor = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
+        var editorOpen = true;
+
+        try
+        {
+            var asked = Assert.Single((await launched.Client.RequestAsync(
+                Requests.Open(Orders, "billing@alpha", "which ledger?", "c1"), cancellationToken: Ct)).Outcomes);
+
+            _ = await operators.FreezeAsync(Freeze(Orders), cancellationToken: Ct);
+
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Stop, (await node.WaitForCommandAsync(Patience)).CommandCase);
+
+            _ = await billing.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = "billing@alpha" }, cancellationToken: Ct);
+            _ = await billing.Client.ResultAsync(Requests.Result("billing@alpha", asked.ExchangeId), cancellationToken: Ct);
+
+            _ = await operators.UnfreezeAsync(new Wire.AgentRequest { Agent = Orders }, cancellationToken: Ct);
+
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, (await node.WaitForCommandAsync(Patience)).CommandCase);
+
+            await editor.DisposeAsync();
+            editorOpen = false;
+
+            await Assert.ThrowsAsync<TimeoutException>(() => node.WaitForCommandAsync(Briefly));
+        }
+        finally
+        {
+            if (editorOpen)
+            {
+                await editor.DisposeAsync();
+            }
+
+            await launched.DisposeAsync();
+        }
+
+        var command = await node.WaitForCommandAsync(Patience);
+
+        Assert.Equal(Wire.NodeCommand.CommandOneofCase.Start, command.CommandCase);
+        Assert.Equal(Orders, command.Start.Agent);
+    }
+
+    [Fact]
+    public async Task An_agent_open_only_in_an_editor_when_it_was_unfrozen_is_not_started_when_the_editor_closes()
+    {
+        // Nothing was stopping it, so the turn the unfreeze could not give is not a start owed later: the next message starts it.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["orders"], Ct, reportsTurns: true);
+        await using var billing = await AttachedClient.AttachAsync(broker, "billing@alpha", cancellationToken: Ct);
+
+        var operators = broker.ConnectAsOperator();
+
+        await using (var editor = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct))
+        {
+            var asked = Assert.Single((await editor.Client.RequestAsync(
+                Requests.Open(Orders, "billing@alpha", "which ledger?", "c1"), cancellationToken: Ct)).Outcomes);
+
+            _ = await operators.FreezeAsync(Freeze(Orders), cancellationToken: Ct);
+
+            _ = await billing.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = "billing@alpha" }, cancellationToken: Ct);
+            _ = await billing.Client.ResultAsync(Requests.Result("billing@alpha", asked.ExchangeId), cancellationToken: Ct);
+
+            _ = await operators.UnfreezeAsync(new Wire.AgentRequest { Agent = Orders }, cancellationToken: Ct);
+        }
+
+        await broker.WaitUntilDetachedAsync(Orders, Patience);
+        await Assert.ThrowsAsync<TimeoutException>(() => node.WaitForCommandAsync(Briefly));
+    }
+
+    [Fact]
     public async Task An_agent_frozen_again_before_its_process_went_is_not_started_when_it_goes()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);

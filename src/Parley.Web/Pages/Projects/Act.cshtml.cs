@@ -395,13 +395,16 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                 : $"Nothing to unfreeze: no agent in '{Project}' is frozen.";
         }
 
-        // Counted by what was done, never by what was tried.
+        // Counted by what was done, never by what was tried, and by what was done in this project: an agent frozen here whose
+        // other project could not be reached is frozen here, and is named below with what happened in each.
+        var here = all.Agents.Count(agent => agent.Projects.Any(
+            done => done.Problem is null && string.Equals(done.Project, Project, StringComparison.Ordinal)));
         var incomplete = all.Agents.Count - all.Done;
 
-        return $"{all.Done} of {all.Agents.Count} {(all.Agents.Count == 1 ? "agent" : "agents")} {(freeze ? "frozen" : "unfrozen")} in '{Project}'."
+        return $"{here} of {all.Agents.Count} {(all.Agents.Count == 1 ? "agent" : "agents")} {(freeze ? "frozen" : "unfrozen")} in '{Project}'."
             + (incomplete > 0
-                ? $" {incomplete} {(incomplete == 1 ? "was" : "were")} not, or not in every project that serves {(incomplete == 1 ? "it" : "them")}: "
-                  + string.Join(' ', all.Agents.Where(o => !o.Complete).Select(AgentFreezing.Describe))
+                ? $" {incomplete} {(incomplete == 1 ? "was" : "were")} not {(freeze ? "frozen" : "unfrozen")} in every project that serves {(incomplete == 1 ? "it" : "them")}: "
+                  + string.Join(' ', all.Agents.Where(o => !o.Complete).Select(o => $"'{o.Agent.Value}': {AgentFreezing.Describe(o)}"))
                 : string.Empty);
     }
 

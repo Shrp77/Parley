@@ -3,7 +3,7 @@
 Written after the build, in the order it was done; every task is built and has a test.
 
 ## Phase 1: the freeze in the store, broker and server
-- [x] T001 Migration `011_agent_hold.sql`: `agents.frozen_utc` with the instant CHECK; SPEC.md §9 schema shows it. (`AgentFreezeTests`, `SchemaConformanceTests`)
+- [x] T001 Migration `011_agent_freeze.sql`: `agents.frozen_utc` with the instant CHECK; SPEC.md §9 schema shows it. (`AgentFreezeTests`, `SchemaConformanceTests`)
 - [x] T002 `AgentRecord.FrozenUtc`/`Frozen`; `AgentRepository` reads it, `FreezeAsync`/`UnfreezeAsync` write it guarded on the current value and refuse the person seat and the facilitator. (`AgentFreezeTests`)
 - [x] T003 `OperatorConsole.FreezeAsync`/`UnfreezeAsync`; `Operators.Freeze`/`Unfreeze` in the proto, `FreezeReply`, `frozen_utc` on `RegistryRow`.
 - [x] T004 `BrokerRuntime.Ask` refuses a frozen agent with `WakeOutcome.Frozen` (`WAKE_OUTCOME_FROZEN`); `_frozen` seeded from the store at start. `Start` refuses a frozen agent in words. (`FreezingAnAgentTests`)
@@ -26,4 +26,4 @@ Written after the build, in the order it was done; every task is built and has a
 - [x] T015 `AgentFreezing.AllAsync`; `freezeall`/`unfreezeall` linked from the graph.
 
 ## Phase 5: spec, docs, version
-- [x] T016 SPEC.md §10.2 rows, §11.1 paragraph, protocol 0.20, schema 11; `docs/operating.md`; CLAUDE.md state; version 0.64.0.
+- [x] T016 SPEC.md §10.2 rows, §14 paragraph, protocol 0.20, schema 11; `docs/operating.md`; CLAUDE.md state; version 0.64.0.

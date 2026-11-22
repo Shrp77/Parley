@@ -33,7 +33,7 @@ No gate is violated; the one standing rule narrowed is named above.
 
 | Layer | Change |
 |---|---|
-| Store | `011_agent_hold.sql`: `ALTER TABLE agents ADD COLUMN frozen_utc TEXT` with a CHECK; `AgentRepository` reads and sets it. |
+| Store | `011_agent_freeze.sql`: `ALTER TABLE agents ADD COLUMN frozen_utc TEXT` with a CHECK; `AgentRepository` reads and sets it. |
 | Core | `AgentRecord.FrozenUtc`; `FreezeResult`/`FreezeProcess`; `IParleyBrokerClient.FreezeAsync`/`UnfreezeAsync`. |
 | Broker | `OperatorConsole.FreezeAsync`/`UnfreezeAsync` (the store writes). |
 | Server | `Ask` refuses a frozen agent (`WakeOutcome.Frozen`); `Operators.Freeze` records then `RequestStop`; `Unfreeze` clears then asks it to start if it owes work or anything is waiting for it; `Start` refuses a frozen agent; `frozen_utc` on the agent row. |

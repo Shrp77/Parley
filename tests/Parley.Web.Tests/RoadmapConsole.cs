@@ -123,6 +123,12 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// </summary>
     public string? StartRefusal { get; set; }
 
+    /// <summary>Every conversation a person asked to be ended, with the reason given.</summary>
+    public List<Wire.ForceConcludeRequest> Concluded { get; } = [];
+
+    /// <summary>The conversations an ending changes nothing in, as one already closed.</summary>
+    public HashSet<string> AlreadyClosed { get; } = new(StringComparer.Ordinal);
+
     /// <summary>Every restart a person asked for.</summary>
     public List<Wire.StopRequest> Restarted { get; } = [];
 
@@ -403,6 +409,7 @@ public sealed class RoadmapBroker : HttpMessageHandler
                 "/parley.v1.Operators/SpinOff" => Spun(Wire.SpinOffRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/AbandonSpinOff" => Taken(Wire.SpinOffRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/Start" => AskedToStart(Wire.StartRequest.Parser.ParseFrom(payload)),
+                "/parley.v1.Operators/ForceConclude" => AskedToEnd(Wire.ForceConcludeRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/Stop" => Asked(Stopped, Wire.StopRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/Restart" => Asked(Restarted, Wire.StopRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/Kill" => Asked(Killed, Wire.StopRequest.Parser.ParseFrom(payload)),
@@ -463,6 +470,13 @@ public sealed class RoadmapBroker : HttpMessageHandler
         SpunOff.Add(asked);
 
         return new Wire.SpinOffReply { Refused = SpinOffRefusal };
+    }
+
+    private Wire.DidItReply AskedToEnd(Wire.ForceConcludeRequest asked)
+    {
+        Concluded.Add(asked);
+
+        return new Wire.DidItReply { Changed = !AlreadyClosed.Contains(asked.ConversationId) };
     }
 
     private Wire.DidItReply AskedToStart(Wire.StartRequest asked)

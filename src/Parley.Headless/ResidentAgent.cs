@@ -62,6 +62,7 @@ public sealed class ResidentAgent : IAsyncDisposable
     private int _abandonedResults;
     private volatile string? _sessionId;
     private volatile bool _stopping;
+    private volatile bool _startAskedWhileStopping;
 
     // What the agent does on its own (OwnWork). Read and written on the pump, except as each says.
     private readonly Channel<Func<OwnWork, Task>> _notices =
@@ -157,6 +158,20 @@ public sealed class ResidentAgent : IAsyncDisposable
                 return 0;
             }
         }
+    }
+
+    /// <summary>Gets whether the agent is being stopped: its input is closed and its process may not have exited yet.</summary>
+    /// <remarks>
+    /// A process in this state is still alive and can take nothing. Whoever is asked to start the agent meanwhile must not hand
+    /// it a turn, which would come back as a process that died, with the start it was asked for never made.
+    /// </remarks>
+    public bool IsStopping => _stopping;
+
+    /// <summary>Gets or sets whether a start was asked for while the agent was being stopped, so whoever is stopping it starts it again.</summary>
+    public bool StartAskedWhileStopping
+    {
+        get => _startAskedWhileStopping;
+        set => _startAskedWhileStopping = value;
     }
 
     /// <summary>Gets whether the agent's process is still running.</summary>

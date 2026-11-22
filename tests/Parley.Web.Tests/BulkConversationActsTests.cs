@@ -206,6 +206,75 @@ public sealed partial class BulkConversationActsTests
     }
 
     [Fact]
+    public async Task Ending_says_how_many_ended_and_counts_one_the_broker_did_not_end_as_not_ended()
+    {
+        // One the broker says was already closed did not end, and the page must not say it did.
+        using var console = Console();
+
+        console.Broker.AlreadyClosed.Add("closed");
+
+        using var response = await EndAsync(console, "end", "open", "closed");
+        var page = System.Net.WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync(Ct));
+
+        Assert.Equal(2, console.Broker.Concluded.Count);
+        Assert.Contains("1 ended.", page, StringComparison.Ordinal);
+        Assert.Contains("1 could not be ended", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Conversations_a_broker_that_is_down_did_not_end_are_not_said_to_have_ended()
+    {
+        // A failed call is not an ending: the count is of what the broker said it closed.
+        using var console = Console();
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(
+            new Uri($"/Projects/Agents?project={RoadmapConsole.Project}&showArchived=true", UriKind.Relative), Ct);
+
+        console.Broker.FailsOn = "ForceConclude";
+
+        using var form = new FormUrlEncodedContent(
+        [
+            new("__RequestVerificationToken", Token().Match(page).Groups[1].Value),
+            new("project", RoadmapConsole.Project),
+            new("Ids", "open"),
+            new("Ids", "closed"),
+            new("Typed", "end"),
+        ]);
+
+        using var response = await client.PostAsync(new Uri("/Projects/EndMany", UriKind.Relative), form, Ct);
+        var after = System.Net.WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync(Ct));
+
+        Assert.Contains("0 ended.", after, StringComparison.Ordinal);
+        Assert.Contains("2 could not be ended", after, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_reason_the_person_gave_goes_with_every_ending_and_none_goes_when_none_was_given()
+    {
+        // The page promises each participant holding open work is told why.
+        using var console = Console();
+
+        using (await PostAsync(
+            console,
+            "/Projects/EndMany",
+            [new("Ids", "open"), new("Ids", "closed"), new("Typed", "end"), new("reason", "The plan changed.")]))
+        {
+        }
+
+        Assert.Equal(2, console.Broker.Concluded.Count);
+        Assert.All(console.Broker.Concluded, asked => Assert.Equal("The plan changed.", asked.Reason));
+
+        using var silent = Console();
+
+        using (await EndAsync(silent, "end", "open"))
+        {
+        }
+
+        Assert.Equal(string.Empty, Assert.Single(silent.Broker.Concluded).Reason);
+    }
+
+    [Fact]
     public async Task The_list_offers_a_tick_on_each_row_and_sends_ending_to_its_own_page()
     {
         using var console = Console();

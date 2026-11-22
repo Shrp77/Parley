@@ -3792,7 +3792,8 @@ they just changed. It ends a process and nothing else. What the agent owes stays
 conversations are untouched, so it is not a way to end work (§6) and is never a timeout: the broker
 never stops an agent on its own account. A stopped agent is started again by the next work for it, as
 any agent is, because only retirement gates routing (§14); a person who wants it kept stopped freezes it (§14), and one who wants it out
-for good retires it.
+for good retires it. A start asked for while the stopped process is still going is made once it has gone, never given to the
+process that is ending.
 It waits for the turn rather than cutting it short, and a turn is bounded by the node's patience, so the
 wait is bounded too.
 

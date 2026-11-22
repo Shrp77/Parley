@@ -136,6 +136,9 @@ public sealed partial class FreezingOnTheWebTests
 
         Assert.Contains(said, after, StringComparison.Ordinal);
         Assert.Contains("1 was not", after, StringComparison.Ordinal);
+
+        // Named, so two agents that failed alike do not read as one sentence said twice.
+        Assert.Contains(action == "freezeall" ? $"'{Orders}': " : $"'{Billing}': ", after, StringComparison.Ordinal);
         Assert.Contains("not done", after, StringComparison.Ordinal);
     }
 

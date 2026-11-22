@@ -722,6 +722,21 @@ public static class NodeCommand
 
             if (residents.TryGetValue(identity, out var existing))
             {
+                if (existing.IsAlive && existing.IsStopping)
+                {
+                    // **Being stopped, and not gone yet.** Its input is closed, so a turn given to it now comes back as a
+                    // process that died, and the stop then starts nothing: the broker was told the agent was started and
+                    // nothing ran. The stop is told a start is wanted and makes it once the process has gone
+                    // (RefreshWhenIdleAsync), under this same gate, so the two cannot miss each other.
+                    existing.StartAskedWhileStopping = true;
+
+                    await output.WriteLineAsync(
+                        $"  {agent.Value}: asked for while it is being stopped, so it is started again once it has gone.")
+                        .ConfigureAwait(false);
+
+                    return;
+                }
+
                 if (existing.IsAlive)
                 {
                     // Already here, and "here" is machine-wide rather than this node's own. This is also how
@@ -1617,11 +1632,18 @@ public static class NodeCommand
             _ = residents.TryRemove(identity, out _);
             await resident.DisposeAsync().ConfigureAwait(false);
 
+            // A stop starts nothing, unless a start was asked for while the process was going (StartAsync): that start was
+            // not made then, so it is made now, as a restart is.
+            var wanted = !ending.Restarts && resident.StartAskedWhileStopping;
+
             if (!ending.Restarts)
             {
                 await output.WriteLineAsync($"  {agent.Value}: {ending.Stopped}").ConfigureAwait(false);
 
-                return;
+                if (!wanted)
+                {
+                    return;
+                }
             }
 
             // A node that has swept starts nothing more (see StartAsync).
@@ -1673,7 +1695,9 @@ public static class NodeCommand
             // this checkout learns its new token, and one joining meanwhile finds it in the table.
             await TellJoinedAsync(residents, identity, restarted).ConfigureAwait(false);
 
-            await output.WriteLineAsync($"  {agent.Value}: {ending.Restarted}").ConfigureAwait(false);
+            await output.WriteLineAsync(
+                $"  {agent.Value}: {(wanted ? "started again, for the start that was asked for while it was stopping." : ending.Restarted)}")
+                .ConfigureAwait(false);
 
             // **And given a turn, as a fresh start is** (StartAsync). A turn asked for while the old process was stopping
             // queued on it and came back died, and the broker's wake stays claimed until a drain — so without this the

@@ -93,6 +93,63 @@ public sealed class NodeStopTests : IDisposable
         }
     }
 
+    [Theory]
+    [InlineData(1500)]
+    [InlineData(0)]
+    public async Task A_start_asked_for_while_the_process_is_still_going_is_made_once_it_has_gone(int lingers)
+    {
+        // The stop had closed the agent's input and the process had not exited yet, so the node still counted it as running
+        // and gave the start to it as a turn. The turn came back "process died", the stop started nothing, and the broker,
+        // told the agent was started, held every later wake for two minutes (review, lens 1 on 0.64.5). This is the start an
+        // unfreeze asks for when the frozen agent's process detaches, and any message that arrives just after a person's stop.
+        var (catalogue, identity, command) = Catalogued("docs", lingers);
+        var residents = new ConcurrentDictionary<AgentIdentity, ResidentAgent>();
+        var old = ResidentAgent.Start(
+            AgentName.Create("docs@alpha"), InvocationCommand.Parse(command), _workspace, TimeProvider.System);
+        residents[identity] = old;
+        var said = new Said();
+
+        try
+        {
+            await NodeCommand.StopAsync(
+                new Wire.StopAgent { Agent = "docs@alpha", Because = "frozen" }, catalogue, "alpha", residents, said.Writer, Ct);
+
+            // Not before the stop has closed its input: until then it is simply running, and a start is a turn.
+            var deadline = DateTime.UtcNow.AddSeconds(20);
+
+            while (!old.IsStopping && DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(10, Ct);
+            }
+
+            Assert.True(old.IsStopping, "the stop never began");
+
+            await NodeCommand.StartAsync(
+                new Wire.StartAgent { Agent = "docs@alpha", Because = "unfrozen" }, catalogue, "alpha", residents, said.Writer, Ct);
+
+            deadline = DateTime.UtcNow.AddSeconds(30);
+
+            while (DateTime.UtcNow < deadline
+                && !(residents.TryGetValue(identity, out var current) && !ReferenceEquals(current, old) && current.IsAlive))
+            {
+                await Task.Delay(25, Ct);
+            }
+
+            Assert.True(residents.TryGetValue(identity, out var now), $"nothing is running. The node said: {said.Text}");
+            Assert.NotSame(old, now);
+            Assert.True(now.IsAlive, "the process started in its place is not running");
+            Assert.False(old.IsAlive, "the stopped process is still running");
+            Assert.Single(residents);
+        }
+        finally
+        {
+            foreach (var resident in residents.Values)
+            {
+                await resident.DisposeAsync();
+            }
+        }
+    }
+
     [Fact]
     public async Task An_agent_this_node_is_not_running_is_not_stopped_and_it_says_so()
     {
@@ -138,7 +195,7 @@ public sealed class NodeStopTests : IDisposable
         }
     }
 
-    private (NodeCatalogue Catalogue, AgentIdentity Identity, string Command) Catalogued(string role)
+    private (NodeCatalogue Catalogue, AgentIdentity Identity, string Command) Catalogued(string role, int lingers = 0)
     {
         var stub = Path.Combine(_workspace, "stub.ps1");
 
@@ -148,6 +205,9 @@ public sealed class NodeStopTests : IDisposable
             "while ($null -ne ($line = [Console]::In.ReadLine())) {",
             "  [Console]::Out.WriteLine('{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"ok\",\"num_turns\":1,\"total_cost_usd\":0,\"session_id\":\"s\",\"permission_denials\":[]}'); [Console]::Out.Flush()",
             "}",
+
+            // A process that takes a while to go after its input closes, as a real agent does while it shuts its tools down.
+            $"Start-Sleep -Milliseconds {lingers.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
         ]);
 
         var command = "pwsh -NoProfile -NonInteractive -File \"" + stub + "\" --input-format stream-json";
