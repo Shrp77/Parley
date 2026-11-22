@@ -85,6 +85,8 @@ names it also answers to.
 - **Forward it over HTTPS** (plain `tailscale serve` does). Over plain HTTP a browser does not say
   which site asked for a page, so Parley refuses every request that comes in under a listed name
   that way.
+- **Give the console a name of its own.** Anything else served under the same name counts as the
+  console's own page, so it could act through it.
 - **Anyone who can reach that name acts as you.** The console has no sign-in. With Tailscale,
   your tailnet's access rules decide who that is.
 - **Never make the name public.** Tailscale Funnel, or any tunnel open to the internet, would let

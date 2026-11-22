@@ -186,7 +186,9 @@ public static class ConsoleHost
             if (StartedElsewhere(context)
                 || (listed.Count > 0
                     && !context.Request.Headers.ContainsKey("Sec-Fetch-Site")
-                    && listed.Contains(context.Request.Host.Host, StringComparer.OrdinalIgnoreCase)))
+                    // The header as sent: Request.Host decodes an xn-- label to Unicode, which the ASCII list never matched
+                    // (review, lens 2 run 3 on 6fde4ef3).
+                    && listed.Contains(new HostString(context.Request.Headers.Host.ToString()).Host, StringComparer.OrdinalIgnoreCase)))
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await context.Response.WriteAsync(StartedElsewhereSaid, context.RequestAborted).ConfigureAwait(false);
