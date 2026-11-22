@@ -26,7 +26,7 @@ else
             @* The terminal's door, here too (Parley.Setup's AgentWithdrawal holds both): what it owes, an acceptance when
                purging would leave somebody waiting on nothing, then the agent's own name typed back. Anything but the exact
                name keeps it. *@
-            @if (string.Equals(Model.Action, "purge", StringComparison.OrdinalIgnoreCase) && Model.OwedConsequence is { } consequence)
+            @if (Model.Verb == "purge" &&Model.OwedConsequence is { } consequence)
             {
                 <p class="unreachable">@consequence</p>
                 <p><label><input type="checkbox" name="AcceptOwed" value="true" required /> @Parley.Setup.AgentWithdrawal.AcceptOwed</label></p>
@@ -38,7 +38,7 @@ else
             </div>
         }
 
-        @if (string.Equals(Model.Action, "ownership", StringComparison.OrdinalIgnoreCase))
+        @if (Model.Verb == "ownership")
         {
             @* No maxlength: the store holds no bound on this line, and the field must not offer a cap
                the store does not hold, which is how a person comes to trust a number nobody chose.
@@ -52,7 +52,7 @@ else
             </p>
         }
 
-        @if (string.Equals(Model.Action, "acceptanswer", StringComparison.OrdinalIgnoreCase) && Model.Proposed is { } proposed)
+        @if (Model.Verb == "acceptanswer" &&Model.Proposed is { } proposed)
         {
             @* The one box on this page that opens holding somebody else's words, and it says whose. Unchanged, they are
                recorded as the agent's; changed, as your edit. The comparison is made again at the POST against what the
@@ -63,7 +63,7 @@ else
             </p>
         }
 
-        @if (string.Equals(Model.Action, "replyaskedback", StringComparison.OrdinalIgnoreCase))
+        @if (Model.Verb == "replyaskedback")
         {
             @* A message to the agent, so it is the console's one composer, with the same keys as every other. *@
             <p>
@@ -72,15 +72,15 @@ else
             </p>
         }
 
-        @if (string.Equals(Model.Action, "freeze", StringComparison.OrdinalIgnoreCase) || string.Equals(Model.Action, "freezeall", StringComparison.OrdinalIgnoreCase))
+        @if (Model.Verb is "freeze" or "freezeall")
         {
             @* The choice that makes a freeze outlast a logon. Unchecked, the next start of the broker lifts it. *@
             <p>
-                <label><input type="checkbox" name="KeepFrozen" value="true" /> Do not unfreeze on logon: keep @(string.Equals(Model.Action, "freezeall", StringComparison.OrdinalIgnoreCase) ? "them" : "it") frozen until I unfreeze @(string.Equals(Model.Action, "freezeall", StringComparison.OrdinalIgnoreCase) ? "them" : "it") myself.</label>
+                <label><input type="checkbox" name="KeepFrozen" value="true" /> Do not unfreeze on logon: keep @(Model.Verb == "freezeall" ? "them" : "it") frozen until I unfreeze @(Model.Verb == "freezeall" ? "them" : "it") myself.</label>
             </p>
         }
 
-        @if (string.Equals(Model.Action, "forceconclude", StringComparison.OrdinalIgnoreCase))
+        @if (Model.Verb == "forceconclude")
         {
             <p>
                 <partial name="_Composer" model="@(new Parley.Web.ComposerBox(

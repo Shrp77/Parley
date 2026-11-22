@@ -318,7 +318,8 @@ Anything that restarts the broker lifts an ordinary freeze, such as installing a
 crash. The broker cannot tell that from a logon.
 
 One agent process serves every project its repository is enrolled in. So a freeze covers the
-agent in each project that lists it. The page names those projects before you agree. A project
+agent in each project that lists it, even where it goes by another name. Another repository's
+agent with the same name is left alone. The page names those projects before you agree. A project
 that cannot be reached is named and left unfrozen. *Freeze all* says how many agents it froze out
 of how many it tried.
 

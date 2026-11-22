@@ -43,7 +43,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     public bool AcceptOwed { get; set; }
 
     /// <summary>Whether this action is one of the three that withdraw an agent and take its name typed back.</summary>
-    public bool Withdraws => Action?.ToLowerInvariant() is "retire" or "reinstate" or "purge";
+    public bool Withdraws => Verb is "retire" or "reinstate" or "purge";
 
     /// <summary>What the agent owes right now, read for retiring and purging, or null when not read.</summary>
     public string? Owes { get; private set; }
@@ -60,6 +60,14 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     /// </remarks>
     [BindProperty(SupportsGet = true)]
     public string? Action { get; set; }
+
+    /// <summary>The action as the handlers and the page both read it: lower-cased, or null when there is none.</summary>
+    /// <remarks>
+    /// One place, because lower-casing and comparing ignoring case differ for a Kelvin sign and a long s: the page drew its
+    /// fields by one and the handlers described and acted by the other, so one spelling was described as one act and drawn
+    /// as another.
+    /// </remarks>
+    public string? Verb => Action?.ToLowerInvariant();
 
     /// <summary>Who or what it is about.</summary>
     [BindProperty(SupportsGet = true)]
@@ -160,7 +168,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
         // description would be untrue and the broker refuses the act, so neither is offered. A registry that cannot be read
         // leaves it offered, and the broker's own check decides.
         // Lower-cased as the description and the act read it, never compared ignoring case: those differ for a Kelvin sign.
-        if (Action?.ToLowerInvariant() == "kill" && AgentName.TryCreate(Subject, out var killing))
+        if (Verb == "kill" && AgentName.TryCreate(Subject, out var killing))
         {
             var roll = await BrokerDirectory.ReadAsync(async () =>
                 await new BrokerClient(directory.ClientFor(project)).RegistryAsync(HttpContext.RequestAborted)
@@ -173,9 +181,9 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
         // Freezing ends the one process that serves every project the agent is in, so the person is told which they are before
         // they agree (SPEC.md §14): freezing it for one project's sake stops its work for the rest.
-        if (Action?.ToLowerInvariant() is "freeze" or "unfreeze" && AgentName.TryCreate(Subject, out var reached))
+        if (Verb is "freeze" or "unfreeze" && AgentName.TryCreate(Subject, out var reached))
         {
-            var (serving, unreachable) = await AgentFreezing.ServedByAsync(directory, reached, HttpContext.RequestAborted)
+            var (serving, unreachable) = await AgentFreezing.ServedByAsync(directory, project.Name.Value, reached, HttpContext.RequestAborted)
                 .ConfigureAwait(false);
 
             Reaches = AgentFreezing.Reach(reached, serving, unreachable);
@@ -194,7 +202,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
         // What it owes, as the terminal's dialog says it: the debt is what makes the difference between retiring and
         // purging concrete, and a purge of an agent that still owes work asks for an acceptance first.
-        if (Action?.ToLowerInvariant() is "retire" or "purge" && AgentName.TryCreate(Subject, out var leaving))
+        if (Verb is "retire" or "purge" && AgentName.TryCreate(Subject, out var leaving))
         {
             var owed = await OwedAsync(new BrokerClient(directory.ClientFor(project)), leaving, HttpContext.RequestAborted)
                 .ConfigureAwait(false);
@@ -206,7 +214,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
             }
         }
 
-        (Warning, Destroys) = Action?.ToLowerInvariant() switch
+        (Warning, Destroys) = Verb switch
         {
             // The terminal's words, from the one place both surfaces read them.
             "retire" => (AgentWithdrawal.Retiring + " Reinstating it undoes this. " + AgentWithdrawal.TheFiles + " "
@@ -328,7 +336,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
         var named = AgentName.TryCreate(Subject, out var agent);
 
         var read = await BrokerDirectory.ReadAsync(async () =>
-            await (Action?.ToLowerInvariant() switch
+            await (Verb switch
             {
                 // forceconclude takes a conversation identifier, which is opaque and chosen by an
                 // agent (§5.0). There is nothing to validate it against, so it is passed through.
@@ -360,9 +368,9 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
                 "start" => DescribeStart(broker.StartAsync(agent, "a person asked from the web UI", token)),
 
-                "freeze" => FreezeOne(agent, freeze: true, token),
+                "freeze" => FreezeOne(project, agent, freeze: true, token),
 
-                "unfreeze" => FreezeOne(agent, freeze: false, token),
+                "unfreeze" => FreezeOne(project, agent, freeze: false, token),
 
                 "stop" => DescribeStop(agent, restart: false, broker.StopAsync(agent, "a person stopped it from the web UI", token)),
 
@@ -412,10 +420,10 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
     private string FreezeReach() => Reaches ?? string.Empty;
 
-    private async Task<string> FreezeOne(AgentName agent, bool freeze, CancellationToken token) =>
+    private async Task<string> FreezeOne(ProjectSettings project, AgentName agent, bool freeze, CancellationToken token) =>
         AgentFreezing.Describe(freeze
-            ? await AgentFreezing.FreezeAsync(directory, agent, KeepFrozen, token).ConfigureAwait(false)
-            : await AgentFreezing.UnfreezeAsync(directory, agent, token).ConfigureAwait(false));
+            ? await AgentFreezing.FreezeAsync(directory, project.Name.Value, agent, KeepFrozen, token).ConfigureAwait(false)
+            : await AgentFreezing.UnfreezeAsync(directory, project.Name.Value, agent, token).ConfigureAwait(false));
 
     private async Task<string> FreezeEveryone(bool freeze, CancellationToken token)
     {
@@ -733,7 +741,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
             return wrong;
         }
 
-        var action = Action!.ToLowerInvariant();
+        var action = Verb!;
 
         if (action == "reinstate")
         {

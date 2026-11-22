@@ -7,10 +7,19 @@ namespace Parley.Client;
 /// <param name="Changed">Whether its state there changed: it was not frozen before (a freeze), or it was frozen (an unfreeze).</param>
 /// <param name="Process">What became of its process, for a freeze; null for an unfreeze or when the project could not be reached.</param>
 /// <param name="Problem">Why it could not be done there, or null when it could.</param>
-public sealed record FrozenIn(string Project, bool Changed, FreezeProcess? Process, string? Problem);
+/// <param name="Named">
+/// The agent's name in this project, or null when the project could not be read. It differs from the name the person acted on
+/// when the repository carries another name here (SPEC.md §4.1.1).
+/// </param>
+public sealed record FrozenIn(string Project, bool Changed, FreezeProcess? Process, string? Problem, AgentName? Named = null);
+
+/// <summary>A project that serves an agent, and the agent's name there.</summary>
+/// <param name="Project">The project.</param>
+/// <param name="Agent">The agent's name in that project, which need not be the name it has where the person acted (SPEC.md §4.1.1).</param>
+public sealed record ServedIn(string Project, AgentName Agent);
 
 /// <summary>What freezing or unfreezing one agent did across every project that serves it.</summary>
-/// <param name="Agent">The agent.</param>
+/// <param name="Agent">The agent, by its name in the project the person acted in.</param>
 /// <param name="Projects">One entry per project.</param>
 public sealed record FreezeOutcome(AgentName Agent, IReadOnlyList<FrozenIn> Projects)
 {
@@ -41,8 +50,15 @@ public sealed record FreezeAllOutcome(IReadOnlyList<FreezeOutcome> Agents, strin
 /// <remarks>
 /// <para>
 /// <b>The surface loops, not the broker.</b> A broker freezes one project and a store has one broker, so what is the same agent in
-/// several projects is frozen by asking each project's broker. The agent is <c>role@machine</c> in each, and the one process serves
-/// them all (SPEC.md §11.6): freezing it in one project only would end the process and let the next project's work start it again.
+/// several projects is frozen by asking each project's broker. The one process serves them all (SPEC.md §11.6): freezing it in one
+/// project only would end the process and let the next project's work start it again.
+/// </para>
+/// <para>
+/// <b>The same agent is the same identity, never the same name.</b> A repository's identifier is the agent and its name is only
+/// what a project shows (SPEC.md §4.1.1), so one checkout may be <c>inv@pc</c> in one project and <c>stock@pc</c> in another,
+/// and two unrelated repositories may share a name in two projects. Each project's row is found by the identity and the machine
+/// of the row where the person acted, and acted on under that project's own name (review, lens 2 run A on 5de89187: matching by
+/// name froze an unrelated agent, missed a renamed one, and let an agent that took another's name shed its freeze).
 /// </para>
 /// <para>
 /// A project that cannot be reached is reported, never skipped: the agent is not frozen there, and the person is told so that they
@@ -54,53 +70,112 @@ public sealed record FreezeAllOutcome(IReadOnlyList<FreezeOutcome> Agents, strin
 /// </remarks>
 public static class AgentFreezing
 {
-    /// <summary>The projects whose registry lists the agent.</summary>
+    /// <summary>The projects that serve the agent the person acts on in one project, and its name in each.</summary>
     /// <param name="directory">The projects and their brokers.</param>
-    /// <param name="agent">The agent.</param>
+    /// <param name="project">The project the person acts in, whose registry says which agent this is.</param>
+    /// <param name="agent">The agent, by its name in that project.</param>
     /// <param name="cancellationToken">Cancels the reads.</param>
-    /// <returns>The project names, and those that could not be read, with why.</returns>
-    public static async Task<(IReadOnlyList<string> Serving, IReadOnlyList<(string Project, string Problem)> Unreachable)> ServedByAsync(
-        BrokerDirectory directory, AgentName agent, CancellationToken cancellationToken = default)
+    /// <returns>
+    /// The projects and the agent's name in each, and those that could not be read, with why. When the acting project cannot be
+    /// read nothing else is asked: without its row there is no telling which agent elsewhere is this one.
+    /// </returns>
+    public static async Task<(IReadOnlyList<ServedIn> Serving, IReadOnlyList<(string Project, string Problem)> Unreachable)> ServedByAsync(
+        BrokerDirectory directory, string project, AgentName agent, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(directory);
 
-        var serving = new List<string>();
+        var acting = directory.Find(project);
+
+        if (acting is null)
+        {
+            return ([], [(project, $"This console has no project named '{project}'.")]);
+        }
+
+        var read = await RegistryAsync(directory, acting, cancellationToken).ConfigureAwait(false);
+
+        if (read.Value is not { } registry)
+        {
+            return ([], [(acting.Name.Value, read.Problem ?? "it did not answer")]);
+        }
+
+        // Its row whatever its standing here, so an agent retired in this project is still found where it is active.
+        return registry.FirstOrDefault(a => a.Name == agent) is { } row
+            ? await ServedByAsync(directory, acting, registry, row, cancellationToken).ConfigureAwait(false)
+            : ([], []);
+    }
+
+    private static async Task<(IReadOnlyList<ServedIn> Serving, IReadOnlyList<(string Project, string Problem)> Unreachable)> ServedByAsync(
+        BrokerDirectory directory,
+        ProjectSettings acting,
+        IReadOnlyList<AgentRecord> actingRegistry,
+        AgentRecord row,
+        CancellationToken cancellationToken)
+    {
+        var serving = new List<ServedIn>();
         var unreachable = new List<(string, string)>();
 
         foreach (var project in directory.Projects)
         {
-            var broker = new BrokerClient(directory.ClientFor(project));
+            IReadOnlyList<AgentRecord>? registry = string.Equals(project.Name.Value, acting.Name.Value, StringComparison.Ordinal)
+                ? actingRegistry
+                : null;
+            string? problem = null;
 
-            var read = await BrokerDirectory.ReadAsync(async () =>
-                await broker.RegistryAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
-
-            if (read.Value is null)
+            if (registry is null)
             {
-                unreachable.Add((project.Name.Value, read.Problem ?? "it did not answer"));
+                var read = await RegistryAsync(directory, project, cancellationToken).ConfigureAwait(false);
+
+                registry = read.Value;
+                problem = read.Problem;
             }
-            else if (read.Value.Any(a => a.Name == agent && a.Status == AgentStatus.Active))
+
+            if (registry is null)
             {
-                serving.Add(project.Name.Value);
+                unreachable.Add((project.Name.Value, problem ?? "it did not answer"));
+            }
+            else if (registry.FirstOrDefault(a => a.Status == AgentStatus.Active && IsTheSameAgent(row, a)) is { } match)
+            {
+                serving.Add(new ServedIn(project.Name.Value, match.Name));
             }
         }
 
         return (serving, unreachable);
     }
 
+    /// <summary>Whether a row in some project is the agent the person acted on.</summary>
+    /// <param name="acted">The agent's row in the project the person acted in.</param>
+    /// <param name="candidate">A row in some project.</param>
+    /// <returns>Whether they are one agent.</returns>
+    /// <remarks>
+    /// The identity and the machine, because the same identifier on another machine is another agent (SPEC.md §4.1.1). A row
+    /// with no identity was registered by an adapter that presented none, which registers by name alone; for that row the name
+    /// is all there is to match on, so it is matched by name, knowing that a name may be another repository's elsewhere.
+    /// </remarks>
+    private static bool IsTheSameAgent(AgentRecord acted, AgentRecord candidate) =>
+        acted.Identity.Known
+            ? candidate.Identity == acted.Identity
+              && string.Equals(candidate.Name.Machine, acted.Name.Machine, StringComparison.Ordinal)
+            : candidate.Name == acted.Name;
+
+    private static Task<ProjectRead<IReadOnlyList<AgentRecord>>> RegistryAsync(
+        BrokerDirectory directory, ProjectSettings project, CancellationToken cancellationToken) =>
+        BrokerDirectory.ReadAsync(async () =>
+            await new BrokerClient(directory.ClientFor(project)).RegistryAsync(cancellationToken).ConfigureAwait(false));
+
     /// <summary>Says which projects a freeze or an unfreeze of an agent reaches, for the person to read before agreeing (SPEC.md §14).</summary>
-    /// <param name="agent">The agent.</param>
-    /// <param name="serving">The projects that list it.</param>
+    /// <param name="agent">The agent, by its name where the person acts.</param>
+    /// <param name="serving">The projects that serve it, and its name in each.</param>
     /// <param name="unreachable">The projects that could not be asked.</param>
     /// <returns>The sentences, the same on every surface.</returns>
     public static string Reach(
-        AgentName agent, IReadOnlyList<string> serving, IReadOnlyList<(string Project, string Problem)> unreachable)
+        AgentName agent, IReadOnlyList<ServedIn> serving, IReadOnlyList<(string Project, string Problem)> unreachable)
     {
         ArgumentNullException.ThrowIfNull(serving);
         ArgumentNullException.ThrowIfNull(unreachable);
 
         return serving.Count == 0
             ? $"No project that can be reached lists '{agent.Value}'."
-            : $"This reaches {string.Join(", ", serving)}."
+            : $"This reaches {string.Join(", ", serving.Select(s => s.Project + As(agent, s.Agent)))}."
               + (unreachable.Count > 0
                   ? $" It cannot be reached in {string.Join(", ", unreachable.Select(u => u.Project))}, so it is not done there."
                   : string.Empty);
@@ -108,48 +183,63 @@ public static class AgentFreezing
 
     /// <summary>Freezes an agent in every project that serves it.</summary>
     /// <param name="directory">The projects and their brokers.</param>
-    /// <param name="agent">The agent.</param>
+    /// <param name="project">The project the person acts in.</param>
+    /// <param name="agent">The agent, by its name in that project.</param>
     /// <param name="keepFrozen">Whether the freeze outlasts a start of the broker, so a logon does not lift it.</param>
     /// <param name="cancellationToken">Cancels the acts.</param>
     /// <returns>What happened in each project.</returns>
     public static Task<FreezeOutcome> FreezeAsync(
-        BrokerDirectory directory, AgentName agent, bool keepFrozen = false, CancellationToken cancellationToken = default) =>
-        ActAsync(directory, agent, freeze: true, keepFrozen, cancellationToken);
+        BrokerDirectory directory, string project, AgentName agent, bool keepFrozen = false, CancellationToken cancellationToken = default) =>
+        ActAsync(directory, project, agent, freeze: true, keepFrozen, cancellationToken);
 
     /// <summary>Unfreezes an agent in every project where it is frozen.</summary>
     /// <param name="directory">The projects and their brokers.</param>
-    /// <param name="agent">The agent.</param>
+    /// <param name="project">The project the person acts in.</param>
+    /// <param name="agent">The agent, by its name in that project.</param>
     /// <param name="cancellationToken">Cancels the acts.</param>
     /// <returns>What happened in each project.</returns>
     public static Task<FreezeOutcome> UnfreezeAsync(
-        BrokerDirectory directory, AgentName agent, CancellationToken cancellationToken = default) =>
-        ActAsync(directory, agent, freeze: false, keepFrozen: false, cancellationToken);
+        BrokerDirectory directory, string project, AgentName agent, CancellationToken cancellationToken = default) =>
+        ActAsync(directory, project, agent, freeze: false, keepFrozen: false, cancellationToken);
 
     private static async Task<FreezeOutcome> ActAsync(
-        BrokerDirectory directory, AgentName agent, bool freeze, bool keepFrozen, CancellationToken cancellationToken)
+        BrokerDirectory directory, string project, AgentName agent, bool freeze, bool keepFrozen, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(directory);
 
-        var (serving, unreachable) = await ServedByAsync(directory, agent, cancellationToken).ConfigureAwait(false);
+        var served = await ServedByAsync(directory, project, agent, cancellationToken).ConfigureAwait(false);
+
+        return await ActAsync(directory, agent, served, freeze, keepFrozen, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<FreezeOutcome> ActAsync(
+        BrokerDirectory directory,
+        AgentName agent,
+        (IReadOnlyList<ServedIn> Serving, IReadOnlyList<(string Project, string Problem)> Unreachable) served,
+        bool freeze,
+        bool keepFrozen,
+        CancellationToken cancellationToken)
+    {
         var results = new List<FrozenIn>();
 
-        foreach (var (project, problem) in unreachable)
+        foreach (var (project, problem) in served.Unreachable)
         {
             results.Add(new FrozenIn(project, false, null, problem));
         }
 
-        foreach (var name in serving)
+        foreach (var (name, named) in served.Serving)
         {
             var broker = new BrokerClient(directory.ClientFor(directory.Find(name)!));
 
+            // Under this project's own name for it: a broker knows the agent by nothing else.
             var done = await BrokerDirectory.ReadAsync(async () => freeze
-                ? await broker.FreezeAsync(agent, keepFrozen, cancellationToken).ConfigureAwait(false)
-                : new FreezeResult(await broker.UnfreezeAsync(agent, cancellationToken).ConfigureAwait(false), FreezeProcess.NotRunning))
+                ? await broker.FreezeAsync(named, keepFrozen, cancellationToken).ConfigureAwait(false)
+                : new FreezeResult(await broker.UnfreezeAsync(named, cancellationToken).ConfigureAwait(false), FreezeProcess.NotRunning))
                 .ConfigureAwait(false);
 
             results.Add(done.Value is { } result
-                ? new FrozenIn(name, result.Changed, freeze ? result.Process : null, null)
-                : new FrozenIn(name, false, null, done.Problem));
+                ? new FrozenIn(name, result.Changed, freeze ? result.Process : null, null, named)
+                : new FrozenIn(name, false, null, done.Problem, named));
         }
 
         return new FreezeOutcome(agent, [.. results.OrderBy(r => r.Project, StringComparer.Ordinal)]);
@@ -164,7 +254,7 @@ public static class AgentFreezing
     /// <returns>One outcome per agent, and why the project could not be read when it could not.</returns>
     /// <remarks>
     /// The person's seat and the facilitator are left out: neither is started by a node, and storage refuses to freeze either.
-    /// A retired agent is left out too, since nothing wakes it.
+    /// A retired agent is left out too, since nothing wakes it. Each agent is found elsewhere by its identity, as one is.
     /// </remarks>
     public static async Task<FreezeAllOutcome> AllAsync(
         BrokerDirectory directory, string project, bool freeze, bool keepFrozen = false, CancellationToken cancellationToken = default)
@@ -178,9 +268,7 @@ public static class AgentFreezing
             return new FreezeAllOutcome([], $"This console has no project named '{project}'.");
         }
 
-        var read = await BrokerDirectory.ReadAsync(async () =>
-            await new BrokerClient(directory.ClientFor(settings)).RegistryAsync(cancellationToken).ConfigureAwait(false))
-            .ConfigureAwait(false);
+        var read = await RegistryAsync(directory, settings, cancellationToken).ConfigureAwait(false);
 
         if (read.Value is not { } registry)
         {
@@ -189,12 +277,13 @@ public static class AgentFreezing
 
         var outcomes = new List<FreezeOutcome>();
 
-        foreach (var agent in registry
+        foreach (var row in registry
             .Where(a => a.Status == AgentStatus.Active && !a.Facilitator && !PersonSeat.Is(a.Name))
-            .Where(a => freeze ? !a.Frozen : a.Frozen)
-            .Select(a => a.Name))
+            .Where(a => freeze ? !a.Frozen : a.Frozen))
         {
-            outcomes.Add(await ActAsync(directory, agent, freeze, keepFrozen, cancellationToken).ConfigureAwait(false));
+            var served = await ServedByAsync(directory, settings, registry, row, cancellationToken).ConfigureAwait(false);
+
+            outcomes.Add(await ActAsync(directory, row.Name, served, freeze, keepFrozen, cancellationToken).ConfigureAwait(false));
         }
 
         return new FreezeAllOutcome(outcomes, null);
@@ -207,7 +296,8 @@ public static class AgentFreezing
     /// <returns>A sentence per agent, each starting with a space, or empty.</returns>
     /// <remarks>
     /// One process serves every project an agent is in, so the act reaches them all; said by name, so a person who unfreezes
-    /// one project learns an agent frozen for another project's sake was released there too (review, lens 2 run B on 44c8e1e6).
+    /// one project learns an agent frozen for another project's sake was released there too (review, lens 2 run B on 44c8e1e6),
+    /// and by that project's name for it where it has another.
     /// </remarks>
     public static string Elsewhere(FreezeAllOutcome all, string project, bool freeze)
     {
@@ -216,10 +306,10 @@ public static class AgentFreezing
         return string.Concat(all.Agents
             .Select(o => (o.Agent, Others: o.Projects
                 .Where(p => p.Problem is null && p.Changed && !string.Equals(p.Project, project, StringComparison.Ordinal))
-                .Select(p => p.Project)
+                .Select(p => $"'{p.Project}'{As(o.Agent, p.Named)}")
                 .ToList()))
             .Where(o => o.Others.Count > 0)
-            .Select(o => $" '{o.Agent.Value}' was {(freeze ? "frozen" : "unfrozen")} in {string.Join(", ", o.Others.Select(p => $"'{p}'"))} too."));
+            .Select(o => $" '{o.Agent.Value}' was {(freeze ? "frozen" : "unfrozen")} in {string.Join(", ", o.Others)} too."));
     }
 
     /// <summary>Says what freezing did, in a few sentences a person can act on.</summary>
@@ -235,11 +325,15 @@ public static class AgentFreezing
         }
 
         var lines = outcome.Projects.Select(p => p.Problem is { } problem
-            ? $"{p.Project}: not done. {problem}"
-            : $"{p.Project}: {(p.Changed ? "changed" : "already so")}{ProcessWords(p.Process)}.");
+            ? $"{p.Project}{As(outcome.Agent, p.Named)}: not done. {problem}"
+            : $"{p.Project}{As(outcome.Agent, p.Named)}: {(p.Changed ? "changed" : "already so")}{ProcessWords(p.Process)}.");
 
         return string.Join(' ', lines);
     }
+
+    // The agent's name in a project, said only where it differs from the name the person acted on.
+    private static string As(AgentName acted, AgentName? named) =>
+        named is { } there && there != acted ? $" (as '{there.Value}')" : string.Empty;
 
     private static string ProcessWords(FreezeProcess? process) => process switch
     {

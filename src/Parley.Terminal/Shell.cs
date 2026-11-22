@@ -2721,7 +2721,7 @@ internal sealed partial class Shell : Window
         // (SPEC.md §14). That is a read of each project, so the description opens after it, from the queue.
         Queue(async token =>
         {
-            var (serving, unreachable) = await AgentFreezing.ServedByAsync(_directory, agent, token).ConfigureAwait(false);
+            var (serving, unreachable) = await AgentFreezing.ServedByAsync(_directory, project.Name.Value, agent, token).ConfigureAwait(false);
 
             // The read can land after the person has moved on: a description that opened over another project would be about
             // an agent no longer in view.
@@ -2749,8 +2749,8 @@ internal sealed partial class Shell : Window
                 Queue(async inner =>
                 {
                     var done = freeze
-                        ? await AgentFreezing.FreezeAsync(_directory, agent, keepFrozen, inner).ConfigureAwait(false)
-                        : await AgentFreezing.UnfreezeAsync(_directory, agent, inner).ConfigureAwait(false);
+                        ? await AgentFreezing.FreezeAsync(_directory, project.Name.Value, agent, keepFrozen, inner).ConfigureAwait(false)
+                        : await AgentFreezing.UnfreezeAsync(_directory, project.Name.Value, agent, inner).ConfigureAwait(false);
 
                     Said = AgentFreezing.Describe(done);
 
