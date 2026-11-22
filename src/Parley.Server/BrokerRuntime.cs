@@ -240,6 +240,26 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     private readonly ConcurrentDictionary<string, bool> _startWanted = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// The agents a wake passed over because they were running only as processes a node that is gone left running, until the
+    /// last of those processes has gone or a person kills it (SPEC.md §11.1).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A left process is not started beside itself, and it does not stay.</b> A broker that died hard under a turn finds the
+    /// process attached again with a token no node holds, so the restart wake, and every message's wake after it, leaves it
+    /// alone. The process finishes the turn it was on, finds its input ended because its node has gone, and exits. Nothing
+    /// asked for the agent afterwards, so the exchange it had collected stayed open and the mail sent to it meanwhile was
+    /// stranded (review, lens 1 run C, Linux, real processes). What was passed over is asked for when the last session
+    /// detaches, as <see cref="WakeIfOwingAsync"/> asks, so a frozen or retired agent is still not started.
+    /// </para>
+    /// <para>
+    /// <b>Not for a session open in an editor</b>, which presents no token: that one is somebody's, and it reads its mail
+    /// when they prompt it (§11.7). <b>A person's kill clears the note</b>, because a kill does not start the agent (§10.2).
+    /// </para>
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, bool> _leftPassedOver = new(StringComparer.Ordinal);
+
     /// <summary>Makes a wake's claim and its notes one step among wakes.</summary>
     /// <remarks>
     /// Two wakes for one agent, a person's Start crossing a message's, could each write its claim and then its note, in an order
@@ -395,7 +415,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <b>Long enough for a process that outlived the broker to attach again.</b> A broker that was killed leaves the agents'
     /// processes running, and their adapters try again every two seconds (<c>BrokerLink.RetryAfter</c> in Parley.Mcp). A node
     /// rejoins faster than that, so a wake at the join found the agent detached and asked for a start: a second process in the
-    /// same checkout, collecting the same owed work. Once the old one is back it reads as left running, which the wake skips.
+    /// same checkout, collecting the same owed work. Once the old one is back it reads as left running, which the wake skips
+    /// until it has gone (<see cref="_leftPassedOver"/>).
     /// </para>
     /// <para>
     /// A constant, not a setting: nothing a deployment knows makes another number right, and the adapter's interval is
@@ -1166,7 +1187,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// under its agents finds them detached until their adapters retry, and its node rejoins first. Woken at once, each agent
     /// owing work was started a second time beside its old process, both collected the same work in one checkout, and the
     /// old one could not be killed. After <see cref="RestartWakeDelay"/> the old process is attached again with a token no
-    /// node holds, and <see cref="Ask"/> leaves it alone.
+    /// node holds, and <see cref="Ask"/> leaves it alone until it has gone (<see cref="_leftPassedOver"/>).
     /// </para>
     /// <para>
     /// <b>The wake is an extra</b>, so a failure, or the broker stopping, is forgotten and asked for again at the machine's
@@ -1776,8 +1797,18 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return KillOutcome.NoProcess;
         }
 
+        // **A kill does not start the agent** (SPEC.md §10.2): what a wake passed over while it ran is not asked for when it goes.
+        // Cleared before the node is asked, so the detach the kill causes cannot take the note first, and put back when no node
+        // was asked, because the process then ends on its own and is owed what it was owed before.
+        var noted = _leftPassedOver.TryRemove(agent.Value, out _);
+
         if (!_nodes.TryGetValue(agent.Machine, out var node) || !node.RequestKill(agent, process, because))
         {
+            if (noted)
+            {
+                _leftPassedOver[agent.Value] = true;
+            }
+
             return KillOutcome.NoNode;
         }
 
@@ -2069,7 +2100,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         // Open outside Parley is among them: nobody was asked, so a claim left behind told every wake for the next two minutes
         // that a turn was coming when none was, the unfreeze's own wake included.
-        if (outcome is WakeOutcome.Unreachable or WakeOutcome.Frozen or WakeOutcome.OpenOutside)
+        if (outcome is WakeOutcome.Unreachable or WakeOutcome.Frozen or WakeOutcome.OpenOutside or WakeOutcome.LeftRunning)
         {
             // Nothing is coming after all, so the claim is given back rather than left to expire.
             // Holding it would suppress every wake for the next two minutes on the strength
@@ -2083,7 +2114,41 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 .Remove(new KeyValuePair<string, DateTimeOffset>(agent.Value, claimed));
         }
 
-        return outcome;
+        return outcome is WakeOutcome.LeftRunning ? PassedOver(agent, because) : outcome;
+    }
+
+    /// <summary>Notes a wake passed over because the agent runs only as processes a node that is gone left running.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="because">Why it was asked, for the start the note may become.</param>
+    /// <returns>What became of the asking, now that it is noted.</returns>
+    /// <remarks>
+    /// <b>Noted after the claim is given back, never before</b> (SPEC.md §11.1). The note is taken once, by the detach of the
+    /// last such process or here when that detach came first, and whoever takes it asks for the start. Noted while this wake
+    /// still held its claim, a detach taking the note found that claim live, was told a turn was coming, and nothing came.
+    /// </remarks>
+    private WakeOutcome PassedOver(AgentName agent, string because)
+    {
+        _leftPassedOver[agent.Value] = true;
+
+        if (_attached.TryGetValue(agent.Value, out var still) && !still.IsEmpty)
+        {
+            if (still.All(Left))
+            {
+                return WakeOutcome.LeftRunning;
+            }
+
+            // Somebody opened it in an editor, or a node started it, meanwhile: nothing is owed when the left one goes, and
+            // the wake is asked again of what is attached now.
+            return _leftPassedOver.TryRemove(agent.Value, out _)
+                ? RequestAttentionForMail(agent, because)
+                : WakeOutcome.LeftRunning;
+        }
+
+        // **The process went between the look and the note.** Its detach found nothing to take, or has taken this already and
+        // asks for the start itself; whichever takes the note acts on it, so it is asked for once.
+        return _leftPassedOver.TryRemove(agent.Value, out _)
+            ? RequestAttentionForMail(agent, because)
+            : WakeOutcome.LeftRunning;
     }
 
     /// <summary>Whether a mark claimed that long ago still counts.</summary>
@@ -2261,7 +2326,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
         // would be suppressed.
         if (running && sessions.All(session => !session.StartedByParley))
         {
-            return WakeOutcome.OpenOutside;
+            // **Left running by a node that is gone** (§11.1): not somebody's editor, and nobody will prompt it. Told apart so
+            // the sender is not told an editor will, and so what is passed over is asked for once it has gone
+            // (RequestAttentionForMail, ReleaseAsync).
+            return sessions.All(Left) ? WakeOutcome.LeftRunning : WakeOutcome.OpenOutside;
         }
 
         if (!(running ? node.RequestTurn(agent, IdentityOf(agent), because) : node.RequestStart(agent, IdentityOf(agent), because)))
@@ -2766,6 +2834,15 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         if (!last)
         {
+            // The last left process has gone and a session somebody opened, or one a node started, is still attached: what
+            // a wake passed over is that session's to read now, as it would have been had it been there at the wake.
+            if (Left(attached)
+                && _attached.TryGetValue(attached.Name.Value, out var others)
+                && !others.Any(Left))
+            {
+                _ = _leftPassedOver.TryRemove(attached.Name.Value, out _);
+            }
+
             return;
         }
 
@@ -2773,8 +2850,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
         var asked = _turnAsked.TryRemove(attached.Name.Value, out var lost);
         var wanted = _startWanted.TryRemove(attached.Name.Value, out _);
         var unfrozen = _unfrozenWhileUp.TryRemove(attached.Name.Value, out _);
+        var passedOver = _leftPassedOver.TryRemove(attached.Name.Value, out _);
 
-        if (!(asked || wanted || unfrozen))
+        if (!(asked || wanted || unfrozen || passedOver))
         {
             return;
         }
@@ -2788,17 +2866,24 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 .Remove(new KeyValuePair<string, DateTimeOffset>(attached.Name.Value, lost));
         }
 
-        // **A turn was asked of the process that has just ended, or it was unfrozen while a stop was waiting for it** (SPEC.md
-        // §11.1, §14). What the turn was for is asked for again, as a start. A frozen agent is declined where every wake is,
-        // so a freeze made meanwhile still holds.
+        // **A turn was asked of the process that has just ended, it was unfrozen while a stop was waiting for it, or a wake
+        // passed it over as left running** (SPEC.md §11.1, §14). What was asked is asked for again, as a start. A frozen agent
+        // is declined where every wake is, so a freeze made meanwhile still holds.
         try
         {
-            if (unfrozen)
+            if (unfrozen || passedOver)
             {
                 // An unfreeze pays what the freeze put off, whatever else was asked: open work the agent owes as well as
                 // anything uncollected. Gated on the turn's mail alone, an agent unfrozen before its turn had ended was
-                // left stopped with the work it had already collected.
-                _ = await WakeIfOwingAsync(attached.Name, CancellationToken.None).ConfigureAwait(false);
+                // left stopped with the work it had already collected. A left process that has gone is paid the same way:
+                // the restart wake passed over the work it had collected and left open, and every message's wake its mail.
+                _ = await WakeIfOwingAsync(
+                    attached.Name,
+                    CancellationToken.None,
+                    unfrozen
+                        ? "a person unfroze it and work or mail is waiting for it"
+                        : "a process a node that is gone left running has ended, and work or mail is waiting for it")
+                    .ConfigureAwait(false);
 
                 // A person's start asked meanwhile is still owed when the unfreeze found nothing to pay. If the unfreeze did
                 // ask, its claim answers the asking below as already coming, so nothing is started twice.

@@ -1574,11 +1574,14 @@ enum WakeOutcome {
   // The receiver is the person seat (section 12.3): they have it and will answer, whether here or
   // away. No machine was asked to start anybody, because nothing starts a person.
   WAKE_OUTCOME_WITH_THE_PERSON = 5;
-  // The receiver is running only as a process Parley did not start (section 11.7): nobody was asked, and it reads
-  // the message when somebody prompts it.
+  // The receiver is open in a session somebody opened outside Parley, with no launch token (section 11.7): nobody
+  // was asked, and it reads the message when somebody prompts it there.
   WAKE_OUTCOME_OPEN_OUTSIDE = 6;
   // A person has frozen the receiver (section 14): nobody was asked to start it, and the work waits until it is unfrozen.
   WAKE_OUTCOME_FROZEN = 7;
+  // The receiver is running only as a process a node that is gone left running (section 11.1): nobody was asked, and it
+  // is started for the message once that process has gone, unless a person ends it with kill or freezes it first.
+  WAKE_OUTCOME_LEFT_RUNNING = 8;
 }
 
 enum ClosureError {

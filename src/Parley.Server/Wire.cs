@@ -339,6 +339,7 @@ internal static class Conversions
         Core.WakeOutcome.WithThePerson => Wire.WakeOutcome.WithThePerson,
         Core.WakeOutcome.OpenOutside => Wire.WakeOutcome.OpenOutside,
         Core.WakeOutcome.Frozen => Wire.WakeOutcome.Frozen,
+        Core.WakeOutcome.LeftRunning => Wire.WakeOutcome.LeftRunning,
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Not a defined wake outcome.")
     };
 

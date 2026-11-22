@@ -800,7 +800,8 @@ it, which a message expecting nothing back never told anybody (principle 2.7).
 running is given a turn, by the machine that holds it (§4). What the sender is told alongside
 the exchange identifier is what became of the receiver: started, already running, already being
 seen to, not reachable from here, **open outside Parley** (§11.7) — it reads the message when somebody
-prompts it — **frozen** by the person (§14) — it reads the message once it is unfrozen — or **with the
+prompts it — **left running** by a node that is gone (§11.1) — it is started for the message once that process
+ends — **frozen** by the person (§14) — it reads the message once it is unfrozen — or **with the
 person**. **None of these is a refusal.** The
 Request is stored before any of it is decided, and an unreachable receiver is flagged to the person
 running the deployment rather than written off (principle 2.8).
@@ -3773,6 +3774,9 @@ Four things end a resident agent, and nothing else may:
    progress, as for a refresh, then stops the agent, and for a restart starts it again with its
    launch configuration read afresh. Only an agent the node started: one open outside Parley
    (§11.7) is held by no node, and is ended by whoever opened it, or with `kill` when a node that is gone left it running.
+   When more than one ending is asked of an agent while it waits for one turn (a stop, a restart, a refresh), the node does
+   the last one asked, except that a refresh never undoes a person's stop: the process ends either way, and the agent reads
+   its new line the next time it starts.
 
 A fifth act is a person's and is not one of these, because it ends no resident agent: **ending a process a node that is
 gone left running** (§10.2 `kill`). A process outlives the node that started it, and a node that is replaced, as an install
@@ -3780,7 +3784,11 @@ does, knows none of the processes its predecessor started; the broker, which for
 restarts, then saw them as open outside Parley and blamed somebody who had not opened them. An attachment that presents a
 launch token no node now holds is **left running**, and one with no token is open outside Parley, which is somebody's. A
 left process is shown as such on every surface and a person may end it: nothing holds it, so no node can wait for its
-turn, give it one, or stop it, and it is not started again while it runs. The adapter says which process hosts it, as a
+turn, give it one, or stop it, and it is not started again while it runs. What a wake passed over while it ran, the open
+work the restart wake found (§14) and the messages sent to it, is asked for once its last session detaches, as a start, if
+the agent is still active, not frozen and still owes something; a left process finishes the turn it was on, finds its
+input ended and exits, so without this the agent would wait for the next work with what it owed left open. A `kill` clears
+that, because a kill does not start the agent. The adapter says which process hosts it, as a
 label and never as authority; the node ends it only after checking it is a running process named for an agent's own kind,
 that it is neither the node nor one the node hosts. It does not wait, so what the process was part-way through is lost, which
 a person is told before doing it. What the agent owes stays owed, and the next work for it starts it again unless it is frozen (§14).
@@ -4025,7 +4033,8 @@ What follows from it:
 
 - **A wake on an agent open only outside Parley asks nobody.** The sender is told the agent is open outside
   Parley and reads the message when somebody prompts it (§5); no node is asked for a start or a turn, and the
-  wake is not marked as coming, because nothing is.
+  wake is not marked as coming, because nothing is. When every attachment is left running, the sender is told so
+  instead, and the agent is started for the message once that process has gone (§11.1): nobody has it open to prompt.
 - **`start` refuses an agent open outside Parley** (§10.2): a second process in one checkout is two models
   editing it. The refusal says which it is: an editor's session to close, or a process left by a node that is gone, to
   end with `kill`.
@@ -4569,7 +4578,8 @@ forced update at the weekend. The broker cannot tell them apart and does not try
 that the second reading wins**: when a machine's node first joins a broker (the first join since the broker started; one that threw, or that the node left or the broker stopped before, is asked again at the next), every active agent on that
 machine that owes an open exchange is asked to start (once each, however many exchanges it owes), subject to the
 resume gate and never for an agent open outside Parley or left running (§11.7, §11.1). The asking waits five seconds after the join, so a process that outlived
-the broker attaches again first and reads as left running rather than being started a second time beside itself; an adapter slower than that is not waited for. Work stays open under every policy; the policy decides
+the broker attaches again first and reads as left running rather than being started a second time beside itself; an adapter slower than that is not waited for.
+An agent passed over as left running is started once that process has gone, if it still owes the work and nobody killed it (§11.1). Work stays open under every policy; the policy decides
 only whether anybody is started to do it. The way to stop work is to close its conversation. Stopping an agent
 from a surface (§11.1) ends its process and not its work: the work stays open, and under `always` the agent is started again at
 the next restart or by the next work for it, as any agent is. Killing the broker stops nothing for long. The resume policy is `always` in the broker the

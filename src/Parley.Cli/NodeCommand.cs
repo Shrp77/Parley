@@ -1558,9 +1558,39 @@ public static class NodeCommand
             return;
         }
 
-        if (!residents.TryGetValue(identity, out var resident) || !resident.IsAlive)
+        // **The last ending asked of a resident is the one done** (review, lens 1 run C on Linux: a person's stop then restart,
+        // restart then stop, or a refresh then a stop, during one turn, kept the first and dropped the second without a word).
+        // One waiter per resident: a later ending only replaces what it will do, read under the same gate the waiter takes,
+        // so the two cannot miss each other, and a process that has already exited but not yet been taken still counts.
+        string? said = null;
+        ResidentAgent? resident = null;
+
+        await Residency.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
         {
-            await output.WriteLineAsync($"  {agent.Value}: {ending.NotRunning}").ConfigureAwait(false);
+            if (residents.TryGetValue(identity, out var held) && EndingsAsked.TryGetValue(held, out var asked))
+            {
+                said = Supersede(asked, ending);
+            }
+            else if (held is null || !held.IsAlive)
+            {
+                said = ending.NotRunning;
+            }
+            else
+            {
+                EndingsAsked.Add(held, new EndingAsked(ending));
+                resident = held;
+            }
+        }
+        finally
+        {
+            _ = Residency.Release();
+        }
+
+        if (resident is null)
+        {
+            await output.WriteLineAsync($"  {agent.Value}: {said}").ConfigureAwait(false);
 
             return;
         }
@@ -1617,6 +1647,45 @@ public static class NodeCommand
             "a stop");
     }
 
+    /// <summary>The ending a resident's one waiter will do once its turn is over: the latest asked.</summary>
+    /// <param name="latest">The ending asked first.</param>
+    /// <remarks>Read and written only under <see cref="Residency"/>.</remarks>
+    private sealed class EndingAsked(Ending latest)
+    {
+        /// <summary>Gets or sets the ending the waiter does.</summary>
+        public Ending Latest { get; set; } = latest;
+    }
+
+    /// <summary>The resident each waiting ending is for; a resident with none has no waiter.</summary>
+    /// <remarks>Weak, so a resident that is gone takes its entry with it.</remarks>
+    private static readonly ConditionalWeakTable<ResidentAgent, EndingAsked> EndingsAsked = new();
+
+    /// <summary>Records an ending asked while another waits for the same resident's turn, and says what will be done.</summary>
+    /// <param name="asked">What the waiter will do.</param>
+    /// <param name="ending">The ending asked now.</param>
+    /// <returns>The line to report.</returns>
+    /// <remarks>
+    /// <b>The latest wins, except a refresh.</b> A person's later word replaces their earlier one or the broker's refresh. A
+    /// refresh needs only that the process end before the agent next starts, which any ending already waiting gives it, so it
+    /// never undoes a person's stop.
+    /// </remarks>
+    private static string Supersede(EndingAsked asked, Ending ending)
+    {
+        var earlier = asked.Latest;
+
+        if (ReferenceEquals(ending, Ending.Refresh))
+        {
+            return $"not refreshed on its own — {earlier.For} already waits for its turn to end, and it reads its new "
+                + "ownership line the next time it starts.";
+        }
+
+        asked.Latest = ending;
+
+        return ReferenceEquals(earlier, ending)
+            ? $"{ending.For} was asked again; it is still waiting for its turn to end."
+            : $"{ending.For} was asked while {earlier.For} waited for its turn to end, so {ending.For} is what is done.";
+    }
+
     /// <summary>Waits for an agent's turn to end, stops it, and starts it again unless it was only stopped.</summary>
     /// <returns>A task that completes when the new process is running, or it was stopped and left.</returns>
     private static async Task RefreshWhenIdleAsync(
@@ -1630,12 +1699,30 @@ public static class NodeCommand
         CancellationToken cancellationToken,
         TurnReporter? reporter)
     {
-        _ = await resident.ShutdownWhenIdleAsync(ShutdownGrace, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            _ = await resident.ShutdownWhenIdleAsync(ShutdownGrace, cancellationToken).ConfigureAwait(false);
 
-        await Residency.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await Residency.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // No waiter now, so an ending asked later is not handed to one that will never act on it.
+            _ = EndingsAsked.Remove(resident);
+
+            throw;
+        }
 
         try
         {
+            // **The latest ending asked, taken under the gate it was written under** (Supersede), so one asked after this
+            // finds the resident gone and says so rather than being handed to a waiter that has already read.
+            if (EndingsAsked.TryGetValue(resident, out var asked))
+            {
+                ending = asked.Latest;
+                _ = EndingsAsked.Remove(resident);
+            }
+
             // A start that got here first found the process gone and replaced it, which already reads the launch
             // configuration afresh — so there is nothing left to do, and the corpse is the start's to dispose.
             if (!residents.TryGetValue(identity, out var current) || !ReferenceEquals(current, resident))

@@ -99,5 +99,16 @@ public enum WakeOutcome
     /// person made and can reverse, and the work is not lost. Not <see cref="WithThePerson"/> either, since nobody is deciding
     /// the work itself.
     /// </remarks>
-    Frozen = 6
+    Frozen = 6,
+
+    /// <summary>
+    /// The recipient is running only as a process a node that is gone left running (SPEC.md §11.1): nobody was asked, and it
+    /// is started for the message once that process has gone, unless a person ends it or freezes it first.
+    /// </summary>
+    /// <remarks>
+    /// Not <see cref="OpenOutside"/>, which tells the sender somebody will prompt the agent in an editor. Nobody has a left
+    /// process open: it finishes the turn it was on when its node went, finds its input ended and exits, and nothing could
+    /// prompt it meanwhile. What the sender is owed is the start the broker asks for when it goes.
+    /// </remarks>
+    LeftRunning = 7
 }

@@ -2177,6 +2177,11 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
             "open in a session Parley did not start; it reads your request when somebody there prompts it",
         Wire.WakeOutcome.Frozen =>
             "frozen by the person: it is not started, and it gets your request when it is unfrozen. Nothing is lost",
+
+        // SPEC.md §11.1: nobody has a left process open, so nobody will prompt it; it is started once it has gone.
+        Wire.WakeOutcome.LeftRunning =>
+            "still finishing in a process left from before Parley restarted; it is started for your request once that " +
+            "process ends, unless the person ends it first",
         _ => "unknown"
     };
 

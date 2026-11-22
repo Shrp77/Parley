@@ -153,6 +153,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         Wire.WakeOutcome.OpenOutside => "Open outside Parley; reads it when prompted there",
         Wire.WakeOutcome.WithThePerson => "With the person",
         Wire.WakeOutcome.Frozen => "Frozen; reads it when unfrozen",
+        Wire.WakeOutcome.LeftRunning => "Left running; started for it once that process ends",
         _ => "Not reported",
     };
 
@@ -357,6 +358,12 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
             parts.Add($"{outside} open outside Parley, reading it when prompted there");
         }
 
+        // SPEC.md §11.1: left running by a node that is gone, and started for it once that process ends.
+        if (counted.GetValueOrDefault(Wire.WakeOutcome.LeftRunning) is > 0 and var left)
+        {
+            parts.Add($"{left} left running, started for it once that process ends");
+        }
+
         if (parts.Count > 0)
         {
             _ = said.Append(' ').Append(string.Join(", ", parts)).Append('.');
@@ -556,10 +563,13 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         // is here so the switch never says "not reported" about a fact the broker did report.
         Wire.WakeOutcome.WithThePerson => $"{to.Value} is the person, and has it.",
         Wire.WakeOutcome.OpenOutside =>
-            // The broker answers the same for a session somebody opened in an editor and for a process a node that is gone
-            // left running (SPEC.md §11.7), so this says only what is true of both.
             $"{to.Value}{OpenOutsideParley}, so Parley cannot give it a turn; it reads this when somebody prompts it where " +
             "it is open.",
+
+        // SPEC.md §11.1: nobody has it open to prompt, and the broker starts it for this once that process has gone.
+        Wire.WakeOutcome.LeftRunning =>
+            $"{to.Value} is running as a process a node that is gone left behind, so Parley cannot give it a turn; it is " +
+            "started for this once that process ends, unless you kill it first.",
         _ => $"What became of {to.Value} was not reported.",
     };
 
