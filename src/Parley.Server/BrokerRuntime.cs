@@ -179,36 +179,49 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     private readonly ConcurrentDictionary<string, bool> _unfrozenWhileUp = new(StringComparer.Ordinal);
 
-    /// <summary>The agents whose node has been asked to stop them and whose process has not gone yet (SPEC.md §11.1).</summary>
-    /// <remarks>
-    /// Kept so that a wake asked for in that time can be told apart (<see cref="_wokenWhileStopping"/>). A restart is not
-    /// kept: the node starts the agent again itself and gives it a turn.
-    /// </remarks>
-    private readonly ConcurrentDictionary<string, bool> _stopSent = new(StringComparer.Ordinal);
-
     /// <summary>
-    /// The agents that were given a turn after their node was asked to stop them, each with the wake claim that turn left, until
-    /// their process has gone.
+    /// The agents a turn was asked of while they were attached, each with the wake claim that turn left, until their process
+    /// has gone or a stop is asked of them (SPEC.md §11.1).
     /// </summary>
     /// <remarks>
-    /// While the stopped process is still attached, new work for it is a turn and not a start. Its node gives that turn to a
-    /// process the stop then ends, so the turn is lost: the sender was told a turn was coming, the claim held every later wake
-    /// for two minutes, and nothing started the agent, though "the next work for it starts it again" (SPEC.md §10.2
-    /// <c>stop</c>). The work is asked for again, as a start, when the last session of that process detaches.
     /// <para>
-    /// <b>The claim is kept with the mark, and whoever takes the mark acts on it.</b> The asking and the detach run on different
+    /// <b>A turn asked of a process is not a turn taken.</b> The process may end first: a person's stop, asked through this
+    /// broker or through another project's that the same checkout serves, takes the turns queued behind it, and a process can
+    /// simply die. The turn's sender was told the agent was running, the claim the turn left held every later wake for two
+    /// minutes, and nothing started the agent, though "the next work for it starts it again" (SPEC.md §10.2 <c>stop</c>). So
+    /// every turn is noted, and when the last session of that process detaches the work is asked for again, as a start, if it is
+    /// still uncollected.
+    /// </para>
+    /// <para>
+    /// <b>Every turn, and not only one asked while a stop was known to be waiting.</b> This broker cannot know that: the stop may
+    /// be another broker's, and telling a turn asked just before a stop from one asked just after took a note of the stop, a
+    /// second look at it and a rule for each kind of wake, each of which a race then found a way past. A turn that was taken
+    /// collected its mail, so at the detach there is nothing uncollected and nothing is asked.
+    /// </para>
+    /// <para>
+    /// <b>The claim is kept with the note, and whoever takes the note acts on it.</b> The asking and the detach run on different
     /// threads, so the claim a lost turn left is told from a start already asked for by being this exact claim, never by when it
-    /// was made: a turn can be asked of the dying process a moment after its session began to leave. And the mark is taken once,
-    /// by the detach or by the asking that finds the session already gone, so the start is asked for once.
+    /// was made. The note is taken once, by the detach or by the asking that finds the session already gone, so the start is
+    /// asked for once. A stop clears the notes of turns asked before it, before its node is asked: what the agent had not
+    /// collected by then does not undo the stop, and a turn asked after it is noted after the clearing.
     /// </para>
     /// </remarks>
-    private readonly ConcurrentDictionary<string, DateTimeOffset> _wokenWhileStopping = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _turnAsked = new(StringComparer.Ordinal);
 
-    /// <summary>Makes a wake's claim and its note of a turn asked of a stopping process one step among wakes.</summary>
+    /// <summary>The agents a person asked to start while they were attached, so that the asking went out as a turn, until that turn begins or their process has gone.</summary>
     /// <remarks>
-    /// Two wakes for one stopping agent, a person's Start crossing a message's, could each write its claim and then its note,
-    /// in an order that left the note holding one wake's claim and the claim table the other's. The detach then removed
-    /// nothing and found a live claim, so it asked for nothing. Nothing inside the lock waits on anything.
+    /// A person's start of an agent that is still attached is asked as a turn. If the process ends before the turn begins, the
+    /// start the person asked for is still owed, whether or not anything is waiting for the agent: "a start asked for while the
+    /// stopped process is still going is made once it has gone" (SPEC.md §11.1). Cleared when the node reports a turn begun, which
+    /// is the asking answered, and by a stop, which is the person's later word.
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, bool> _startWanted = new(StringComparer.Ordinal);
+
+    /// <summary>Makes a wake's claim and its notes one step among wakes.</summary>
+    /// <remarks>
+    /// Two wakes for one agent, a person's Start crossing a message's, could each write its claim and then its note, in an order
+    /// that left the note holding one wake's claim and the claim table the other's. The detach then removed nothing and found a
+    /// live claim, so it asked for nothing. Nothing inside the lock waits on anything.
     /// </remarks>
     private readonly Lock _claimAndNote = new();
 
@@ -1183,6 +1196,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         var running = new RunningTurn(startedUtc, machine, waiting);
 
+        // A turn has begun, which is a person's start of an attached agent answered: it is no longer owed when the process goes.
+        _ = _startWanted.TryRemove(agent.Value, out _);
+
         _ = _turns.AddOrUpdate(agent, running, (_, was) => was.Started > startedUtc ? was : running);
 
         // The node may have left while the count was read, and its release swept the table before this landed. Taken
@@ -1710,7 +1726,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </para>
     /// </remarks>
     public bool RequestAttention(AgentName agent, string because) =>
-        Ask(agent, because) is WakeOutcome.Started or WakeOutcome.AlreadyRunning;
+        Ask(agent, because, person: true) is WakeOutcome.Started or WakeOutcome.AlreadyRunning;
 
     /// <summary>Whether a person has frozen the agent (SPEC.md §14).</summary>
     /// <param name="agent">The agent.</param>
@@ -1764,24 +1780,23 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return StopOutcome.OpenOutside;
         }
 
-        // **Noted before the node is asked, never after.** A wake that reads this between the asking and a later note finds
-        // "not stopping", and its turn then queues on the node behind the stop with nothing to say it was lost: the message
-        // sat unread and its sender was told the agent was running. Taken back only if this call made the note and the
-        // node could not be asked.
-        var noted = !restart && _stopSent.TryAdd(agent.Value, true);
+        // **Cleared before the node is asked, never after.** What was asked of the agent before this stop does not undo it: the
+        // turns noted so far, a person's earlier start, and the claim that suppresses the next wake all go. A wake that asks
+        // its turn after the node has the stop writes its note after this clearing, so that note is still there when the
+        // process goes; cleared afterwards, the note of a turn the stop was about to take went with the rest, and the message
+        // sat unread while its sender was told the agent was running.
+        lock (_claimAndNote)
+        {
+            _ = _turnAsked.TryRemove(agent.Value, out _);
+            _ = _startWanted.TryRemove(agent.Value, out _);
+            _ = _pending.TryRemove(agent.Value, out _);
+        }
 
         if (!_nodes.TryGetValue(agent.Machine, out var node)
             || !node.RequestStop(agent, IdentityOf(agent), restart, because))
         {
-            if (noted)
-            {
-                _ = _stopSent.TryRemove(agent.Value, out _);
-            }
-
             return StopOutcome.NoNode;
         }
-
-        _ = _pending.TryRemove(agent.Value, out _);
 
         return StopOutcome.Sent;
     }
@@ -1999,13 +2014,14 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <summary>Asks the agent's machine for whatever it needs, and marks attention pending.</summary>
     /// <param name="agent">The agent.</param>
     /// <param name="because">Why, for the operator's benefit.</param>
+    /// <param name="person">Whether a person asked for the agent to be started, so the start is owed even with nothing waiting.</param>
     /// <returns>What became of the asking.</returns>
     /// <remarks>
     /// <b>Every wake marks, whatever asked for it.</b> A message arriving while a turn is already
     /// coming — for an earlier message, or a person's start — must find the mark set, or two in
     /// quick succession cost two turns for one reading.
     /// </remarks>
-    private WakeOutcome Ask(AgentName agent, string because)
+    private WakeOutcome Ask(AgentName agent, string because, bool person = false)
     {
         // **The one place a start or a turn is asked for, so the one place a freeze is honoured** (SPEC.md §14): the
         // restart wake, new work and a person's Start all come through here. Before any node is asked and before anything is
@@ -2019,10 +2035,6 @@ public sealed class BrokerRuntime : IAsyncDisposable
         {
             return WakeOutcome.Unreachable;
         }
-
-        // Read before the sessions are: a detach takes the session out first and this mark after, so a mark gone by now
-        // means the session went before it, and the look below finds nobody attached.
-        var stopping = _stopSent.ContainsKey(agent.Value);
 
         // Attached already, so a start would duplicate a process. What the traffic needs is a turn. The node
         // gives the turn only to a resident of its own, so an agent attached through somebody's editor window
@@ -2045,48 +2057,47 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return WakeOutcome.Unreachable;
         }
 
-        // Read again now the node has been asked: a stop noted since the first look was sent to the node before this turn
-        // or will be dealt with behind it, and either way the turn may be one it takes.
-        stopping |= _stopSent.ContainsKey(agent.Value);
-
         DateTimeOffset claimed;
 
-        // A turn asked of a process its node is stopping is one the stop may take with it: noted with the claim it left, and
-        // asked for again as a start once the process has gone (ReleaseAsync). The claim and the note are written as one
-        // step, so the note always holds the claim that is in the table.
+        // A turn asked of a process is one the process may not live to take: noted with the claim it left, and asked for
+        // again as a start once the process has gone (ReleaseAsync). The claim and the notes are written as one step, so the
+        // note always holds the claim that is in the table.
         lock (_claimAndNote)
         {
             claimed = Clock.GetUtcNow();
             _pending[agent.Value] = claimed;
 
-            if (running && stopping)
+            if (running)
             {
-                _wokenWhileStopping[agent.Value] = claimed;
+                _turnAsked[agent.Value] = claimed;
+
+                if (person)
+                {
+                    _startWanted[agent.Value] = true;
+                }
             }
         }
 
-        if (running && stopping)
+        // **The process went between the look and the asking.** Its detach has taken its notes already, or is about to:
+        // whichever of the two takes this one acts on it. Taken here, the turn just asked for went to nobody, so its claim is
+        // let go and the work is asked for as the start it should have been.
+        if (running
+            && !(_attached.TryGetValue(agent.Value, out var still) && !still.IsEmpty)
+            && ((ICollection<KeyValuePair<string, DateTimeOffset>>)_turnAsked)
+                .Remove(new KeyValuePair<string, DateTimeOffset>(agent.Value, claimed)))
         {
+            _ = ((ICollection<KeyValuePair<string, DateTimeOffset>>)_pending)
+                .Remove(new KeyValuePair<string, DateTimeOffset>(agent.Value, claimed));
+            _ = _startWanted.TryRemove(agent.Value, out _);
 
-            // **The process went between the look and the asking.** Its detach has taken its marks already, or is about to:
-            // whichever of the two takes this one acts on it. Taken here, the turn just asked for went to nobody, so its
-            // claim is let go and the work is asked for as the start it should have been.
-            if (!(_attached.TryGetValue(agent.Value, out var still) && !still.IsEmpty)
-                && ((ICollection<KeyValuePair<string, DateTimeOffset>>)_wokenWhileStopping)
-                    .Remove(new KeyValuePair<string, DateTimeOffset>(agent.Value, claimed)))
+            if (!node.RequestStart(agent, IdentityOf(agent), because))
             {
-                _ = ((ICollection<KeyValuePair<string, DateTimeOffset>>)_pending)
-                    .Remove(new KeyValuePair<string, DateTimeOffset>(agent.Value, claimed));
-
-                if (!node.RequestStart(agent, IdentityOf(agent), because))
-                {
-                    return WakeOutcome.Unreachable;
-                }
-
-                _pending[agent.Value] = Clock.GetUtcNow();
-
-                return WakeOutcome.Started;
+                return WakeOutcome.Unreachable;
             }
+
+            _pending[agent.Value] = Clock.GetUtcNow();
+
+            return WakeOutcome.Started;
         }
 
         return running ? WakeOutcome.AlreadyRunning : WakeOutcome.Started;
@@ -2543,59 +2554,64 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return;
         }
 
-        // The process a stop was asked of has gone, so nothing is being stopped any more. Each mark is taken whatever the
-        // other says, so none is left behind for a later process.
-        _ = _stopSent.TryRemove(attached.Name.Value, out _);
-
-        var woken = _wokenWhileStopping.TryRemove(attached.Name.Value, out var lost);
+        // The process has gone. Each note is taken whatever the others say, so none is left behind for a later process.
+        var asked = _turnAsked.TryRemove(attached.Name.Value, out var lost);
+        var wanted = _startWanted.TryRemove(attached.Name.Value, out _);
         var unfrozen = _unfrozenWhileUp.TryRemove(attached.Name.Value, out _);
 
-        // **Given a turn, or unfrozen, while a stop was still waiting for its turn** (SPEC.md §11.1, §14): that turn went to the
-        // process that has just ended, so the claim it left is let go and what is waiting is asked for again, as a start. A
-        // frozen agent is declined where every wake is, so a freeze made meanwhile still holds.
-        if (woken || unfrozen)
+        if (!(asked || wanted || unfrozen))
         {
-            // **Only the claim the lost turn left**, by key and value. Any other claim is a start a newer message has already
-            // asked for, and dropping it bought a second start for one message; telling them apart by time left a turn asked
-            // a moment after the session began to leave looking like such a start, with its message unread and nothing coming.
-            if (woken)
+            return;
+        }
+
+        // **Only the claim the noted turn left**, by key and value. Any other claim is a start a newer message has already
+        // asked for, and dropping it bought a second start for one message; telling them apart by time left a turn asked a
+        // moment after the session began to leave looking like such a start, with its message unread and nothing coming.
+        if (asked)
+        {
+            _ = ((ICollection<KeyValuePair<string, DateTimeOffset>>)_pending)
+                .Remove(new KeyValuePair<string, DateTimeOffset>(attached.Name.Value, lost));
+        }
+
+        // **A turn was asked of the process that has just ended, or it was unfrozen while a stop was waiting for it** (SPEC.md
+        // §11.1, §14). What the turn was for is asked for again, as a start. A frozen agent is declined where every wake is,
+        // so a freeze made meanwhile still holds.
+        try
+        {
+            if (unfrozen)
             {
-                _ = ((ICollection<KeyValuePair<string, DateTimeOffset>>)_pending)
-                    .Remove(new KeyValuePair<string, DateTimeOffset>(attached.Name.Value, lost));
+                // An unfreeze pays what the freeze put off, whatever else was asked: open work the agent owes as well as
+                // anything uncollected. Gated on the turn's mail alone, an agent unfrozen before its turn had ended was
+                // left stopped with the work it had already collected.
+                await WakeIfOwingAsync(attached.Name, CancellationToken.None).ConfigureAwait(false);
+
+                return;
             }
 
-            try
-            {
-                if (woken)
-                {
-                    // Only an agent still registered and not retired, as every wake the broker makes on its own account asks
-                    // (WakeIfOwingAsync): the person may have retired or purged it since the work arrived, and a start then
-                    // would run a process the person's own Start is refused, in a repository they had withdrawn. And only
-                    // when something is still waiting: work the stopping process read before it went needs no start, and
-                    // what the agent already owed does not undo a person's stop.
-                    var waiting = await UseConnectionAsync(
-                        async (connection, _, ct) =>
-                            (await new AgentRepository(connection).GetAllAsync(ct).ConfigureAwait(false))
-                                .Any(row => row.Name == attached.Name && row.Status == AgentStatus.Active)
-                            && await new MessageRepository(connection).CountPendingAsync(attached.Name, cancellationToken: ct).ConfigureAwait(false)
-                            + await new ConversationRepository(connection).CountOutstandingPollsAsync(attached.Name, ct).ConfigureAwait(false) > 0,
-                        CancellationToken.None).ConfigureAwait(false);
+            // Only an agent still registered and not retired, as every wake the broker makes on its own account asks
+            // (WakeIfOwingAsync): the person may have retired or purged it since the turn was asked, and a start then would
+            // run a process the person's own Start is refused, in a repository they had withdrawn. And, unless a person
+            // asked for the start themselves, only when something is still waiting: a turn that was taken collected its
+            // mail, and work the agent had already collected does not start it again.
+            var (active, waiting) = await UseConnectionAsync(
+                async (connection, _, ct) =>
+                    ((await new AgentRepository(connection).GetAllAsync(ct).ConfigureAwait(false))
+                        .Any(row => row.Name == attached.Name && row.Status == AgentStatus.Active),
+                     await new MessageRepository(connection).CountPendingAsync(attached.Name, cancellationToken: ct).ConfigureAwait(false)
+                     + await new ConversationRepository(connection).CountOutstandingPollsAsync(attached.Name, ct).ConfigureAwait(false) > 0),
+                CancellationToken.None).ConfigureAwait(false);
 
-                    if (waiting)
-                    {
-                        _ = RequestAttentionForMail(attached.Name, "work arrived for it while it was being stopped");
-                    }
-                }
-                else
-                {
-                    await WakeIfOwingAsync(attached.Name, CancellationToken.None).ConfigureAwait(false);
-                }
-            }
-            catch (Exception)
+            if (active && (waiting || wanted))
             {
-                // The session has gone and its row says so. The wake is an extra: the work stays open and is flagged on the
-                // ordinary schedule, and the next message for the agent starts it.
+                _ = RequestAttentionForMail(
+                    attached.Name,
+                    wanted ? "a person asked to start it while its process was still going" : "a turn asked of it was not taken before its process went");
             }
+        }
+        catch (Exception)
+        {
+            // The session has gone and its row says so. The wake is an extra: the work stays open and is flagged on the
+            // ordinary schedule, and the next message for the agent starts it.
         }
     }
 

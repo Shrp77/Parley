@@ -24,13 +24,47 @@ public sealed class NodeKillTests : IDisposable
 
     public void Dispose()
     {
+        // A program file stays held for a moment after its process has gone, so the delete is tried until it holds or
+        // the deadline passes: a folder left behind is never a failed test.
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+
+        while (true)
+        {
+            try
+            {
+                Directory.Delete(_folder, recursive: true);
+
+                return;
+            }
+            catch (DirectoryNotFoundException)
+            {
+                return;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                if (DateTime.UtcNow >= deadline)
+                {
+                    return;
+                }
+
+                Thread.Sleep(50);
+            }
+        }
+    }
+
+    /// <summary>Ends a stand-in and waits until it has gone, so nothing of it holds the folder.</summary>
+    private static void End(Process standIn)
+    {
         try
         {
-            Directory.Delete(_folder, recursive: true);
+            standIn.Kill(entireProcessTree: true);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (InvalidOperationException)
         {
+            // It had already gone.
         }
+
+        Assert.True(standIn.WaitForExit(TimeSpan.FromSeconds(10)), "the stand-in is still running");
     }
 
     /// <summary>Starts a copy of a program that stays up, under a name of its own, and returns the process.</summary>
@@ -116,7 +150,7 @@ public sealed class NodeKillTests : IDisposable
         }
         finally
         {
-            other.Kill(entireProcessTree: true);
+            End(other);
         }
     }
 
@@ -134,10 +168,18 @@ public sealed class NodeKillTests : IDisposable
         var residents = new ConcurrentDictionary<AgentIdentity, ResidentAgent>();
 
         // A hosted agent that is named claude, so only the hosting check can refuse it.
-        using var hosted = Sleeper("claude");
-        var resident = ResidentAgent.Start(
-            AgentName.Create("docs@alpha"), InvocationCommand.Parse($"\"{hosted.StartInfo.FileName}\" {string.Join(' ', hosted.StartInfo.ArgumentList)}"),
-            _folder, TimeProvider.System);
+        string command;
+
+        using (var standIn = Sleeper("claude"))
+        {
+            command = $"\"{standIn.StartInfo.FileName}\" {string.Join(' ', standIn.StartInfo.ArgumentList)}";
+
+            // Started only for its command line. Left running it holds its own program file for two minutes, and the
+            // folder cannot be deleted while it does.
+            End(standIn);
+        }
+
+        var resident = ResidentAgent.Start(AgentName.Create("docs@alpha"), InvocationCommand.Parse(command), _folder, TimeProvider.System);
 
         residents[AgentIdentity.Mint()] = resident;
 
@@ -171,8 +213,7 @@ public sealed class NodeKillTests : IDisposable
         using var gone = Sleeper("claude");
         var id = gone.Id;
 
-        gone.Kill(entireProcessTree: true);
-        gone.WaitForExit();
+        End(gone);
 
         var said = await KillAsync(id);
 

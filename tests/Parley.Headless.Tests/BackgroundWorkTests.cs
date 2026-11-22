@@ -467,7 +467,6 @@ public sealed class BackgroundWorkTests : IDisposable
     }
 
     [Fact]
-    [Slow]
     public async Task A_turn_given_while_the_agent_works_on_its_own_waits_for_it_and_reads_its_own_reply()
     {
         // The second prompt arrives while the agent's own turn runs, as the probe sent it: the runner answers its own turn

@@ -281,6 +281,41 @@ public sealed class AFreezeHoldsWhateverTheAgentWasDoingTests
     }
 
     [Fact]
+    public async Task An_unfreeze_before_the_turn_has_ended_is_paid_for_work_the_agent_had_already_collected()
+    {
+        // The agent owes open work it has collected, and nothing is uncollected. Unfrozen before its turn ended, the turn the
+        // unfreeze asked for went to the process the freeze's stop was ending, and the start at the detach looked only for
+        // uncollected mail: the agent was left unfrozen, stopped and owing (review, lens 1 on 0.64.10). An unfreeze asks it to
+        // start if it owes open work and the resume policy allows (SPEC.md §10.2).
+        await using var broker = await LoopbackBroker.StartAsync(
+            Ct, options: Parley.Broker.BrokerOptions.Default with { ResumePolicy = Parley.Core.ResumePolicy.Always });
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["orders"], Ct, reportsTurns: true);
+        await using var docs = await AttachedClient.AttachAsync(broker, "docs@alpha", cancellationToken: Ct);
+
+        var operators = broker.ConnectAsOperator();
+
+        await using (var orders = await LaunchedAsync(broker, node, "t-1"))
+        {
+            _ = await docs.Client.RequestAsync(Requests.Open("docs@alpha", Orders, "owed and collected", "c1"), cancellationToken: Ct);
+
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, (await node.WaitForCommandAsync(Patience)).CommandCase);
+            Assert.Single((await orders.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Orders }, cancellationToken: Ct)).Messages);
+
+            _ = await operators.FreezeAsync(Freeze(Orders), cancellationToken: Ct);
+
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Stop, (await node.WaitForCommandAsync(Patience)).CommandCase);
+
+            Assert.True((await operators.UnfreezeAsync(new Wire.AgentRequest { Agent = Orders }, cancellationToken: Ct)).Changed);
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, (await node.WaitForCommandAsync(Patience)).CommandCase);
+        }
+
+        var command = await node.WaitForCommandAsync(Patience);
+
+        Assert.Equal(Wire.NodeCommand.CommandOneofCase.Start, command.CommandCase);
+        Assert.Equal(Orders, command.Start.Agent);
+    }
+
+    [Fact]
     public async Task An_agent_frozen_again_before_its_process_went_is_not_started_when_it_goes()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);

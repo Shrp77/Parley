@@ -900,7 +900,9 @@ become, not by where the box is: text that becomes one of the person's messages 
 Clarify asking back, or a Result on an agent's Request to them) is written in a message box, and every message box on a
 surface takes the same keys, the same attachments (a file pasted, dropped or picked is placed in the conversation and
 named in the message, §9.5; pasted text past the surface's threshold becomes a file), and keeps the words and files a
-refused send leaves, so nothing is typed or attached twice. A surface that can also keeps a message box's unsent
+refused send leaves, so nothing is typed or attached twice, with one exception: a conversation that has not started has
+nowhere to hold a file, so the words go first, and when nobody takes them the files are not placed and the surface says to
+attach them again. A surface that can also keeps a message box's unsent
 words where the person left them, through a reload or a visit elsewhere, until they are sent. A new place that takes such text is a message box by this
 rule, without being listed. Text that names or describes something is not a message, even when an agent later reads
 it: a conversation's or project's name, an ownership line, a roadmap's text, a reason given when closing. Such a box
@@ -3790,15 +3792,23 @@ The fourth is the person's, and the trade is theirs to make, because they can se
 that an agent is stuck, is running a session they no longer trust, or should read a launch configuration
 they just changed. It ends a process and nothing else. What the agent owes stays owed and its
 conversations are untouched, so it is not a way to end work (§6) and is never a timeout: the broker
-never stops an agent on its own account. A stopped agent is started again by the next work for it, as
-any agent is, because only retirement gates routing (§14); a person who wants it kept stopped freezes it (§14), and one who wants it out
-for good retires it. A start asked for while the stopped process is still going is made once it has gone, never given to the
-process that is ending, and work that arrives while that process is still attached, and that it has not collected by the time it
-has gone, is asked for again, as a start, unless the person has retired the agent meanwhile. Only a wake asked for meanwhile does it: for new work, or for mail the stopping process left uncollected when its turn ran
-out of time or its collection stopped short. Work it had already collected does not start it, and neither does mail that nothing
-asked a turn for after the stop.
-It waits for the turn rather than cutting it short, and a turn is bounded by the node's patience, so the
-wait is bounded too.
+never stops an agent on its own account. The node waits for the turn rather than cutting it short, and a
+turn is bounded by the node's patience, so the wait is bounded too.
+
+A stopped agent is started again by the next work for it, as any agent is, because only retirement gates
+routing (§14); a person who wants it kept stopped freezes it (§14), and one who wants it out for good
+retires it. **A turn asked of a process that ends before taking it is not lost.** A start the node is asked
+for before a stopping process has gone is made once it has gone, never given to the process that is
+ending. A turn is different: the broker asks one of an agent that is still attached, and the process may
+end before taking it, because a stop took it (this project's, or another's that the same checkout
+serves, which this broker never hears of) or because the process died. That holds whatever the turn was
+for: new work, a person's Start, or mail left uncollected when a turn ran out of time or a collection
+stopped short. So the broker notes each turn it asks, and once the agent's last session has gone it asks
+for a start if the agent still has mail it has not collected or a closure poll waiting on its vote, or
+if a person asked for the start and no turn has begun since, unless the person has retired, purged or
+frozen the agent meanwhile. A stop forgets the turns asked before it, so the only start a stop leaves
+behind is for what was asked after it: work the process had already collected does not start the agent
+again, and neither does mail that no turn was asked for after the stop.
 
 A turn that runs past the node's patience is **not** one of them. The process holds everything the
 agent has learned, and discarding that because a single turn ran long is a far worse trade than
@@ -4856,8 +4866,8 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
   owns it (principle 2.5), which keeps every change in the hands of the agent that understands
   the code being changed.
 - **Not a shared context store.** An agent may read the log through `read_exchange` and `search_history`, framed as a
-  record, bounded, and shown to the person (§10.1, §13); nothing is pushed into another agent's context and there is no
-  shared memory that one agent can write for another to read. A conversation groups every
+  record, bounded, and shown to the person (§10.1, §13); nothing is pushed into another agent's context, and what one
+  agent wrote reaches another only as a message addressed to it or as a framed record it asked for. A conversation groups every
   exchange in one line of work so that the person running the deployment can read it whole
   (principle 2.9). Traffic is
   pruned once it is operationally spent (§9.4), and a person who wants to keep a conversation

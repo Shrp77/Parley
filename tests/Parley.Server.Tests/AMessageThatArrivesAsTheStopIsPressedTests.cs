@@ -10,16 +10,16 @@ namespace Parley.Server.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The stop was noted after its node had been asked. A wake that looked in between found "not stopping", and its turn then
-/// reached the node behind the stop: the turn went to a process the stop ended, nothing noted it as lost, and the sender had
-/// been told the agent was running (review, lens 1 on 0.64.9: 11 lost in 30,000 over the wire, and most of the crossings
-/// when the two are released together).
+/// A stop forgets the turns asked before it. It once did so after its node had been asked, so the note of a turn that
+/// reached the node behind the stop could be forgotten with the rest: the turn went to a process the stop ended, nothing
+/// held it as lost, and the sender had been told the agent was running (review, lens 1 on 0.64.9: 11 lost in 30,000 over
+/// the wire, and most of the crossings when the two are released together). The forgetting now comes before the asking.
 /// </para>
 /// <para>
 /// <b>Many agents released on one barrier, because it is a race.</b> About a third of the pairs land as a stop and then a
 /// turn. Every one of those must be followed by a start once the process has gone, and a test that saw none of them has
-/// tested nothing, so it says so. With the old ordering put back this failed in about one run in three: it narrows the
-/// odds of the fault returning unseen, and does not close them.
+/// tested nothing, so it says so. It is a race, so a pass narrows the odds of the fault returning unseen and does not
+/// close them.
 /// </para>
 /// </remarks>
 [Integration]

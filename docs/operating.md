@@ -231,7 +231,8 @@ with the same words and the same typed name, because both run one implementation
 its page in the web console, and choose Stop or Restart. Its node lets the current turn finish, then stops
 it, and for a restart starts it again so it reads its launch configuration afresh. What it owes stays owed
 and its conversations are untouched; only what the running session had learned is lost. A stopped agent is
-started again by the next work for it. To keep it from being started, freeze it (below), or retire it for good. A
+started again by the next work for it. A message that arrives while it is finishing its turn is not lost: the agent
+is started again for it once it has stopped. To keep it from being started, freeze it (below), or retire it for good. A
 frozen agent cannot be restarted, because a restart starts it again; unfreeze it first. Neither is offered for an
 agent somebody opened in an editor, because Parley did not start that process and cannot stop it.
 

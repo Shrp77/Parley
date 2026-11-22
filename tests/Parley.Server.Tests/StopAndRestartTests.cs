@@ -205,6 +205,97 @@ public sealed class StopAndRestartTests
     }
 
     [Fact]
+    public async Task A_persons_start_of_an_agent_that_is_still_stopping_is_made_once_its_process_has_gone()
+    {
+        // The agent is still attached, so the start goes out as a turn, which the stop takes with it. The person was told its
+        // node had been asked to start it, and with nothing waiting for the agent nothing did (review, lens 1 on 0.64.10).
+        // "A start asked for while the stopped process is still going is made once it has gone" (SPEC.md §11.1).
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
+
+        var operators = broker.ConnectAsOperator();
+
+        await using (var agent = await LaunchedAsync(broker, node))
+        {
+            _ = await operators.StopAsync(new Wire.StopRequest { Agent = Agent }, cancellationToken: Ct);
+
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Stop, (await node.WaitForCommandAsync(TimeSpan.FromSeconds(5))).CommandCase);
+
+            Assert.True((await operators.StartAsync(new Wire.StartRequest { Agent = Agent }, cancellationToken: Ct)).Changed);
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, (await node.WaitForCommandAsync(TimeSpan.FromSeconds(5))).CommandCase);
+        }
+
+        var command = await node.WaitForCommandAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(Wire.NodeCommand.CommandOneofCase.Start, command.CommandCase);
+        Assert.Equal(Agent, command.Start.Agent);
+    }
+
+    [Fact]
+    public async Task A_persons_start_that_was_answered_with_a_turn_is_not_owed_again_when_the_process_goes_later()
+    {
+        // The node reports the turn begun, which is the asking answered. Without that the note would wait for the process to
+        // end, perhaps days on, and start the agent then for a request long since met.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
+
+        await using (var agent = await LaunchedAsync(broker, node))
+        {
+            Assert.True((await broker.ConnectAsOperator().StartAsync(new Wire.StartRequest { Agent = Agent }, cancellationToken: Ct)).Changed);
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, (await node.WaitForCommandAsync(TimeSpan.FromSeconds(5))).CommandCase);
+
+            Assert.True(await broker.Runtime.TurnStartedAsync(Here, Parley.Core.AgentName.Create(Agent), DateTimeOffset.UtcNow, Ct));
+        }
+
+        await broker.WaitUntilDetachedAsync(Agent, TimeSpan.FromSeconds(5));
+        await Assert.ThrowsAsync<TimeoutException>(() => node.WaitForCommandAsync(Briefly));
+    }
+
+    [Fact]
+    public async Task A_turn_asked_of_a_process_that_then_goes_with_nobody_stopping_it_here_is_asked_for_again_as_a_start()
+    {
+        // One checkout can serve two projects, and a stop asked through the other project's broker is one this broker never
+        // hears of. The turn it asked for a message here went to the process that stop ended, the sender was told the agent
+        // was running, and the next sender was told a turn was already coming (review, lens 1 on 0.64.10). The same holds
+        // for a process that simply dies.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
+        await using var docs = await AttachedClient.AttachAsync(broker, "docs@m1", cancellationToken: Ct);
+
+        await using (var agent = await LaunchedAsync(broker, node))
+        {
+            var sent = await docs.Client.RequestAsync(Requests.Open("docs@m1", Agent, "no stop was asked here", "c1"), cancellationToken: Ct);
+
+            Assert.Equal(Wire.WakeOutcome.AlreadyRunning, Assert.Single(sent.Outcomes).Wake);
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, (await node.WaitForCommandAsync(TimeSpan.FromSeconds(5))).CommandCase);
+        }
+
+        var command = await node.WaitForCommandAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(Wire.NodeCommand.CommandOneofCase.Start, command.CommandCase);
+        Assert.Equal(Agent, command.Start.Agent);
+    }
+
+    [Fact]
+    public async Task A_turn_that_was_taken_leaves_nothing_to_start_for_when_the_process_goes()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
+        await using var docs = await AttachedClient.AttachAsync(broker, "docs@m1", cancellationToken: Ct);
+
+        await using (var agent = await LaunchedAsync(broker, node))
+        {
+            _ = await docs.Client.RequestAsync(Requests.Open("docs@m1", Agent, "read in its turn", "c1"), cancellationToken: Ct);
+
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, (await node.WaitForCommandAsync(TimeSpan.FromSeconds(5))).CommandCase);
+            Assert.Single((await agent.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Agent }, cancellationToken: Ct)).Messages);
+        }
+
+        await broker.WaitUntilDetachedAsync(Agent, TimeSpan.FromSeconds(5));
+        await Assert.ThrowsAsync<TimeoutException>(() => node.WaitForCommandAsync(Briefly));
+    }
+
+    [Fact]
     public async Task A_stopped_agent_nothing_arrived_for_is_not_started_when_its_process_goes()
     {
         // A stop is a stop: only work that arrived meanwhile starts it again, never the work it already owed.

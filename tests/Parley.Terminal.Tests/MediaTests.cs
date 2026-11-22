@@ -153,6 +153,82 @@ public sealed class MediaTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Choosing_Close_or_pressing_Escape_opens_nothing_and_leaves_the_list()
+    {
+        // Close is the first choice and is no file, and Escape chooses nothing: neither may be read as a row of the list.
+        await _files.PlaceAsync(Billing, "only.gif", "GIF89a-only", "pricing");
+
+        using var driving = Driving.Open();
+        using var shell = await IntoTheConversationAsync(driving, _files, _directory.FullName);
+
+        var pane = Enumerable.Range(0, 4).FirstOrDefault(
+            at =>
+            {
+                shell.Focus(at);
+                return shell.Actions().Any(a => a.Label == Media.Title);
+            },
+            -1);
+
+        Assert.True(pane >= 0, "no pane of the project view offers a conversation's media");
+
+        await shell.Actions().Single(a => a.Label == Media.Title).Run();
+        await shell.Settled;
+
+        var list = (ChoiceDialog)driving.Find(Media.Title);
+
+        Assert.Equal("Close", FilesOnScreen.Choices(list)[0]);
+
+        driving.Row(list.Choices, "Close");
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        Assert.False(driving.Has(Media.Title), "the list is still open after Close");
+        Assert.Empty(driving.Launched);
+
+        await shell.Actions().Single(a => a.Label == Media.Title).Run();
+        await shell.Settled;
+
+        _ = driving.Find(Media.Title);
+
+        await driving.PressThenSettleAsync(Key.Esc, () => shell.Settled);
+
+        Assert.False(driving.Has(Media.Title), "the list is still open after Escape");
+        Assert.Empty(driving.Launched);
+        Assert.DoesNotContain("xception", shell.Said ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_conversation_with_no_files_says_so_and_offers_only_Close()
+    {
+        Assert.Equal("There are no files in this conversation.", Media.Describe("pricing", [], []));
+
+        using var driving = Driving.Open();
+        using var shell = await FilesOnScreen.OpenAsync(driving, _files, _directory.FullName);
+
+        var said = new List<string>();
+
+        // The list as the surface opens it, for a conversation the broker holds nothing in.
+        await Media.OpenAsync(
+            driving.App, (Parley.Client.BrokerClient)_files.Client, "nothing-placed", shell.FileLauncher, shell.Queued, words =>
+            {
+                said.Add(words);
+
+                return Task.CompletedTask;
+            });
+        await shell.Settled;
+
+        var list = (ChoiceDialog)driving.Find(Media.Title);
+
+        Assert.Equal("There are no files in this conversation.", list.Described);
+        Assert.Equal(["Close"], FilesOnScreen.Choices(list));
+
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+
+        Assert.False(driving.Has(Media.Title), "the list is still open after Close");
+        Assert.Empty(driving.Launched);
+        Assert.Empty(said);
+    }
+
+    [Fact]
     public async Task The_transcript_draws_each_placement_as_a_line_of_its_own()
     {
         await _files.PlaceAsync(Billing, "mockup.png", "an image", "pricing");
