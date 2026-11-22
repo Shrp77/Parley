@@ -1615,7 +1615,8 @@ CREATE TABLE agents (
   refreshed_utc   TEXT    CHECK (refreshed_utc IS NULL OR unixepoch(refreshed_utc) IS NOT NULL),
   -- When a person froze this agent (§14); NULL when it is not frozen. Nothing starts a frozen agent: not new
   -- work, not a person's Start or Restart. Only a person writes it. `unfreeze` clears it; the broker's next start lets
-  -- it lapse unless `keep_frozen`, and clears it once the start the lapse owes has been asked for (§14). On the
+  -- it lapse unless `keep_frozen`, and clears it once the start the lapse owes has been asked for, or a person's
+  -- `kill` of the left process that start waited on has settled it (§14). On the
   -- agent's row rather than a table of its own, so a purge removes it with
   -- the row and a rename carries it to the new name.
   frozen_utc        TEXT    CHECK (frozen_utc IS NULL OR unixepoch(frozen_utc) IS NOT NULL),
@@ -3788,7 +3789,9 @@ turn, give it one, or stop it, and it is not started again while it runs. What a
 work the restart wake found (§14) and the messages sent to it, is asked for once its last session detaches, as a start, if
 the agent is still active, not frozen and still owes something; a left process finishes the turn it was on, finds its
 input ended and exits, so without this the agent would wait for the next work with what it owed left open. A `kill` clears
-that, because a kill does not start the agent. The adapter says which process hosts it, as a
+that, because a kill does not start the agent. A process that read as left running only because it attached again before its
+node announced it is the node's own once announced: what was passed over is asked of it then as a turn, and a later `stop`
+forgets it with the other turns asked before it. The adapter says which process hosts it, as a
 label and never as authority; the node ends it only after checking it is a running process named for an agent's own kind,
 that it is neither the node nor one the node hosts. It does not wait, so what the process was part-way through is lost, which
 a person is told before doing it. What the agent owes stays owed, and the next work for it starts it again unless it is frozen (§14).
@@ -4602,8 +4605,10 @@ owes open work, as the restart wake does (above). **An unfreeze pays what the fr
 reached a frozen agent had its wake declined, so when the freeze ends, by `unfreeze` or by a lapse, the agent is asked to start if
 anything is waiting for it that it has not collected, whatever the resume policy; after a lapse that is at the first join of its
 machine's node, once the restart wake's five seconds have passed, so a session that outlived the broker attaches again first and
-nobody is started beside it. Until that start has been asked for, the lapse stays in the agent's row, read by every surface as no
-freeze, so a broker that starts again before the node joins owes the same start; a person who freezes the agent again meanwhile
+nobody is started beside it. If a process a node that is gone left running has attached again by then, the start waits until that
+process has gone (§11.1). Until that start has been asked for, the lapse stays in the agent's row, read by
+every surface as no freeze, so a broker that starts again before the node joins, or before the left process has gone, owes the
+same start; a person's `kill` of that process settles the lapse, because a kill does not start the agent. A person who freezes the agent again meanwhile
 makes a new freeze, which the lapse's payment leaves alone. An agent unfrozen while the freeze's stop is still waiting for its turn to end
 is asked again once that process has gone, because the turn asked for at the unfreeze went to a process the stop then ended. An
 agent that has been retired is not started by a freeze ending. A freeze made with `keep_frozen` (the person's choice, "do not unfreeze on logon")

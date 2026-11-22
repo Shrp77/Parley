@@ -74,10 +74,12 @@ internal sealed class LoopbackBroker : IAsyncDisposable
     /// <param name="store">The store's path.</param>
     /// <param name="cancellationToken">Cancels startup.</param>
     /// <param name="restartWakeDelay">How long a machine's first join waits before its wakes, or null for none, as for <see cref="StartAsync"/>.</param>
+    /// <param name="options">The broker's options, or null for the defaults.</param>
     /// <returns>The running broker.</returns>
-    public static async Task<LoopbackBroker> StartOnAsync(string store, CancellationToken cancellationToken, TimeSpan? restartWakeDelay = null)
+    public static async Task<LoopbackBroker> StartOnAsync(
+        string store, CancellationToken cancellationToken, TimeSpan? restartWakeDelay = null, BrokerOptions? options = null)
     {
-        var runtime = BrokerRuntime.Open(Parley.Core.ProjectName.Create("test"), store, BrokerOptions.Default, TimeProvider.System);
+        var runtime = BrokerRuntime.Open(Parley.Core.ProjectName.Create("test"), store, options ?? BrokerOptions.Default, TimeProvider.System);
 
         runtime.RestartWakeDelay = restartWakeDelay ?? TimeSpan.Zero;
 

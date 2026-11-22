@@ -260,6 +260,27 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     private readonly ConcurrentDictionary<string, bool> _leftPassedOver = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// The agents whose lapse's start was passed over because they ran only as a left process, until that process has gone
+    /// (SPEC.md §14, §11.1).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A lapse passed over is not paid.</b> Nothing was started: the debt only moved into <see cref="_leftPassedOver"/>,
+    /// which is memory. Cleared from the store then, a broker that started again before the left process ended lost the
+    /// start the lapse owed, a Result or a closure poll left waiting for the agent (review, lens 2 run C on 5de89187). So the
+    /// stored lapse stays until the detach of the last left process asks for the start, and is cleared then.
+    /// </para>
+    /// <para>
+    /// <b>Not cleared when nobody could be asked</b> (the node left, or the broker is stopping and its node's stream is
+    /// closed): the lapse goes back to <see cref="_lapsed"/> for the machine's next join, and the store keeps it for a
+    /// broker that starts before. <b>Cleared when a person killed the process</b>, which took the note: a kill does not
+    /// start the agent (§10.2), and keeping the stored lapse would have a restart start what this run would not. Likewise
+    /// when a session somebody opened, or one a node started, took the note over.
+    /// </para>
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, bool> _lapseOnLeft = new(StringComparer.Ordinal);
+
     /// <summary>Makes a wake's claim and its notes one step among wakes.</summary>
     /// <remarks>
     /// Two wakes for one agent, a person's Start crossing a message's, could each write its claim and then its note, in an order
@@ -1021,6 +1042,11 @@ public sealed class BrokerRuntime : IAsyncDisposable
             _lapsed[registration.Name.Value] = true;
         }
 
+        if (_lapseOnLeft.TryRemove(holder.Name.Value, out _))
+        {
+            _lapseOnLeft[registration.Name.Value] = true;
+        }
+
         _ = _identities.TryRemove(holder.Name, out _);
     }
 
@@ -1264,10 +1290,21 @@ public sealed class BrokerRuntime : IAsyncDisposable
             {
                 // Nobody to ask after all (the node left as this asked): kept for the next join, never lost (review, lens 1
                 // run 2 on 6fde4ef3).
-                if (await WakeIfOwingAsync(agent, _stopping.Token, "its freeze lapsed when the broker started, and work or mail is waiting for it")
-                        .ConfigureAwait(false) == WakeOutcome.Unreachable)
+                var outcome = await WakeIfOwingAsync(agent, _stopping.Token, "its freeze lapsed when the broker started, and work or mail is waiting for it")
+                    .ConfigureAwait(false);
+
+                if (outcome == WakeOutcome.Unreachable)
                 {
                     _lapsed[agent.Value] = true;
+
+                    continue;
+                }
+
+                // **Passed over is not paid** (review, lens 2 run C on 5de89187): nothing was started, and the note the
+                // start now waits on is memory. The store keeps the lapse until the left process's detach asks for it.
+                if (outcome == WakeOutcome.LeftRunning)
+                {
+                    _lapseOnLeft[agent.Value] = true;
 
                     continue;
                 }
@@ -1304,6 +1341,28 @@ public sealed class BrokerRuntime : IAsyncDisposable
         }
 
         return names;
+    }
+
+    /// <summary>Clears from the store a lapse whose start a left process held up, once it is settled (SPEC.md §14).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>A task that completes when the store has been written, or the writing given up.</returns>
+    /// <remarks>
+    /// Guarded on the lapse itself (<see cref="AgentRepository.ClearLapseAsync"/>), so a person who froze the agent again
+    /// meanwhile keeps that freeze. A failure leaves the lapse stored, and the next start of the broker asks for the start
+    /// again: a turn, never a loss.
+    /// </remarks>
+    private async Task ClearPaidLapseAsync(AgentName agent)
+    {
+        try
+        {
+            _ = await UseConnectionAsync(
+                (connection, _, ct) => new AgentRepository(connection).ClearLapseAsync(agent, RunId, ct),
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Kept in the store, as the summary says.
+        }
     }
 
     /// <summary>Gives a scheduled wake back, so the machine's next join asks for it again.</summary>
@@ -1594,7 +1653,52 @@ public sealed class BrokerRuntime : IAsyncDisposable
             _ = RequestStop(agent, restart: false, "a person froze it");
         }
 
+        TakenBack(agent);
+
         return true;
+    }
+
+    /// <summary>Asks a turn for what a wake passed over while a process read as left running, once its node has taken it back.</summary>
+    /// <param name="agent">The agent whose launch was just reported.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>The note does not outlive the node taking the process back</b> (SPEC.md §11.1; review, lens 1 run A on 5de89187).
+    /// After a broker restart a resident's adapter can attach before its node announces it again, so it reads as left
+    /// running and a message's wake is passed over. Once it is the node's own, nothing would ask for that mail until the
+    /// process went, and a person's stop meanwhile was followed by a start. The note is taken now and the turn asked of the
+    /// supervised process, as a wake that finds such a session attached asks it (<see cref="PassedOver"/>).
+    /// </para>
+    /// <para>
+    /// <b>A lapse whose start waited on the note is paid by that turn</b>, and cleared from the store once it is asked;
+    /// when nobody could be asked it goes back to <see cref="_lapsed"/> for the machine's next join.
+    /// </para>
+    /// </remarks>
+    private void TakenBack(AgentName agent)
+    {
+        if (!_attached.TryGetValue(agent.Value, out var sessions)
+            || sessions.IsEmpty
+            || sessions.Any(Left)
+            || !_leftPassedOver.TryRemove(agent.Value, out _))
+        {
+            return;
+        }
+
+        var outcome = RequestAttentionForMail(agent, "its node took back a process a wake had passed over as left running");
+
+        if (!_lapseOnLeft.TryRemove(agent.Value, out _))
+        {
+            return;
+        }
+
+        if (outcome == WakeOutcome.Unreachable)
+        {
+            _lapsed[agent.Value] = true;
+        }
+        else
+        {
+            // Not awaited: a report from the node is answered at once, and the clearing gives up quietly (a turn, never a loss).
+            _ = ClearPaidLapseAsync(agent);
+        }
     }
 
     /// <summary>Records how many background tasks a node says an agent has running (SPEC.md §11.6).</summary>
@@ -1978,6 +2082,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     internal void MarkFrozen(AgentName agent, bool frozen)
     {
         _ = _lapsed.TryRemove(agent.Value, out _);
+        _ = _lapseOnLeft.TryRemove(agent.Value, out _);
 
         if (frozen)
         {
@@ -2031,6 +2136,11 @@ public sealed class BrokerRuntime : IAsyncDisposable
             _ = _turnAsked.TryRemove(agent.Value, out _);
             _ = _startWanted.TryRemove(agent.Value, out _);
             _ = _pending.TryRemove(agent.Value, out _);
+
+            // A wake passed over while the process read as left running, before its node took it back, is a turn asked before
+            // the stop too (review, lens 1 run A on 5de89187). Only a session a node holds gets here, so a note still owed to an
+            // agent running only as a left process is not dropped by this.
+            _ = _leftPassedOver.TryRemove(agent.Value, out _);
         }
 
         if (!_nodes.TryGetValue(agent.Machine, out var node)
@@ -2851,6 +2961,14 @@ public sealed class BrokerRuntime : IAsyncDisposable
         var wanted = _startWanted.TryRemove(attached.Name.Value, out _);
         var unfrozen = _unfrozenWhileUp.TryRemove(attached.Name.Value, out _);
         var passedOver = _leftPassedOver.TryRemove(attached.Name.Value, out _);
+        var lapseOnLeft = _lapseOnLeft.TryRemove(attached.Name.Value, out _);
+
+        // **The note a lapse's start waited on was taken already**: a person's kill or stop took it, neither of which starts
+        // the agent, or a session that took over did. Either settles the lapse in this run, so the store does not keep it for the next.
+        if (lapseOnLeft && !passedOver)
+        {
+            await ClearPaidLapseAsync(attached.Name).ConfigureAwait(false);
+        }
 
         if (!(asked || wanted || unfrozen || passedOver))
         {
@@ -2877,13 +2995,28 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 // anything uncollected. Gated on the turn's mail alone, an agent unfrozen before its turn had ended was
                 // left stopped with the work it had already collected. A left process that has gone is paid the same way:
                 // the restart wake passed over the work it had collected and left open, and every message's wake its mail.
-                _ = await WakeIfOwingAsync(
+                var outcome = await WakeIfOwingAsync(
                     attached.Name,
                     CancellationToken.None,
                     unfrozen
                         ? "a person unfroze it and work or mail is waiting for it"
                         : "a process a node that is gone left running has ended, and work or mail is waiting for it")
                     .ConfigureAwait(false);
+
+                // **A lapse's start passed over while this process ran is paid now, and only now cleared from the store.**
+                // Not when nobody could be asked: a broker stopping closes its node's stream before this runs, so the asking
+                // finds no node, and the lapse is the next join's to pay, or the next start's.
+                if (lapseOnLeft)
+                {
+                    if (outcome == WakeOutcome.Unreachable)
+                    {
+                        _lapsed[attached.Name.Value] = true;
+                    }
+                    else
+                    {
+                        await ClearPaidLapseAsync(attached.Name).ConfigureAwait(false);
+                    }
+                }
 
                 // A person's start asked meanwhile is still owed when the unfreeze found nothing to pay. If the unfreeze did
                 // ask, its claim answers the asking below as already coming, so nothing is started twice.
