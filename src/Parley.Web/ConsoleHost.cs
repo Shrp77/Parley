@@ -196,15 +196,32 @@ public static class ConsoleHost
 
     /// <summary>Whether the browser says another site started a request.</summary>
     /// <param name="context">The request.</param>
-    /// <returns>True when <c>Sec-Fetch-Site</c> is <c>cross-site</c> or <c>same-site</c>.</returns>
+    /// <returns>
+    /// True when <c>Sec-Fetch-Site</c> is <c>cross-site</c> or <c>same-site</c>, or <c>Sec-Purpose</c> says the browser is
+    /// prefetching or prerendering.
+    /// </returns>
     /// <remarks>
+    /// <para>
+    /// A speculative load is refused whoever asked for it. Chrome sends speculation rules from another loopback port's
+    /// page as <c>Sec-Fetch-Site: none</c>, the same as a typed address, so the site header alone let that page have the
+    /// Inbox run and mark the person's mail delivered with the person never seeing it (review, lens 2 run S3 on
+    /// 3b752970). A page the person then opens is fetched again, so nothing they asked for is lost.
+    /// </para>
+    /// <para>
     /// <c>same-site</c> is refused too: on a loopback address every port is the same site, so another program's page on
     /// this machine reads as one. A request with no such header comes from something that is not a browser, or one too
     /// old to send it, and is left to the host check.
+    /// </para>
     /// </remarks>
     internal static bool StartedElsewhere(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
+
+        if (context.Request.Headers["Sec-Purpose"]
+            .Any(line => (line ?? string.Empty).Contains("prefetch", StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
 
         // Every value: a header written twice reads as one joined text ('none,cross-site'), which no comparison matched.
         return context.Request.Headers["Sec-Fetch-Site"]

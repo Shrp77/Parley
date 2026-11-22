@@ -220,6 +220,14 @@ internal sealed class Browsing : TableDialog<Browsing>, IKeyTable<Browsing>
     /// <param name="folder">The folder.</param>
     private void Show(string folder)
     {
+        // Before any lookup by path: a listed row can be a link an agent made to a share, and listing what is inside it
+        // would offer the person's sign-in to that host (review, lens 2 run S2 on 3b752970). The web browser asks the same.
+        if (OffMachineLinks.LeadsOffThisMachine(folder))
+        {
+            _said.Text = Parley.Core.LocalPath.OffThisMachine;
+            return;
+        }
+
         var full = Path.GetFullPath(folder);
 
         string[] inside;

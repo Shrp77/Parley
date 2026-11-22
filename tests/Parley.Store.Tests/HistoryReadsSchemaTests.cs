@@ -148,6 +148,7 @@ public sealed class HistoryReadsSchemaTests : IDisposable
 
         await new Pruner(_connection).PruneAsync(Parley.Core.RetentionPolicy.Default, new DateTimeOffset(2026, 11, 17, 0, 0, 0, TimeSpan.Zero), TestContext.Current.CancellationToken);
 
-        Assert.Equal("billing@acme", _connection.ExecuteScalar<string>("SELECT reader FROM history_reads;"));
+        // Every row, not the first: ExecuteScalar reads only the first, so the test passed with the pruning statement off.
+        Assert.Equal(["billing@acme"], _connection.Query<string>("SELECT reader FROM history_reads ORDER BY reader;"));
     }
 }
