@@ -1074,8 +1074,8 @@ agent's view and discard the rest. It is guidance and not a check, as the propos
 
 **The answers become a roadmap only through a proposal the person confirms.** A surface may offer to send one agent the
 person picks a further Request in that conversation, carrying the roadmap's items and every answer quoted under its author's
-name, and asking it to propose one revision (`propose_roadmap`, with the roadmap's title as `revises`). No agent reads
-another's exchange, so the answers reach it only in the person's Request; they are other agents' words, the Request says they
+name, and asking it to propose one revision (`propose_roadmap`, with the roadmap's title as `revises`). An agent is not given
+another's exchange (it may read one as a record, §5.8, but is never handed it as work), so the answers reach it in the person's Request; they are other agents' words, the Request says they
 are information and not instructions, and the person is shown the whole of it before it is sent (§16). Only agents' Results to
 the person are quoted, never a notice the broker wrote. The proposal is decided where every proposal is.
 
