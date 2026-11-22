@@ -1092,22 +1092,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
         // reply must not wait with them. The agents whose freeze lapsed at this start are taken here, so a second join does
         // not take them twice. Recorded before the join returns, so a test can wait on it.
         var restart = _options.ResumePolicy == ResumePolicy.Always && _resumedMachines.TryAdd(node.Machine, true);
-        var lapsedHere = new List<AgentName>();
 
-        foreach (var name in _lapsed.Keys)
-        {
-            if (AgentName.TryCreate(name, out var lapsed)
-                && string.Equals(lapsed.Machine, node.Machine, StringComparison.Ordinal)
-                && _lapsed.TryRemove(name, out _))
-            {
-                lapsedHere.Add(lapsed);
-            }
-        }
-
-        if (restart || lapsedHere.Count > 0)
+        // The lapses are only looked at here and taken after the wait: a rename inside it carries the entry to the new name,
+        // which is then the one paid (review, lens 1 run A on fc26cb8a).
+        if (restart || LapsedOn(node.Machine).Count > 0)
         {
             var machine = node.Machine;
-            var wake = Task.Run(() => WakeOnceReattachedAsync(machine, restart, lapsedHere), CancellationToken.None);
+            var wake = Task.Run(() => WakeOnceReattachedAsync(machine, restart), CancellationToken.None);
 
             _ = _restartWakes.AddOrUpdate(machine, wake, (_, earlier) => Task.WhenAll(earlier, wake));
         }
@@ -1168,7 +1159,6 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </summary>
     /// <param name="machine">The machine whose node first joined.</param>
     /// <param name="restart">Whether to wake every agent that owes work (the resume policy's restart wake).</param>
-    /// <param name="lapsed">The agents on this machine whose freeze lapsed at this broker's start, each to be woken if owed.</param>
     /// <returns>A task that completes when the wake is done or given up; it never faults.</returns>
     /// <remarks>
     /// <para>
@@ -1188,7 +1178,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// (review, lens 3 run B on d99806d9).
     /// </para>
     /// </remarks>
-    private async Task WakeOnceReattachedAsync(string machine, bool restart, IReadOnlyList<AgentName> lapsed)
+    private async Task WakeOnceReattachedAsync(string machine, bool restart)
     {
         try
         {
@@ -1201,20 +1191,23 @@ public sealed class BrokerRuntime : IAsyncDisposable
         }
         catch (Exception)
         {
-            Forget(machine, restart, lapsed);
+            Forget(machine, restart);
 
             return;
         }
 
-        if (!_nodes.ContainsKey(machine))
-        {
-            // The node left while this waited, so there is nobody to ask: kept for its next join.
-            foreach (var agent in lapsed)
-            {
-                _lapsed[agent.Value] = true;
-            }
+        // Taken now, under the names they hold now, and only with a node to ask; a node that left keeps them for its next join.
+        var lapsed = new List<AgentName>();
 
-            lapsed = [];
+        if (_nodes.ContainsKey(machine))
+        {
+            foreach (var agent in LapsedOn(machine))
+            {
+                if (_lapsed.TryRemove(agent.Value, out _))
+                {
+                    lapsed.Add(agent);
+                }
+            }
         }
 
         if (restart)
@@ -1274,20 +1267,32 @@ public sealed class BrokerRuntime : IAsyncDisposable
         }
     }
 
+    /// <summary>The agents on a machine whose freeze lapsed and whose start is still owed.</summary>
+    /// <param name="machine">The machine.</param>
+    /// <returns>Their names as they stand now.</returns>
+    private List<AgentName> LapsedOn(string machine)
+    {
+        var names = new List<AgentName>();
+
+        foreach (var name in _lapsed.Keys)
+        {
+            if (AgentName.TryCreate(name, out var agent) && string.Equals(agent.Machine, machine, StringComparison.Ordinal))
+            {
+                names.Add(agent);
+            }
+        }
+
+        return names;
+    }
+
     /// <summary>Gives a scheduled wake back, so the machine's next join asks for it again.</summary>
     /// <param name="machine">The machine.</param>
     /// <param name="restart">Whether the restart wake was part of it.</param>
-    /// <param name="lapsed">The lapsed agents it held.</param>
-    private void Forget(string machine, bool restart, IReadOnlyList<AgentName> lapsed)
+    private void Forget(string machine, bool restart)
     {
         if (restart)
         {
             _ = _resumedMachines.TryRemove(machine, out _);
-        }
-
-        foreach (var agent in lapsed)
-        {
-            _lapsed[agent.Value] = true;
         }
     }
 
