@@ -102,6 +102,30 @@ public sealed class WroteElsewhereTests : IDisposable
     }
 
     [Fact]
+    public async Task Moving_away_the_exchanges_written_first_keeps_the_note_where_it_was_written()
+    {
+        // As above, but the exchanges moved are the conversation's earliest, so what stays here begins after the message
+        // the note follows. The read was bounded by the first message still here, and lost the note from both places
+        // (review, lens 1 run C1 on 3b752970: 202 of 900 oracle rounds missing a note).
+        var older = await AskAsync(Billing, Orders, "Which ledger?", Older);
+        var asked = await AskAsync(Person, Orders, "Sort the pricing script", Here);
+        var e = await AskAsync(Orders, Billing, "Who owns the script?", Here);
+        await ClarifyAsync(older, Orders, "Back to the ledger: monthly?");
+
+        var clarify = LastMessage();
+
+        await AskAsync(Person, Billing, "And the invoices?", Here);
+
+        Assert.Equal(clarify, Assert.Single(await NotedHereAsync()).Message);
+
+        var moved = await _console.MoveExchangesAsync(Here, "moved-x", true, [asked, e], T0.AddMinutes(5), Ct);
+
+        Assert.True(moved.Moved, moved.Refused);
+        Assert.Equal(clarify, Assert.Single(await NotedHereAsync()).Message);
+        Assert.Empty((await _console.ExportAsync("moved-x", Ct)).WroteElsewhere!);
+    }
+
+    [Fact]
     public async Task An_exchange_moved_twice_is_placed_by_its_first_move_so_the_note_stays_where_it_was_written()
     {
         // orders asked billing here (E), then went straight to an older exchange elsewhere. The person moves E here to an

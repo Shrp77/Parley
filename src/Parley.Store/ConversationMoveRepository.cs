@@ -546,7 +546,9 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
                                msg.conversation_id) AS conversation_id
                       FROM messages msg
                      WHERE msg.exchange_id IN (SELECT exchange_id FROM exchanges_here)
-                       AND msg.id >= (SELECT MIN(id) FROM messages WHERE conversation_id = @Id)
+                       -- From the earliest message on any of those exchanges, not the earliest still here: a move of
+                       -- the conversation's first exchanges leaves what stays beginning after a message written here.
+                       AND msg.id >= (SELECT MIN(id) FROM messages WHERE exchange_id IN (SELECT exchange_id FROM exchanges_here))
                 ), before AS (
                     -- Each agent's messages written in this conversation, sent or received: the "last thing it saw here".
                     SELECT id, from_agent AS agent FROM written WHERE conversation_id = @Id

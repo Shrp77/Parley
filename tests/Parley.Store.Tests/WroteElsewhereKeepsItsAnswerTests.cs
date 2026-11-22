@@ -34,7 +34,6 @@ public sealed class WroteElsewhereKeepsItsAnswerTests
                          LIMIT 1),
                        msg.conversation_id) AS conversation_id
               FROM messages msg
-             WHERE msg.id >= (SELECT MIN(id) FROM messages WHERE conversation_id = @Id)
         ), seen AS (
             SELECT id, exchange_id, conversation_id, type, from_agent AS agent, to_agent AS other, 1 AS wrote
               FROM written
