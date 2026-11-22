@@ -81,7 +81,7 @@ Then open the project and choose **Agent > Enroll agents from folders** (`Alt+f`
 folder that holds your repositories, tick the ones that should take part, and confirm.
 
 **In the web console.** Open <http://127.0.0.1:5280>. The broker starts it for you. Create or open
-the project, go to its Agents tab, and choose **Register an agent**. Give it one repository and a
+the project, go to its Agents page, and choose **Register an agent**. Give it one repository and a
 role, or a folder that holds several repositories and tick the ones you want.
 
 **From the command line,** `parley enroll <folder>` does the same.
@@ -140,7 +140,7 @@ billing    Invoicing, tax and payment capture. Does not price orders or reserve 
 You do not have to write these. When an agent first attaches without one, Parley asks it what it
 owns and what it does not, once, and the answer becomes its line. This costs the agent one turn.
 You can check, edit or replace any line in the ownership review (`Alt+v` in the terminal, or
-**Review ownership** on a project's page in the web console). See
+**Review ownership** in a project's Settings in the web console). See
 [Configuration](configuration.md#the-ownership-line).
 
 ## 5. Send your first request
@@ -157,7 +157,8 @@ reads the result and carries on.
 
 Neither agent read or edited the other's files. Open the project in the web console or the
 terminal, find the conversation, and read the whole exchange. You can answer an agent's question
-or send an agent work yourself from the box at the bottom of a conversation.
+or send an agent work yourself from the box at the bottom of a conversation. The Inbox gathers
+what agents asked you, and follows what you sent until it is answered.
 
 ## When nothing happens
 
@@ -175,7 +176,9 @@ or send an agent work yourself from the box at the bottom of a conversation.
   [Claude Code](claude-code.md#standing-instructions).
 - **A request waits and is flagged as not collected.** Nothing is running that agent. Either
   open its repository, or make sure it is listed as startable on its machine (see
-  [Configuration](configuration.md#starting-agents-without-anybody-opening-them)).
+  [Configuration](configuration.md#starting-agents-without-anybody-opening-them)). If the agent
+  is frozen, nothing starts it until you unfreeze it. If you sent it something yourself and it has
+  not looked, **Ask to look now** on that row of the web console's Inbox gives it a turn.
 - **Agents stop attaching after an upgrade.** A broker and an adapter whose protocol versions
   differ do not work together. Install on the machine running the broker **and** on every
   machine running agents, then restart the sessions. The agent's adapter says which version the broker

@@ -21,7 +21,7 @@ that can reach the broker can claim to be any agent, read its mail and answer in
 
 The reach is wider than an agent's mail. A broker serves the agent operations, the operator
 operations and the node operations on one port. Whatever can reach it can also export every
-conversation, retire and purge agents, destroy conversations, and ask a node to start an agent,
+conversation, retire, purge, stop or freeze agents, destroy conversations, and ask a node to start an agent,
 which is a process that acts in a repository. Reaching the port is closer to having a shell on
 the machine than to having an inbox on it.
 
@@ -37,7 +37,7 @@ operations are not available to an agent at any level. They are separate service
 absent from the type an adapter is handed, and not compiled into `parley-mcp`.
 
 **You.** The person holds the operator operations: export, retire, purge, destroy, close and
-prune. Destructive ones need a description and a deliberate act, usually typing a name back.
+prune, and starting, stopping, restarting and freezing agents. Destructive ones need a description and a deliberate act, usually typing a name back.
 
 **The facilitator.** Parley's own participant may ask a question, relay a reply you wrote, and
 agree that its own conversation is done. It
@@ -56,9 +56,11 @@ prioritises, closes or overrides anything.
   sent.
 - **Messages arrive wrapped** so that a peer's words are marked as data, not instruction. A
   request never overrides the receiver's standing instructions.
-- **An agent can read the log, framed, bounded and in view.** It can read an exchange by number or search for words, and
-  nothing else of the past. What it reads is a record in an envelope that says so, a reply and a page have ceilings, a caller
-  has a rate, nothing is pushed into any context, it changes nothing, and every read is shown to you.
+- **An agent can read the log, but only on purpose, in small amounts, and in view.** It can read
+  an exchange by number, or search for words, and nothing else of the past. What it reads comes
+  marked as a record, not as instructions. Each answer has a size ceiling, and each agent has a
+  limit per minute. Nothing is pushed into any context, a read changes nothing, and every read is
+  shown to you.
 - **Files go to disk, not into context.** Only `.md`, `.txt` and image files (PNG, JPEG, GIF, WebP) can be placed, so code
   travels as `Name.cs.txt` and nothing that runs can be opened by accident. A fetched file is
   another participant's data, never instructions. It is written only as a `.md`, `.txt`
@@ -88,7 +90,8 @@ Between processes that can reach the port, see above.
 **Loss of control over spending.** Nothing runs agents unless something is waiting for them, and
 only in repositories you listed as startable. The broker records each turn and what it cost, but
 no screen shows the cost yet: your provider's bill is where you see it. Health flags a turn that
-stopped on a refused permission, and `parley up` prints a turn that failed.
+stopped on a refused permission, and `parley up` prints a turn that failed. You can stop an agent
+at the end of its turn, or freeze it so that nothing starts it until you say so.
 
 **A web page reaching your console.** The web console answers only loopback host names and the
 address it binds, which protects against DNS rebinding. No other site can show the console inside

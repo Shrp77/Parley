@@ -52,6 +52,16 @@ parley use                                           # which project a command h
 The choice lasts until that terminal closes. There is deliberately no saved "current project".
 Chosen in one window, it could silently apply to a destructive command in another.
 
+### Settings for every project
+
+A few settings belong to Parley on this machine rather than to one project. Change them on the
+web console's **Settings** page, at the foot of the strip on the left.
+
+- **How many days the Inbox's *Closed* view covers.** Seven unless you change it, from 1 to 365.
+  It is kept in `settings.json` beside the `projects` folder, so the terminal's Inbox uses the
+  same number.
+- **The console's theme and density.** These are kept in your browser only.
+
 ### Running the broker
 
 `parley serve` runs the broker for every project, and `parley autostart install` registers it to
@@ -170,15 +180,17 @@ line. Parley writes it into the launch configuration, records it as accepted aut
 restarts the agent once it is idle so its peers see it. Nothing is restarted mid-turn. An answer
 that cannot be a line as written, that the agent said was blocked, or that comes from an agent on
 another machine, waits for you.
-Turn Auto Accept off, in **Configuration** (`F3`) or the Project menu, and every answer waits for
-you.
+Turn Auto Accept off, in the terminal's **Configuration** (`F3`) or Project menu, or at the top of
+the web console's **Review ownership** page, and every answer waits for you.
 
 **Checking and correcting lines.** The ownership review (`Alt+v` on the agents pane in the
-terminal, or **Review ownership** on a project's page in the web console) shows each agent's
+terminal, or **Review ownership** in a project's Settings in the web console) shows each agent's
 line, whether a person or nobody has read it, and any answer waiting. From there you can accept,
 edit or discard an answer, write a line yourself, reply if the agent asked something back, or have
 the facilitator ask again. `Alt+n` on an agent shows what it has said and lets you edit its line
-in place. `Alt+e` asks every agent at once. The web console offers the same.
+in place. `Alt+e` asks every agent at once. The web console offers the same: *What this agent is
+responsible for* on an agent's page, and *Ask every agent again what it owns* in a project's
+Settings.
 
 **No tool an agent has writes the line directly.** It answers Parley's question, and the answer
 becomes the line only by acceptance: Auto Accept's, recorded as `automatic`, or yours. With Auto
@@ -242,10 +254,14 @@ parley up
 
 Leave it running. Ctrl+C stops the node and every agent it started. An agent is also told to quit
 when you retire it, or when you remove its launch setting and open the repository once, so that a
-withdrawal reaches a process that is already running.
+withdrawal reaches a process that is already running. You can also stop, restart or freeze one
+agent from the terminal or the web console; see
+[Running a deployment](operating.md#stopping-and-restarting-an-agent).
 
 **It responds and does not initiate.** A node starts agents that have something waiting: a result
-they owe, or any message they have not collected. With nothing waiting it starts nobody. The first
+they owe, or any message they have not collected. With nothing waiting it starts nobody. When the
+broker has just started, each agent that owes open work is started once, so work interrupted by a
+reboot or an install carries on. While an agent is frozen, nothing starts it. The first
 request still comes from a person or an agent with a reason to ask. After that the loop needs no
 one: the receiver is started to do the work, a clarification hands the turn back, and the
 requester is started in its turn.
@@ -327,6 +343,9 @@ result carries back, or the recent rows that deduplication still reads. The age 
 only text on an exchange that is still open outlives it. A message nobody collected goes once it is
 older than the cap, so lowering `PARLEY_RETENTION_MAX_AGE_HOURS` can delete mail an agent never
 picked up.
+
+The record of which agents read or searched the history keeps no message text. A line of it goes
+once its agent has not read again for the age cap.
 
 To keep a conversation beyond the policy, export it. The export is a file you own.
 

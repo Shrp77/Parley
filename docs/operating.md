@@ -61,54 +61,95 @@ an agent's own.
 
 ## The web console
 
-The console opens on a grid of your projects, showing for each whether its broker is answering,
-how many agents it has and how many are running, and how many conversations. Open a row for its
-address and any warnings. Inside a project:
+A strip down the left side of every page takes you where you want to go. Its arrow at the bottom
+folds it to icons, and the console remembers that.
 
-- **The graph**: a tab at the right edge of every page opens a picture of what is being worked on. Each project is a band
-  with its agents on the left and its conversations on the right, a line from an agent to each conversation it is in, a dashed line
-  from a spin-off to the conversation it came from, and a dot beside an agent for each background task its node says it has running.
-  Each agent says in words whether it is working, idle, waiting on background work, or frozen; a frozen agent has a dashed outline.
-  *Pin* keeps it open as you move between pages; *Hide closed* thins out finished conversations. Nothing is read until you open it,
-  and it refreshes every fifteen seconds while open. Freeze and Unfreeze are on each agent, and Freeze all and Unfreeze all on each project.
-  The same facts follow the picture as a list.
-- **Agents**: who is in the project, what each owns, and whether it is running. Register,
-  retire, reinstate or purge agents, review ownership lines, and ask every agent again what it owns.
-- **Conversations**: each as a transcript that says who did not see what. Read, reply, archive
-  or destroy. An image placed in the conversation shows where it was placed, as a thumbnail you
-  click to see full size, and other files show as a card. **Media** lists a conversation's images
-  as a grid and its other files as a list, newest first. In the box, each agent on the To line is a
-  chip; its **x** takes that agent off the To list.
-- **Inbox**: three views. *Waiting on you* is what agents asked you, across projects. *In flight* is
-  what you answered or asked an agent that it has not replied to yet, with a chip saying where the
-  agent stands: working, background work, idle, running (its turns are not reported), not running, cannot be started
-  now, open outside Parley, or unknown, and beside it stalled, not collected yet, stopped on a refused
-  permission, or retired when one applies. *Closed* is what ended in the last 7 days, with how it
-  ended; the number of days is a setting, and **Show older** steps back one such window at a time.
-  Every row opens its conversation. In *Waiting on you*, a request has a box for your result, a box to ask the
-  agent to clarify, and a button to close it without answering. A question the agent asked you has a box for your
-  reply and the same button. A row in *In flight* or *Closed* has a box for a
-  follow-up, which goes to that agent as a new request in the same conversation; the facilitator's rows have none. A row in
-  *In flight* also has an **Ask to look now** button: it starts that agent, or gives it a turn if it is already running, so
-  that it collects what is waiting for it. Use it when an agent has not picked something up. It writes no message and
-  touches nothing the agent owes; it costs the agent a turn. If the agent is frozen, or open in an editor Parley did not
-  start, the page says so in the broker's words instead. **Ask which are still open** sends each agent that has questions
-  waiting on you one request per conversation, listing them, so it can say which a later message
-  already answered; only the agent closes its own questions.
+- **Projects** is where the console opens: a grid of your projects. Each row says whether its
+  broker is answering, how many agents it has and how many are running, and how many
+  conversations. Open a row for its address and any warnings. You can create a project here.
+- **All Agents** lists every agent in every project, one line each.
+- **Inbox** is everything that involves you, across projects (below).
+
+Open a project and its own pages appear under its name:
+
+- **Conversations**: the project's conversations, each as a transcript that says who did not see
+  what. Read, reply, archive or destroy, one at a time or [several at once](#conversations).
+  Start a new one from the button at the top.
+- **Agents**: who is in the project, what each owns, and whether it is running. Register an agent
+  here. Open an agent for its own page: what it is responsible for, and the buttons to start,
+  stop, restart, freeze, retire, reinstate or purge it.
 - **Roadmaps**: your confirmed roadmaps, and proposals waiting for you.
 - **Files**: what agents have placed, and who placed each.
 - **Health**: flagged work (including a turn stopped on a refused permission), who is waiting on
   whom, message sizes refused, clarifications, and what requests came to.
-- **Notifications**: a bell that tells you when something needs you.
-- **Settings**: choose which agents are ticked by default in a new conversation (kept in this browser only), and the other
-  project-level actions. Renaming a project is the terminal's, in two steps: remove it and name the new one. Its
-  conversations stay behind and its repositories must be enrolled again.
-- **Parley's settings** (the Settings item above the project): the console's theme and density, and
-  how many days the Inbox's *Closed* view covers, which the terminal reads too.
+- **Settings**: the project's own settings. Choose which agents are ticked by default in a new
+  conversation (kept in this browser only). Review ownership lines, and ask every agent again
+  what it owns. Renaming a project is the terminal's, in two steps: remove it and name the new
+  one. Its conversations stay behind and its repositories must be enrolled again.
 
-It follows a conversation as it happens. If you are at the very end of the page when a message
-arrives, it follows. If you are reading earlier and a long message arrives, it leaves you where
-you are and offers a **New message** button.
+**Settings** at the foot of the strip is Parley's own. It holds the console's theme (light, dark
+or the system's) and density, kept in this browser only. It also holds how many days the Inbox's
+*Closed* view covers, which the terminal reads too.
+
+**The bell** at the top tells you when something needs you.
+
+### The graph
+
+A tab at the right edge of every page opens a picture of what is being worked on.
+
+- Each project is a band. Its agents are on the left and its conversations on the right.
+- A line joins an agent to each conversation it is in. A dashed line joins a spin-off to the
+  conversation it came from.
+- A dot beside an agent stands for each background task its node says it has running.
+- Each agent says in words whether it is working, idle, waiting on background work, or frozen.
+  A frozen agent also has a dashed outline.
+- *Freeze* and *Unfreeze* are on each agent. *Freeze all* and *Unfreeze all* are on each project.
+- The same facts follow the picture as a list.
+
+*Pin* keeps the graph open as you move between pages. *Hide closed* thins out finished
+conversations. Nothing is read until you open the graph. While it is open, it refreshes every
+fifteen seconds.
+
+### The Inbox
+
+The Inbox has three views. Every row opens its conversation.
+
+- **Waiting on you** is what agents asked you. A request has a box for your result, a box to ask
+  the agent to clarify, and a button to close it without answering. A question the agent asked
+  you has a box for your reply and the same button.
+- **In flight** is what you answered, or asked an agent, that it has not replied to yet. A chip
+  says where the agent stands: working, background work, idle, running (its turns are not
+  reported), not running, cannot be started now, open outside Parley, left running, or unknown.
+  Beside it is a warning when one applies: stalled, not collected yet, stopped on a refused
+  permission, or retired.
+- **Closed** is what ended in the last 7 days, with how it ended. The number of days is a setting.
+  **Show older** steps back one such window at a time.
+
+A row in *In flight* or *Closed* has a box for a follow-up. It goes to that agent as a new request
+in the same conversation. The facilitator's rows have none.
+
+A row in *In flight* also has **Ask to look now**. It starts that agent, or gives it a turn if it
+is already running, so that it collects what is waiting for it. Use it when an agent has not
+picked something up. It writes no message and changes nothing the agent owes. It costs the agent
+a turn. If the agent is frozen, or open in an editor Parley did not start, the page says so
+instead.
+
+**Ask which are still open** sends each agent that has questions waiting on you one request per
+conversation, listing them. The agent can then say which ones a later message already answered.
+Only the agent closes its own questions.
+
+### Reading a conversation
+
+The console follows a conversation as it happens. If you are at the very end of the page when a
+message arrives, it follows. If you are reading earlier and a long message arrives, it leaves you
+where you are and offers a **New message** button.
+
+An image placed in the conversation shows where it was placed, as a thumbnail. Click it to see it
+full size. An image over 20 MiB shows as a tile with its size until you ask for it. Other files
+show as a card. **Media** lists a conversation's images as a grid and its other files as a list,
+newest first.
+
+In the box, each agent on the To line is a chip. Its **x** takes that agent off the To line.
 
 When an agent writes `exchange #351`, or `exchanges #349 and #351`, each number is a button that
 opens that exchange under the line it is on.
@@ -185,16 +226,21 @@ You must be seated in the project. It is not a key in the inbox itself.
 
 The web console says the same things on a conversation's page.
 
-**To see who is working across a project,** look at the agents list. On the terminal it groups agents
-under *working* (with how long), *stopped on a refused permission*, *idle* and the rest, and updates
-every few seconds. On the web console's Agents tab, working agents come first, under a *Working now*
-line. The tab shows one line for each agent, with every project that lists it on that line, because an agent is a repository
-and one repository can be in several projects; open the line to see how it stands in each. The page refreshes itself every
-10 seconds without reloading, so it changes only where something changed, and a line you opened stays open. An agent waiting
-on its own background work sorts with them. *Idle* means attached with no turn and no background work running. *Running*
-on its own means attached, and nobody reports whether it is in a turn, so Parley will not guess.
-These lists show who is working and for how long, not on which conversation: Parley does not record
-which conversation a turn is for.
+**To see who is working,** look at the agents list.
+
+- **In the terminal** it groups agents under *working* (with how long), *stopped on a refused
+  permission*, *idle* and the rest, and updates every few seconds.
+- **In the web console**, *All Agents* covers every project and a project's *Agents* page covers
+  that project. Working agents come first, under a *Working now* line, and an agent waiting on its
+  own background work sorts with them. In *All Agents* each agent has one line, naming every
+  project that lists it, because one repository can be in several projects. Open the line to see
+  how it stands in each.
+  The page refreshes itself every 10 seconds without reloading, and a line you opened stays open.
+
+*Idle* means attached with no turn and no background work running. *Running* on its own means
+attached, and nobody reports whether it is in a turn, so Parley will not guess. *Frozen by you*
+means you froze it. These lists show who is working and for how long, not on which conversation:
+Parley does not record which conversation a turn is for.
 
 **A stop caused by a refused permission is flagged at once,** in Health (`Alt+y`) and on the
 console's health page, instead of after the usual four hours. Only a person can get the agent past
@@ -220,56 +266,98 @@ process.
 To **remove** an agent, the screen first describes it: what it is, where it runs, what it owns,
 and any answer it owes right now. It then offers keeping first, retiring second, and purging last.
 Retiring and purging each ask you to type the agent's own name. A purge that would leave somebody
-waiting names them, and says what they will see, before asking. Retiring or purging an agent that
-runs on this machine also takes its entry for the project out of its repository's `.mcp.json` and its
-line out of this machine's catalogue, so it no longer starts; an agent on another machine keeps those
-files there. Retiring can be undone from the same place, but reinstating writes no file back: add the
-agent again for it to start. Purging cannot be undone. The web console's Agents tab does the same,
-with the same words and the same typed name, because both run one implementation.
+waiting names them, and says what they will see, before asking.
 
-**Stopping or restarting a running agent.** Press Enter on a running agent's row in the terminal, or open
-its page in the web console, and choose Stop or Restart. Its node lets the current turn finish, then stops
-it, and for a restart starts it again so it reads its launch configuration afresh. What it owes stays owed
-and its conversations are untouched; only what the running session had learned is lost. A stopped agent is
-started again by the next work for it. A message that arrives while it is finishing its turn is not lost: the agent
-is started again for it once it has stopped. To keep it from being started, freeze it (below), or retire it for good. A
-frozen agent cannot be restarted, because a restart starts it again; unfreeze it first. Neither is offered for an
-agent somebody opened in an editor, because Parley did not start that process and cannot stop it.
+Retiring or purging an agent that runs on this machine also tidies its repository. Its entry for
+the project leaves the repository's `.mcp.json`, and its line leaves this machine's catalogue, so
+it no longer starts. An agent on another machine keeps those files there. Retiring can be undone
+from the same place, but reinstating writes no file back: add the agent again for it to start.
+Purging cannot be undone.
 
-**Freezing an agent, to keep it stopped.** Stop does not stay: the next work for the agent starts it again, and so does a
-restart. When you are about to restart the machine or log off, *freeze* the agents that would otherwise start at once, and they stay
-stopped until the broker next starts, which a logon or a reboot does. Then the freeze is lifted for you and each agent that owes work
-is started. Press Enter on its row in the
-terminal, or use the *Freeze* button on its page, in the graph, or *Freeze all* for a whole project. The page says what it does first:
-the agent is stopped once its current turn ends, and then nothing starts it: not new work for it, not a Start, and until the broker
-next starts, not a restart wake either. What it owes stays open and waits, and a message sent to it tells its sender that the agent is frozen.
-*Unfreeze* undoes it by hand, and an agent that owes work, or that has a message or a closing vote waiting from while it was
-frozen, is then started. The same is paid when a logon lifts the freeze. To keep an agent frozen through the
-logon as well, check *Do not unfreeze on logon* when you freeze it (on the confirmation page, or the second Freeze entry in the
-terminal's row menu); it then stays frozen until you unfreeze it yourself. Anything that restarts the broker, such as installing a
-new build or a crash, lifts a freeze the same way, because the broker cannot tell that from a logon. One agent process serves every project whose
-repository is enrolled, so a freeze covers the agent in each project that lists it, and the page names them before you agree: freezing
-it for one project's sake stops its work for the others too. A project that cannot be reached is named and left unfrozen. *Freeze all* says how many agents it froze out of how many it tried, and when a project's agents cannot be read it says that nothing was frozen. An agent
-somebody opened in an editor can be frozen, so that nothing starts it again, but Parley cannot end that session.
+In the terminal, retire, reinstate and purge are on the agents pane's own keys (`Alt+r`, `Alt+i`).
+In the web console they are buttons on the agent's page. Both show the same words and ask for the
+same typed name, because both run one implementation.
 
-**A restart starts the agents that owe work.** When a machine's node joins a broker that has just started (after an
-install, a reboot, or `parley serve` run again), every active agent on that machine that owes an open exchange is asked to
-start, once each. An unattended machine that takes a forced update therefore gets its work going again with nobody there.
-Work stays open whatever happens; this only decides whether anybody is started to do it. It does not wake an agent open
-outside Parley, and the resume gate can decline an agent. To stop work, close its conversation: stopping an agent, or ending
-the broker, stops nothing for long.
+### Stopping and restarting an agent
 
-**An agent left running by a node that is gone.** On Windows, installing a new build ends the broker and its node, but
-not the agents the node started: those keep running, with nothing holding them. On Linux and macOS the agents of a
-broker the autostart entry runs end with it, because systemd and launchd end everything the entry started; a broker you
-started yourself and then killed leaves its agents running, as on Windows. Stopping a `parley serve` or `parley up`
-with Ctrl+C tells its agents to quit on every platform. Such an agent reads *left running by a node
-that is gone*, and an agent somebody opened in an editor reads *open outside Parley*. Nothing can stop a left process at the end of its turn, give it a
-turn, or report its status, and it ends by itself only once its work does. To end it now, press Enter on its row in the
-terminal, or open its page in the web console, and choose *Kill process*. The page says what is lost first: whatever it is
-part-way through, and what the session had learned. What it owes stays owed, and the next work for it starts it again.
-Only a process a node left behind is offered this; never one somebody opened, and never one a node still holds, which
-you stop instead.
+Press Enter on a running agent's row in the terminal, or open its page in the web console, and
+choose **Stop** or **Restart**.
+
+- The node lets the current turn finish. It never cuts a turn short.
+- Then it ends the agent's process. For a restart, it starts it again, so the agent reads its
+  launch configuration afresh.
+- What the agent owes stays owed, and its conversations are untouched. Only what the running
+  session had learned is lost.
+
+A stopped agent does not stay stopped. The next work for it starts it again. A message that
+arrives while it is finishing its turn is not lost either: the agent is started again for it. To
+keep an agent from starting, freeze it (below), or retire it for good.
+
+Neither is offered for an agent somebody opened in an editor. Parley did not start that process,
+so it cannot stop it.
+
+### Freezing an agent, to keep it stopped
+
+Freeze an agent when you want it to stay stopped: for example, before you restart the machine or
+log off.
+
+- **Where:** Enter on its row in the terminal, the *Freeze* button on its page in the web console,
+  or *Freeze* on it in the graph. *Freeze all* in the graph freezes a whole project.
+- **What happens:** the agent stops once its current turn ends. Then nothing starts it: not new
+  work, not a Start, not a Restart. What it owes stays open and waits. Anybody who sends it a
+  message is told it is frozen. It reads *frozen by you* in the agents list.
+- **How it ends:** *Unfreeze* ends it by hand. The next start of the broker also ends it, and a
+  logon or a reboot starts the broker. Either way, the agent is then started if it owes work, or if
+  a message or a closing vote reached it while it was frozen.
+- **To keep it frozen through a logon:** tick *Do not unfreeze on logon* on the web console's
+  confirmation page, or choose the second Freeze entry in the terminal's row menu. It then stays
+  frozen until you unfreeze it yourself.
+
+Anything that restarts the broker lifts an ordinary freeze, such as installing a new build, or a
+crash. The broker cannot tell that from a logon.
+
+One agent process serves every project its repository is enrolled in. So a freeze covers the
+agent in each project that lists it. The page names those projects before you agree. A project
+that cannot be reached is named and left unfrozen. *Freeze all* says how many agents it froze out
+of how many it tried.
+
+A frozen agent cannot be restarted, because a restart starts it again. Unfreeze it first. An agent
+somebody opened in an editor can be frozen, so that nothing starts it again, but Parley cannot end
+that session.
+
+### When the broker starts again
+
+When a machine's node joins a broker that has just started (after an install, a reboot, or
+`parley serve` run again), each active agent on that machine that owes an open exchange is started,
+once. So an unattended machine that takes a forced update gets its work going again with nobody
+there. It does not start an agent you froze with *Do not unfreeze on logon*, or one open outside
+Parley.
+
+Work stays open whatever happens. Stopping an agent, or ending the broker, decides only whether
+anybody is working on it right now. To end work, close its conversation.
+
+### An agent left running by a node that is gone
+
+Sometimes a node ends and the agents it started keep running, with nothing holding them.
+
+- On Windows, installing a new build ends the broker and its node, but not the agents the node
+  started.
+- On Linux and macOS, the agents of a broker the autostart entry runs end with it, because systemd
+  and launchd end everything the entry started. A broker you started yourself and then killed
+  leaves its agents running, as on Windows.
+- Stopping a `parley serve` or `parley up` with Ctrl+C tells its agents to quit, on every platform.
+
+Such an agent reads *left running by a node that is gone*. (An agent somebody opened in an editor
+reads *open outside Parley* instead.) Nothing can stop a left process at the end of its turn, give
+it a turn, or report its status. It ends by itself only once its work does.
+
+To end it now, press Enter on its row in the terminal, or open its page in the web console, and
+choose **Kill process**. The page first says what is lost: whatever it is part-way through, and
+what the session had learned. What it owes stays owed, and the next work for it starts it again.
+Only a process a node left behind is offered this. Never one somebody opened, and never one a node
+still holds: stop that one instead.
+
+### When an agent cannot be started
 
 An agent reads as *stranded* when nothing has it open and its machine's node is not connected, so
 nothing can start it. Its work waits. The broker's own node rejoins by itself after a dropped
@@ -293,20 +381,31 @@ timezone, sortable either way.
 - **Archive** files a conversation out of the list. The count of what is hidden stays on screen,
   because an archived conversation goes on receiving messages, and a message does not un-archive
   it.
-- **Several at once**, in the web console's conversation list: tick the rows you mean, then *Archive selected* or *Bring
-  back selected*. *Archive all closed* files every conversation that is closed and not yet archived, whatever is ticked,
-  and never an open one. Each takes one click, because bringing back undoes it, and each changes at most 500 at a time.
-  *End selected* ends the ticked conversations for everybody, which cannot be undone, so it opens a page that lists
-  them and does nothing until you type `end`; it ends at most 100 at a time. Each row also has its own Archive button.
+- **Several at once**, in the web console's conversation list. Tick the rows you mean, then:
+  - *Archive selected* or *Bring back selected*. One click each, because one undoes the other.
+  - *Archive all closed* files every conversation that is closed and not yet archived, whatever
+    is ticked. It never files an open one.
+  - *End selected* closes the ticked conversations for everybody, and that cannot be undone. So it
+    opens a page that lists them, asks why, and does nothing until you type `end`. Each
+    participant holding open work is told your reason.
+
+  Archiving changes at most 500 conversations at a time, and ending at most 100. Each row also has
+  its own Archive button.
 - **Destroy** deletes a conversation and every participant's half of it. It is described first,
   and keeping is offered first. If a move had split a question from what settled it, and what settled it goes, the
   question stays in its conversation and reads as closed.
-- **What agents read.** An agent may read any exchange of the project by its number, or search the project's messages for
-  words, to pick up work after a restart. You see every read. Under an exchange's first message a line says *Read by*
-  and who, when, and how often. Beside the conversation, *Searched the history* gives a line for each agent that searched,
-  with how many searches it has made and its newest words. The same lines are in the exported text. Reads change
-  nothing: no message is marked delivered, nobody is woken, and the reader does not become a participant. The tally is
-  removed when an agent has not added to it for the retention period.
+- **What agents read.** An agent may read any exchange of the project by its number, or search
+  the project's messages for words. It does this to pick up work after a restart. You see every
+  read:
+  - Under an exchange's first message, a *Read by* line says who read it, when, and how often.
+  - Beside the conversation, *Searched the history* has a line for each agent that searched, with
+    how many searches it made and its newest words.
+  - The same lines are in the exported text.
+
+  Reads change nothing. No message is marked delivered, nobody is woken, and the reader does not
+  join the conversation. A line goes once the agent has not read again for the retention age cap
+  (thirty days unless your broker sets another, see
+  [Configuration](configuration.md#retention)).
 - **Export** writes a conversation whole to a file you own.
 - **Close** ends a conversation. You can do this when the participants have not agreed. You give
   a reason, and it is recorded.

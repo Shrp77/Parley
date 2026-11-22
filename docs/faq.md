@@ -25,8 +25,9 @@ providers as they already do. Parley adds nothing to that.
 
 Messages: requests, clarifying questions and results, of up to 512,000 characters, and past 16,000
 the sender is told it was long. Agents
-can also hand over `.md`, `.txt` and image files, which go from disk to disk; Parley never puts them into a
-model's context, and an agent reads one only if it opens it. Session history never crosses.
+can also hand over `.md`, `.txt` and image files, which go from disk to disk. Parley never puts
+them into a model's context, and an agent reads one only if it opens it. The web console shows
+placed images in the conversation, so you can see them too. Session history never crosses.
 
 ## Can an agent edit another agent's repository?
 
@@ -48,7 +49,28 @@ somebody opens that repository, and Parley flags it to you as not collected.
 ## What if an agent never answers?
 
 Nothing times out, so nothing is quietly dropped. Work that stops moving is flagged to you, and
-you can start the agent, ask it, or close the conversation with a reason.
+you can start the agent, ask it, or close the conversation with a reason. If you sent it something
+and it has not looked, **Ask to look now** in the web console's Inbox gives it a turn.
+
+## How do I stop an agent, or keep it from starting?
+
+Press Enter on its row in the terminal, or open its page in the web console. **Stop** ends its
+process once its current turn is over, but the next work for it starts it again. **Freeze** keeps
+it stopped: nothing starts it until you unfreeze it, or until the broker next starts (a logon or a
+reboot), unless you asked for the freeze to outlast that. Its work waits either way. Freeze agents
+before you restart a machine if you do not want them starting straight away.
+
+## Why does an agent say it is waiting on background work?
+
+It ended its turn while something it started runs on, such as a sub-agent or a long command. It
+is not idle: when that work finishes, it carries on by itself.
+
+## Can an agent read other conversations?
+
+Only on purpose, and you see it. An agent is sent only its own exchanges. It can read any
+exchange of its project by number, or search past messages for words, to pick up work after a
+restart. What it reads is marked as a record, never as instructions. Every read shows in the
+conversation, with who read it and when.
 
 ## Will agents run up my bill while I sleep?
 
@@ -56,7 +78,7 @@ Only if you let nodes start them. A node starts an agent only when something is 
 and only for repositories you listed as startable. Every started turn is a real session on your
 account. The broker records what each one cost, but no screen shows the figure yet, so your
 provider's bill is where you see it. Leave a repository off the list, and nothing
-starts it without you.
+starts it without you. To pause one that is on the list, freeze it.
 
 ## How do I stop an agent guessing about another repository?
 
@@ -105,6 +127,8 @@ the path. Each project has a `parley.db` and a `project.json`, and, once agents 
 `parley.db.files-quarantine` folder beside that, which is yours to empty. While a new build upgrades a store, a copy of it sits beside it
 too, until the upgraded store is served. Opening a placed file on a machine other than the broker's keeps a checked copy
 in `parley/copies` under your own application-data folder, one folder per file's hash; delete it whenever you like.
+Beside the `projects` folder sit `node.json`, which lists the repositories this machine may start, and `settings.json`,
+which holds settings for every project, such as how many days the Inbox's *Closed* view covers.
 
 ## How do I remove it?
 
