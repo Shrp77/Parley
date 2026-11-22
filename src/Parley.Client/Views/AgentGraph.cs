@@ -167,7 +167,10 @@ public static class AgentGraphBuilder
 
                 var seat = PersonSeat.Is(agent.Name);
                 var retired = agent.Status == AgentStatus.Retired;
-                var state = Standing.Join([agent], new HashSet<string>(StringComparer.Ordinal), PersonSeat.Adapter, agent.Name.Machine ?? string.Empty)
+                // Its own role as catalogued: the graph has no catalogue, and with none every stopped agent read "only runs when
+                // somebody opens it", untrue of one a node can start (review, lens 1 run 3 on 6fde4ef3). Presence then says
+                // whether a node can start it or its machine is not connected.
+                var state = Standing.Join([agent], new HashSet<string>(StringComparer.Ordinal) { agent.Name.Role }, PersonSeat.Adapter, agent.Name.Machine ?? string.Empty)
                     .FirstOrDefault()?.Standing ?? "unknown";
 
                 nodes.Add(new GraphNode(

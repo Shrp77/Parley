@@ -87,6 +87,21 @@ public sealed class AgentGraphTests
         Assert.Equal(Standing.Freezing, frozen.State);
     }
 
+    [Theory]
+    [InlineData(AgentPresence.Startable, Standing.Idle)]
+    [InlineData(AgentPresence.Stranded, Standing.NoMachine)]
+    public void A_stopped_agent_reads_whether_a_node_can_start_it(AgentPresence presence, string phrase)
+    {
+        // With no catalogue the graph read every stopped agent as "only runs when somebody opens it", untrue of one a node
+        // can start and of one whose machine is away (review, lens 1 run 3 on 6fde4ef3).
+        var stopped = new AgentRecord(AgentName.Create("orders@pc"), "mcp", AgentTier.Full, null, null, null, false,
+            AgentStatus.Active, Presence: presence);
+
+        var graph = Graph(new GraphInput("alpha", [stopped], [], null));
+
+        Assert.Equal(phrase, graph.Nodes.Single(n => n.Kind == GraphKind.Agent).State);
+    }
+
     [Fact]
     public void A_frozen_agent_that_is_no_longer_running_reads_frozen()
     {

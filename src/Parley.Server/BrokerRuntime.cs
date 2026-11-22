@@ -1513,6 +1513,16 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         _launches[agent] = token;
 
+        // A freeze made while its node was away asked nobody, and the node's return announces the process again: it is asked
+        // to stop now, as the freeze would have (SPEC.md §14). Otherwise it ran on, frozen and given no turns, read on every
+        // surface as stopping once its turn ends (review, lens 1 run 3 on 6fde4ef3).
+        if (_frozen.ContainsKey(agent.Value)
+            && _attached.TryGetValue(agent.Value, out var sessions)
+            && sessions.Any(session => session.StartedByParley))
+        {
+            _ = RequestStop(agent, restart: false, "a person froze it while its node was away");
+        }
+
         return true;
     }
 
