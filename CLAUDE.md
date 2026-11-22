@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.64.24, protocol 0.20, schema 11. Nothing has been released, but **live stores hold work
+- Version 0.64.25, protocol 0.20, schema 11. Nothing has been released, but **live stores hold work
   in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
   `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
   upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
@@ -124,7 +124,7 @@ in §10.2 (`force_conclude` is not `conclude`) is too thin alone.
   operation added under a new name is still caught.
 - `Agents` replies never carry turn information. `AgentsCannotSeeTurnsTests` holds it.
 
-**Surfaces.** Every operator operation is available on the CLI, the terminal and the web UI,
+**Surfaces.** Every operator operation is available on the terminal and the web UI (the command line keeps the few named below),
 and `DriftTests` asserts both screens bind every `BrokerClient` operation. Everything a person
 does to a deployment is the terminal's, and the web console also creates a project, enrols repositories, and retires,
 reinstates and purges agents; a project is removed or renamed only in the terminal. Renaming is two steps, removing it and naming the new one, which

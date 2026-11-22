@@ -1018,7 +1018,8 @@ message DidItReply {
 }
 
 // What a freeze did. `changed` is false when the agent was already frozen. `process` says what became of its process: `stopping`
-// (its node was asked, and waits for the turn), `not_running`, `open_outside` (no node holds a process of it to end) or `no_node`.
+// (its node was asked, and waits for the turn), `not_running`, `open_outside` (open in somebody's editor; no node holds it),
+// `left_running` (a node that is gone left it running; only a person's kill ends it) or `no_node`.
 message FreezeReply {
   bool changed = 1;
   string process = 2;

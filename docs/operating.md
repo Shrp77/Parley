@@ -290,7 +290,7 @@ choose **Stop** or **Restart**.
 - What the agent owes stays owed, and its conversations are untouched. Only what the running
   session had learned is lost.
 
-A stopped agent does not stay stopped. The next work for it starts it again. A message that
+A stopped agent does not stay stopped. The next work for it starts it again, unless it is frozen. A message that
 arrives while it is finishing its turn is not lost either: the agent is started again for it. To
 keep an agent from starting, freeze it (below), or retire it for good.
 
@@ -355,7 +355,8 @@ it a turn, or report its status. It ends by itself only once its work does.
 
 To end it now, press Enter on its row in the terminal, or open its page in the web console, and
 choose **Kill process**. The page first says what is lost: whatever it is part-way through, and
-what the session had learned. What it owes stays owed, and the next work for it starts it again.
+what the session had learned. What it owes stays owed, and the next work for it starts it again,
+unless you froze it.
 Only a process a node left behind is offered this. Never one somebody opened, and never one a node
 still holds: stop that one instead.
 

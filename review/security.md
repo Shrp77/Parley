@@ -27,6 +27,9 @@ Check a change against each; a new page or a new path lookup must keep all of th
   `Sec-Fetch-Dest: iframe`, same origin only).
 - A request whose `Sec-Fetch-Site` is `cross-site` or `same-site` is refused before any page runs, because pages act on
   a GET (they take the person's seat and record delivery). A typed address or a bookmark sends `none`.
+- Under a name listed in `webUi.hosts` a request that carries no `Sec-Fetch-Site` is refused, so a listed name works only
+  through an HTTPS forwarder (browsers send the header only to a secure origin). A speculative load (`Sec-Purpose`
+  `prefetch` or `prerender`) is refused whoever asked.
 - Every POST is behind antiforgery; a POST-only bound property is `[FromForm]`, and an `OnPost` parameter names its
   source.
 
@@ -79,6 +82,10 @@ Check a change against each; a new page or a new path lookup must keep all of th
 - **Only local storage** (the owner's rule): a repository, a deployment's root and an agent's workspace are refused on a
   synced cloud folder (OneDrive, Google Drive, Dropbox, iCloud Drive, Box), a network drive or a virtual file system
   (`LocalStorage`).
+
+**The node**
+- Kill ends only a running process named for an agent's own kind (`claude`), never the node itself and never a process
+  it hosts; a refused process's name is printed inert, as every line the node writes from an agent's values is.
 
 **Files between agents**
 - Only `.md`, `.txt` and image files (PNG, JPEG, GIF, WebP) cross. A fetch is written only under one of those

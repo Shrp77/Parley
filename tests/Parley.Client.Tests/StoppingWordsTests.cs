@@ -21,4 +21,14 @@ public sealed class StoppingWordsTests
             "Nothing was asked: orders@acme is not running.",
             StoppingWords.Outcome("orders@acme", restart: false, asked: false));
     }
+
+    [Fact]
+    public void A_kill_of_a_frozen_agent_never_says_new_work_starts_it_again()
+    {
+        // A freeze gates starting, so after the kill nothing starts it until it is unfrozen; the words said the next work would
+        // (review, lens 3 run 2 on 6fde4ef3).
+        Assert.DoesNotContain("The next work for it starts it again", StoppingWords.Killing("billing@m1", frozen: true), StringComparison.Ordinal);
+        Assert.Contains("stays frozen", StoppingWords.Killing("billing@m1", frozen: true), StringComparison.Ordinal);
+        Assert.Contains("The next work for it starts it again", StoppingWords.Killing("billing@m1"), StringComparison.Ordinal);
+    }
 }

@@ -458,6 +458,25 @@ public sealed class FreezingAnAgentTests
     }
 
     [Fact]
+    public async Task Freezing_a_process_a_node_that_is_gone_left_says_so_and_blames_no_editor()
+    {
+        // A left process is nobody's editor, and only a person's kill ends it: answered "open_outside", the person was told to
+        // wait for somebody to close it (review, lens 3 run 2 on 6fde4ef3).
+        var token = TestContext.Current.CancellationToken;
+
+        await using var broker = await LoopbackBroker.StartAsync(token);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["orders"], token);
+        await using var left = await AttachedClient.AttachAsync(
+            broker, "orders@alpha", cancellationToken: token, launchToken: "from-a-node-that-is-gone", processId: 4242);
+
+        var frozen = await broker.ConnectAsOperator().FreezeAsync(Freeze("orders@alpha"), cancellationToken: token);
+
+        Assert.True(frozen.Changed);
+        Assert.Equal("left_running", frozen.Process);
+        Assert.Equal(0, await node.CountCommandsAsync(TimeSpan.FromMilliseconds(300)));
+    }
+
+    [Fact]
     public async Task Freezing_an_agent_whose_node_has_gone_says_no_node_is_joined_to_stop_it()
     {
         // The node that started it has left, and the broker still knows the launch as that node's: nothing can be asked to

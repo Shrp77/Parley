@@ -12,6 +12,12 @@ public enum FreezeProcess
     /// <summary>It runs only as a process Parley did not start (§11.7), so no node can end it. It is frozen all the same: nothing will start it again.</summary>
     OpenOutside,
 
+    /// <summary>
+    /// It runs as a process a node that is gone left running (§11.1), which no node can stop at the end of its turn: only a
+    /// person's kill ends it. It is frozen all the same: nothing will start it again.
+    /// </summary>
+    LeftRunning,
+
     /// <summary>No node is joined for its machine, so nothing could be asked. The freeze is recorded and stands when the node returns.</summary>
     NoNode
 }

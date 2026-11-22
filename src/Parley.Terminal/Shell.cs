@@ -2776,7 +2776,8 @@ internal sealed partial class Shell : Window
         }
 
         var act = KillThisTitle + agent.Value;
-        var menu = Prompting.Choose(act, StoppingWords.Killing(agent.Value), [KeepItRunning, act]);
+        var frozen = Agents.SelectedStanding is { } standing && Standing.IsFrozen(standing.Standing);
+        var menu = Prompting.Choose(act, StoppingWords.Killing(agent.Value, frozen), [KeepItRunning, act]);
         var opened = Prompting.Open(app, menu);
 
         menu.Done += (_, chosen) =>

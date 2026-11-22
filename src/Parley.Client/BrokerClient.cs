@@ -187,6 +187,7 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
         {
             "stopping" => FreezeProcess.Stopping,
             "open_outside" => FreezeProcess.OpenOutside,
+            "left_running" => FreezeProcess.LeftRunning,
             "no_node" => FreezeProcess.NoNode,
             _ => FreezeProcess.NotRunning
         });

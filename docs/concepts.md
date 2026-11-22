@@ -101,7 +101,7 @@ beside either. A message to it waits until somebody there takes a turn.
 ## Stopping, freezing and background work
 
 You can **stop** or **restart** an agent a node started. Its node lets the current turn finish
-first. What the agent owes stays owed, so the next work for it starts it again.
+first. What the agent owes stays owed, so the next work for it starts it again, unless you froze it.
 
 To keep an agent stopped, **freeze** it. Nothing starts a frozen agent until you unfreeze it, or
 until the broker next starts, which a logon or a reboot does. You can ask for a freeze that

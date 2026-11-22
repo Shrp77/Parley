@@ -427,9 +427,12 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             },
             context).ConfigureAwait(false);
 
+        // A process a node that is gone left is not somebody's editor: said apart, so the person is told only Kill ends it
+        // (review, lens 3 run 2 on 6fde4ef3).
         var process = _runtime.RequestStop(agent, restart: false, "a person froze it") switch
         {
             StopOutcome.Sent => "stopping",
+            StopOutcome.OpenOutside when _runtime.Unsupervised(agent) => "left_running",
             StopOutcome.OpenOutside => "open_outside",
             StopOutcome.NoNode => "no_node",
             _ => "not_running"

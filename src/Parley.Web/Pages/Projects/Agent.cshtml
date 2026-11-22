@@ -97,7 +97,7 @@ else
                not somebody's editor, so ending it is not taking their session. Starting another would put two models in one
                checkout, which is why Start is not offered. *@
             <a class="button tonal" href="/Projects/Act?project=@Model.Project&amp;action=kill&amp;subject=@agent.Name.Value"
-               title="End its process now. What it is part-way through is lost, and the next work for it starts it again.">Kill process</a>
+               title="End its process now. What it is part-way through is lost. Unless it is frozen, the next work for it starts it again.">Kill process</a>
         }
         else if (agent.Presence == AgentPresence.Running && !agent.OpenOutside)
         {

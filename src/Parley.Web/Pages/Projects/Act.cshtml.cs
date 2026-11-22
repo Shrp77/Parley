@@ -114,6 +114,9 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     /// <summary>Whether the act is offered at all, or only explained: false for a kill of a process no node that is gone left.</summary>
     public bool Offered { get; private set; } = true;
 
+    /// <summary>Whether the agent a kill names is frozen, so it is not told new work starts it again.</summary>
+    public bool KillingFrozen { get; private set; }
+
     /// <summary>Describes what is about to happen. Nothing is done here.</summary>
     /// <returns>The confirmation page.</returns>
     public async Task<IActionResult> OnGetAsync()
@@ -158,6 +161,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
             Offered = roll.Value is not { } rows
                 || rows.Any(row => row.Name == killing && row.Presence == AgentPresence.Running && row.Unsupervised);
+            KillingFrozen = roll.Value?.Any(row => row.Name == killing && row.Frozen) ?? false;
         }
 
         // Freezing ends the one process that serves every project the agent is in, so the person is told which they are before
@@ -212,7 +216,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
             // Ends a process now: not destructive of anything the agent owes, but what it is part-way through is lost, said.
             "kill" => (Offered
-                ? Parley.Client.Rendering.StoppingWords.Killing(Subject)
+                ? Parley.Client.Rendering.StoppingWords.Killing(Subject, KillingFrozen)
                 : Parley.Client.Rendering.StoppingWords.NothingToKill(Subject), false),
 
             "purge" => (AgentWithdrawal.Purging + " Its name becomes free for another agent; retiring it instead "

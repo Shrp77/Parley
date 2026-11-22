@@ -28,17 +28,22 @@ public static class StoppingWords
 
     /// <summary>What ending a process a node that is gone left running does, said before it is done (SPEC.md §11.1).</summary>
     /// <param name="agent">The agent's name.</param>
+    /// <param name="frozen">Whether a person has frozen it, so nothing starts it again after this.</param>
     /// <returns>The sentence.</returns>
     /// <remarks>
     /// Said plainly that this does not wait: nothing holds the process, so nothing can say when its turn ends, and what it
-    /// is doing now is lost. It is for a process left by a node that is gone, never one somebody opened in an editor.
+    /// is doing now is lost. It is for a process left by a node that is gone, never one somebody opened in an editor. A
+    /// frozen one is not started again by new work, so it is not told it will be (review, lens 3 run 2 on 6fde4ef3).
     /// </remarks>
-    public static string Killing(string agent) =>
+    public static string Killing(string agent, bool frozen = false) =>
         $"A process of '{agent}' was started by a node that is gone, so no node holds it and it cannot be stopped at the end "
         + "of its turn. This ends the process now, and whatever it is in the middle of is lost, along with what the session "
         + "had learned. A process of it that the node here started is left alone. What it owes stays owed, and its "
-        + "conversations are untouched. The next work for it starts it again, under the node that is here; to keep it from "
-        + "being started, freeze it, or retire it for good.";
+        + "conversations are untouched. "
+        + (frozen
+            ? "It stays frozen, so nothing starts it again until you unfreeze it."
+            : "The next work for it starts it again, under the node that is here; to keep it from being started, freeze it, "
+              + "or retire it for good.");
 
     /// <summary>What a person is told when there is no process a node that is gone left running to end (SPEC.md §11.1).</summary>
     /// <param name="agent">The agent's name.</param>

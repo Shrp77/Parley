@@ -223,6 +223,7 @@ public static class AgentFreezing
     {
         FreezeProcess.Stopping => "; its node was asked to stop it once its turn ends",
         FreezeProcess.OpenOutside => "; it is open outside Parley, so its process stays until somebody closes it, but nothing will start it again",
+        FreezeProcess.LeftRunning => "; a node that is gone left its process running, so it runs until you end it with Kill, but nothing will start it again",
         FreezeProcess.NoNode => "; no node is joined to stop it, so the freeze stands when one returns",
         _ => string.Empty
     };
