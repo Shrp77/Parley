@@ -213,6 +213,26 @@ public sealed partial class FreezingOnTheWebTests
         Assert.DoesNotContain("action=unfreeze&subject=", page, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("stopping", ": changed; its node was asked to stop it once its turn ends.")]
+    [InlineData("open_outside", ": changed; it is open outside Parley, so its process stays until somebody closes it, but nothing will start it again.")]
+    [InlineData("no_node", ": changed; no node is joined to stop it, so the freeze stands when one returns.")]
+    [InlineData("not_running", ": changed.")]
+    public async Task Confirming_a_freeze_says_what_became_of_the_agents_process(string process, string said)
+    {
+        // SPEC.md §10.2: freeze returns what became of the process, and the person is told. A freeze of an agent open in an
+        // editor leaves its process up, which only this sentence says. Nothing held the broker's word on its way to the page:
+        // with every one read as "not running", or the sentences emptied, every test passed.
+        using var console = new RoadmapConsole();
+        console.Broker.Registry.Add(Row(Orders));
+        console.Broker.FreezeProcess = process;
+
+        var after = await ConfirmAsync(console, "freeze", Orders, []);
+
+        Assert.Single(console.Broker.Frozen);
+        Assert.Contains(RoadmapConsole.Project + said, after, StringComparison.Ordinal);
+    }
+
     /// <summary>A project with one agent to freeze, one already frozen, and the three that are never frozen from here.</summary>
     private static RoadmapConsole Everyone()
     {

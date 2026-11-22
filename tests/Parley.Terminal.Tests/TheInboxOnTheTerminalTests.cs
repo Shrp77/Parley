@@ -193,6 +193,37 @@ public sealed class TheInboxOnTheTerminalTests
     }
 
     [Fact]
+    public async Task An_exchange_opened_from_a_message_names_who_it_waits_on_and_not_who_an_older_one_waits_on()
+    {
+        // Other exchanges are open and wait on the person: the fixture's, which is older, and the one that names this one,
+        // which is newer. The named one waits on orders, in a conversation that sorts last, so it is not the first wait the
+        // broker reports by age, by name or by who is waited on. Read without asking which exchange a wait belongs to, it
+        // was said to be waiting on whoever the first wait named, and the test above passed because its exchange came first.
+        await using var seated = await Seated.OpenAsync(Ct);
+
+        var named = await seated.AsksAsync(Seated.Billing, Seated.Orders, "Which ledger?", "zz-ledgers", Ct);
+
+        _ = await seated.AsksAsync(Seated.Billing, seated.Person, $"I asked orders on exchange #{named}; see it.", "notes", Ct);
+
+        await Walking.GoAsync(seated.Shell, Viewing.Conversation, "notes");
+        await seated.Shell.Settled;
+
+        var export = await seated.Operators.ExportAsync("notes", Ct);
+        var naming = export.Messages.Single(message => message.PayloadJson.Contains("see it", StringComparison.Ordinal));
+
+        Assert.True(seated.Shell.Transcript.Reach(naming.Id));
+
+        seated.Focus<TranscriptRegion>();
+        await seated.Session.PressThenSettleAsync(new Key(Shell.ReferenceKey).WithAlt, () => seated.Shell.Settled);
+
+        var lines = Assert.IsType<ExchangeView>(seated.Shell.ExchangeShown).Shown;
+
+        Assert.StartsWith($"Exchange #{named} in zz-ledgers. Open, waiting on {Seated.Orders.Value}.", lines[0], StringComparison.Ordinal);
+
+        Prompting.Close(seated.Session.App, seated.Shell.ExchangeSession);
+    }
+
+    [Fact]
     public async Task A_message_naming_an_exchange_that_does_not_exist_opens_one_that_says_so()
     {
         // Without the guard the broker's empty answer for an exchange it does not have was read as a conversation, and the

@@ -439,6 +439,46 @@ public sealed class FreezingAnAgentTests
     }
 
     [Fact]
+    public async Task Freezing_an_agent_open_outside_Parley_says_no_node_holds_its_process()
+    {
+        // SPEC.md §10.2: freeze returns what became of the agent's process, and for one somebody opened in an editor that is
+        // "open outside Parley": the freeze stands, no node is asked, and the surfaces say its process stays until it is
+        // closed there. Nothing held this arm: answered as "not running", every test passed.
+        var token = TestContext.Current.CancellationToken;
+
+        await using var broker = await LoopbackBroker.StartAsync(token);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["orders"], token);
+        await using var editor = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token);
+
+        var frozen = await broker.ConnectAsOperator().FreezeAsync(Freeze("orders@alpha"), cancellationToken: token);
+
+        Assert.True(frozen.Changed);
+        Assert.Equal("open_outside", frozen.Process);
+        Assert.Equal(0, await node.CountCommandsAsync(TimeSpan.FromMilliseconds(300)));
+    }
+
+    [Fact]
+    public async Task Freezing_an_agent_whose_node_has_gone_says_no_node_is_joined_to_stop_it()
+    {
+        // The node that started it has left, and the broker still knows the launch as that node's: nothing can be asked to
+        // stop the process, so the freeze says so (SPEC.md §10.2, "no node joined"). Answered as "not running", the person
+        // was told nothing of a process still up, and every test passed.
+        var token = TestContext.Current.CancellationToken;
+
+        await using var broker = await LoopbackBroker.StartAsync(token);
+        var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["orders"], token);
+        await using var resident = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token, startedBy: node);
+
+        await node.DisposeAsync();
+        await broker.WaitUntilNodeGoneAsync("alpha", Patience);
+
+        var frozen = await broker.ConnectAsOperator().FreezeAsync(Freeze("orders@alpha"), cancellationToken: token);
+
+        Assert.True(frozen.Changed);
+        Assert.Equal("no_node", frozen.Process);
+    }
+
+    [Fact]
     public void An_agent_cannot_freeze_or_unfreeze_anybody()
     {
         // The Agents service is what an adapter binds. The operations are the person's alone (SPEC.md §10.2).

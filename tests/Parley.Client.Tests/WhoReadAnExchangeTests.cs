@@ -184,6 +184,20 @@ public sealed class WhoReadAnExchangeTests
     }
 
     [Fact]
+    public void A_read_of_an_exchange_is_not_listed_as_a_search()
+    {
+        // SPEC.md §5.8: a reader is shown beneath the exchange it read, and the lines beside the conversation are for
+        // searches. An export carries both kinds. With the kinds not told apart, an agent that only read an exchange was
+        // listed as having searched for nothing, and every test passed.
+        var export = new ConversationExport(
+            [Request(5)], [], Reads: [Read("inventory@acme", 5, 2, count: 3), Read("billing@acme", null, 4)]);
+
+        Assert.Equal(["billing@acme: 1 search, newest “invoice” (2 matches)"], Reading.SearchLines(export.Reads));
+        Assert.Single(Reading.Lines(export, TimeZoneInfo.Utc), l => l.Text.Contains("Searched the history", StringComparison.Ordinal));
+        Assert.Equal(1, Transcript.Write("pricing", "acme", export).Split("Searched the history").Length - 1);
+    }
+
+    [Fact]
     public void An_agent_cannot_hide_another_searcher_past_the_eighth_without_the_person_being_told_how_many_more()
     {
         var reads = new List<HistoryRead> { new(AgentName.Create("spy@acme"), null, "secret", 1, At) };

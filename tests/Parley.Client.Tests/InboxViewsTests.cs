@@ -307,6 +307,49 @@ public sealed class InboxViewsTests
     }
 
     [Fact]
+    public void Each_row_in_flight_carries_the_standing_of_the_agent_it_waits_on_and_of_no_other()
+    {
+        // Two requests in flight, one to each agent, in a registry that lists somebody else first and the two the other
+        // way round: a chip read off the wrong row would say an agent is working on the day it cannot be started.
+        var reading = Read(
+            [new WaitingEdge(Me, Orders, 10), new WaitingEdge(Me, Billing, 20)],
+            [Said(1, 10, MessageType.Request, Me, Orders), Said(2, 20, MessageType.Request, Me, Billing)],
+            [Open(10), Open(20)],
+            [
+                Agent(Facilitator, AgentPresence.Running, new TurnStanding(true, null, null, true, 0)),
+                Agent(Billing, AgentPresence.Stranded),
+                Agent(Orders, AgentPresence.Running, new TurnStanding(true, Now.AddMinutes(-5), null, true, 0)),
+            ]);
+
+        var orders = reading.Rows.Single(row => row.Exchange == 10);
+        var billing = reading.Rows.Single(row => row.Exchange == 20);
+
+        Assert.Equal(Orders, orders.Agent);
+        Assert.Equal(AgentState.Working, orders.Standing!.State);
+        Assert.Equal(Now.AddMinutes(-5), orders.Standing.Since);
+        Assert.Equal(Billing, billing.Agent);
+        Assert.Equal(AgentState.CannotStart, billing.Standing!.State);
+    }
+
+    [Fact]
+    public void Only_what_an_agent_waits_on_the_person_for_counts_as_waiting_on_them_and_each_exchange_once()
+    {
+        // The frame's count and the terminal's are this list's length. What agents wait on each other for, and what the
+        // person waits on an agent for, are in the same graph and are not the person's to answer.
+        var onMe = WaitingOnThePerson.OnMe(
+            [
+                new WaitingEdge(Orders, Me, 10),
+                new WaitingEdge(Orders, Me, 10),
+                new WaitingEdge(Orders, Billing, 11),
+                new WaitingEdge(Me, Billing, 12),
+                new WaitingEdge(Billing, Me, 13),
+            ],
+            Me);
+
+        Assert.Equal([10L, 13L], onMe.Select(edge => edge.ExchangeId).Order());
+    }
+
+    [Fact]
     public void An_agent_the_registry_does_not_list_is_unknown_and_never_idle()
     {
         Assert.Equal(AgentState.Unknown, InFlightStanding.From(null, [], 1).State);

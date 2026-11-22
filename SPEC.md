@@ -829,7 +829,7 @@ again for what it left.
   ends the asking, not the Request: the Request stays open and owed.
 - **A stop, and the end of the process an asking was made of, end the asking too** (§11.1): a
   person's stop forgets what was asked before it, and a turn asked of a process that ends before
-  taking it is asked for again as a start.
+  taking it is asked for again as a start when what it was asked for is still waiting.
 
 **A Request identical to one still open between the same two participants is refused** (§7.1's
 distinctness), and the sender is handed the exchange already carrying it. Once that exchange has

@@ -81,6 +81,14 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <summary>The conversations every list returns.</summary>
     public List<Wire.ConversationSummary> Conversations { get; } = [];
 
+    /// <summary>How many conversations one listing returns before it hands back a token for the rest; 0 returns them all at once.</summary>
+    /// <remarks>The broker lists fifty at a time, so a page that reads only the first answer reads only the newest fifty.</remarks>
+    public int ConversationPageSize { get; set; }
+
+    /// <summary>Whether a listing leaves archived conversations out unless it asks for them, as the broker does.</summary>
+    /// <remarks>Off unless a test sets it, so a fixture that marks a conversation archived only to draw it is still listed.</remarks>
+    public bool OmitsArchived { get; set; }
+
     /// <summary>The agents the registry lists, none by default.</summary>
     public List<Wire.RegistryRow> Registry { get; } = [];
 
@@ -403,7 +411,7 @@ public sealed class RoadmapBroker : HttpMessageHandler
                 "/parley.v1.Operators/EditRoadmap" => Edit(Wire.EditRoadmapRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/DescribeRegistry" => new Wire.RegistryReply { Rows = { Registry } },
                 "/parley.v1.Operators/DescribeWaiting" => new Wire.WaitingReply { Edges = { Edges } },
-                "/parley.v1.Operators/ListConversations" => new Wire.ListConversationsReply { Conversations = { Conversations } },
+                "/parley.v1.Operators/ListConversations" => Listed(Wire.ListConversationsRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/Export" => Export(Wire.ExportRequest.Parser.ParseFrom(payload).ConversationId),
                 "/parley.v1.Operators/Implements" => new Wire.ImplementsReply { ProtocolVersion = Parley.Core.ProtocolVersion.Current },
                 "/parley.v1.Operators/SpinOff" => Spun(Wire.SpinOffRequest.Parser.ParseFrom(payload)),
@@ -653,6 +661,29 @@ public sealed class RoadmapBroker : HttpMessageHandler
                     Removed = item.RemovedRevision != 0,
                 };
             }
+        }
+
+        return reply;
+    }
+
+    /// <summary>Answers a listing: everything at once, or a page at a time and without the archived when a test asked for that.</summary>
+    /// <param name="request">What was asked.</param>
+    /// <returns>The conversations, and a token when more follow.</returns>
+    private Wire.ListConversationsReply Listed(Wire.ListConversationsRequest request)
+    {
+        var listed = Conversations.Where(c => !OmitsArchived || request.IncludeArchived || !c.Archived).ToList();
+
+        if (ConversationPageSize <= 0)
+        {
+            return new Wire.ListConversationsReply { Conversations = { listed } };
+        }
+
+        var from = int.TryParse(request.PageToken, NumberStyles.None, CultureInfo.InvariantCulture, out var at) ? at : 0;
+        var reply = new Wire.ListConversationsReply { Conversations = { listed.Skip(from).Take(ConversationPageSize) } };
+
+        if (from + ConversationPageSize < listed.Count)
+        {
+            reply.NextPageToken = (from + ConversationPageSize).ToString(CultureInfo.InvariantCulture);
         }
 
         return reply;

@@ -131,6 +131,24 @@ public sealed partial class BulkConversationActsTests
     }
 
     [Fact]
+    public async Task Archiving_all_closed_reads_the_whole_list_and_not_only_its_first_page()
+    {
+        // The broker lists fifty at a time, most recently active first, and what is closed is mostly what is oldest: a
+        // page that read only the first answer would file nothing and say so every time it was pressed.
+        using var console = Console();
+
+        console.Broker.ConversationPageSize = 2;
+        console.Broker.Conversations.Add(new Wire.ConversationSummary { ConversationId = "closed-later", Closed = true });
+        console.Broker.Conversations.Add(new Wire.ConversationSummary { ConversationId = "closed-last", Closed = true });
+
+        using var response = await BulkAsync(console, "archiveclosed");
+
+        // The fixture's own closed conversation is on the second page, and these two are on the third.
+        Assert.Equal(3, Asked(console, Archive));
+        Assert.Equal(0, Asked(console, Unarchive));
+    }
+
+    [Fact]
     public async Task A_bulk_act_changes_no_more_than_its_bound_however_many_are_ticked()
     {
         using var console = Console();

@@ -72,6 +72,38 @@ public sealed class HistoryReadsAreShownTests
     }
 
     [Fact]
+    public async Task How_often_an_agent_read_and_searched_is_shown_and_a_read_is_not_listed_as_a_search()
+    {
+        // SPEC.md §5.8: each reader "and how often", and for each agent that searched "how many searches it has made". The
+        // count the broker sends was dropped on the way to the page with every test passing, and so was the difference
+        // between a read of an exchange and a search: inventory, which only read, was listed as having searched for nothing.
+        using var console = new TranscriptConsole();
+        console.Broker.Request(1, Person, Orders, "Gross or net?");
+        console.Broker.Reads.Add(new Wire.HistoryReadRow
+        {
+            Reader = "inventory@test",
+            ExchangeId = 1,
+            CreatedUtc = "2026-11-17T09:30:00.0000000+00:00",
+            Count = 3,
+        });
+        console.Broker.Reads.Add(new Wire.HistoryReadRow
+        {
+            Reader = "billing@test",
+            Words = "price gross",
+            Matches = 2,
+            CreatedUtc = "2026-11-17T09:31:00.0000000+00:00",
+            Count = 4,
+        });
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri, Ct);
+
+        Assert.Matches("Read by inventory@test at [^<(]*\\(3 times\\)", page);
+        Assert.Contains("billing@test: 4 searches, newest ", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("inventory@test: ", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task With_no_reads_neither_is_drawn()
     {
         using var console = new TranscriptConsole();

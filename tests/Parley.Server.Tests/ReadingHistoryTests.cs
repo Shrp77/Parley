@@ -243,6 +243,39 @@ public sealed class ReadingHistoryTests
     }
 
     [Fact]
+    public async Task The_person_is_shown_how_often_each_agent_read_and_searched()
+    {
+        // SPEC.md §5.8: one entry for each reader "and how often", and for an agent's searches "how many". The store counts
+        // (the broker's tests hold that); nothing held the count on its way to the person, and with every row sent as one
+        // read every test passed.
+        var (broker, orders, billing, inventory, exchange) = await SetUpAsync();
+        await using var _b = broker;
+        await using var _o = orders;
+        await using var _i = billing;
+        await using var _n = inventory;
+
+        for (var i = 0; i < 3; i++)
+        {
+            await inventory.Client.ReadExchangeAsync(
+                new Wire.ReadExchangeRequest { AskingAs = Inventory, ExchangeId = exchange }, cancellationToken: Ct);
+        }
+
+        for (var i = 0; i < 2; i++)
+        {
+            await inventory.Client.SearchHistoryAsync(
+                new Wire.SearchHistoryRequest { AskingAs = Inventory, Words = "invoice total" }, cancellationToken: Ct);
+        }
+
+        var conversation = (await broker.ConnectAsOperator().LocateExchangeAsync(
+            new Wire.LocateExchangeRequest { ExchangeId = exchange }, cancellationToken: Ct)).ConversationId;
+        var export = await broker.ConnectAsOperator().ExportAsync(
+            new Wire.ExportRequest { ConversationId = conversation }, cancellationToken: Ct);
+
+        Assert.Equal(3, Assert.Single(export.Reads, r => r.ExchangeId == exchange).Count);
+        Assert.Equal(2, Assert.Single(export.Reads, r => r.ExchangeId == 0).Count);
+    }
+
+    [Fact]
     public async Task A_refused_search_says_why_and_leaves_no_record()
     {
         var (broker, orders, billing, inventory, exchange) = await SetUpAsync();

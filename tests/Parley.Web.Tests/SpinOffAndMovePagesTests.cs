@@ -479,6 +479,27 @@ public sealed class SpinOffAndMovePagesTests
     }
 
     [Fact]
+    public async Task A_spin_off_with_no_file_sends_one_message_and_tells_the_bell_of_nothing_that_failed()
+    {
+        // With no file there is no second message, and nothing to say about one. Sent anyway, the message naming no file was
+        // refused as empty and the bell said, under the agent's name, that nothing was sent, after a send that went.
+        using var console = Seated();
+        using var client = NoRedirects(console);
+
+        var (response, _) = await PostAsync(client, Spin(), Spinning(Orders));
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Single(console.Broker.Requested);
+        Assert.Empty(console.Broker.Placed);
+
+        var told = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions
+            .GetRequiredService<Parley.Web.Notifications.NotificationLog>(console.Services).All();
+
+        Assert.NotEmpty(told);
+        Assert.All(told, one => Assert.True(one.Good, one.Text));
+    }
+
+    [Fact]
     public async Task A_link_refused_sends_nothing_and_keeps_everything()
     {
         using var console = Seated();

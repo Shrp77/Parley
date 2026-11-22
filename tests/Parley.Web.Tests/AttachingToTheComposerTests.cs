@@ -99,6 +99,32 @@ public sealed partial class AttachingToTheComposerTests
     }
 
     [Fact]
+    public async Task A_file_already_in_the_conversation_with_the_same_content_is_named_and_the_message_goes()
+    {
+        // The same screenshot attached a second time: the broker answers that it is already there with exactly this
+        // content, which is the file the person means. It is named with its hash and the words go. Read as a refusal, the
+        // message could not be sent while that file was attached, and every test passed.
+        using var console = Seated();
+        console.Broker.Placing = (header, bytes) => new Wire.PlaceFileReply
+        {
+            Outcome = Wire.PlaceOutcome.AlreadyCurrent,
+            Rejection = Wire.FileRejection.None,
+            ConversationId = header.ConversationId,
+            Name = header.Name,
+            SizeBytes = bytes.Length,
+            Sha256 = Parley.Core.ContentHash.Of(bytes).Value,
+        };
+
+        var page = await SendAsync(console, "The same screen again.", ("shot.png", Png));
+
+        var ask = AskOf(Assert.Single(console.Broker.Requested));
+
+        Assert.StartsWith("The same screen again.\n\nAttached", ask, StringComparison.Ordinal);
+        Assert.Contains($"shot.png (sha256: {Parley.Core.ContentHash.Of(Png).Value})", ask, StringComparison.Ordinal);
+        Assert.DoesNotContain("could not be attached", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_message_may_be_only_files()
     {
         using var console = Seated();

@@ -185,6 +185,59 @@ public sealed partial class InboxFollowsExchangesTests
     }
 
     [Fact]
+    public async Task What_is_in_flight_and_what_closed_in_a_conversation_past_the_first_page_of_the_list_is_still_listed()
+    {
+        // The broker lists the person's conversations fifty at a time, most recently active first. A request the person
+        // is still waiting on is often in one of the quieter ones, so the Inbox reads every page before it decides.
+        using var console = Console();
+
+        console.Broker.ConversationPageSize = 2;
+        console.Broker.Conversations.Insert(0, new Wire.ConversationSummary
+        {
+            ConversationId = "newer-one",
+            LastActivityUtc = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture),
+        });
+        console.Broker.Conversations.Insert(1, new Wire.ConversationSummary
+        {
+            ConversationId = "newer-two",
+            LastActivityUtc = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture),
+        });
+
+        Said(console, 1, 20, Wire.MessageType.Request, Person, Billing, Ask("Which ledger should the export use?"));
+        Exchange(console, 20, open: true);
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Person, WaitedOn = Billing, ExchangeId = 20 });
+
+        Said(console, 2, 21, Wire.MessageType.Request, Orders, Person, Ask("Turn on the nightly export."));
+        Said(console, 3, 21, Wire.MessageType.Result, Person, Orders, """{"outcomes":[{"id":"request","outcome":"done","text":"Switched on."}]}""");
+        Exchange(console, 21, open: false, Wire.ExchangeOutcome.Complete);
+
+        Assert.Contains("Which ledger should the export use?", await GetAsync(console, "/Inbox?view=flight"), StringComparison.Ordinal);
+        Assert.Contains("Switched on.", await GetAsync(console, "/Inbox?view=closed"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task What_is_in_flight_and_what_closed_in_an_archived_conversation_is_still_listed()
+    {
+        // Archiving files a conversation away from the list. It does not stop the work in it, so a request the person
+        // is waiting on there, and one that closed there this week, are still the person's to see.
+        using var console = Console();
+
+        console.Broker.OmitsArchived = true;
+        console.Broker.Conversations[0].Archived = true;
+
+        Said(console, 1, 20, Wire.MessageType.Request, Person, Billing, Ask("Which ledger should the export use?"));
+        Exchange(console, 20, open: true);
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = Person, WaitedOn = Billing, ExchangeId = 20 });
+
+        Said(console, 2, 21, Wire.MessageType.Request, Orders, Person, Ask("Turn on the nightly export."));
+        Said(console, 3, 21, Wire.MessageType.Result, Person, Orders, """{"outcomes":[{"id":"request","outcome":"done","text":"Switched on."}]}""");
+        Exchange(console, 21, open: false, Wire.ExchangeOutcome.Complete);
+
+        Assert.Contains("Which ledger should the export use?", await GetAsync(console, "/Inbox?view=flight"), StringComparison.Ordinal);
+        Assert.Contains("Switched on.", await GetAsync(console, "/Inbox?view=closed"), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_follow_up_is_a_new_request_to_the_rows_agent_in_its_conversation()
     {
         using var console = Console();

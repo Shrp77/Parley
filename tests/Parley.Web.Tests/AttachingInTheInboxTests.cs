@@ -154,6 +154,42 @@ public sealed partial class AttachingInTheInboxTests
     }
 
     [Fact]
+    public async Task A_reply_that_no_seat_could_send_says_to_attach_the_files_again_and_only_when_there_were_files()
+    {
+        // The seat could not be taken (here, a project this console does not have), so nothing was placed. A browser cannot
+        // fill a file field again, so a page that said only why would send the retry without the files (SPEC.md §5.6).
+        using var console = Asked();
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(new Uri("/Inbox", UriKind.Relative), Ct);
+
+        (string Name, string Value)[] fields =
+        [
+            ("For", "no-such-project"),
+            ("Exchange", Exchange.ToString(CultureInfo.InvariantCulture)),
+            ("Conversation", "shared"),
+            ("Ids", "request"),
+            ("Texts", "Here it is."),
+            ("Verdicts", "done"),
+        ];
+
+        using var withAFile = Form(page, fields, ("shot.png", Png));
+        using var refused = await client.PostAsync(new Uri("/Inbox?handler=Result", UriKind.Relative), withAFile, Ct);
+        var said = await refused.Content.ReadAsStringAsync(Ct);
+
+        Assert.Empty(console.Broker.Placed);
+        Assert.Empty(console.Broker.Resulted);
+        Assert.Contains("Nothing was sent. This console has no such project. Attach your files again.", said, StringComparison.Ordinal);
+
+        using var withNone = Form(page, fields);
+        using var plain = await client.PostAsync(new Uri("/Inbox?handler=Result", UriKind.Relative), withNone, Ct);
+        var saidPlain = await plain.Content.ReadAsStringAsync(Ct);
+
+        Assert.Contains("Nothing was sent. This console has no such project.", saidPlain, StringComparison.Ordinal);
+        Assert.DoesNotContain("Attach your files again", saidPlain, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_follow_up_with_only_a_file_is_sent_naming_it()
     {
         using var console = Asked();
