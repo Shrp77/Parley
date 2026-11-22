@@ -1613,8 +1613,9 @@ CREATE TABLE agents (
   -- same reason. Set by tr_refreshing_marks_the_agent.
   refreshed_utc   TEXT    CHECK (refreshed_utc IS NULL OR unixepoch(refreshed_utc) IS NOT NULL),
   -- When a person froze this agent (§14); NULL when it is not frozen. Nothing starts a frozen agent: not new
-  -- work, not a person's Start or Restart. Only a person writes it. `unfreeze` clears it, and so does the broker's
-  -- next start unless `keep_frozen`. On the agent's row rather than a table of its own, so a purge removes it with
+  -- work, not a person's Start or Restart. Only a person writes it. `unfreeze` clears it; the broker's next start lets
+  -- it lapse unless `keep_frozen`, and clears it once the start the lapse owes has been asked for (§14). On the
+  -- agent's row rather than a table of its own, so a purge removes it with
   -- the row and a rename carries it to the new name.
   frozen_utc        TEXT    CHECK (frozen_utc IS NULL OR unixepoch(frozen_utc) IS NOT NULL),
   -- The run of the broker the person froze it under (§14): a number the broker gives itself at every start, so a later start,
@@ -4591,7 +4592,9 @@ owes open work, as the restart wake does (above). **An unfreeze pays what the fr
 reached a frozen agent had its wake declined, so when the freeze ends, by `unfreeze` or by a lapse, the agent is asked to start if
 anything is waiting for it that it has not collected, whatever the resume policy; after a lapse that is at the first join of its
 machine's node, once the restart wake's five seconds have passed, so a session that outlived the broker attaches again first and
-nobody is started beside it. An agent unfrozen while the freeze's stop is still waiting for its turn to end
+nobody is started beside it. Until that start has been asked for, the lapse stays in the agent's row, read by every surface as no
+freeze, so a broker that starts again before the node joins owes the same start; a person who freezes the agent again meanwhile
+makes a new freeze, which the lapse's payment leaves alone. An agent unfrozen while the freeze's stop is still waiting for its turn to end
 is asked again once that process has gone, because the turn asked for at the unfreeze went to a process the stop then ended. An
 agent that has been retired is not started by a freeze ending. A freeze made with `keep_frozen` (the person's choice, "do not unfreeze on logon")
 is not lifted by a start and stays until the person unfreezes it. Unfreezing forgets the choice. A broker restart that is not a

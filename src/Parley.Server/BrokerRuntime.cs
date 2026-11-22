@@ -61,6 +61,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <summary>The token each node said it gave the agent it is starting, until that agent attaches (SPEC.md §11.7).</summary>
     private readonly ConcurrentDictionary<AgentName, string> _launches = new();
 
+    /// <summary>The last stop (not a restart) asked of each agent: the launch it was asked of and the node connection that took it.</summary>
+    /// <remarks>
+    /// Read when a node reports a launch of a frozen agent, so a stop that connection already holds for that process is not asked
+    /// twice. A stop given to an earlier connection may have gone with it, so only the current one counts.
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, (string? Launch, JoinedNode Node)> _stopAsked = new(StringComparer.Ordinal);
+
     /// <summary>The identity each agent was last registered with, so a command for a node can name the checkout.</summary>
     /// <remarks>
     /// A copy, filled when an agent attaches, is renamed or is read for a node that joins, because a wake is not
@@ -173,8 +180,16 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
     /// <summary>The agents whose freeze lapsed when this broker started, until their machine's node first joins (SPEC.md §14).</summary>
     /// <remarks>
+    /// <para>
     /// A lapse is an unfreeze nobody was there to act on: no node had joined, so nothing could be started. The first join of the
     /// agent's machine pays what an unfreeze pays, a turn for anything that arrived while it was frozen, whatever the resume policy.
+    /// </para>
+    /// <para>
+    /// <b>The store keeps the lapse until it is paid.</b> The row stays frozen under the earlier run until that turn has been
+    /// asked for, and only then is it cleared (<see cref="AgentRepository.ClearLapseAsync"/>), so a broker that starts again
+    /// before the join reads the same lapse and owes the same turn. Nothing here reads it as frozen meanwhile: it is never in
+    /// <see cref="_frozen"/>. A person's freeze or unfreeze of the agent takes it out, because either settles the debt itself.
+    /// </para>
     /// </remarks>
     private readonly ConcurrentDictionary<string, bool> _lapsed = new(StringComparer.Ordinal);
 
@@ -295,16 +310,20 @@ public sealed class BrokerRuntime : IAsyncDisposable
         _ = new NodeRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
         _ = new AgentRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
 
-        // A freeze an earlier run made lapses now, unless the person asked that it outlast a start (SPEC.md §14). Before the set
-        // below is read, so `Ask` never sees what has just lapsed. The agents that owe work are started by the first join of
-        // their machine's node, which wakes every active agent that owes an open exchange. Each is remembered until that join,
-        // because what arrived for it while it was frozen had its wake declined and is owed a turn too.
-        foreach (var lapsed in new AgentRepository(connection).UnfreezeLapsedAsync(RunId).GetAwaiter().GetResult())
+        // A freeze an earlier run made lapses now, unless the person asked that it outlast a start (SPEC.md §14). Kept out of the
+        // set below, so `Ask` and every surface never see what has lapsed as frozen. Each is remembered until the first join of
+        // its machine's node, because what arrived for it while it was frozen had its wake declined and is owed a turn.
+        // **Left stored until that turn has been asked for** (WakeOnceReattachedAsync): cleared here, a second start before
+        // the join found nothing lapsed and the debt was gone (review, lens 1 run A on 6257cf80).
+        var lapsedAtStart = new AgentRepository(connection).LapsedAsync(RunId).GetAwaiter().GetResult();
+
+        foreach (var lapsed in lapsedAtStart)
         {
             _lapsed[lapsed.Value] = true;
         }
 
-        foreach (var frozen in new AgentRepository(connection).GetAllAsync().GetAwaiter().GetResult().Where(a => a.Frozen))
+        foreach (var frozen in new AgentRepository(connection).GetAllAsync().GetAwaiter().GetResult()
+                     .Where(a => a.Frozen && !lapsedAtStart.Contains(a.Name)))
         {
             _frozen[frozen.Name.Value] = true;
         }
@@ -975,6 +994,12 @@ public sealed class BrokerRuntime : IAsyncDisposable
             _frozen[registration.Name.Value] = true;
         }
 
+        // A lapse still owed goes with it too: the stored freeze it clears once paid is the new name's now.
+        if (_lapsed.TryRemove(holder.Name.Value, out _))
+        {
+            _lapsed[registration.Name.Value] = true;
+        }
+
         _ = _identities.TryRemove(holder.Name, out _);
     }
 
@@ -1229,11 +1254,21 @@ public sealed class BrokerRuntime : IAsyncDisposable
                         .ConfigureAwait(false) == WakeOutcome.Unreachable)
                 {
                     _lapsed[agent.Value] = true;
+
+                    continue;
                 }
+
+                // **Paid, so the stored freeze goes now and not before** (review, lens 1 run A on 6257cf80): until here a
+                // broker that started again read the same lapse and owed the same turn. Guarded on the lapse itself, so a
+                // person who froze the agent again meanwhile keeps that freeze. Not cancelled: the turn has been asked for.
+                _ = await UseConnectionAsync(
+                    (connection, _, ct) => new AgentRepository(connection).ClearLapseAsync(agent, RunId, ct),
+                    CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception)
             {
-                // As the restart wake: asked for again at the machine's next join.
+                // As the restart wake: asked for again at the machine's next join, and the store still holds the lapse for a
+                // broker that starts before it. A turn already asked may be asked again then, which is a turn, never a loss.
                 _lapsed[agent.Value] = true;
             }
         }
@@ -1520,12 +1555,17 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         // A freeze made while its node was away asked nobody, and the node's return announces the process again: it is asked
         // to stop now, as the freeze would have (SPEC.md §14). Otherwise it ran on, frozen and given no turns, read on every
-        // surface as stopping once its turn ends (review, lens 1 run 3 on 6fde4ef3).
+        // surface as stopping once its turn ends (review, lens 1 run 3 on 6fde4ef3). Not when this connection already holds a stop
+        // for this very process, and said plainly, because the freeze may have been made while the node was here.
         if (_frozen.ContainsKey(agent.Value)
             && _attached.TryGetValue(agent.Value, out var sessions)
-            && sessions.Any(session => session.StartedByParley))
+            && sessions.Any(session => session.StartedByParley)
+            && !(_stopAsked.TryGetValue(agent.Value, out var asked)
+                 && string.Equals(asked.Launch, token, StringComparison.Ordinal)
+                 && _nodes.TryGetValue(machine, out var current)
+                 && ReferenceEquals(asked.Node, current)))
         {
-            _ = RequestStop(agent, restart: false, "a person froze it while its node was away");
+            _ = RequestStop(agent, restart: false, "a person froze it");
         }
 
         return true;
@@ -1895,8 +1935,14 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <summary>Records in memory that a freeze was written to, or cleared from, the store.</summary>
     /// <param name="agent">The agent.</param>
     /// <param name="frozen">Whether it is frozen now.</param>
+    /// <remarks>
+    /// Either way a lapse still owed is settled: a new freeze puts the debt off again, to be paid by its own unfreeze or lapse,
+    /// and an unfreeze pays it, so the join that was to pay it does not ask a second time.
+    /// </remarks>
     internal void MarkFrozen(AgentName agent, bool frozen)
     {
+        _ = _lapsed.TryRemove(agent.Value, out _);
+
         if (frozen)
         {
             _frozen[agent.Value] = true;
@@ -1955,6 +2001,11 @@ public sealed class BrokerRuntime : IAsyncDisposable
             || !node.RequestStop(agent, IdentityOf(agent), restart, because))
         {
             return StopOutcome.NoNode;
+        }
+
+        if (!restart)
+        {
+            _stopAsked[agent.Value] = (_launches.TryGetValue(agent, out var launch) ? launch : null, node);
         }
 
         return StopOutcome.Sent;

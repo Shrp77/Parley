@@ -1093,15 +1093,26 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <param name="run">The run of the broker freezing it, so a later start can tell this freeze is an earlier run's.</param>
     /// <param name="keepFrozen">Whether the freeze outlasts a start of the broker.</param>
-    /// <returns>One if it was not frozen before, zero if it was frozen already or is not registered.</returns>
-    /// <remarks>Guarded on the current value, so the count is a truthful answer to "did this change anything".</remarks>
+    /// <returns>
+    /// One if it was not frozen before, or its freeze had lapsed; zero if it was frozen already or is not registered.
+    /// </returns>
+    /// <remarks>
+    /// <para>Guarded on the current value, so the count is a truthful answer to "did this change anything".</para>
+    /// <para>
+    /// <b>A lapsed freeze is not a freeze.</b> One an earlier run made and did not keep lapsed when this run started, and stays
+    /// stored only until the start it owes has been asked for (<see cref="ClearLapseAsync"/>). The person freezing it again is
+    /// a new freeze, recorded under this run, which that payment then leaves alone. Only when a run is given: without one the
+    /// row cannot be told apart from a freeze this run made.
+    /// </para>
+    /// </remarks>
     public async Task<int> FreezeAsync(
         AgentName name, DateTimeOffset nowUtc, string? run = null, bool keepFrozen = false,
         CancellationToken cancellationToken = default) =>
         await _connection.ExecuteAsync(
             new CommandDefinition(
                 "UPDATE agents SET frozen_utc = @Now, frozen_run = @Run, keep_frozen = @Keep "
-                + "WHERE name = @Name AND frozen_utc IS NULL "
+                + "WHERE name = @Name "
+                + "AND (frozen_utc IS NULL OR (@Run IS NOT NULL AND keep_frozen = 0 AND frozen_run IS NOT @Run)) "
                 + "AND adapter NOT IN ('parley-console', 'parley-facilitator');",
                 new
                 {
@@ -1123,28 +1134,51 @@ public sealed class AgentRepository(SqliteConnection connection)
                 new { Name = name.Value },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-    /// <summary>Unfreezes every agent that an earlier run of the broker froze and that was not asked to outlast a start.</summary>
+    /// <summary>The agents whose freeze an earlier run of the broker made and did not keep: lapsed now (SPEC.md §14).</summary>
     /// <param name="currentRun">The run the broker is in now.</param>
-    /// <param name="cancellationToken">Cancels the write.</param>
-    /// <returns>The agents that were unfrozen.</returns>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The agents whose freeze has lapsed.</returns>
     /// <remarks>
+    /// <para>
     /// A person's freeze is a decision to keep an agent stopped through the restart they are about to make, and a start of the
     /// broker is the evidence that restart happened, so it lets the freeze lapse. A freeze marked to outlast one does not.
-    /// Read and written in one statement, so an agent frozen a moment later is not caught by a stale list.
+    /// </para>
+    /// <para>
+    /// <b>Read, not cleared.</b> A lapse owes the agent a start for what arrived while it was frozen, and nothing can be started
+    /// until its machine's node joins. Cleared here, a second start of the broker before that join found nothing lapsed and the
+    /// debt was gone (review, lens 1 run A on 6257cf80). The row stays as it is until <see cref="ClearLapseAsync"/>.
+    /// </para>
     /// </remarks>
-    public async Task<IReadOnlyList<AgentName>> UnfreezeLapsedAsync(
+    public async Task<IReadOnlyList<AgentName>> LapsedAsync(
         string currentRun, CancellationToken cancellationToken = default)
     {
         var names = await _connection.QueryAsync<string>(
             new CommandDefinition(
-                "UPDATE agents SET frozen_utc = NULL, frozen_run = NULL, keep_frozen = 0 "
-                + "WHERE frozen_utc IS NOT NULL AND keep_frozen = 0 AND frozen_run IS NOT @Run "
-                + "RETURNING name;",
+                "SELECT name FROM agents "
+                + "WHERE frozen_utc IS NOT NULL AND keep_frozen = 0 AND frozen_run IS NOT @Run;",
                 new { Run = currentRun },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         return [.. names.Select(AgentName.Create)];
     }
+
+    /// <summary>Clears a lapsed freeze once the start it owed has been asked for (SPEC.md §14).</summary>
+    /// <param name="name">The agent.</param>
+    /// <param name="currentRun">The run the broker is in now.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>One if a lapsed freeze was cleared, zero otherwise.</returns>
+    /// <remarks>
+    /// Guarded on what made it a lapse, in the one statement, so a person who froze the agent again in this run, kept or not,
+    /// keeps that freeze: it is stored under this run and no longer matches.
+    /// </remarks>
+    public async Task<int> ClearLapseAsync(
+        AgentName name, string currentRun, CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "UPDATE agents SET frozen_utc = NULL, frozen_run = NULL, keep_frozen = 0 "
+                + "WHERE name = @Name AND frozen_utc IS NOT NULL AND keep_frozen = 0 AND frozen_run IS NOT @Run;",
+                new { Name = name.Value, Run = currentRun },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
 
     /// <summary>
     /// Withdraws a retirement, returning the agent to service.

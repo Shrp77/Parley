@@ -701,6 +701,11 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
                 _runtime.BackgroundTasks(row.Name)),
             OpenOutside = _runtime.OpenOutside(row.Name),
             Unsupervised = _runtime.Unsupervised(row.Name),
+
+            // **Frozen as the broker honours it** (SPEC.md §14): a freeze that lapsed at this start stays stored until the
+            // start it owes has been asked for, and it is not a freeze meanwhile, so it is not shown as one.
+            FrozenUtc = _runtime.IsFrozen(row.Name) ? row.FrozenUtc : null,
+            KeepFrozen = _runtime.IsFrozen(row.Name) && row.KeepFrozen,
         })));
 
         return reply;

@@ -184,6 +184,175 @@ public sealed class ALapsedFreezePaysItsMailTests : IDisposable
         Assert.Equal(0, await again.CountCommandsAsync(Briefly));
     }
 
+    [Fact]
+    public async Task A_lapse_outlives_a_second_start_before_its_node_joins()
+    {
+        // Review, lens 1 run A on 6257cf80: the start cleared the stored freeze at once and kept what it owed only in memory, so
+        // a second start before the node joined found nothing lapsed and the answer waited for something unrelated.
+        await AnsweredWhileFrozenAsync(keep: false, answer: true);
+
+        await using (var second = await LoopbackBroker.StartOnAsync(Store, Ct))
+        {
+            Assert.False(await FrozenAsync(second), "the restart did not lift the freeze");
+        }
+
+        await using var third = await LoopbackBroker.StartOnAsync(Store, Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(third, Here, ["orders"], Ct, reportsTurns: true);
+
+        Assert.Equal(1, await node.CountCommandsAsync(1, Briefly, Patience));
+
+        var command = await node.WaitForCommandAsync(Patience);
+
+        Assert.Equal(Wire.NodeCommand.CommandOneofCase.Start, command.CommandCase);
+        Assert.Equal(Orders, command.Start.Agent);
+    }
+
+    [Fact]
+    public async Task A_lapse_whose_broker_stopped_inside_the_wait_is_paid_once_by_the_next_start()
+    {
+        await AnsweredWhileFrozenAsync(keep: false, answer: true);
+
+        await using (var second = await LoopbackBroker.StartOnAsync(Store, Ct, restartWakeDelay: TimeSpan.FromSeconds(30)))
+        {
+            // Joined, and the broker stops while the lapse's start waits for sessions to attach again.
+            await using var early = await JoinedNodeClient.JoinAsync(
+                second, Here, ["orders"], Ct, reportsTurns: true, waitForRestartWake: false);
+
+            Assert.Equal(0, await early.CountCommandsAsync(Briefly));
+        }
+
+        await using var third = await LoopbackBroker.StartOnAsync(Store, Ct);
+
+        Assert.False(await FrozenAsync(third), "the lapse read as a freeze");
+
+        await using var node = await JoinedNodeClient.JoinAsync(third, Here, ["orders"], Ct, reportsTurns: true);
+
+        Assert.Equal(1, await node.CountCommandsAsync(1, Briefly, Patience));
+        Assert.Equal(Wire.NodeCommand.CommandOneofCase.Start, (await node.WaitForCommandAsync(Patience)).CommandCase);
+    }
+
+    [Fact]
+    public async Task A_lapse_paid_at_one_start_is_not_paid_again_at_the_next()
+    {
+        await AnsweredWhileFrozenAsync(keep: false, answer: true);
+
+        await using (var second = await LoopbackBroker.StartOnAsync(Store, Ct))
+        {
+            await using var node = await JoinedNodeClient.JoinAsync(second, Here, ["orders"], Ct, reportsTurns: true);
+
+            Assert.Equal(1, await node.CountCommandsAsync(1, Briefly, Patience));
+        }
+
+        // The answer is still uncollected (the start was asked of a node that started nothing), so only the lapse having been
+        // cleared once paid stands between it and a second start here. The resume policy is never, so nothing else asks.
+        await using var third = await LoopbackBroker.StartOnAsync(Store, Ct);
+        await using var again = await JoinedNodeClient.JoinAsync(third, Here, ["orders"], Ct, reportsTurns: true);
+
+        Assert.Equal(0, await again.CountCommandsAsync(Briefly));
+        Assert.False(await FrozenAsync(third));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_freeze_made_while_a_lapse_is_owed_takes_and_holds_across_a_restart_only_if_kept(bool keep)
+    {
+        await AnsweredWhileFrozenAsync(keep: false, answer: true);
+
+        await using (var second = await LoopbackBroker.StartOnAsync(Store, Ct))
+        {
+            var frozen = await second.ConnectAsOperator().FreezeAsync(
+                new Wire.FreezeRequest { Agent = Orders, KeepFrozen = keep }, cancellationToken: Ct);
+
+            Assert.True(frozen.Changed, "a freeze over a lapse was taken for one already made");
+            Assert.True(await FrozenAsync(second));
+
+            // The lapse's payment at the join starts nothing and does not clear the person's new freeze.
+            await using var node = await JoinedNodeClient.JoinAsync(second, Here, ["orders"], Ct, reportsTurns: true);
+
+            Assert.Equal(0, await node.CountCommandsAsync(Briefly));
+            Assert.True(await FrozenAsync(second), "the lapse's payment cleared the person's new freeze");
+        }
+
+        await using var third = await LoopbackBroker.StartOnAsync(Store, Ct);
+
+        Assert.Equal(keep, await FrozenAsync(third));
+
+        await using var later = await JoinedNodeClient.JoinAsync(third, Here, ["orders"], Ct, reportsTurns: true);
+
+        Assert.Equal(keep ? 0 : 1, await later.CountCommandsAsync(keep ? 0 : 1, Briefly, Patience));
+    }
+
+    [Fact]
+    public async Task A_freeze_made_inside_the_lapses_wait_is_not_cleared_by_the_lapses_payment()
+    {
+        // The node has joined and the lapse's start is waiting for sessions to attach again when the person freezes the agent,
+        // kept. The payment that follows finds it frozen, starts nothing, and must leave the person's freeze stored.
+        await AnsweredWhileFrozenAsync(keep: false, answer: true);
+
+        await using (var second = await LoopbackBroker.StartOnAsync(Store, Ct, restartWakeDelay: TimeSpan.FromSeconds(1)))
+        {
+            await using var node = await JoinedNodeClient.JoinAsync(
+                second, Here, ["orders"], Ct, reportsTurns: true, waitForRestartWake: false);
+
+            Assert.True((await second.ConnectAsOperator().FreezeAsync(
+                new Wire.FreezeRequest { Agent = Orders, KeepFrozen = true }, cancellationToken: Ct)).Changed);
+
+            await second.Runtime.RestartWakeOf(Here).WaitAsync(Patience, Ct);
+
+            Assert.Equal(0, await node.CountCommandsAsync(Briefly));
+            Assert.True(await FrozenAsync(second), "the lapse's payment cleared the person's new freeze");
+        }
+
+        await using var third = await LoopbackBroker.StartOnAsync(Store, Ct);
+
+        Assert.True(await FrozenAsync(third), "the person's kept freeze did not outlast the restart");
+
+        await using var later = await JoinedNodeClient.JoinAsync(third, Here, ["orders"], Ct, reportsTurns: true);
+
+        Assert.Equal(0, await later.CountCommandsAsync(Briefly));
+    }
+
+    [Fact]
+    public async Task An_unfreeze_of_a_lapse_still_owed_pays_it_once()
+    {
+        await AnsweredWhileFrozenAsync(keep: false, answer: true);
+
+        await using var second = await LoopbackBroker.StartOnAsync(Store, Ct, restartWakeDelay: TimeSpan.FromSeconds(1));
+        await using var node = await JoinedNodeClient.JoinAsync(
+            second, Here, ["orders"], Ct, reportsTurns: true, waitForRestartWake: false);
+
+        // Before the lapse's wait is over: the unfreeze pays, and the join that was to pay asks nothing more.
+        var lifted = await second.ConnectAsOperator().UnfreezeAsync(new Wire.AgentRequest { Agent = Orders }, cancellationToken: Ct);
+
+        Assert.True(lifted.Changed);
+
+        await second.Runtime.RestartWakeOf(Here).WaitAsync(Patience, Ct);
+
+        Assert.Equal(1, await node.CountCommandsAsync(1, Briefly, Patience));
+        Assert.False(await FrozenAsync(second));
+    }
+
+    [Fact]
+    public async Task The_registry_and_a_persons_start_read_a_lapse_still_owed_as_not_frozen()
+    {
+        await AnsweredWhileFrozenAsync(keep: false, answer: true);
+
+        await using var second = await LoopbackBroker.StartOnAsync(Store, Ct);
+
+        var row = (await second.ConnectAsOperator().DescribeRegistryAsync(new Wire.Empty(), cancellationToken: Ct)).Rows
+            .Single(r => r.Name == Orders);
+
+        Assert.Empty(row.FrozenUtc);
+        Assert.False(row.KeepFrozen);
+        Assert.False(second.Runtime.IsFrozen(Parley.Core.AgentName.Create(Orders)));
+
+        // No node is here, so nothing starts, but it is not refused as frozen.
+        var started = await second.ConnectAsOperator().StartAsync(new Wire.StartRequest { Agent = Orders }, cancellationToken: Ct);
+
+        Assert.False(started.Changed);
+    }
+
     /// <summary>
     /// The first run of the broker: one agent asks another a question and is frozen, and the other answers or does not. No node
     /// is joined, so nothing is started and nothing is collected.

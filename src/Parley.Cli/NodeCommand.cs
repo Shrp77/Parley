@@ -1607,7 +1607,7 @@ public static class NodeCommand
         public static readonly Ending Stop = new(
             "not stopped — this node is not running it.",
             Restarts: false,
-            "stopped once its turn was over, as a person asked. The next work for it starts it again.",
+            "stopped once its turn was over, as a person asked. The next work for it starts it again, unless it is frozen.",
             string.Empty,
             "a stop");
     }

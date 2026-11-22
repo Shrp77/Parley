@@ -139,32 +139,56 @@ public sealed class AgentFreezeTests : IDisposable
     }
 
     [Fact]
-    public async Task A_later_run_lifts_a_freeze_an_earlier_run_made_and_leaves_one_this_run_made()
+    public async Task A_later_run_finds_a_freeze_an_earlier_run_made_lapsed_and_leaves_one_this_run_made()
     {
         var orders = AgentName.Create("orders@test");
         var billing = AgentName.Create("billing@test");
         _ = await _agents.FreezeAsync(orders, Then, "11111111-1111-1111-1111-111111111111", cancellationToken: Ct);
         _ = await _agents.FreezeAsync(billing, Then, "22222222-2222-2222-2222-222222222222", cancellationToken: Ct);
 
-        var lifted = await _agents.UnfreezeLapsedAsync("22222222-2222-2222-2222-222222222222", Ct);
+        var lapsed = await _agents.LapsedAsync("22222222-2222-2222-2222-222222222222", Ct);
 
-        Assert.Equal([orders], lifted);
+        Assert.Equal([orders], lapsed);
+
+        // Read, not cleared: the row keeps the lapse until the start it owes has been asked for.
+        Assert.True((await Read("orders@test")).Frozen);
+
+        Assert.Equal(1, await _agents.ClearLapseAsync(orders, "22222222-2222-2222-2222-222222222222", Ct));
+        Assert.Equal(0, await _agents.ClearLapseAsync(billing, "22222222-2222-2222-2222-222222222222", Ct));
         Assert.False((await Read("orders@test")).Frozen);
         Assert.True((await Read("billing@test")).Frozen);
     }
 
     [Fact]
-    public async Task A_freeze_kept_across_a_start_is_not_lifted_and_says_so_in_its_record()
+    public async Task A_freeze_kept_across_a_start_is_not_lapsed_and_says_so_in_its_record()
     {
         var orders = AgentName.Create("orders@test");
         _ = await _agents.FreezeAsync(orders, Then, "11111111-1111-1111-1111-111111111111", keepFrozen: true, cancellationToken: Ct);
 
-        Assert.Empty(await _agents.UnfreezeLapsedAsync("22222222-2222-2222-2222-222222222222", Ct));
+        Assert.Empty(await _agents.LapsedAsync("22222222-2222-2222-2222-222222222222", Ct));
+        Assert.Equal(0, await _agents.ClearLapseAsync(orders, "22222222-2222-2222-2222-222222222222", Ct));
 
         var row = await Read("orders@test");
 
         Assert.True(row.Frozen);
         Assert.True(row.KeepFrozen);
+    }
+
+    [Fact]
+    public async Task Freezing_a_lapsed_agent_again_takes_and_the_lapse_then_clears_nothing()
+    {
+        var orders = AgentName.Create("orders@test");
+        const string Now = "22222222-2222-2222-2222-222222222222";
+        _ = await _agents.FreezeAsync(orders, Then, "11111111-1111-1111-1111-111111111111", cancellationToken: Ct);
+
+        // A freeze this run made over a lapsed one is a change, and the freeze is this run's now.
+        Assert.Equal(1, await _agents.FreezeAsync(orders, Then.AddHours(1), Now, cancellationToken: Ct));
+        Assert.Equal(Then.AddHours(1), (await Read("orders@test")).FrozenUtc);
+        Assert.Equal(0, await _agents.FreezeAsync(orders, Then.AddHours(2), Now, cancellationToken: Ct));
+
+        Assert.Empty(await _agents.LapsedAsync(Now, Ct));
+        Assert.Equal(0, await _agents.ClearLapseAsync(orders, Now, Ct));
+        Assert.True((await Read("orders@test")).Frozen);
     }
 
     [Fact]
