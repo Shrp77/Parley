@@ -18,9 +18,12 @@ namespace Parley.Cli.Tests;
 /// </para>
 /// <para>
 /// Driven with a stand-in agent whose turn takes three seconds, so both endings are asked while the first waits for it.
+/// Each case is a three-second turn plus a three-second wait for anything still to come: about 26 seconds a run, so it
+/// stays out of the smoke run.
 /// </para>
 /// </remarks>
 [Integration]
+[Slow]
 public sealed class TheLastEndingAskedIsTheOneDoneTests : IDisposable
 {
     private const string Agent = "docs@alpha";

@@ -10,8 +10,9 @@ namespace Parley.Web.Tests;
 /// snapped shut within one refresh, the link they were on lost the focus, and a screen reader was handed the whole graph
 /// again (review, lens 1 run 1 on 0.64.4). The list is the picture's equal, so it has to be readable for longer than that.
 /// Read from the script as code, comments out, so a guard that is commented out does not count as there.
+/// It reads the layout from the repository, a file, so it is an integration test like the other script guards.
 /// </remarks>
-[Unit]
+[Integration]
 public sealed class TheGraphPanelRefreshesInPlaceTests
 {
     private static string Layout => ScriptSource.Page("src/Parley.Web/Pages/Shared/_Layout.cshtml");
