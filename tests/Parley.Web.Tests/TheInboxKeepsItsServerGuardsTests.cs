@@ -278,6 +278,81 @@ public sealed partial class TheInboxKeepsItsServerGuardsTests
         }
     }
 
+    [Theory]
+    [InlineData("Result")]
+    [InlineData("Clarify")]
+    public async Task A_refused_answer_goes_back_only_into_its_own_projects_row(string handler)
+    {
+        // Exchange numbers are unique only within a project. Without the project in the match, a Result or a Clarify
+        // refused in alpha filled the row of the same number in beta with alpha's words, verdict and attached file names,
+        // and opened it: one press from being sent to a different agent about a different question.
+        using var console = new TwoProjects();
+
+        Asked(console.Alpha, "alpha", 20, Orders, "What alpha was asked.");
+        Asked(console.Beta, "beta", 20, Billing, "What beta was asked.");
+        console.Alpha.FailsOn = "/parley.v1.Agents/" + handler;
+
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(new Uri("/Inbox", UriKind.Relative), Ct);
+
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent(Token().Match(page).Groups[1].Value), "__RequestVerificationToken" },
+            { new StringContent("alpha"), "For" },
+            { new StringContent("20"), "Exchange" },
+            { new StringContent("talk"), "Conversation" },
+            { new StringContent("request"), "Ids" },
+            { new StringContent("Words for alpha alone"), "Texts" },
+            { new StringContent("blocked:conflict"), "Verdicts" },
+            { new StringContent("A question for alpha alone"), "Clarification" },
+            { new StringContent("alphas-screen.png"), "Attached" },
+        };
+
+        using var response = await client.PostAsync(new Uri("/Inbox?handler=" + handler, UriKind.Relative), form, Ct);
+        var after = await response.Content.ReadAsStringAsync(Ct);
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(console.Alpha.Resulted);
+        Assert.Empty(console.Beta.Resulted);
+
+        var rows = after.Split("<details class=\"dgrid-row\" role=\"row\"");
+        var alpha = Assert.Single(rows, row => row.Contains("What alpha was asked.", StringComparison.Ordinal));
+        var beta = Assert.Single(rows, row => row.Contains("What beta was asked.", StringComparison.Ordinal));
+        var words = handler == "Result" ? "Words for alpha alone" : "A question for alpha alone";
+
+        // Alpha's row comes back open with everything the person had put in it.
+        Assert.StartsWith(" open=\"open\"", alpha, StringComparison.Ordinal);
+        Assert.Contains(words, alpha, StringComparison.Ordinal);
+        Assert.Contains("alphas-screen.png", alpha, StringComparison.Ordinal);
+
+        // Beta's row has the same exchange number and none of it.
+        Assert.False(beta.StartsWith(" open=", StringComparison.Ordinal), "the row of the same number in another project was opened");
+        Assert.DoesNotContain("for alpha alone", beta, StringComparison.Ordinal);
+        Assert.DoesNotContain("alphas-screen.png", beta, StringComparison.Ordinal);
+        Assert.DoesNotContain("value=\"blocked:conflict\" selected", beta, StringComparison.Ordinal);
+
+        if (handler == "Result")
+        {
+            Assert.Contains("value=\"blocked:conflict\" selected", alpha, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>An open exchange an agent asked the person, which the person has not answered yet.</summary>
+    private static void Asked(RoadmapBroker broker, string project, long exchange, string agent, string ask)
+    {
+        Said(
+            broker, exchange * 10, exchange, Wire.MessageType.Request, agent, PersonOf(project),
+            "{\"ask\":" + JsonSerializer.Serialize(ask) + "}", 5, "talk");
+        broker.ExportExchanges.Add(new Wire.ExchangeSnapshot
+        {
+            ExchangeId = exchange,
+            State = Wire.ExchangeState.Open,
+            OpenedUtc = DateTimeOffset.UtcNow.AddMinutes(-5).ToString("O", CultureInfo.InvariantCulture),
+        });
+        broker.Edges.Add(new Wire.WaitingEdge { Waiter = agent, WaitedOn = PersonOf(project), ExchangeId = exchange });
+    }
+
     /// <summary>An open exchange the person asked an agent, which the agent has not answered yet.</summary>
     private static void InFlight(RoadmapBroker broker, string project, long exchange, string agent, string ask)
     {

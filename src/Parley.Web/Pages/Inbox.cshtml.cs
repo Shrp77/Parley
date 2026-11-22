@@ -120,31 +120,40 @@ public sealed class InboxModel(
     public IList<string> Attached { get; set; } = [];
 
     /// <summary>The files a refused send kept for one form of a row, to go back in its box.</summary>
+    /// <param name="project">The row's project.</param>
     /// <param name="exchange">The row's exchange.</param>
     /// <param name="form"><c>Result</c> or <c>Clarify</c>.</param>
     /// <returns>The kept files, or nothing.</returns>
-    public IReadOnlyList<string>? KeptFiles(long exchange, string form) =>
-        Kept(exchange) && string.Equals(_filesFor, form, StringComparison.Ordinal) ? [.. Attached] : null;
+    public IReadOnlyList<string>? KeptFiles(string project, long exchange, string form) =>
+        Kept(project, exchange) && string.Equals(_filesFor, form, StringComparison.Ordinal) ? [.. Attached] : null;
 
     /// <summary>Whether this exchange's form was just refused, and holds what the person wrote.</summary>
+    /// <param name="project">The row's project.</param>
     /// <param name="exchange">The exchange.</param>
     /// <returns>Whether its row is opened and its boxes filled again.</returns>
-    /// <remarks>Refused or not, a page that came back with empty boxes would lose everything they typed.</remarks>
-    public bool Kept(long exchange) => _refused && exchange == Exchange;
+    /// <remarks>
+    /// Refused or not, a page that came back with empty boxes would lose everything they typed. An exchange's number is
+    /// its own only within a project, so the project is compared too: the words refused in one project would otherwise
+    /// fill the row of the same number in another, one press from being sent there.
+    /// </remarks>
+    public bool Kept(string project, long exchange) =>
+        _refused && exchange == Exchange && string.Equals(project, For, StringComparison.Ordinal);
 
     /// <summary>What the person wrote in an item's box, when the send was refused.</summary>
+    /// <param name="project">The row's project.</param>
     /// <param name="exchange">The exchange.</param>
     /// <param name="id">The item.</param>
     /// <returns>Their words, or nothing.</returns>
-    public string? KeptText(long exchange, string id) =>
-        Kept(exchange) && Ids.IndexOf(id) is >= 0 and var at && at < Texts.Count ? Texts[at] : null;
+    public string? KeptText(string project, long exchange, string id) =>
+        Kept(project, exchange) && Ids.IndexOf(id) is >= 0 and var at && at < Texts.Count ? Texts[at] : null;
 
     /// <summary>The outcome the person chose for an item, when the send was refused.</summary>
+    /// <param name="project">The row's project.</param>
     /// <param name="exchange">The exchange.</param>
     /// <param name="id">The item.</param>
     /// <returns>Their choice, or nothing.</returns>
-    public string? KeptVerdict(long exchange, string id) =>
-        Kept(exchange) && Ids.IndexOf(id) is >= 0 and var at && at < Verdicts.Count ? Verdicts[at] : null;
+    public string? KeptVerdict(string project, long exchange, string id) =>
+        Kept(project, exchange) && Ids.IndexOf(id) is >= 0 and var at && at < Verdicts.Count ? Verdicts[at] : null;
 
     /// <summary>The project a form was submitted for.</summary>
     [BindProperty, FromForm]

@@ -263,7 +263,7 @@
                 var payload = Payload.Read(item.Message.PayloadJson);
                 var owed = item.Items();
 
-                <details class="dgrid-row" role="row" open="@Model.Kept(item.Message.ExchangeId)">
+                <details class="dgrid-row" role="row" open="@Model.Kept(projectName, item.Message.ExchangeId)">
                     <summary class="dgrid-line">
                         <span role="cell">
                             <span class="who slot-@Palette.SlotFor(item.Message.From)" aria-hidden="true" style="display:inline-grid;vertical-align:middle;margin-right:0.5rem;width:1.6rem;height:1.6rem;font-size:0.58rem;">@Palette.BadgeFor(item.Message.From)</span>
@@ -310,13 +310,13 @@
                                         <input type="hidden" name="Ids" value="@id" />
                                         <partial name="_Composer" model="@(new Parley.Web.ComposerBox(
                                             "Texts",
-                                            Model.KeptText(item.Message.ExchangeId, id),
+                                            Model.KeptText(projectName, item.Message.ExchangeId, id),
                                             Id: $"t-{item.Message.ExchangeId}-{id}",
                                             Rows: 2,
                                             Label: $"{id} — what was done, the answer, or what blocks it",
                                             ShowKeys: false,
                                             Attach: id == owed[0],
-                                            Attached: id == owed[0] ? Model.KeptFiles(item.Message.ExchangeId, "Result") : null,
+                                            Attached: id == owed[0] ? Model.KeptFiles(projectName, item.Message.ExchangeId, "Result") : null,
                                             Draft: $"{projectName}/result/{item.Message.ExchangeId}/{id}",
                                             Mentions: Model.MentionsIn(projectName)))" />
                                         @* Labelled on screen, not only for a screen reader: an unlabelled "Done" read as a
@@ -325,7 +325,7 @@
                                         <select name="Verdicts" id="v-@item.Message.ExchangeId-@id">
                                             @foreach (var (value, says) in SeatVoice.Outcomes)
                                             {
-                                                <option value="@value" selected="@(Model.KeptVerdict(item.Message.ExchangeId, id) == value)">@says</option>
+                                                <option value="@value" selected="@(Model.KeptVerdict(projectName, item.Message.ExchangeId, id) == value)">@says</option>
                                             }
                                         </select>
                                     }
@@ -349,12 +349,12 @@
                                     <input type="hidden" name="Conversation" value="@item.Message.ConversationId" />
                                     <partial name="_Composer" model="@(new Parley.Web.ComposerBox(
                                         "Clarification",
-                                        Model.Kept(item.Message.ExchangeId) ? Model.Clarification : null,
+                                        Model.Kept(projectName, item.Message.ExchangeId) ? Model.Clarification : null,
                                         Id: $"c-{item.Message.ExchangeId}",
                                         Rows: 2,
                                         Label: item.OwesReply ? "Your reply" : "Or ask them to clarify",
                                         Attach: true,
-                                        Attached: Model.KeptFiles(item.Message.ExchangeId, "Clarify"),
+                                        Attached: Model.KeptFiles(projectName, item.Message.ExchangeId, "Clarify"),
                                         Draft: $"{projectName}/clarify/{item.Message.ExchangeId}",
                                         Mentions: Model.MentionsIn(projectName)))" />
                                     <button type="submit">@(item.OwesReply ? "Reply" : "Ask")</button>
