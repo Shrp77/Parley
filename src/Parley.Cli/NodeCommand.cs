@@ -387,6 +387,12 @@ public static class NodeCommand
         {
             // Ctrl+C, which is how this command is meant to end.
         }
+        catch (RpcException failure) when (failure.StatusCode == StatusCode.Cancelled && cancellationToken.IsCancellationRequested)
+        {
+            // **Ctrl+C, SIGTERM or SIGHUP, arriving as the node's stream ending.** The stream is cancelled from this side,
+            // which gRPC reports as an RpcException rather than an OperationCanceledException: told as "the broker refused
+            // that" and exit 74, a `systemctl stop` of `parley up` read as a failed stop (review, lens 1 run A on 6561e9ea).
+        }
         catch (RpcException failure) when (failure.StatusCode == StatusCode.Unavailable)
         {
             await output.WriteLineAsync(
@@ -1918,7 +1924,16 @@ public static class NodeCommand
         _ = await resident.ShutdownAsync(ShutdownGrace).ConfigureAwait(false);
         await resident.DisposeAsync().ConfigureAwait(false);
 
-        await output.WriteLineAsync($"  {named}: stopped.").ConfigureAwait(false);
+        try
+        {
+            await output.WriteLineAsync($"  {named}: stopped.").ConfigureAwait(false);
+        }
+        catch (IOException)
+        {
+            // **The terminal has gone, which is why this sweep runs.** After a hangup every write to it fails; thrown, the
+            // first line aborted the process and every agent after the first was never told to quit (review, lens 1 run A
+            // on 6561e9ea). The agent has stopped either way; only the line about it is lost.
+        }
     }
 
     /// <summary>Stops every agent this node started.</summary>
