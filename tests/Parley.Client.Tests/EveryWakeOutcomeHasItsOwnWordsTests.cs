@@ -56,4 +56,20 @@ public sealed class EveryWakeOutcomeHasItsOwnWordsTests
 
         Assert.Contains("2 left running, started for it once that process ends", said, StringComparison.Ordinal);
     }
+
+    // Review, lens 3 run A on 81b6a1a7: with the frozen count left out of a broadcast's report every test stayed green, and a
+    // person who sent to everybody was told nothing of the receivers that will not read it until they are unfrozen.
+    [Fact]
+    public void A_request_to_everybody_counts_the_receivers_that_are_frozen()
+    {
+        var said = SeatVoice.Reported(
+            3,
+            3,
+            stopped: false,
+            new Dictionary<Wire.WakeOutcome, int> { [Wire.WakeOutcome.Started] = 1, [Wire.WakeOutcome.Frozen] = 2 },
+            [],
+            []);
+
+        Assert.Contains("2 frozen, reading it once unfrozen", said, StringComparison.Ordinal);
+    }
 }

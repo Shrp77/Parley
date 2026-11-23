@@ -390,6 +390,39 @@ public sealed class AgentFreezingAcrossProjectsTests
         Assert.False(outcome.Complete);
     }
 
+    // Review, lens 3 run A on 81b6a1a7: the acting project's row is read whatever its standing there, which no test held.
+    // Looked up among active rows only, an agent retired here but still serving another project was reached nowhere.
+    [Fact]
+    public async Task An_agent_retired_where_the_person_acts_is_still_frozen_where_it_serves()
+    {
+        using var deployment = new Deployment("alpha", "beta");
+
+        deployment["alpha"].Registry.Add(Row(Inv, Wire.AgentStatus.Retired, identity: First));
+        deployment["beta"].Registry.Add(Row(Stock, identity: First));
+
+        var outcome = await AgentFreezing.FreezeAsync(deployment.Directory, "alpha", Inv, cancellationToken: Ct);
+
+        Assert.Empty(deployment["alpha"].Frozen);
+        Assert.Equal([Stock.Value], deployment["beta"].Frozen.Select(f => f.Agent));
+        Assert.Equal(["beta"], outcome.Projects.Select(p => p.Project));
+    }
+
+    // Review, lens 3 run A on 81b6a1a7: a project where the act failed is named with the agent's name there too, as one where
+    // it was done is, so the person knows which agent to look at in it.
+    [Fact]
+    public async Task A_project_where_it_could_not_be_done_says_the_agents_name_there()
+    {
+        using var deployment = new Deployment("alpha", "beta");
+
+        deployment["alpha"].Registry.Add(Row(Inv, identity: First));
+        deployment["beta"].Registry.Add(Row(Stock, identity: First));
+        deployment["beta"].FailsOn = "/Freeze";
+
+        var outcome = await AgentFreezing.FreezeAsync(deployment.Directory, "alpha", Inv, cancellationToken: Ct);
+
+        Assert.Contains("beta (as 'stock@test'): not done.", AgentFreezing.Describe(outcome), StringComparison.Ordinal);
+    }
+
     private static Wire.RegistryRow Row(
         AgentName agent,
         Wire.AgentStatus status = Wire.AgentStatus.Active,

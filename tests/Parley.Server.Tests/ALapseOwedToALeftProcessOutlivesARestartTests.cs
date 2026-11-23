@@ -108,6 +108,80 @@ public sealed class ALapseOwedToALeftProcessOutlivesARestartTests : IDisposable
         Assert.Equal(0, await again.CountCommandsAsync(TimeSpan.FromSeconds(1)));
     }
 
+    // Review, lens 3 run A on 81b6a1a7: with the store left holding a lapse the left process's detach had paid, every
+    // test here stayed green, and each later start of the broker started the agent again for work it had been asked for.
+    [Fact]
+    public async Task A_lapse_paid_when_the_left_process_goes_is_not_asked_again_by_the_next_start()
+    {
+        // Never, so the restart wake starts nobody and only a lapse still stored could start orders afterwards.
+        var options = BrokerOptions.Default with { ResumePolicy = ResumePolicy.Never };
+
+        await FrozenWithAResultWaitingAsync(options);
+
+        await using (var second = await LoopbackBroker.StartOnAsync(Store, Ct, restartWakeDelay: Wait, options: options))
+        {
+            await using var node = await JoinedNodeClient.JoinAsync(second, Here, ["orders", "billing"], Ct, reportsTurns: true, waitForRestartWake: false);
+            var left = await AttachedClient.AttachAsync(second, Orders, cancellationToken: Ct, launchToken: Gone, processId: LeftProcess);
+
+            await second.Runtime.RestartWakeOf(Here).WaitAsync(Patience, Ct);
+
+            Assert.Equal(0, await node.CountCommandsAsync(TimeSpan.FromMilliseconds(500)));
+
+            // It exits without collecting: the lapse's start is asked now, and the lapse is paid.
+            await left.DisposeAsync();
+            await second.WaitUntilDetachedAsync(Orders, Patience);
+
+            _ = await node.CountCommandsAsync(TimeSpan.FromSeconds(2));
+
+            Assert.Equal(1, node.Commands.Count(StartOf(Orders)));
+        }
+
+        await using var third = await LoopbackBroker.StartOnAsync(Store, Ct, restartWakeDelay: Wait, options: options);
+        await using var again = await JoinedNodeClient.JoinAsync(third, Here, ["orders", "billing"], Ct, reportsTurns: true, waitForRestartWake: false);
+
+        await third.Runtime.RestartWakeOf(Here).WaitAsync(Patience, Ct);
+
+        Assert.Equal(0, await again.CountCommandsAsync(TimeSpan.FromSeconds(1)));
+    }
+
+    // The same when the node announces the process again (TakenBack) rather than the process going: the turn it is asked
+    // pays the lapse, so the store does not keep it for the next start.
+    [Fact]
+    public async Task A_lapse_paid_when_its_node_takes_the_process_back_is_not_asked_again_by_the_next_start()
+    {
+        var options = BrokerOptions.Default with { ResumePolicy = ResumePolicy.Never };
+
+        await FrozenWithAResultWaitingAsync(options);
+
+        await using (var second = await LoopbackBroker.StartOnAsync(Store, Ct, restartWakeDelay: Wait, options: options))
+        {
+            await using var node = await JoinedNodeClient.JoinAsync(second, Here, ["orders", "billing"], Ct, reportsTurns: true, waitForRestartWake: false);
+            var process = await AttachedClient.AttachAsync(second, Orders, cancellationToken: Ct, launchToken: Gone, processId: LeftProcess);
+
+            await second.Runtime.RestartWakeOf(Here).WaitAsync(Patience, Ct);
+
+            Assert.Equal(0, await node.CountCommandsAsync(TimeSpan.FromMilliseconds(500)));
+
+            _ = await node.Nodes.ReportLaunchAsync(
+                new Wire.LaunchReport { Machine = Here, Agent = Orders, Token = Gone }, cancellationToken: Ct);
+
+            // The passed-over start is asked of the process it now supervises, as a turn.
+            _ = await node.CountCommandsAsync(1, TimeSpan.FromMilliseconds(500), Patience);
+
+            Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, Assert.Single(node.Commands).CommandCase);
+
+            await process.DisposeAsync();
+            await second.WaitUntilDetachedAsync(Orders, Patience);
+        }
+
+        await using var third = await LoopbackBroker.StartOnAsync(Store, Ct, restartWakeDelay: Wait, options: options);
+        await using var again = await JoinedNodeClient.JoinAsync(third, Here, ["orders", "billing"], Ct, reportsTurns: true, waitForRestartWake: false);
+
+        await third.Runtime.RestartWakeOf(Here).WaitAsync(Patience, Ct);
+
+        Assert.Equal(0, await again.CountCommandsAsync(TimeSpan.FromSeconds(1)));
+    }
+
     private static Func<Wire.NodeCommand, bool> StartOf(string agent) =>
         command => command.CommandCase == Wire.NodeCommand.CommandOneofCase.Start && command.Start.Agent == agent;
 

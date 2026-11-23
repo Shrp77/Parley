@@ -195,6 +195,71 @@ public sealed class TheLastEndingAskedIsTheOneDoneTests : IDisposable
         }
     }
 
+    // Review, lens 3 run A on 81b6a1a7: with the waiter keeping its first asker after a later ending replaced it, every test
+    // stayed green, since each asked from one node: the later ending was done in the first asker's name, with its catalogue,
+    // and reported to its node rather than to the one that asked it.
+    [Fact]
+    public async Task A_later_ending_from_another_project_is_reported_to_that_projects_node()
+    {
+        var (catalogue, _, residents, _, turn, first) = await HoldingATurnAsync();
+        var second = new Said();
+
+        try
+        {
+            await NodeCommand.StopAsync(
+                new Wire.StopAgent { Agent = Agent, Because = "stuck" }, catalogue, "alpha", residents, first.Writer, Ct);
+            await NodeCommand.StopAsync(
+                new Wire.StopAgent { Agent = Agent, Because = "stuck", Restart = true }, catalogue, "alpha", residents, second.Writer, Ct);
+
+            _ = await turn;
+
+            await second.UntilAsync("restarted once its turn was over, as a person asked");
+
+            Assert.DoesNotContain("once its turn was over", first.Text, StringComparison.Ordinal);
+        }
+        finally
+        {
+            await DisposeAllAsync(residents);
+        }
+    }
+
+    // Review, lens 3 run A on 81b6a1a7: a waiter whose only asker's node stopped was handed on to that same stopped asker, or
+    // left recorded with nobody waiting, with every test green; a stop asked afterwards was taken for one already waiting, and
+    // either went nowhere or kept the node spinning.
+    [Fact]
+    public async Task A_waiter_whose_only_askers_node_stops_lets_go_and_a_later_stop_waits_afresh()
+    {
+        var (catalogue, _, residents, old, turn, said) = await HoldingATurnAsync();
+
+        try
+        {
+            using var projectA = new CancellationTokenSource();   // the only asker's node loop, which then stops
+            await NodeCommand.StopAsync(
+                new Wire.StopAgent { Agent = Agent, Because = "stuck" }, catalogue, "alpha", residents, said.Writer, projectA.Token);
+            await projectA.CancelAsync();
+
+            // Long enough for the waiter to see its node stop; the turn still has two seconds to run.
+            await Task.Delay(TimeSpan.FromSeconds(1), Ct);
+
+            await NodeCommand.StopAsync(
+                new Wire.StopAgent { Agent = Agent, Because = "stuck" }, catalogue, "alpha", residents, said.Writer, Ct);
+
+            Assert.DoesNotContain("asked again", said.Text, StringComparison.Ordinal);
+
+            _ = await turn;
+
+            await said.UntilAsync("stopped once its turn was over, as a person asked");
+            await UntilAsync(() => !old.IsAlive && residents.IsEmpty);
+
+            Assert.False(old.IsAlive, $"the old process still runs. The node said: {said.Text}");
+            Assert.True(residents.IsEmpty, $"something is running. The node said: {said.Text}");
+        }
+        finally
+        {
+            await DisposeAllAsync(residents);
+        }
+    }
+
     // Starts the agent and begins a three-second turn, returning once the turn is under way.
     private async Task<(NodeCatalogue Catalogue, AgentIdentity Identity, ConcurrentDictionary<AgentIdentity, ResidentAgent> Residents, ResidentAgent Old, Task<TurnOutcome> Turn, Said Said)>
         HoldingATurnAsync()
