@@ -302,8 +302,9 @@ function Stop-Broker {
 
     # **A web UI whose broker has gone is an orphan, and it is this script that orphaned it.**
     # Stopping a scheduled task terminates the process; it does not ask it to exit, so the broker
-    # never reaches the code that ends the child it started. The child keeps running, keeps the
-    # port, and keeps `parley-web-ui.exe` mapped -- which refuses the very install that stopped
+    # never reaches the code that ends the child it started. A broker from 0.64.45 on hands its web UI
+    # a pipe that closes when the broker dies, so its child ends too; one from before kept running,
+    # kept the port, and kept `parley-web-ui.exe` mapped -- which refused the very install that stopped
     # the broker, every time, with a refusal naming a process the person never started and cannot see.
     #
     # **Told apart by its parent rather than by its name**, because a web UI somebody started by

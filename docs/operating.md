@@ -19,10 +19,12 @@ in `settings.json` (see [Configuration](configuration.md#reaching-the-console-by
 which protects it from DNS rebinding, and it refuses a request another site started, so a page you visit cannot act
 through it. It binds to loopback unless you give it an address.
 
-The broker names the console's address only once the console says it is serving. If it says
-*Web UI: did not start* because another program holds the address, the console is not running:
-close that program, or start the broker with `--web-ui` and another address. The broker and the
-terminal keep working either way.
+The broker tells you to open the console's address only once the console says it is serving; if it
+has not said so within half a minute, the broker says it started but is not answering yet, and adds a
+line when it does. If it says *Web UI: did not start* because another program holds the address, the
+console is not running: close that program, or give the console another address. For the broker the
+logon task runs, that is `parley autostart install --web-ui <address>`; for one you start yourself,
+`parley serve --with-web-ui --web-ui <address>`. The broker and the terminal keep working either way.
 
 ## Your seat
 
@@ -354,8 +356,8 @@ Sometimes a node ends and the agents it started keep running, with nothing holdi
   owes open work is started again once the broker is back. A broker stopped any other way (its
   scheduled task ended, or `-Only parley`) leaves its agents running, and those read as left running.
 - On Linux and macOS, the agents of a broker the autostart entry runs end with it, because systemd
-  and launchd end everything the entry started. A broker you started yourself and then killed
-  leaves its agents running, as on Windows.
+  and launchd end everything the entry started. A broker you started yourself and then killed outright
+  (`kill -9`) leaves its agents running, as on Windows.
 - Stopping a `parley serve` or `parley up` with Ctrl+C tells its agents to quit, on every platform. On Linux and
   macOS so does SIGTERM (what `systemctl stop`, `launchctl` and a plain `kill` send) or the terminal closing.
 
@@ -605,7 +607,9 @@ UTC. Besides the broker's own messages, the log says:
 - when each project's broker starts listening, when it begins stopping and when it has stopped;
 - when the process is asked to stop, and by what: Ctrl+C, the console window being closed,
   logoff or shutdown, or a signal on Linux and macOS;
-- whether the web console it started is serving, and what that console writes;
+- whether the web console it started is serving, and what that console writes to its standard output
+  (its warnings, such as a name in `webUi.hosts` it left out, go to the broker's own error output, which a
+  hidden logon task does not keep);
 - an exception that ends the process, and one a background task raised that nothing handled;
 - that the process is exiting, with its exit code.
 
