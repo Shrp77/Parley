@@ -351,7 +351,8 @@ Sometimes a node ends and the agents it started keep running, with nothing holdi
 - On Linux and macOS, the agents of a broker the autostart entry runs end with it, because systemd
   and launchd end everything the entry started. A broker you started yourself and then killed
   leaves its agents running, as on Windows.
-- Stopping a `parley serve` or `parley up` with Ctrl+C tells its agents to quit, on every platform.
+- Stopping a `parley serve` or `parley up` with Ctrl+C tells its agents to quit, on every platform. On Linux and
+  macOS so does SIGTERM (what `systemctl stop`, `launchctl` and a plain `kill` send) or the terminal closing.
 
 Such an agent reads *left running by a node that is gone*. (An agent somebody opened in an editor
 reads *open outside Parley* instead.) Nothing can stop a left process at the end of its turn, give

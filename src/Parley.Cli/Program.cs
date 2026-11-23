@@ -2,6 +2,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using Parley.Setup;
 using Grpc.Core;
 using Grpc.Net.Client;
@@ -776,6 +777,16 @@ if (verb == "serve" && rest.Length == 0)
 
             Process? child = null;
             string? whyNot = null;
+            var installHint = false;
+            var silent = false;
+
+            // **Asked before anything is started.** Something already answering there is most likely a web UI an
+            // earlier broker left running when it was killed, serving that broker's settings. A child started now
+            // would fail to bind, and a connection made to see whether it answered would reach the other one.
+            if (await WebUiReadiness.TakenAsync(webUiAddress, stopping).ConfigureAwait(false))
+            {
+                whyNot = WebUiReadiness.Taken(webUiAddress);
+            }
 
             try
             {
@@ -791,14 +802,25 @@ if (verb == "serve" && rest.Length == 0)
                 // ASCII only in this region, comments included: `StartupBannerTests` holds it.
                 // What that guard protects is the block printed on a console whose code page
                 // nobody chose.
+                //
+                // **Its standard input is a pipe from this process, and nothing is ever written to it.** The web
+                // UI is told to stop when that pipe closes. A broker that ends in order closes it below; a broker
+                // that is killed outright (SIGKILL, Stop-Process -Force, a supervisor's hard stop) cannot run any
+                // code at all, but the operating system closes every handle it held, so the pipe closes then too
+                // and the web UI stops instead of holding its port with this broker's settings. Chosen over a
+                // Windows job object and Linux's parent-death signal because it is one mechanism on Windows,
+                // Linux and macOS (which has no parent-death signal), needs no native call, and fails safe: a
+                // web UI run by hand is not given the flag and reads nothing.
                 var start = new ProcessStartInfo(WebUiTool)
                 {
                     UseShellExecute = false,
                     CreateNoWindow = true,
+                    RedirectStandardInput = true,
                 };
 
                 start.ArgumentList.Add("--listen");
                 start.ArgumentList.Add(webUiAddress);
+                start.ArgumentList.Add("--until-input-closes");
 
                 // **The manifest this process serves, not whichever one the web UI would find on its own.** It locates
                 // one the way every tool does -- the variable, then this machine's -- so without this
@@ -818,11 +840,12 @@ if (verb == "serve" && rest.Length == 0)
                     start.ArgumentList.Add(addresses[0]);
                 }
 
-                child = Process.Start(start);
-
-                if (child is null)
+                // Not started at all when the address was already taken: the reason is known, and a child that
+                // could only fail would print a second, vaguer one.
+                if (whyNot is null)
                 {
-                    throw new InvalidOperationException($"{WebUiTool} could not be started.");
+                    child = Process.Start(start)
+                        ?? throw new InvalidOperationException($"{WebUiTool} could not be started.");
                 }
             }
             catch (Exception failure) when (failure is Win32Exception
@@ -833,6 +856,27 @@ if (verb == "serve" && rest.Length == 0)
                 // chosen per machine. Named as a missing tool rather than as a fault, and the
                 // broker keeps serving.
                 whyNot = failure.Message;
+                installHint = true;
+            }
+
+            // **Announced once it answers, never merely once it started.** A child that started and then
+            // could not bind used to be announced as serving; the person was sent to an address that served
+            // another program or nothing. Waited on once, with a deadline: this is not a wait on the child's
+            // life, and a child that exits is still not restarted.
+            if (child is not null)
+            {
+                var outcome = await WebUiReadiness.AwaitAsync(
+                    webUiAddress, child, WebUiReadiness.Deadline, stopping).ConfigureAwait(false);
+
+                if (outcome == WebUiReadiness.Outcome.Exited)
+                {
+                    whyNot = WebUiReadiness.Exited(
+                        child.ExitCode,
+                        webUiAddress,
+                        await WebUiReadiness.TakenAsync(webUiAddress, stopping).ConfigureAwait(false));
+                }
+
+                silent = outcome == WebUiReadiness.Outcome.Silent;
             }
 
             // **Printed either way, and the failure is a line inside it rather than instead of**
@@ -843,9 +887,12 @@ if (verb == "serve" && rest.Length == 0)
             // run where somebody needs to be told there is another way in.
             var opening = whyNot is null
                 ? $"   Web UI:   {webUiAddress}{Environment.NewLine}"
-                    + "   Open that one in a browser."
+                    + (silent
+                        ? "   Started, but not answering yet. Open that one in a browser in a moment."
+                        : "   Open that one in a browser.")
                 : $"   Web UI:   did not start ({whyNot}){Environment.NewLine}"
-                    + $"   The broker is still serving. {Forwarding.InstallHint("parley-web-ui")}";
+                    + "   The broker is still serving."
+                    + (installHint ? $" {Forwarding.InstallHint("parley-web-ui")}" : string.Empty);
 
             var body =
                 opening + Environment.NewLine
@@ -881,17 +928,26 @@ if (verb == "serve" && rest.Length == 0)
                 // **Ended with the broker, so nothing is orphaned.** A web UI outliving the broker
                 // it was started for is a page serving a deployment that has stopped, holding the
                 // port that the next broker's web UI would want.
+                //
+                // Asked first, by closing the pipe it watches, so it stops as Ctrl+C would stop it; ended
+                // outright only when it has not gone within a few seconds.
                 try
                 {
                     if (child is { HasExited: false })
                     {
-                        child.Kill(entireProcessTree: true);
-                        child.WaitForExit(5000);
+                        child.StandardInput.Close();
+
+                        if (!child.WaitForExit(5000))
+                        {
+                            child.Kill(entireProcessTree: true);
+                            child.WaitForExit(5000);
+                        }
                     }
                 }
                 catch (Exception ending) when (ending is InvalidOperationException
                                                    or Win32Exception
-                                                   or NotSupportedException)
+                                                   or NotSupportedException
+                                                   or IOException)
                 {
                     // Already gone, or not this process's to end. Neither is worth a message on a
                     // path that runs while the broker is shutting down.
@@ -1335,6 +1391,35 @@ async Task<int> UntilInterrupted(Func<CancellationToken, Task<int>> run)
     }
 
     Console.CancelKeyPress += Stop;
+
+    // **SIGTERM is Ctrl+C from a supervisor, and SIGHUP is Ctrl+C from a terminal that went away.** systemd and
+    // launchd stop a service with SIGTERM and then SIGKILL. Only Ctrl+C reached the token, so a SIGTERM was taken by
+    // each project's web host (which cancels it and stops only itself), the token never moved, and the process stayed
+    // up with its node retrying a broker that had stopped until the supervisor killed it outright -- agents not told to
+    // quit, the web UI orphaned. Each now does exactly what the first Ctrl+C does.
+    //
+    // Not on Windows, where these two are a closed console window and logoff or shutdown: Windows ends the process
+    // a few seconds after either whatever a handler says, so they are left as they were.
+    var signalled = 0;
+
+    void Signalled(PosixSignalContext context)
+    {
+        // The first one stops. A later one is left to the default handling, as a second Ctrl+C is: if shutting down
+        // has wedged, a second signal must still end the process.
+        if (Interlocked.Exchange(ref signalled, 1) == 0)
+        {
+            context.Cancel = true;
+            stopping.Cancel();
+        }
+    }
+
+    using var terminated = OperatingSystem.IsWindows()
+        ? null
+        : PosixSignalRegistration.Create(PosixSignal.SIGTERM, Signalled);
+
+    using var hungUp = OperatingSystem.IsWindows()
+        ? null
+        : PosixSignalRegistration.Create(PosixSignal.SIGHUP, Signalled);
 
     try
     {
