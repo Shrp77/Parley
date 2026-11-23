@@ -101,6 +101,27 @@ public sealed class WebUiReadinessWordsTests
     }
 
     [Fact]
+    public void A_line_the_broker_cannot_write_after_a_hangup_is_dropped_rather_than_thrown()
+    {
+        // After a terminal hangs up every write to it fails with an I/O error, not a disposed writer. Thrown on the
+        // process reader's thread, it would end the broker the way the node's "stopped." line once ended `parley up`.
+        var said = new WebUiReadiness.Said(new HungUp());
+
+        said.Line("a line written after the terminal hung up");
+    }
+
+    private sealed class HungUp : TextWriter
+    {
+        public override System.Text.Encoding Encoding => System.Text.Encoding.UTF8;
+
+        public override void Write(char value) => throw new IOException("Input/output error");
+
+        public override void WriteLine(string? value) => throw new IOException("Input/output error");
+
+        public override Task WriteLineAsync(string? value) => throw new IOException("Input/output error");
+    }
+
+    [Fact]
     public void An_exited_web_ui_whose_address_is_free_is_named_by_its_exit_code()
     {
         var said = WebUiReadiness.Exited(69, "http://127.0.0.1:5280", takenNow: false);
@@ -276,6 +297,67 @@ public sealed class WebUiReadinessTests
             new WebUiReadiness.Said(TextWriter.Null), exited, Patience, stopping.Token).WaitAsync(Patience, ct);
 
         Assert.Equal(WebUiReadiness.Outcome.Exited, outcome);
+    }
+
+    [Fact]
+    public async Task A_web_ui_that_said_it_was_serving_and_then_exited_has_exited()
+    {
+        // Asked in that order on purpose: a web UI that said so and is gone is not serving, and announcing its address
+        // sends the person to nothing, or to whoever takes the port next.
+        var ct = TestContext.Current.CancellationToken;
+        using var exited = await ExitedAsync(ct);
+        var said = new WebUiReadiness.Said(TextWriter.Null);
+
+        said.Line(Parley.Configuration.WebUiAddress.ServingMarker + "http://127.0.0.1:5280");
+
+        var outcome = await WebUiReadiness.AwaitAsync(said, exited, Patience, ct).WaitAsync(Patience, ct);
+
+        Assert.Equal(WebUiReadiness.Outcome.Exited, outcome);
+    }
+
+    [Fact]
+    public async Task A_silent_web_ui_that_exits_while_another_program_holds_its_address_is_followed_up_as_taken()
+    {
+        // The follow-up names an address held after the web UI exited as another program's, as the banner does, rather
+        // than by an exit code that says nothing of where the address went.
+        var ct = TestContext.Current.CancellationToken;
+        using var held = new TcpListener(IPAddress.Loopback, 0);
+        held.Start();
+
+        var heldAt = $"http://127.0.0.1:{((IPEndPoint)held.LocalEndpoint).Port}";
+
+        using var exited = await ExitedAsync(ct);
+        await using var log = new StringWriter();
+
+        await WebUiReadiness.FollowUpAsync(new WebUiReadiness.Said(TextWriter.Null), exited, heldAt, log, ct)
+            .WaitAsync(Patience, ct);
+
+        Assert.Contains($"Web UI:   did not start ({WebUiReadiness.Taken(heldAt)})", log.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("exited with code", log.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_follow_up_whose_output_has_gone_ends_quietly()
+    {
+        // Awaited in serve's last finally: thrown there, it would skip disposing the child and end serve with a stack
+        // trace on the stop it was meant to finish.
+        var ct = TestContext.Current.CancellationToken;
+        using var running = Process.GetCurrentProcess();
+        var said = new WebUiReadiness.Said(TextWriter.Null);
+
+        said.Line(Parley.Configuration.WebUiAddress.ServingMarker + "http://127.0.0.1:5280");
+
+        await WebUiReadiness.FollowUpAsync(said, running, "http://127.0.0.1:5280", new GoneOutput(), CancellationToken.None)
+            .WaitAsync(Patience, ct);
+    }
+
+    private sealed class GoneOutput : TextWriter
+    {
+        public override System.Text.Encoding Encoding => System.Text.Encoding.UTF8;
+
+        public override void Write(char value) => throw new IOException("Input/output error");
+
+        public override Task WriteLineAsync(string? value) => throw new IOException("Input/output error");
     }
 
     private static async Task<Process> ExitedAsync(CancellationToken ct)

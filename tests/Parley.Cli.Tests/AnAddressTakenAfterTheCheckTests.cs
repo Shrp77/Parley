@@ -104,6 +104,7 @@ public sealed class AnAddressTakenAfterTheCheckTests : IDisposable
             Assert.Contains("already in use by another program", output, StringComparison.Ordinal);
             Assert.Contains("this broker's web UI is not running", output, StringComparison.Ordinal);
             Assert.Contains("The broker is still serving.", output, StringComparison.Ordinal);
+            Assert.Contains("Stop that program, or serve with --web-ui and another address.", output, StringComparison.Ordinal);
             Assert.DoesNotContain("Open that one in a browser", output, StringComparison.Ordinal);
             Assert.False(broker.HasExited, "the broker exited because its web UI could not bind.");
         }

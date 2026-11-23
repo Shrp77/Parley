@@ -109,6 +109,9 @@ public sealed class AStoppedBrokerLeavesNoWebUiTests : IDisposable
             Assert.Contains("The broker is still serving.", output, StringComparison.Ordinal);
             Assert.DoesNotContain("Open that one in a browser", output, StringComparison.Ordinal);
 
+            // What to do about it, found by the check made before anything was started.
+            Assert.Contains(TakenAdvice, output, StringComparison.Ordinal);
+
             // The tool is installed; telling the person to install it sends them the wrong way.
             Assert.DoesNotContain("install.ps1", output, StringComparison.Ordinal);
             Assert.False(broker.HasExited, "the broker exited because a web page could not bind.");
@@ -143,6 +146,9 @@ public sealed class AStoppedBrokerLeavesNoWebUiTests : IDisposable
 
             // Announced only once it answered, so it answers now.
             Assert.True(await AcceptsAsync(_webUiAt, ct), "the broker announced a web UI that does not answer.");
+
+            // And said once: the follow-up is for a web UI announced as not answering yet, never for this one.
+            await NeverSaysAsync(said, "is answering now", ct);
         }
         finally
         {
@@ -246,6 +252,12 @@ public sealed class AStoppedBrokerLeavesNoWebUiTests : IDisposable
             Assert.Contains("The broker is still serving.", output, StringComparison.Ordinal);
             Assert.DoesNotContain("Open that one in a browser", output, StringComparison.Ordinal);
             Assert.DoesNotContain("install.ps1", output, StringComparison.Ordinal);
+
+            // Nothing holds the address, so there is no program to stop.
+            Assert.DoesNotContain(TakenAdvice, output, StringComparison.Ordinal);
+
+            // Said once, in the banner: an exited web UI is not followed up as though it had been announced as silent.
+            await NeverSaysAsync(said, "Web UI:   did not start", ct, allowed: 1);
         }
         finally
         {
@@ -420,6 +432,52 @@ public sealed class AStoppedBrokerLeavesNoWebUiTests : IDisposable
     }
 
     [Fact]
+    public async Task A_broker_stopped_before_its_web_ui_says_it_is_serving_names_no_web_ui()
+    {
+        // A stop that lands during the wait for the web UI: an address to open, or a promise to say when it answers,
+        // printed after the broker began stopping would send the person to a web UI that is being ended.
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "SIGTERM is the orderly stop a test can send; on Windows it is Ctrl+C.");
+
+        var ct = TestContext.Current.CancellationToken;
+        var standIn = Path.Combine(_root, "stand-in");
+        var pidFile = Path.Combine(_root, "stand-in.pid");
+
+        Directory.CreateDirectory(standIn);
+
+        // Never says it is serving, and ends when the broker closes its input, as the real one does.
+        WriteScript(Path.Combine(standIn, "parley-web-ui"), $"echo $$ > '{pidFile}'", "exec cat > /dev/null");
+
+        using var broker = Serve(withWebUi: true, out var said, path: standIn + Path.PathSeparator + "/usr/bin:/bin");
+
+        try
+        {
+            Assert.True(await Loopback.AnswersAsync(_brokerAt, ct), "the broker never answered.");
+
+            var started = Stopwatch.StartNew();
+
+            while (!(File.Exists(pidFile) && File.ReadAllText(pidFile).Trim().Length > 0)
+                   && started.Elapsed < TimeSpan.FromSeconds(30))
+            {
+                await Task.Delay(100, ct);
+            }
+
+            Assert.True(File.Exists(pidFile), "the stand-in web UI never started, so the broker was never waiting on it.");
+            Assert.DoesNotContain("Web UI:", Read(said), StringComparison.Ordinal);
+
+            // Inside the thirty seconds the broker waits for the web UI to say it is serving.
+            await SignalAsync("TERM", broker, ct);
+
+            Assert.True(broker.WaitForExit(TimeSpan.FromSeconds(60)), "serve was still running a minute after SIGTERM.");
+            Assert.Equal(0, broker.ExitCode);
+            Assert.DoesNotContain("Web UI:", Read(said), StringComparison.Ordinal);
+        }
+        finally
+        {
+            End(broker);
+        }
+    }
+
+    [Fact]
     [Slow]
     public async Task A_web_ui_that_runs_and_never_answers_is_announced_as_not_answering_yet()
     {
@@ -451,6 +509,11 @@ public sealed class AStoppedBrokerLeavesNoWebUiTests : IDisposable
             Assert.Contains($"Web UI:   {_webUiAt}", output, StringComparison.Ordinal);
             Assert.Contains("Started, but not answering yet.", output, StringComparison.Ordinal);
             Assert.DoesNotContain("Open that one in a browser.", output, StringComparison.Ordinal);
+
+            // A promise the follow-up below keeps, never a guess that it will be up "in a moment", which a squatter
+            // binding the address later would seem to fulfil.
+            Assert.Contains("The broker will say so here when it does.", output, StringComparison.Ordinal);
+            Assert.DoesNotContain("in a moment", output, StringComparison.Ordinal);
 
             // Followed up once it says so, rather than left at "not answering yet" for good.
             var followed = Stopwatch.StartNew();
@@ -509,6 +572,25 @@ public sealed class AStoppedBrokerLeavesNoWebUiTests : IDisposable
         {
             return false;
         }
+    }
+
+    // The advice given when another program holds the web UI's address.
+    private const string TakenAdvice = "Stop that program, or serve with --web-ui and another address.";
+
+    // Watches the output for a few seconds and fails when what is watched for appears more than allowed. A line that
+    // should never come cannot be waited for, so it is watched for over a window longer than it would take to come:
+    // a follow-up that did come would be written within a second of the banner (one connection's limit).
+    private static async Task NeverSaysAsync(StringBuilder said, string words, CancellationToken ct, int allowed = 0)
+    {
+        var window = Stopwatch.StartNew();
+        int Count() => Read(said).Split(words).Length - 1;
+
+        while (Count() <= allowed && window.Elapsed < TimeSpan.FromSeconds(3))
+        {
+            await Task.Delay(100, ct);
+        }
+
+        Assert.True(Count() <= allowed, $"'{words}' was said {Count()} times, {allowed} allowed. It said: {Read(said)}");
     }
 
     private static async Task<string> BannerAsync(StringBuilder said, TimeSpan patience, CancellationToken ct)
