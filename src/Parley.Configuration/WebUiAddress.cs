@@ -37,7 +37,8 @@ public static class WebUiAddress
     /// <b>Readiness comes from the child, not from the address.</b> A broker used to call its web UI ready when a
     /// connection to the address was accepted. Another program that took the address after the broker looked and before
     /// the web UI bound accepted that connection too, and the broker sent the person to it while its own web UI failed
-    /// to bind and exited. Only the web UI writes to its own standard output, so this line cannot come from anyone else.
+    /// to bind and exited. Only the web UI and the broker that started it hold its standard output. A program another
+    /// user runs cannot write there, but one the same person runs can (on Linux, through <c>/proc</c>), so the line is trusted as far as the person's own processes are, and no further.
     /// </para>
     /// <para>
     /// Here because both ends read it: the web UI writes it and the broker's tool waits for it, and the two are in

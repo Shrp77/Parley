@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using Parley.Configuration;
+using Parley.Core;
 
 namespace Parley.Cli;
 
@@ -20,7 +21,9 @@ namespace Parley.Cli;
 /// accepted. A program that took the address after the broker looked and before the web UI bound accepted it too, and
 /// was announced as this broker's web UI while the web UI failed to bind and exited (review, lens 1 run B on
 /// 6561e9ea). So the web UI says itself that it is serving, in one line on its standard output
-/// (<see cref="WebUiAddress.ServingMarker"/>), which nobody else can write to.
+/// (<see cref="WebUiAddress.ServingMarker"/>). A program another user runs cannot write there, but one the same
+/// person runs can (on Linux, through <c>/proc</c>), so the line is trusted as far as the person's own processes are, and no
+/// further.
 /// </para>
 /// <para>
 /// <b>A connection is still how the address is asked about before the web UI starts.</b> Something already answering
@@ -33,6 +36,16 @@ namespace Parley.Cli;
 /// </remarks>
 internal static class WebUiReadiness
 {
+    /// <summary>What a person does when another program holds the web UI's address: one ASCII line.</summary>
+    /// <remarks>
+    /// Both ways, because <c>serve</c> reads <c>--web-ui</c> only beside <c>--with-web-ui</c>: advice to serve with
+    /// <c>--web-ui</c> alone changed nothing, and the broker a logon task runs is changed by installing the task
+    /// again, not by a command typed once.
+    /// </remarks>
+    internal const string ElsewhereAdvice =
+        "Stop that program, or give the web UI another address: for the logon task, "
+        + "`parley autostart install --web-ui <address>`; by hand, `parley serve --with-web-ui --web-ui <address>`.";
+
     /// <summary>How long a web UI is given to say it is serving before the broker says it has not.</summary>
     internal static readonly TimeSpan Deadline = TimeSpan.FromSeconds(30);
 
@@ -52,26 +65,72 @@ internal static class WebUiReadiness
         Stopping,
     }
 
-    /// <summary>Reads a started web UI's standard output for as long as it runs.</summary>
+    /// <summary>Reads a started web UI's standard output and standard error for as long as it runs.</summary>
     /// <param name="child">
-    /// The web UI's process, started with its standard output redirected and not yet read.
+    /// The web UI's process, started with its standard output and standard error redirected and neither yet read.
     /// </param>
-    /// <param name="log">Where every other line it writes goes: the broker's own output.</param>
+    /// <param name="log">Where every other line it writes on its standard output goes: the broker's own output.</param>
+    /// <param name="errors">
+    /// Where every line it writes on its standard error goes: the broker's error output, which is copied into
+    /// <c>--log</c>.
+    /// </param>
     /// <returns>What it has said.</returns>
     /// <remarks>
+    /// <para>
     /// Read for the child's whole life, not only until it says it is serving: a pipe nobody reads fills, and a web UI
     /// whose writes block stops answering.
+    /// </para>
+    /// <para>
+    /// <b>Its errors are read too, so its warnings reach the log.</b> Under a hidden logon task the broker has no
+    /// console, and a web UI writing to an inherited error handle wrote to nothing: a <c>webUi.hosts</c> entry it
+    /// refused, or the names it also answers to, were seen by nobody. Each line is copied as the output's are, with
+    /// its control characters neutralised.
+    /// </para>
     /// </remarks>
-    internal static Said Watch(Process child, TextWriter log)
+    internal static Said Watch(Process child, TextWriter log, TextWriter errors)
     {
         ArgumentNullException.ThrowIfNull(child);
+        ArgumentNullException.ThrowIfNull(errors);
 
         var said = new Said(log);
 
         child.OutputDataReceived += (_, line) => said.Line(line.Data);
+        child.ErrorDataReceived += (_, line) => Pass(errors, line.Data);
         child.BeginOutputReadLine();
+        child.BeginErrorReadLine();
 
         return said;
+    }
+
+    /// <summary>Copies one line the web UI wrote to one of the broker's writers, with nothing in it that could act.</summary>
+    /// <param name="to">The broker's writer.</param>
+    /// <param name="line">The line, or null at the end of the child's output.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>Neutralised, because the web UI's log carries text it did not write.</b> A request path is logged as it was
+    /// asked for, decoded, by a request the console then refuses: a cross-site page's image, a rebinding name. Copied
+    /// raw, an escape sequence in one clears or retitles the person's terminal, or hides a line in the log.
+    /// </para>
+    /// <para>
+    /// Runs on a thread the process's reader owns, where an exception would end the broker; so a broker output that
+    /// has gone is not this method's concern.
+    /// </para>
+    /// </remarks>
+    internal static void Pass(TextWriter to, string? line)
+    {
+        if (line is null)
+        {
+            return;
+        }
+
+        try
+        {
+            to.WriteLine(HistoryText.Neutralised(line));
+        }
+        catch (Exception gone) when (gone is ObjectDisposedException or IOException)
+        {
+            // The broker's output closed as it stopped; the web UI is being ended with it.
+        }
     }
 
     /// <summary>Waits until the web UI says it is serving, exits, or runs out of time.</summary>
@@ -138,9 +197,12 @@ internal static class WebUiReadiness
                 return;
             }
 
+            var taken = child.HasExited && await TakenAsync(address, stopping).ConfigureAwait(false);
+
             var line = child.HasExited
-                ? $"   Web UI:   did not start ({Exited(child.ExitCode, address, await TakenAsync(address, stopping).ConfigureAwait(false))})."
+                ? $"   Web UI:   did not start ({Exited(child.ExitCode, address, taken)})."
                     + " The broker is still serving."
+                    + (taken ? $" {ElsewhereAdvice}" : string.Empty)
                 : $"   Web UI:   {address} is answering now. Open that one in a browser.";
 
             if (!stopping.IsCancellationRequested)
@@ -242,8 +304,7 @@ internal static class WebUiReadiness
         /// <summary>Takes one line the web UI wrote.</summary>
         /// <param name="line">The line, or null at the end of its output.</param>
         /// <remarks>
-        /// Runs on a thread the process's reader owns, where an exception would end the broker; so a broker output that
-        /// has gone is not this method's concern.
+        /// Every line but the serving one is passed on through <see cref="Pass"/>, neutralised.
         /// </remarks>
         internal void Line(string? line)
         {
@@ -258,14 +319,7 @@ internal static class WebUiReadiness
                 return;
             }
 
-            try
-            {
-                log.WriteLine(line);
-            }
-            catch (Exception gone) when (gone is ObjectDisposedException or IOException)
-            {
-                // The broker's output closed as it stopped; the web UI is being ended with it.
-            }
+            Pass(log, line);
         }
     }
 }

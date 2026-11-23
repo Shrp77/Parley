@@ -762,7 +762,7 @@ if (verb == "serve" && rest.Length == 0)
         // and a broker that refused to serve because a web page could not bind would take a whole
         // deployment down for the one part of it no agent uses.
         async Task<int> HostingWebUi(
-            IReadOnlyList<string> addresses, TextWriter reporting, CancellationToken stopping)
+            IReadOnlyList<string> addresses, TextWriter reporting, TextWriter failing, CancellationToken stopping)
         {
             // Set apart, because this is the one address on the screen a person is meant to type
             // into a browser. Ruled rather than coloured: this writer is tee'd into --log, so
@@ -824,8 +824,12 @@ if (verb == "serve" && rest.Length == 0)
                     // **Its standard output comes here.** The web UI says on it, in one line, when it is serving, and
                     // that line is what the address is announced on. Everything else it writes is passed on to this
                     // process's own output for as long as it runs (WebUiReadiness.Watch), so the pipe never fills.
-                    // Its errors are not redirected and reach this process's error output as they always did.
                     RedirectStandardOutput = true,
+
+                    // **So are its errors, to this process's error output, which is copied into --log.** Its warnings
+                    // (a webUi.hosts name it left out, the names it also answers to) reached an inherited handle that a
+                    // hidden logon task points at nothing. Read for its whole life too, and neutralised.
+                    RedirectStandardError = true,
                 };
 
                 start.ArgumentList.Add("--listen");
@@ -856,7 +860,7 @@ if (verb == "serve" && rest.Length == 0)
                 {
                     child = Process.Start(start)
                         ?? throw new InvalidOperationException($"{WebUiTool} could not be started.");
-                    said = WebUiReadiness.Watch(child, reporting);
+                    said = WebUiReadiness.Watch(child, reporting, failing);
                 }
             }
             catch (Exception failure) when (failure is Win32Exception
@@ -904,7 +908,7 @@ if (verb == "serve" && rest.Length == 0)
                 : $"   Web UI:   did not start ({whyNot}){Environment.NewLine}"
                     + "   The broker is still serving."
                     + (installHint ? $" {Forwarding.InstallHint("parley-web-ui")}" : string.Empty)
-                    + (taken ? " Stop that program, or serve with --web-ui and another address." : string.Empty);
+                    + (taken ? $" {WebUiReadiness.ElsewhereAdvice}" : string.Empty);
 
             var body =
                 opening + Environment.NewLine
@@ -1064,11 +1068,14 @@ if (verb == "serve" && rest.Length == 0)
             Console.SetError(TextWriter.Null);
         }
 
+        // **A terminal that closes under a running broker costs it nothing.** A disowned `serve --with-node` got an
+        // IOException on its next console write, and the node's "started" line threw out of an agent's start
+        // (SurvivingWriter). The log, written after the console, is unaffected either way.
         return ServeCommand.RunAsync(
             serving,
             logPath,
-            Console.Out,
-            Console.Error,
+            new SurvivingWriter(Console.Out),
+            new SurvivingWriter(Console.Error),
             hostNode ? HostingNodeFor : null,
             hostWebUi ? HostingWebUi : null,
             watching ? rereadManifest : null,
@@ -1083,7 +1090,7 @@ if (verb == "serve" && rest.Length == 0)
         // **Every agent this machine started is sent away here, and only here.** A node loop sweeps only a
         // table it created itself; this one it did not create, so ending them belongs to the process that
         // did.
-        await NodeCommand.StopEveryoneAsync(residents, Console.Out).ConfigureAwait(false);
+        await NodeCommand.StopEveryoneAsync(residents, new SurvivingWriter(Console.Out)).ConfigureAwait(false);
     }
 }
 
@@ -1393,7 +1400,9 @@ async Task<int> UpAsync() =>
             channel,
             endpoint,
             resolvedNodeConfig.Value ?? NodeCatalogue.DefaultFileName,
-            Console.Out,
+
+            // A closed terminal must not end the node or lose the agent it was starting (SurvivingWriter).
+            new SurvivingWriter(Console.Out),
             project?.Name.Value,
             null,
             token,

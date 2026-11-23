@@ -334,6 +334,44 @@ public sealed class WebUiReadinessTests
 
         Assert.Contains($"Web UI:   did not start ({WebUiReadiness.Taken(heldAt)})", log.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("exited with code", log.ToString(), StringComparison.Ordinal);
+
+        // And says what to do about it, as the banner does: both ways, because `serve` reads --web-ui only beside
+        // --with-web-ui.
+        Assert.Contains(
+            "Stop that program, or give the web UI another address: for the logon task, "
+            + "`parley autostart install --web-ui <address>`; by hand, `parley serve --with-web-ui --web-ui <address>`.",
+            log.ToString(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task What_the_web_ui_writes_on_its_errors_reaches_the_brokers_error_output()
+    {
+        // Its warnings (a webUi.hosts name it left out, the names it also answers to) went to an inherited handle, which
+        // a hidden logon task points at nothing; read, they reach the broker's error output and so --log.
+        var ct = TestContext.Current.CancellationToken;
+        var start = OperatingSystem.IsWindows()
+            ? new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "cmd.exe"), "/d /c echo warn: a name left out 1>&2")
+            : new ProcessStartInfo("/bin/sh", ["-c", "echo 'warn: a name left out' >&2"]);
+
+        start.UseShellExecute = false;
+        start.CreateNoWindow = true;
+        start.RedirectStandardOutput = true;
+        start.RedirectStandardError = true;
+
+        using var child = Process.Start(start) ?? throw new InvalidOperationException("The stand-in did not start.");
+        await using var output = new StringWriter();
+        await using var errors = new StringWriter();
+
+        _ = WebUiReadiness.Watch(child, output, errors);
+
+        await child.WaitForExitAsync(ct).WaitAsync(Patience, ct);
+
+        // Until both readers have reached the end of what it wrote.
+        child.WaitForExit();
+
+        Assert.Contains("warn: a name left out", errors.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("warn: a name left out", output.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

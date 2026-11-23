@@ -175,7 +175,7 @@ public sealed class AutostartConsoleTests
 
         var console = await Record.ExceptionAsync(() => ServeCommand.RunAsync(
             projects, null, TextWriter.Null, TextWriter.Null,
-            alongside: (_, _, _) => Task.FromResult(0),
+            alongside: (_, _, _, _) => Task.FromResult(0),
             cancellationToken: stopping.Token));
 
         Assert.IsNotType<ArgumentException>(console);

@@ -547,6 +547,9 @@ internal sealed class JoinedNodeClient : IAsyncDisposable
     /// <summary>Gets the machine name.</summary>
     public string Machine { get; }
 
+    /// <summary>Gets whether the join stream is still open.</summary>
+    public bool StillJoined => !_pump.IsCompleted;
+
     /// <summary>Joins a machine and waits until the broker has recorded it.</summary>
     /// <param name="broker">The broker.</param>
     /// <param name="machine">The machine name.</param>

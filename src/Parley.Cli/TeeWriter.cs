@@ -18,6 +18,10 @@ namespace Parley.Cli;
 /// Neither destination is disposed here. Both are owned by whoever opened them, and the console
 /// writer in particular must outlive this: closing it would take standard output with it.
 /// </para>
+/// <para>
+/// <b>The second is written even when the first throws.</b> The first is the console, and a console that has gone
+/// (a terminal closed under a running broker) must not cost the log its line; the failure still reaches the caller.
+/// </para>
 /// </remarks>
 internal sealed class TeeWriter(TextWriter first, TextWriter second) : TextWriter
 {
@@ -27,28 +31,52 @@ internal sealed class TeeWriter(TextWriter first, TextWriter second) : TextWrite
     /// <inheritdoc />
     public override void Write(char value)
     {
-        first.Write(value);
-        second.Write(value);
+        try
+        {
+            first.Write(value);
+        }
+        finally
+        {
+            second.Write(value);
+        }
     }
 
     /// <inheritdoc />
     public override void Write(string? value)
     {
-        first.Write(value);
-        second.Write(value);
+        try
+        {
+            first.Write(value);
+        }
+        finally
+        {
+            second.Write(value);
+        }
     }
 
     /// <inheritdoc />
     public override void WriteLine(string? value)
     {
-        first.WriteLine(value);
-        second.WriteLine(value);
+        try
+        {
+            first.WriteLine(value);
+        }
+        finally
+        {
+            second.WriteLine(value);
+        }
     }
 
     /// <inheritdoc />
     public override void Flush()
     {
-        first.Flush();
-        second.Flush();
+        try
+        {
+            first.Flush();
+        }
+        finally
+        {
+            second.Flush();
+        }
     }
 }

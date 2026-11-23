@@ -607,9 +607,9 @@ UTC. Besides the broker's own messages, the log says:
 - when each project's broker starts listening, when it begins stopping and when it has stopped;
 - when the process is asked to stop, and by what: Ctrl+C, the console window being closed,
   logoff or shutdown, or a signal on Linux and macOS;
-- whether the web console it started is serving, and what that console writes to its standard output
-  (its warnings, such as a name in `webUi.hosts` it left out, go to the broker's own error output, which a
-  hidden logon task does not keep);
+- whether the web console it started is serving, and everything that console writes, its warnings
+  included (such as a name in `webUi.hosts` it left out, or the other names it answers to), with any
+  control characters in them made harmless;
 - an exception that ends the process, and one a background task raised that nothing handled;
 - that the process is exiting, with its exit code.
 

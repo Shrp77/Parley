@@ -87,6 +87,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
     private readonly ConcurrentDictionary<string, JoinedNode> _nodes =
         new(StringComparer.Ordinal);
 
+    // Set once the host begins stopping (CloseStreams). A session that arrives after that is closed as it is held, so a
+    // reattach during the stop cannot hold the host for its whole shutdown timeout. 1 when set; read with Volatile.
+    private int _closing;
+
     // The turns nodes have said are running and not yet said are over (SPEC.md §11.6). In memory on purpose: it is a
     // fact about live connections, like a node being joined, and a broker that has just started holds none — so a
     // restart forgetting them is right by construction, where a column would be false after every crash.
@@ -947,6 +951,14 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 [attached],
                 (_, existing) => existing.Add(attached));
 
+            // **Closed at once when the broker has begun stopping.** CloseStreams runs once, when the host begins to
+            // stop; an adapter that reattaches after it (during the web UI's grace, say) would otherwise hold its
+            // handler, and the host, for Kestrel's whole shutdown timeout (review, lens 1 run B on 4b802112).
+            if (Volatile.Read(ref _closing) == 1)
+            {
+                attached.Close();
+            }
+
             // **Frozen while it was starting** (SPEC.md §14): the freeze found no process to stop, because the start a node
             // had already been asked for had not attached yet. It is stopped now, as the freeze would have stopped it, once
             // the turn it came up for is over. Without this it came up and went on working while every surface said frozen.
@@ -1101,6 +1113,12 @@ public sealed class BrokerRuntime : IAsyncDisposable
             throw new InvalidOperationException(
                 $"A node is already connected for '{node.Machine}'. SPEC.md §4 gives a machine " +
                 "one node: two would each be told to start the same agents.");
+        }
+
+        // A node joining after the broker began stopping is closed as it is held, as a late attach is.
+        if (Volatile.Read(ref _closing) == 1)
+        {
+            joined.Close();
         }
 
         try
@@ -3106,9 +3124,17 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// racing every handler on the way out — which is also the only arrangement that survives
     /// the shutdown it most needs to, the one where it did not get to run anything.
     /// </para>
+    /// <para>
+    /// <b>And every stream held after it.</b> It runs once, when the host begins stopping, but an adapter can attach
+    /// again (or a node join) while the host is still stopping. Each of those is closed as it is held, or it would hold
+    /// the host for the same thirty seconds this exists to save.
+    /// </para>
     /// </remarks>
     public void CloseStreams()
     {
+        // First, and a full fence, so a session held after this is either seen below or sees the flag itself.
+        _ = Interlocked.Exchange(ref _closing, 1);
+
         foreach (var sessions in _attached.Values)
         {
             foreach (var attached in sessions)

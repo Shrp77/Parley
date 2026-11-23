@@ -432,6 +432,121 @@ public sealed class AStoppedBrokerLeavesNoWebUiTests : IDisposable
     }
 
     [Fact]
+    public async Task An_agent_that_attaches_again_while_serve_stops_does_not_hold_it()
+    {
+        // A signal closes every held stream at once, then serve gives its web UI five seconds to leave before it
+        // releases each project. An adapter that attached again inside those five seconds was held by its handler, and
+        // the project's host waited Kestrel's thirty-second shutdown timeout for it; three projects outlived systemd's
+        // ninety and were killed (review, lens 1 run B on 4b802112).
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "SIGTERM is the orderly stop a test can send; on Windows it is Ctrl+C.");
+
+        var ct = TestContext.Current.CancellationToken;
+        var standIn = Path.Combine(_root, "stand-in");
+        var pidFile = Path.Combine(_root, "stand-in.pid");
+
+        Directory.CreateDirectory(standIn);
+
+        // A web UI that never reads its pipe, so serve waits out the whole grace before ending it.
+        WriteScript(Path.Combine(standIn, "parley-web-ui"), $"echo $$ > '{pidFile}'", "exec sleep 300");
+
+        using var broker = Serve(withWebUi: true, out var said, path: standIn + Path.PathSeparator + "/usr/bin:/bin");
+        using var channel = Grpc.Net.Client.GrpcChannel.ForAddress(_brokerAt);
+        var agents = new Parley.Transport.Agents.AgentsClient(channel);
+        var held = new List<Grpc.Core.AsyncServerStreamingCall<Parley.Transport.Event>>();
+        int? standInPid = null;
+
+        try
+        {
+            Assert.True(await Loopback.AnswersAsync(_brokerAt, ct), "the broker never answered.");
+
+            var started = Stopwatch.StartNew();
+
+            while (!(File.Exists(pidFile) && int.TryParse(File.ReadAllText(pidFile).Trim(), out _))
+                   && started.Elapsed < TimeSpan.FromSeconds(30))
+            {
+                await Task.Delay(100, ct);
+            }
+
+            Assert.True(File.Exists(pidFile), "the stand-in web UI never started, so serve has no grace to wait out.");
+
+            standInPid = int.Parse(File.ReadAllText(pidFile).Trim(), System.Globalization.CultureInfo.InvariantCulture);
+
+            Assert.True(await AttachAsync(agents, held, ct), "the agent could not attach before the stop.");
+
+            await SignalAsync("TERM", broker, ct);
+
+            var stopping = Stopwatch.StartNew();
+            var lateAttaches = 0;
+
+            // The adapter attaching again, as one does when its stream closes, for most of the grace.
+            while (stopping.Elapsed < TimeSpan.FromSeconds(4) && !broker.HasExited)
+            {
+                if (await AttachAsync(agents, held, ct))
+                {
+                    lateAttaches++;
+                }
+
+                await Task.Delay(250, ct);
+            }
+
+            Assert.True(lateAttaches > 0, "no attach was accepted after the signal, so nothing was left to hold serve. It said: " + Read(said));
+
+            // Five seconds of grace and a little: well inside the thirty a held stream cost.
+            Assert.True(
+                broker.WaitForExit(TimeSpan.FromSeconds(Math.Max(0, 15 - stopping.Elapsed.TotalSeconds))),
+                $"serve was still running {stopping.Elapsed.TotalSeconds:0}s after SIGTERM, held by {lateAttaches} late attaches. It said: " + Read(said));
+            Assert.Equal(0, broker.ExitCode);
+        }
+        finally
+        {
+            End(broker);
+
+            foreach (var call in held)
+            {
+                call.Dispose();
+            }
+
+            if (standInPid is { } pid && Alive(pid))
+            {
+                using var left = Process.GetProcessById(pid);
+                left.Kill();
+            }
+        }
+
+        static async Task<bool> AttachAsync(
+            Parley.Transport.Agents.AgentsClient agents,
+            List<Grpc.Core.AsyncServerStreamingCall<Parley.Transport.Event>> held,
+            CancellationToken ct)
+        {
+            var call = agents.Attach(
+                new Parley.Transport.AttachRequest
+                {
+                    Agent = "orders@alpha",
+                    Adapter = "test",
+                    Tier = Parley.Transport.AgentTier.Pull,
+                    ProtocolVersion = ProtocolVersion.Current,
+                },
+                cancellationToken: ct);
+
+            // Held, not disposed: an adapter keeps its stream for as long as the broker does.
+            held.Add(call);
+
+            try
+            {
+                using var first = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                first.CancelAfter(TimeSpan.FromSeconds(2));
+
+                return await call.ResponseStream.MoveNext(first.Token)
+                    && call.ResponseStream.Current.EventCase == Parley.Transport.Event.EventOneofCase.Attached;
+            }
+            catch (Exception refused) when (refused is Grpc.Core.RpcException or OperationCanceledException)
+            {
+                return false;
+            }
+        }
+    }
+
+    [Fact]
     public async Task A_broker_stopped_before_its_web_ui_says_it_is_serving_names_no_web_ui()
     {
         // A stop that lands during the wait for the web UI: an address to open, or a promise to say when it answers,
@@ -575,7 +690,7 @@ public sealed class AStoppedBrokerLeavesNoWebUiTests : IDisposable
     }
 
     // The advice given when another program holds the web UI's address.
-    private const string TakenAdvice = "Stop that program, or serve with --web-ui and another address.";
+    private const string TakenAdvice = "Stop that program, or give the web UI another address: for the logon task, `parley autostart install --web-ui <address>`; by hand, `parley serve --with-web-ui --web-ui <address>`.";
 
     // Watches the output for a few seconds and fails when what is watched for appears more than allowed. A line that
     // should never come cannot be waited for, so it is watched for over a window longer than it would take to come:
