@@ -46,6 +46,18 @@ public sealed class TheWebUisOutputIsDrawnInertTests
         AssertInert(line, errors.ToString());
     }
 
+    [Fact]
+    public void The_end_of_the_web_uis_errors_is_passed_as_nothing_and_never_thrown()
+    {
+        // The reader says the stream has ended with a null line, on its own thread, where an exception would end the
+        // broker the moment its web UI exited.
+        using var errors = new StringWriter();
+
+        WebUiReadiness.Pass(errors, null);
+
+        Assert.Equal(string.Empty, errors.ToString());
+    }
+
     private static string Line(int[] codes) =>
         "      Request starting HTTP/1.1 GET http://127.0.0.1:5280/x"
         + new string([.. codes.Select(code => (char)code)]) + " - - -";

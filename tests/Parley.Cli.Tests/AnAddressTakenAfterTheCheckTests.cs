@@ -228,6 +228,75 @@ public sealed class AnAddressTakenAfterTheCheckTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task What_the_web_ui_writes_on_its_errors_reaches_serves_error_output_and_its_log()
+    {
+        // The real web UI, failing to bind, says why on its standard error. That reaches serve's error output, never its
+        // standard output, and the --log file, which is where a hidden logon task's broker keeps it: the web UI's errors
+        // used to reach an inherited handle that such a broker points at nothing.
+        var ct = TestContext.Current.CancellationToken;
+        using var held = new TcpListener(IPAddress.Loopback, _webUiPort);
+        var said = new StringBuilder();
+        var output = new StringBuilder();
+        var errors = new StringBuilder();
+        var log = Path.Combine(_root, "serve.log");
+        var tookIt = false;
+
+        using var broker = ToolProcess.Launch(
+            [("PATH", ChildLifetimeTests.WebUiOnPath())],
+            "serve", "--config", _root, "--with-web-ui", "--web-ui", WebUiAt, "--log", log);
+
+        void Keep(StringBuilder into, DataReceivedEventArgs line)
+        {
+            lock (said)
+            {
+                if (!tookIt && line.Data?.Contains("Parley web UI on", StringComparison.Ordinal) == true)
+                {
+                    held.Start();
+                    tookIt = true;
+                }
+
+                said.AppendLine(line.Data);
+
+                lock (into)
+                {
+                    into.AppendLine(line.Data);
+                }
+            }
+        }
+
+        broker.OutputDataReceived += (_, line) => Keep(output, line);
+        broker.ErrorDataReceived += (_, line) => Keep(errors, line);
+        broker.BeginOutputReadLine();
+        broker.BeginErrorReadLine();
+
+        try
+        {
+            _ = await BannerAsync(said, ct);
+
+            const string why = "The web UI did not start on";
+            var deadline = Stopwatch.StartNew();
+
+            while (!Read(errors).Contains(why, StringComparison.Ordinal) && deadline.Elapsed < TimeSpan.FromSeconds(30))
+            {
+                await Task.Delay(100, ct);
+            }
+
+            Assert.True(Read(errors).Contains(why, StringComparison.Ordinal), "serve's error output never had the web UI's reason: " + Read(said));
+            Assert.DoesNotContain(why, Read(output), StringComparison.Ordinal);
+
+            // The log is opened, written and closed for each line, so it is read while serve runs.
+            await using var logged = new FileStream(log, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(logged);
+
+            Assert.Contains(why, await reader.ReadToEndAsync(ct), StringComparison.Ordinal);
+        }
+        finally
+        {
+            End(broker);
+        }
+    }
+
     // A stand-in web UI. Serve asks the tool for its version as it starts, so that is answered and nothing else is.
     private static void WriteScript(string path, params string[] lines)
     {
