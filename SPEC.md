@@ -3772,7 +3772,8 @@ Four things end a resident agent, and nothing else may:
    configuration read afresh. It refreshes only an agent it started itself; an agent attached from
    somebody's editor window is never refreshed, and its line waits for its next start.
 4. **A person stops or restarts it** (§10.2 `stop`, `restart`). The node waits until no turn is in
-   progress, as for a refresh, then stops the agent, and for a restart starts it again with its
+   progress, as for a refresh, then stops the agent (background work the agent started is not waited for and ends
+   with its process), and for a restart starts it again with its
    launch configuration read afresh. Only an agent the node started: one open outside Parley
    (§11.7) is held by no node, and is ended by whoever opened it, or with `kill` when a node that is gone left it running.
    When more than one ending is asked of an agent while it waits for one turn (a stop, a restart, a refresh), the node does
