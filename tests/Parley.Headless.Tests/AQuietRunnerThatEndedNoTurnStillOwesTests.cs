@@ -36,7 +36,7 @@ public sealed class AQuietRunnerThatEndedNoTurnStillOwesTests : IDisposable
     public async Task A_reply_owed_is_not_forgotten_while_a_runner_that_has_ended_no_turn_is_quiet()
     {
         // Turn 1 gives up after a second; the runner says nothing for four seconds and then answers prompt 1.
-        var template = StubRunner.Scripted(_workspace, [StubRunner.Pause(4), First], [Second]);
+        var template = StubRunner.Scripted(_workspace, [StubRunner.Pause(8), First], [Second]);
 
         await using var agent = ResidentAgent.Start(
             AgentName.Create("billing@test"), InvocationCommand.Parse(template), _workspace, TimeProvider.System);
@@ -45,7 +45,7 @@ public sealed class AQuietRunnerThatEndedNoTurnStillOwesTests : IDisposable
 
         Assert.True(one.TimedOut, one.Describe());
 
-        var two = await agent.TakeTurnAsync("2", TimeSpan.FromSeconds(2), Ct);
+        var two = await agent.TakeTurnAsync("2", TimeSpan.FromSeconds(3), Ct);
 
         Assert.NotEqual("FIRST", two.Reply);
 

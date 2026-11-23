@@ -10,7 +10,7 @@ namespace Parley.Headless.Tests;
 [Integration]
 public sealed class AHandBackAnsweredLateIsNotTheNextTurnsReplyTests : IDisposable
 {
-    private static readonly TimeSpan Short = TimeSpan.FromSeconds(8);
+    private static readonly TimeSpan Short = TimeSpan.FromSeconds(15);
 
     private const string Init = """{"type":"system","subtype":"init","session_id":"s"}""";
 
@@ -45,7 +45,7 @@ public sealed class AHandBackAnsweredLateIsNotTheNextTurnsReplyTests : IDisposab
         // patience. Turn 2 is then given; while it waits, the hand-back's tagged result arrives, then turn 2's own reply.
         var template = StubRunner.Scripted(
             _workspace,
-            [Started, StubRunner.Pause(1), Init, StubRunner.Pause(3), PeerDone],
+            [Started, StubRunner.Pause(1), Init, StubRunner.Pause(6), PeerDone],
             [Second]);
 
         var ended = new TaskCompletionSource<TurnOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);

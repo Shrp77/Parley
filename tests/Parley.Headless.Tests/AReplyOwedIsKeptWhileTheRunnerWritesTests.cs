@@ -41,7 +41,7 @@ public sealed class AReplyOwedIsKeptWhileTheRunnerWritesTests : IDisposable
         // writing lines, and answers prompt 1 at about 6 s. Turn 2's wait (3 s) sees it working the whole time.
         var template = StubRunner.Scripted(
             _workspace,
-            [StubRunner.Pause(2), Done, StubRunner.Pause(1), "working", StubRunner.Pause(1), "working", StubRunner.Pause(1), "working", StubRunner.Pause(1), "working", StubRunner.Pause(1), First],
+            [StubRunner.Pause(3), Done, StubRunner.Pause(1), "working", StubRunner.Pause(1), "working", StubRunner.Pause(1), "working", StubRunner.Pause(1), "working", StubRunner.Pause(1), First],
             [Second]);
 
         await using var agent = ResidentAgent.Start(
