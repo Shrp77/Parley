@@ -3939,10 +3939,12 @@ answered.
 
 **A node tells the broker when each turn it gives begins and when it ends.** The end carries how long
 the turn ran, whether it finished cleanly, whether it was cut off for running too long, whether the
-process died, what it cost and how many model turns it took, and **how many tool calls were refused for
+process died, the cost the runner reported with it and how many model turns it took, and **how many tool calls were refused for
 want of permission**. A resident agent runs with nobody at the keyboard, so a call needing approval is
 refused rather than paused — and an agent whose work was stopped that way looks, from every other fact
-the broker holds, exactly like one still doing it: a Request collected and not answered.
+the broker holds, exactly like one still doing it: a Request collected and not answered. **The cost is recorded as the
+runner reports it.** Claude Code reports the running total of its session so far, not the turn's own share, so a turn's
+figure is what the process had spent by the end of that turn, and it starts again from zero with each new process.
 
 The broker records each ended turn in `invocations` (§9.2), counting itself how much the agent had
 waiting before and after — that is its inbox, which the node cannot see. A turn that has begun and not

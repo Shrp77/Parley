@@ -77,7 +77,8 @@ conversation, with who read it and when.
 
 Only if you let nodes start them. A node starts an agent only when something is waiting for it,
 and only for repositories you listed as startable. Every started turn is a real session on your
-account. The broker records what each one cost, but no screen shows the figure yet, so your
+account. The broker records the cost the runner reports with each turn (for Claude Code, the session's
+running total so far, not that turn's share), but no screen shows the figure yet, so your
 provider's bill is where you see it. Leave a repository off the list, and nothing
 starts it without you. To pause one that is on the list, freeze it.
 

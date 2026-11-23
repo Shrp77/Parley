@@ -88,8 +88,8 @@ prioritises, closes or overrides anything.
 Between processes that can reach the port, see above.
 
 **Loss of control over spending.** Nothing runs agents unless something is waiting for them, and
-only in repositories you listed as startable. The broker records each turn and what it cost, but
-no screen shows the cost yet: your provider's bill is where you see it. Health flags a turn that
+only in repositories you listed as startable. The broker records each turn and the cost the runner
+reports with it (for Claude Code, the session's running total so far), but no screen shows the cost yet: your provider's bill is where you see it. Health flags a turn that
 stopped on a refused permission, and `parley up` prints a turn that failed. You can stop an agent
 at the end of its turn, or freeze it so that nothing starts it until you unfreeze it or the broker next starts.
 

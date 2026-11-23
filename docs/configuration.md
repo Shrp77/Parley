@@ -298,7 +298,7 @@ requester is started in its turn.
 
 **It spends money while nobody is watching.** That is the feature and the risk in one sentence.
 Every turn is a real session on your account. The broker records each turn: count, duration,
-cost, and how often an agent ran and still owed exactly what it owed, which is the shape a runaway
+the cost the runner reports (for Claude Code, the session's running total at the end of that turn), and how often an agent ran and still owed exactly what it owed, which is the shape a runaway
 takes before it looks like one. No screen shows those figures yet, so your provider's bill is
 where you see the cost; `parley up` prints a turn that failed.
 
