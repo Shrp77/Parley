@@ -355,8 +355,18 @@ public static class ConsoleHost
     /// <param name="fallbackBroker">
     /// The broker to offer when this machine's manifest names no projects. Null to offer none.
     /// </param>
+    /// <param name="serving">
+    /// Called once the console has bound and started, with the addresses it listens on. Null to be told nothing.
+    /// </param>
     /// <param name="cancellationToken">Stops the console.</param>
-    /// <remarks>The machine's deployment root is found here, at the top, and handed to <see cref="Build"/>.</remarks>
+    /// <remarks>
+    /// <para>The machine's deployment root is found here, at the top, and handed to <see cref="Build"/>.</para>
+    /// <para>
+    /// <b>Told after the start, never before.</b> A broker that starts the console announces it to a person only once
+    /// this has been called. Whether the address accepts a connection is no answer: another program can hold it while
+    /// this console fails to bind.
+    /// </para>
+    /// </remarks>
     /// <returns>A task completing when the console stops.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="args"/> is null.</exception>
     public static async Task RunAsync(
@@ -364,6 +374,7 @@ public static class ConsoleHost
         string? address = null,
         TextWriter? warn = null,
         string? fallbackBroker = null,
+        Func<IReadOnlyCollection<string>, Task>? serving = null,
         CancellationToken cancellationToken = default)
     {
         var app = Build(
@@ -376,6 +387,12 @@ public static class ConsoleHost
 
         try
         {
+            // StartAsync returns once Kestrel has bound every address, so what is read here is what it bound.
+            if (serving is not null)
+            {
+                await serving([.. app.Urls]).ConfigureAwait(false);
+            }
+
             await app.WaitForShutdownAsync(cancellationToken).ConfigureAwait(false);
         }
         finally

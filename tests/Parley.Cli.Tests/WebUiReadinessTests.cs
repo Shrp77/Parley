@@ -6,7 +6,8 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Where the broker connects to see whether its web UI answers, and the words it uses when it did not.
+/// Where the broker connects to see whether a web UI's address is taken, how it reads what its web UI says, and the
+/// words it uses when the web UI did not start.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -52,6 +53,51 @@ public sealed class WebUiReadinessWordsTests
 
         Assert.Equal(WebUiReadiness.Taken(address), WebUiReadiness.Exited(3, address, takenNow: true));
         Assert.Contains("already in use by another program", WebUiReadiness.Taken(address), StringComparison.Ordinal);
+
+        // Said plainly: the console is not running. It used to guess at "a web UI an earlier broker left running", which
+        // is wrong whenever the holder is anything else, and since a web UI ends with its broker it rarely is.
+        Assert.Contains("this broker's web UI is not running", WebUiReadiness.Taken(address), StringComparison.Ordinal);
+        Assert.DoesNotContain("earlier broker", WebUiReadiness.Taken(address), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_serving_line_is_taken_once_and_everything_else_is_passed_on()
+    {
+        await using var log = new StringWriter();
+        var said = new WebUiReadiness.Said(log);
+
+        said.Line("Parley web UI on http://127.0.0.1:5280. Ctrl+C stops it.");
+        Assert.False(said.Serving.IsCompleted, "a line that is not the serving line was taken for it.");
+
+        said.Line(Parley.Configuration.WebUiAddress.ServingMarker + "http://127.0.0.1:5280");
+        said.Line(Parley.Configuration.WebUiAddress.ServingMarker + "http://127.0.0.1:5281");
+        said.Line("info: Microsoft.Hosting.Lifetime");
+        said.Line(null);
+
+        Assert.True(said.Serving.IsCompletedSuccessfully);
+        Assert.Equal("http://127.0.0.1:5280", await said.Serving);
+
+        var passed = log.ToString();
+
+        Assert.Contains("Parley web UI on http://127.0.0.1:5280. Ctrl+C stops it.", passed, StringComparison.Ordinal);
+        Assert.Contains("info: Microsoft.Hosting.Lifetime", passed, StringComparison.Ordinal);
+        Assert.DoesNotContain("http://127.0.0.1:5280" + Environment.NewLine + "info", passed, StringComparison.Ordinal);
+
+        // Only the first is the answer; a second is passed on like any other line.
+        Assert.Contains(Parley.Configuration.WebUiAddress.ServingMarker + "http://127.0.0.1:5281", passed, StringComparison.Ordinal);
+        Assert.DoesNotContain(Parley.Configuration.WebUiAddress.ServingMarker + "http://127.0.0.1:5280", passed, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_line_the_broker_can_no_longer_write_is_dropped_rather_than_thrown()
+    {
+        // The line arrives on the process reader's thread, where an exception would end the broker.
+        var log = new StringWriter();
+        log.Dispose();
+
+        var said = new WebUiReadiness.Said(log);
+
+        said.Line("a line written after the broker's output closed");
     }
 
     [Fact]
@@ -64,12 +110,14 @@ public sealed class WebUiReadinessWordsTests
 }
 
 /// <summary>
-/// What the broker makes of a web UI it started: answered, exited, or silent, decided by a connection on loopback.
+/// What the broker makes of a web UI it started: answered, exited, silent or not worth saying, decided by what the web UI
+/// said and whether it is running, never by whether its address answers.
 /// </summary>
 /// <remarks>
-/// The child here is a process that cannot listen (this test host, or one that has already exited), so the outcome rests
-/// only on the address and on whether the process is running. A process that exited is never waited on for the whole
-/// deadline, and is never taken for one that answered.
+/// The child here is a process that cannot listen (this test host, or one that has already exited), and what it says is
+/// handed to <see cref="WebUiReadiness.Said"/> directly. A process that exited is never waited on for the whole deadline,
+/// and is never taken for one that answered; another program listening at the address is never taken for it either
+/// (review, lens 1 run B on 6561e9ea).
 /// </remarks>
 [Integration]
 public sealed class WebUiReadinessTests
@@ -90,30 +138,116 @@ public sealed class WebUiReadinessTests
     }
 
     [Fact]
-    public async Task A_running_web_ui_whose_address_answers_has_answered()
+    public async Task A_running_web_ui_that_says_it_is_serving_has_answered()
     {
+        var ct = TestContext.Current.CancellationToken;
+        using var running = Process.GetCurrentProcess();
+        var said = new WebUiReadiness.Said(TextWriter.Null);
+
+        var waiting = WebUiReadiness.AwaitAsync(said, running, Patience, ct);
+
+        said.Line(Parley.Configuration.WebUiAddress.ServingMarker + "http://127.0.0.1:5280");
+
+        Assert.Equal(WebUiReadiness.Outcome.Answered, await waiting.WaitAsync(Patience, ct));
+    }
+
+    [Fact]
+    public async Task Another_program_listening_at_the_address_is_not_the_web_ui_answering()
+    {
+        // The defect this replaced: a program that took the address after the broker's check accepted the connection
+        // the broker took for its web UI answering, and was announced while the web UI failed to bind.
         var ct = TestContext.Current.CancellationToken;
         using var held = new TcpListener(IPAddress.Loopback, 0);
         held.Start();
 
+        Assert.True(
+            await WebUiReadiness.TakenAsync($"http://127.0.0.1:{((IPEndPoint)held.LocalEndpoint).Port}", ct),
+            "nothing listens at the address, so this proves nothing.");
+
         using var running = Process.GetCurrentProcess();
 
         var outcome = await WebUiReadiness.AwaitAsync(
-            $"http://127.0.0.1:{((IPEndPoint)held.LocalEndpoint).Port}", running, Patience, ct).WaitAsync(Patience, ct);
+            new WebUiReadiness.Said(TextWriter.Null), running, TimeSpan.FromSeconds(1), ct).WaitAsync(Patience, ct);
 
-        Assert.Equal(WebUiReadiness.Outcome.Answered, outcome);
+        Assert.Equal(WebUiReadiness.Outcome.Silent, outcome);
     }
 
     [Fact]
-    public async Task A_running_web_ui_that_never_answers_is_silent_at_the_deadline()
+    public async Task A_running_web_ui_that_says_nothing_is_silent_at_the_deadline()
     {
         var ct = TestContext.Current.CancellationToken;
         using var running = Process.GetCurrentProcess();
 
         var outcome = await WebUiReadiness.AwaitAsync(
-            $"http://127.0.0.1:{Loopback.FreePort()}", running, TimeSpan.FromSeconds(1), ct).WaitAsync(Patience, ct);
+            new WebUiReadiness.Said(TextWriter.Null), running, TimeSpan.FromSeconds(1), ct).WaitAsync(Patience, ct);
 
         Assert.Equal(WebUiReadiness.Outcome.Silent, outcome);
+    }
+
+    [Fact]
+    public async Task A_broker_that_begins_stopping_is_told_so_rather_than_silent()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var running = Process.GetCurrentProcess();
+        using var stopping = new CancellationTokenSource();
+
+        var waiting = WebUiReadiness.AwaitAsync(new WebUiReadiness.Said(TextWriter.Null), running, Patience, stopping.Token);
+
+        await stopping.CancelAsync();
+
+        Assert.Equal(WebUiReadiness.Outcome.Stopping, await waiting.WaitAsync(Patience, ct));
+    }
+
+    [Fact]
+    public async Task A_silent_web_ui_that_says_it_is_serving_later_is_followed_up_once()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var running = Process.GetCurrentProcess();
+        using var stopping = new CancellationTokenSource();
+        await using var log = new StringWriter();
+        var said = new WebUiReadiness.Said(TextWriter.Null);
+
+        var following = WebUiReadiness.FollowUpAsync(said, running, "http://127.0.0.1:5280", log, stopping.Token);
+
+        Assert.False(following.IsCompleted, "the follow-up finished before the web UI said anything.");
+
+        said.Line(Parley.Configuration.WebUiAddress.ServingMarker + "http://127.0.0.1:5280");
+        await following.WaitAsync(Patience, ct);
+
+        Assert.Equal(
+            "   Web UI:   http://127.0.0.1:5280 is answering now. Open that one in a browser." + Environment.NewLine,
+            log.ToString());
+    }
+
+    [Fact]
+    public async Task A_follow_up_says_nothing_once_the_broker_is_stopping()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var running = Process.GetCurrentProcess();
+        using var stopping = new CancellationTokenSource();
+        await using var log = new StringWriter();
+        var said = new WebUiReadiness.Said(TextWriter.Null);
+
+        var following = WebUiReadiness.FollowUpAsync(said, running, "http://127.0.0.1:5280", log, stopping.Token);
+
+        await stopping.CancelAsync();
+        await following.WaitAsync(Patience, ct);
+
+        Assert.Equal(string.Empty, log.ToString());
+    }
+
+    [Fact]
+    public async Task A_silent_web_ui_that_exits_is_followed_up_as_not_started()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var exited = await ExitedAsync(ct);
+        await using var log = new StringWriter();
+
+        await WebUiReadiness.FollowUpAsync(
+            new WebUiReadiness.Said(TextWriter.Null), exited, $"http://127.0.0.1:{Loopback.FreePort()}", log, ct)
+            .WaitAsync(Patience, ct);
+
+        Assert.Contains("Web UI:   did not start (parley-web-ui exited with code 3)", log.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -124,7 +258,7 @@ public sealed class WebUiReadinessTests
 
         // A deadline far longer than the patience: an exit noticed only when the deadline ran out fails here.
         var outcome = await WebUiReadiness.AwaitAsync(
-            $"http://127.0.0.1:{Loopback.FreePort()}", exited, TimeSpan.FromMinutes(10), ct).WaitAsync(Patience, ct);
+            new WebUiReadiness.Said(TextWriter.Null), exited, TimeSpan.FromMinutes(10), ct).WaitAsync(Patience, ct);
 
         Assert.Equal(WebUiReadiness.Outcome.Exited, outcome);
     }
@@ -139,7 +273,7 @@ public sealed class WebUiReadinessTests
         await stopping.CancelAsync();
 
         var outcome = await WebUiReadiness.AwaitAsync(
-            $"http://127.0.0.1:{Loopback.FreePort()}", exited, Patience, stopping.Token).WaitAsync(Patience, ct);
+            new WebUiReadiness.Said(TextWriter.Null), exited, Patience, stopping.Token).WaitAsync(Patience, ct);
 
         Assert.Equal(WebUiReadiness.Outcome.Exited, outcome);
     }

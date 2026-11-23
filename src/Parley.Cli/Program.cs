@@ -776,16 +776,20 @@ if (verb == "serve" && rest.Length == 0)
             // the broker, and that is frequently not a machine with a browser on it at all.
 
             Process? child = null;
+            WebUiReadiness.Said? said = null;
+            Task? followUp = null;
             string? whyNot = null;
             var installHint = false;
             var silent = false;
+            var taken = false;
 
-            // **Asked before anything is started.** Something already answering there is most likely a web UI an
-            // earlier broker left running when it was killed, serving that broker's settings. A child started now
-            // would fail to bind, and a connection made to see whether it answered would reach the other one.
+            // **Asked before anything is started.** Something already answering there is another program, and a
+            // child started now could only fail to bind. Whether a child started later is serving is not asked of
+            // the address at all: it says so itself (WebUiReadiness).
             if (await WebUiReadiness.TakenAsync(webUiAddress, stopping).ConfigureAwait(false))
             {
                 whyNot = WebUiReadiness.Taken(webUiAddress);
+                taken = true;
             }
 
             try
@@ -816,6 +820,12 @@ if (verb == "serve" && rest.Length == 0)
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     RedirectStandardInput = true,
+
+                    // **Its standard output comes here.** The web UI says on it, in one line, when it is serving, and
+                    // that line is what the address is announced on. Everything else it writes is passed on to this
+                    // process's own output for as long as it runs (WebUiReadiness.Watch), so the pipe never fills.
+                    // Its errors are not redirected and reach this process's error output as they always did.
+                    RedirectStandardOutput = true,
                 };
 
                 start.ArgumentList.Add("--listen");
@@ -841,11 +851,12 @@ if (verb == "serve" && rest.Length == 0)
                 }
 
                 // Not started at all when the address was already taken: the reason is known, and a child that
-                // could only fail would print a second, vaguer one.
-                if (whyNot is null)
+                // could only fail would print a second, vaguer one. Nor when the broker is already stopping.
+                if (whyNot is null && !stopping.IsCancellationRequested)
                 {
                     child = Process.Start(start)
                         ?? throw new InvalidOperationException($"{WebUiTool} could not be started.");
+                    said = WebUiReadiness.Watch(child, reporting);
                 }
             }
             catch (Exception failure) when (failure is Win32Exception
@@ -859,21 +870,21 @@ if (verb == "serve" && rest.Length == 0)
                 installHint = true;
             }
 
-            // **Announced once it answers, never merely once it started.** A child that started and then
-            // could not bind used to be announced as serving; the person was sent to an address that served
-            // another program or nothing. Waited on once, with a deadline: this is not a wait on the child's
-            // life, and a child that exits is still not restarted.
-            if (child is not null)
+            // **Announced once it says it is serving, never merely once it started, and never because the
+            // address answers.** A child that could not bind used to be announced as serving, and later a program
+            // that took the address after the check above was announced in its place while the child failed and
+            // exited. Waited on once, with a deadline: this is not a wait on the child's life, and a child that
+            // exits is still not restarted.
+            if (child is not null && said is not null)
             {
                 var outcome = await WebUiReadiness.AwaitAsync(
-                    webUiAddress, child, WebUiReadiness.Deadline, stopping).ConfigureAwait(false);
+                    said, child, WebUiReadiness.Deadline, stopping).ConfigureAwait(false);
 
                 if (outcome == WebUiReadiness.Outcome.Exited)
                 {
-                    whyNot = WebUiReadiness.Exited(
-                        child.ExitCode,
-                        webUiAddress,
-                        await WebUiReadiness.TakenAsync(webUiAddress, stopping).ConfigureAwait(false));
+                    // Something answering now is not this broker's web UI, which has exited.
+                    taken = await WebUiReadiness.TakenAsync(webUiAddress, stopping).ConfigureAwait(false);
+                    whyNot = WebUiReadiness.Exited(child.ExitCode, webUiAddress, taken);
                 }
 
                 silent = outcome == WebUiReadiness.Outcome.Silent;
@@ -888,11 +899,12 @@ if (verb == "serve" && rest.Length == 0)
             var opening = whyNot is null
                 ? $"   Web UI:   {webUiAddress}{Environment.NewLine}"
                     + (silent
-                        ? "   Started, but not answering yet. Open that one in a browser in a moment."
+                        ? "   Started, but not answering yet. The broker will say so here when it does."
                         : "   Open that one in a browser.")
                 : $"   Web UI:   did not start ({whyNot}){Environment.NewLine}"
                     + "   The broker is still serving."
-                    + (installHint ? $" {Forwarding.InstallHint("parley-web-ui")}" : string.Empty);
+                    + (installHint ? $" {Forwarding.InstallHint("parley-web-ui")}" : string.Empty)
+                    + (taken ? " Stop that program, or serve with --web-ui and another address." : string.Empty);
 
             var body =
                 opening + Environment.NewLine
@@ -908,10 +920,22 @@ if (verb == "serve" && rest.Length == 0)
             var rule = new string(
                 '-', body.Split(Environment.NewLine).Max(line => line.Length));
 
-            await reporting.WriteLineAsync(
-                $"{Environment.NewLine}  {rule}{Environment.NewLine}"
-                + $"{body}{Environment.NewLine}"
-                + $"  {rule}{Environment.NewLine}").ConfigureAwait(false);
+            // Nothing at all once the broker is stopping: an address to open, or a promise to say when it answers,
+            // printed after "stopping" sends a person to a web UI that is being ended.
+            if (!stopping.IsCancellationRequested)
+            {
+                await reporting.WriteLineAsync(
+                    $"{Environment.NewLine}  {rule}{Environment.NewLine}"
+                    + $"{body}{Environment.NewLine}"
+                    + $"  {rule}{Environment.NewLine}").ConfigureAwait(false);
+            }
+
+            // **A web UI announced as not answering yet is followed up once:** a line when it says it is serving,
+            // or when it exits. Not a wait on its life either: it ends at the first of those or at the broker's stop.
+            if (silent && child is not null && said is not null)
+            {
+                followUp = WebUiReadiness.FollowUpAsync(said, child, webUiAddress, reporting, stopping);
+            }
 
             try
             {
@@ -951,6 +975,13 @@ if (verb == "serve" && rest.Length == 0)
                 {
                     // Already gone, or not this process's to end. Neither is worth a message on a
                     // path that runs while the broker is shutting down.
+                }
+
+                // Finished before the process is let go, so the follow-up never asks a disposed one. The broker
+                // is stopping by now, which is what ends it, and it never throws.
+                if (followUp is not null)
+                {
+                    await followUp.ConfigureAwait(false);
                 }
 
                 child?.Dispose();

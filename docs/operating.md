@@ -19,6 +19,11 @@ in `settings.json` (see [Configuration](configuration.md#reaching-the-console-by
 which protects it from DNS rebinding, and it refuses a request another site started, so a page you visit cannot act
 through it. It binds to loopback unless you give it an address.
 
+The broker names the console's address only once the console says it is serving. If it says
+*Web UI: did not start* because another program holds the address, the console is not running:
+close that program, or start the broker with `--web-ui` and another address. The broker and the
+terminal keep working either way.
+
 ## Your seat
 
 In every project the broker provides a seat for you, named `human-user@<project>`. It is never
@@ -600,6 +605,7 @@ UTC. Besides the broker's own messages, the log says:
 - when each project's broker starts listening, when it begins stopping and when it has stopped;
 - when the process is asked to stop, and by what: Ctrl+C, the console window being closed,
   logoff or shutdown, or a signal on Linux and macOS;
+- whether the web console it started is serving, and what that console writes;
 - an exception that ends the process, and one a background task raised that nothing handled;
 - that the process is exiting, with its exit code.
 

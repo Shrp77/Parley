@@ -23,6 +23,7 @@ parley-web-ui: the operator's web UI.
   --until-input-closes
                       Stop when standard input closes. A broker passes it with a pipe, so
                       the web UI ends with the broker even when the broker is killed.
+                      With it, one line on standard output says when it is serving.
   --version, -v       The build and the protocol it speaks.
   --help, -h          This.
 
@@ -154,7 +155,23 @@ if (untilInputCloses)
 
 try
 {
-    await ConsoleHost.RunAsync([], address, Console.Error, brokerAddress, parentGone.Token).ConfigureAwait(false);
+    // **A broker is told when this is serving, and only a broker.** It waits for this line before it names the address
+    // to a person: a connection accepted at the address could be another program's. Written by hand it would be noise,
+    // so only on the flag a broker passes.
+    await ConsoleHost.RunAsync(
+        [],
+        address,
+        Console.Error,
+        brokerAddress,
+        untilInputCloses
+            ? async bound =>
+            {
+                await Console.Out.WriteLineAsync(WebUiAddress.ServingMarker + string.Join(';', bound))
+                    .ConfigureAwait(false);
+                await Console.Out.FlushAsync().ConfigureAwait(false);
+            }
+            : null,
+        parentGone.Token).ConfigureAwait(false);
 
     return 0;
 }

@@ -433,7 +433,13 @@ public sealed class AStoppedBrokerLeavesNoWebUiTests : IDisposable
         var tool = Path.Combine(standIn, "parley-web-ui");
         var pidFile = Path.Combine(_root, "stand-in.pid");
 
-        WriteScript(tool, $"echo $$ > '{pidFile}'", "exec sleep 300");
+        // Says it is serving ten seconds after the thirty the broker waits, which the broker then says.
+        WriteScript(
+            tool,
+            $"echo $$ > '{pidFile}'",
+            "sleep 40",
+            $"echo '{WebUiAddress.ServingMarker}{_webUiAt}'",
+            "exec sleep 300");
 
         using var broker = Serve(withWebUi: true, out var said, path: standIn + Path.PathSeparator + "/usr/bin:/bin");
 
@@ -445,6 +451,17 @@ public sealed class AStoppedBrokerLeavesNoWebUiTests : IDisposable
             Assert.Contains($"Web UI:   {_webUiAt}", output, StringComparison.Ordinal);
             Assert.Contains("Started, but not answering yet.", output, StringComparison.Ordinal);
             Assert.DoesNotContain("Open that one in a browser.", output, StringComparison.Ordinal);
+
+            // Followed up once it says so, rather than left at "not answering yet" for good.
+            var followed = Stopwatch.StartNew();
+            var answering = $"Web UI:   {_webUiAt} is answering now. Open that one in a browser.";
+
+            while (!Read(said).Contains(answering, StringComparison.Ordinal) && followed.Elapsed < TimeSpan.FromSeconds(60))
+            {
+                await Task.Delay(100, ct);
+            }
+
+            Assert.Contains(answering, Read(said), StringComparison.Ordinal);
         }
         finally
         {
