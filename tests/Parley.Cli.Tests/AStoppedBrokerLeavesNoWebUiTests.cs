@@ -108,6 +108,9 @@ public sealed class AStoppedBrokerLeavesNoWebUiTests : IDisposable
             Assert.Contains("already in use by another program", output, StringComparison.Ordinal);
             Assert.Contains("The broker is still serving.", output, StringComparison.Ordinal);
             Assert.DoesNotContain("Open that one in a browser", output, StringComparison.Ordinal);
+
+            // A taken port is not a missing tool: telling the person to install parley-web-ui sends them the wrong way.
+            Assert.DoesNotContain("-Only parley-web-ui", output, StringComparison.Ordinal);
             Assert.False(broker.HasExited, "the broker exited because a web page could not bind.");
         }
         finally
@@ -140,6 +143,53 @@ public sealed class AStoppedBrokerLeavesNoWebUiTests : IDisposable
 
             // Announced only once it answered, so it answers now.
             Assert.True(await AcceptsAsync(_webUiAt, ct), "the broker announced a web UI that does not answer.");
+        }
+        finally
+        {
+            End(broker);
+        }
+    }
+
+    [Fact]
+    public async Task The_web_ui_answers_the_moment_it_is_announced()
+    {
+        // The broker waits for its web UI to answer before naming it. Without the wait it named the address the moment the
+        // process started, and every test still passed, because the one above retries for half a minute (review, lens 3 run
+        // B on 6561e9ea).
+        var ct = TestContext.Current.CancellationToken;
+        using var broker = Serve(withWebUi: true, out var said);
+
+        try
+        {
+            // Watched closely, so the one connection below is made within a few milliseconds of the announcement.
+            var deadline = Stopwatch.StartNew();
+
+            while (!Read(said).Contains("Open that one in a browser.", StringComparison.Ordinal)
+                   && deadline.Elapsed < TimeSpan.FromSeconds(60))
+            {
+                await Task.Delay(5, ct);
+            }
+
+            Assert.Contains($"Web UI:   {_webUiAt}", Read(said), StringComparison.Ordinal);
+
+            // Once, briefly, with no retry: a web UI takes far longer than this to bind, so an address named before it
+            // answered is caught. Bounded by a token because Windows retries a refused loopback connection for about two
+            // seconds before it gives up.
+            using var client = new TcpClient();
+            using var brief = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            brief.CancelAfter(TimeSpan.FromMilliseconds(250));
+            var answered = true;
+
+            try
+            {
+                await client.ConnectAsync(IPAddress.Loopback, new Uri(_webUiAt).Port, brief.Token);
+            }
+            catch (Exception refused) when (refused is SocketException || (refused is OperationCanceledException && !ct.IsCancellationRequested))
+            {
+                answered = false;
+            }
+
+            Assert.True(answered, "the broker announced its web UI before it answered. It said: " + Read(said));
         }
         finally
         {

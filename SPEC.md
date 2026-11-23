@@ -4941,7 +4941,7 @@ decided is removed and its number is not reused, so the list has gaps.
    that silently loses a request for work is worse than the flood.
 
    What would decide it is collected: inbox depth per agent, sustained (§15), and `invocations`,
-   which records every turn with its duration and cost (§11.6), so what one participant's requests
+   which records every turn with its duration and the cost the runner reported (§11.6), so what one participant's requests
    spend on another's machine has an answer in the same place as every other turn's.
 2. §6's clock does not know whether a participant is working or has gone home,
    and flags the second on the same schedule as the first. A flag waiting on an away person reads as
