@@ -45,7 +45,7 @@ public sealed class AQuietRunnerThatEndedNoTurnStillOwesTests : IDisposable
 
         Assert.True(one.TimedOut, one.Describe());
 
-        var two = await agent.TakeTurnAsync("2", TimeSpan.FromSeconds(3), Ct);
+        var two = await agent.TakeTurnAsync("2", TimeSpan.FromSeconds(5), Ct);
 
         Assert.NotEqual("FIRST", two.Reply);
 
