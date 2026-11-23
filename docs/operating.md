@@ -21,9 +21,11 @@ through it. It binds to loopback unless you give it an address.
 
 The broker tells you to open the console's address only once the console says it is serving; if it
 has not said so within half a minute, the broker says it started but is not answering yet, and adds a
-line when it does. If it says *Web UI: did not start* because another program holds the address, the
-console is not running: close that program, or give the console another address. For the broker the
-logon task runs, that is `parley autostart install --web-ui <address>`; for one you start yourself,
+line when it does, or when it gives up. If it says *Web UI: did not start* because another program holds
+the address, the console is not running: close that program, or give the console another address. For
+the broker the logon task runs, that is `parley autostart install --web-ui <address>` (add `--hidden` if
+the entry had it; `parley autostart status` shows it), and the new address takes effect when the broker
+next starts: stop and start the logon task, or log off and on. For one you start yourself, it is
 `parley serve --with-web-ui --web-ui <address>`. The broker and the terminal keep working either way.
 
 ## Your seat
@@ -601,8 +603,8 @@ applies the policy the broker started with, which is the only policy in the depl
 ### The broker's log
 
 `parley serve --log <path>` writes everything the broker says to that file, and the autostart
-entry always passes one (`parley autostart install` prints where). Each line starts with the time, in
-UTC. Besides the broker's own messages, the log says:
+entry always passes one (`parley autostart install` prints where). The broker's own diagnostic lines start
+with the time, in UTC; the banner and what the web console writes are kept as they were written. Besides the broker's own messages, the log says:
 
 - when each project's broker starts listening, when it begins stopping and when it has stopped;
 - when the process is asked to stop, and by what: Ctrl+C, the console window being closed,
