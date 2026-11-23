@@ -74,7 +74,7 @@ public sealed class SurfaceBoundaryTests
     ];
 
     private static IEnumerable<string> PublicMethodsOf(Type type) =>
-        type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+        type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
             .Select(m => m.Name)
             .Where(n => !n.StartsWith("get_Equals", StringComparison.Ordinal))
             .Where(n => n is not ("Equals" or "GetHashCode" or "ToString"));
