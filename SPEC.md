@@ -4023,8 +4023,9 @@ Every other fact the broker holds says only that the name is attached.
 **So a node names each launch.** Before it starts an agent it tells the broker the agent and a token it chose
 for this one launch, and starts the process with that token in its environment; the adapter presents the token
 when it attaches. An attachment presenting the token the broker was told of for that agent, by the node on that
-agent's machine, is **started by Parley**. The token stays good until that node starts the agent again with a new
-one, so the same process reattaching after its stream dropped is still Parley's; and since a broker holds launches
+agent's machine, is **started by Parley**. The token stays good while the node connection that told of it is joined, and until
+that node starts the agent again with a new one, so the same process reattaching after its stream dropped is still
+Parley's; once that connection has gone, the process reads as left running until a node joins and tells of it again; and since a broker holds launches
 only in memory, a node joining a broker tells it again the token of every agent of that project it is still running,
 with the repository's identity, so an agent renamed since its launch is found under its new name. A checkout enrolled in
 several projects is one process for all of them, so a node hosting several tells each that starts it of a launch
