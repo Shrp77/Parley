@@ -34,4 +34,20 @@ public sealed class EveryWakeOutcomeIsSaidTests
         Assert.Contains("unfreeze", said, StringComparison.Ordinal);
         Assert.False(SeatVoice.GoesOnUnaided("Sent. " + said));
     }
+
+    [Fact]
+    public void A_request_to_everybody_counts_the_receivers_frozen()
+    {
+        // The count was added with the frozen words (0.64.39) and no test read it: with it removed, a broadcast to two frozen
+        // agents said nothing of them (review, lens 3 run C on 81b6a1a7).
+        var said = SeatVoice.Reported(
+            3,
+            3,
+            stopped: false,
+            new Dictionary<Wire.WakeOutcome, int> { [Wire.WakeOutcome.Started] = 1, [Wire.WakeOutcome.Frozen] = 2 },
+            [],
+            []);
+
+        Assert.Contains("2 frozen, reading it once unfrozen", said, StringComparison.Ordinal);
+    }
 }

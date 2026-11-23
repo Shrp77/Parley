@@ -67,7 +67,8 @@ public sealed class ALapseOwedToALeftProcessOutlivesARestartTests : IDisposable
         await left.DisposeAsync();
         await third.WaitUntilDetachedAsync(Orders, Patience);
 
-        _ = await node.CountCommandsAsync(TimeSpan.FromSeconds(3));
+        // Waited for, then listened past for a second one: a fixed window cannot tell "not yet" from "never" (CountCommandsAsync).
+        _ = await node.CountCommandsAsync(1, Wait, Patience);
 
         Assert.Equal(1, node.Commands.Count(StartOf(Orders)));
     }
@@ -94,7 +95,7 @@ public sealed class ALapseOwedToALeftProcessOutlivesARestartTests : IDisposable
             await left.DisposeAsync();
             await second.WaitUntilDetachedAsync(Orders, Patience);
 
-            _ = await node.CountCommandsAsync(TimeSpan.FromSeconds(1));
+            _ = await node.CountCommandsAsync(1, Wait, Patience);
 
             Assert.Equal(Wire.NodeCommand.CommandOneofCase.Kill, Assert.Single(node.Commands).CommandCase);
         }
