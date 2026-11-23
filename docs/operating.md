@@ -110,7 +110,7 @@ A tab at the right edge of every page opens a picture of what is being worked on
 - Each project is a band. Its agents are on the left and its conversations on the right.
 - A line joins an agent to each conversation it is in. A dashed line joins a spin-off to the
   conversation it came from.
-- A dot beside an agent stands for each background task its node says it has running.
+- A dot beside an agent stands for each background task its node says it has running, up to five; past that the dots end in a count.
 - Each agent says in words whether it is working, idle, waiting on background work, or frozen.
   A frozen agent also has a dashed outline.
 - *Freeze* and *Unfreeze* are on each agent. *Freeze all* and *Unfreeze all* are on each project.

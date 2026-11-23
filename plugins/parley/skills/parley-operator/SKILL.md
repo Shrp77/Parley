@@ -20,7 +20,7 @@ one of two places:
 
 - **The terminal.** Type `parley` (or `parley terminal`, the same thing spelled out). It needs a
   real terminal, not a script.
-- **The web UI.** `parley web-ui` opens it in a browser. It is on `127.0.0.1:5280` by default.
+- **The web UI.** The broker serves it, on `127.0.0.1:5280` by default; `parley web-ui --open` opens that in a browser. `parley web-ui` alone starts a second one by hand.
 
 The command line refuses those verbs. Each one exits with code 64, says it is not a command, and
 names the terminal. **Do not try to run them.** Tell the person where the action is, and
@@ -90,7 +90,7 @@ parley autostart install              start the broker whenever you log in, serv
 parley autostart remove               stop doing that
 parley autostart status               say whether it is set up, and what it serves
 parley up                             run this machine's node, so its agents can be started
-parley web-ui [<url>]                 the web UI in a browser; loopback by default
+parley web-ui --open [<url>]          open the web UI the broker serves in a browser
                                       (its own tool: parley-web-ui, installed separately)
 parley                                the terminal; needs a real one
                                       (its own tool: parley-terminal, installed separately;
