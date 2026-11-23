@@ -109,8 +109,8 @@ public sealed class AStoppedBrokerLeavesNoWebUiTests : IDisposable
             Assert.Contains("The broker is still serving.", output, StringComparison.Ordinal);
             Assert.DoesNotContain("Open that one in a browser", output, StringComparison.Ordinal);
 
-            // A taken port is not a missing tool: telling the person to install parley-web-ui sends them the wrong way.
-            Assert.DoesNotContain("-Only parley-web-ui", output, StringComparison.Ordinal);
+            // The tool is installed; telling the person to install it sends them the wrong way.
+            Assert.DoesNotContain("install.ps1", output, StringComparison.Ordinal);
             Assert.False(broker.HasExited, "the broker exited because a web page could not bind.");
         }
         finally
@@ -197,12 +197,70 @@ public sealed class AStoppedBrokerLeavesNoWebUiTests : IDisposable
         }
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task SIGTERM_stops_serve_in_order_and_it_exits_zero(bool withWebUi)
+    [Fact]
+    public async Task A_web_ui_that_is_not_installed_is_named_with_how_to_install_it()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "SIGTERM is how Linux and macOS supervisors stop a service.");
+        var ct = TestContext.Current.CancellationToken;
+        var nowhere = Path.Combine(_root, "no-tools");
+
+        Directory.CreateDirectory(nowhere);
+
+        using var broker = Serve(withWebUi: true, out var said, path: nowhere);
+
+        try
+        {
+            Assert.True(await Loopback.AnswersAsync(_brokerAt, ct), "the broker never answered.");
+
+            var output = await BannerAsync(said, TimeSpan.FromSeconds(60), ct);
+
+            Assert.Contains("Web UI:   did not start", output, StringComparison.Ordinal);
+            Assert.Contains("The broker is still serving.", output, StringComparison.Ordinal);
+            Assert.Contains("install.ps1 -Only parley-web-ui", output, StringComparison.Ordinal);
+            Assert.Contains("./install.sh --only parley-web-ui", output, StringComparison.Ordinal);
+        }
+        finally
+        {
+            End(broker);
+        }
+    }
+
+    [Fact]
+    public async Task A_web_ui_that_exits_before_it_answers_is_named_as_not_started_at_once()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // An address the broker passes on and the web UI refuses at its bind (Kestrel takes no path), so the child starts,
+        // exits, and its port was never taken by anything: only the wait on the child can tell.
+        var refused = _webUiAt + "/zz";
+
+        using var broker = Serve(withWebUi: true, out var said, webUiAt: refused);
+
+        try
+        {
+            Assert.True(await Loopback.AnswersAsync(_brokerAt, ct), "the broker never answered.");
+
+            // Well inside the readiness deadline: an exit noticed only when the deadline ran out is the person told late.
+            var output = await BannerAsync(said, TimeSpan.FromSeconds(20), ct);
+
+            Assert.Contains("Web UI:   did not start (parley-web-ui exited with code", output, StringComparison.Ordinal);
+            Assert.Contains("The broker is still serving.", output, StringComparison.Ordinal);
+            Assert.DoesNotContain("Open that one in a browser", output, StringComparison.Ordinal);
+            Assert.DoesNotContain("install.ps1", output, StringComparison.Ordinal);
+        }
+        finally
+        {
+            End(broker);
+        }
+    }
+
+    [Theory]
+    [InlineData("TERM", false)]
+    [InlineData("TERM", true)]
+    [InlineData("HUP", false)]
+    [InlineData("HUP", true)]
+    public async Task A_signal_to_stop_stops_serve_in_order_and_it_exits_zero(string signal, bool withWebUi)
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "SIGTERM and SIGHUP are how Linux and macOS stop a service or a terminal's job.");
 
         var ct = TestContext.Current.CancellationToken;
         using var broker = Serve(withWebUi, out var said);
@@ -216,19 +274,16 @@ public sealed class AStoppedBrokerLeavesNoWebUiTests : IDisposable
                 Assert.True(await AcceptsAsync(_webUiAt, ct), "the web UI never answered.");
             }
 
-            using (var kill = Process.Start("/bin/sh", ["-c", $"kill -TERM {broker.Id}"]))
-            {
-                await kill.WaitForExitAsync(ct);
-            }
+            await SignalAsync(signal, broker, ct);
 
             var exited = broker.WaitForExit(TimeSpan.FromSeconds(60));
 
-            Assert.True(exited, "serve was still running a minute after SIGTERM. It said: " + Read(said));
+            Assert.True(exited, $"serve was still running a minute after SIG{signal}. It said: " + Read(said));
             Assert.Equal(0, broker.ExitCode);
 
             if (withWebUi)
             {
-                Assert.True(await FreedAsync(_webUiAt, ct), "the web UI outlived a broker stopped by SIGTERM.");
+                Assert.True(await FreedAsync(_webUiAt, ct), $"the web UI outlived a broker stopped by SIG{signal}.");
             }
         }
         finally
@@ -237,13 +292,233 @@ public sealed class AStoppedBrokerLeavesNoWebUiTests : IDisposable
         }
     }
 
-    private Process Serve(bool withWebUi, out StringBuilder said)
+    // SIGHUP only. A second SIGTERM in this window was seen to be swallowed (serve ran its stop to the end and exited
+    // zero): reported by review run r10-surf-a for the owner, not held here.
+    [Theory]
+    [InlineData("HUP")]
+    public async Task A_second_signal_while_stopping_ends_serve_at_once(string signal)
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "SIGTERM and SIGHUP are Linux and macOS signals.");
+
+        var ct = TestContext.Current.CancellationToken;
+        var standIn = Path.Combine(_root, "stand-in");
+        var pidFile = Path.Combine(_root, "stand-in.pid");
+
+        Directory.CreateDirectory(standIn);
+
+        // A web UI that never reads its pipe, so an orderly stop waits out its grace before ending it: a stop that has
+        // wedged for five seconds, which is the window the second signal must land in. A stop with nothing to wait for
+        // is over in well under a tenth of a second, and two signals sent together arrive as one.
+        WriteScript(Path.Combine(standIn, "parley-web-ui"), $"echo $$ > '{pidFile}'", "exec sleep 300");
+
+        using var broker = Serve(withWebUi: true, out var said, path: standIn + Path.PathSeparator + "/usr/bin:/bin");
+
+        try
+        {
+            Assert.True(await Loopback.AnswersAsync(_brokerAt, ct), "the broker never answered.");
+
+            var started = Stopwatch.StartNew();
+
+            while (!File.Exists(pidFile) && started.Elapsed < TimeSpan.FromSeconds(30))
+            {
+                await Task.Delay(100, ct);
+            }
+
+            Assert.True(File.Exists(pidFile), "the stand-in web UI never started, so serve has nothing to wait for.");
+
+            await SignalAsync(signal, broker, ct);
+
+            // The broker stops answering before it waits on the web UI, so this is serve inside its wedged stop.
+            var stopping = Stopwatch.StartNew();
+
+            while (Loopback.CanBind(_brokerAt) is false && stopping.Elapsed < TimeSpan.FromSeconds(4) && !broker.HasExited)
+            {
+                await Task.Delay(50, ct);
+            }
+
+            await SignalAsync(signal, broker, ct);
+
+            Assert.True(broker.WaitForExit(TimeSpan.FromSeconds(60)), $"serve outlived two SIG{signal}s. It said: " + Read(said));
+
+            // Ended by the second signal, not by the orderly stop running to its end, which exits zero.
+            Assert.NotEqual(0, broker.ExitCode);
+        }
+        finally
+        {
+            End(broker);
+
+            if (File.Exists(pidFile)
+                && int.TryParse(File.ReadAllText(pidFile).Trim(), out var pid)
+                && Alive(pid))
+            {
+                using var left = Process.GetProcessById(pid);
+                left.Kill();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task A_web_ui_that_ignores_its_input_closing_is_ended_when_serve_stops()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "SIGTERM is the orderly stop a test can send; on Windows it is Ctrl+C.");
+
+        var ct = TestContext.Current.CancellationToken;
+        var standIn = Path.Combine(_root, "stand-in");
+        var pidFile = Path.Combine(_root, "stand-in.pid");
+
+        Directory.CreateDirectory(standIn);
+
+        // Starts, never listens, never reads its input: a web UI wedged before it could watch the pipe.
+        var tool = Path.Combine(standIn, "parley-web-ui");
+
+        WriteScript(tool, $"echo $$ > '{pidFile}'", "exec sleep 300");
+
+        using var broker = Serve(withWebUi: true, out var said, path: standIn + Path.PathSeparator + "/usr/bin:/bin");
+        int? standInPid = null;
+
+        try
+        {
+            Assert.True(await Loopback.AnswersAsync(_brokerAt, ct), "the broker never answered.");
+
+            var deadline = Stopwatch.StartNew();
+
+            while (deadline.Elapsed < TimeSpan.FromSeconds(30)
+                   && !(File.Exists(pidFile) && int.TryParse(File.ReadAllText(pidFile).Trim(), out _)))
+            {
+                await Task.Delay(100, ct);
+            }
+
+            Assert.True(File.Exists(pidFile), "the stand-in web UI never started, so this proves nothing.");
+
+            standInPid = int.Parse(File.ReadAllText(pidFile).Trim(), System.Globalization.CultureInfo.InvariantCulture);
+
+            await SignalAsync("TERM", broker, ct);
+
+            Assert.True(broker.WaitForExit(TimeSpan.FromSeconds(60)), "serve was still running a minute after SIGTERM.");
+
+            var gone = Stopwatch.StartNew();
+
+            while (Alive(standInPid.Value) && gone.Elapsed < TimeSpan.FromSeconds(15))
+            {
+                await Task.Delay(100, ct);
+            }
+
+            Assert.False(
+                Alive(standInPid.Value),
+                "a web UI that did not stop when its pipe closed outlived the broker that started it. It said: " + Read(said));
+        }
+        finally
+        {
+            End(broker);
+
+            if (standInPid is { } pid && Alive(pid))
+            {
+                using var left = Process.GetProcessById(pid);
+                left.Kill();
+            }
+        }
+    }
+
+    [Fact]
+    [Slow]
+    public async Task A_web_ui_that_runs_and_never_answers_is_announced_as_not_answering_yet()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "The stand-in is a shell script.");
+
+        var ct = TestContext.Current.CancellationToken;
+        var standIn = Path.Combine(_root, "stand-in");
+
+        Directory.CreateDirectory(standIn);
+
+        var tool = Path.Combine(standIn, "parley-web-ui");
+        var pidFile = Path.Combine(_root, "stand-in.pid");
+
+        WriteScript(tool, $"echo $$ > '{pidFile}'", "exec sleep 300");
+
+        using var broker = Serve(withWebUi: true, out var said, path: standIn + Path.PathSeparator + "/usr/bin:/bin");
+
+        try
+        {
+            // The readiness deadline is thirty seconds; given twice that.
+            var output = await BannerAsync(said, TimeSpan.FromSeconds(60), ct);
+
+            Assert.Contains($"Web UI:   {_webUiAt}", output, StringComparison.Ordinal);
+            Assert.Contains("Started, but not answering yet.", output, StringComparison.Ordinal);
+            Assert.DoesNotContain("Open that one in a browser.", output, StringComparison.Ordinal);
+        }
+        finally
+        {
+            End(broker);
+
+            // Best effort: the stand-in reads no pipe, so nothing else ends it if the broker did not.
+            if (File.Exists(pidFile)
+                && int.TryParse(File.ReadAllText(pidFile).Trim(), out var pid)
+                && Alive(pid))
+            {
+                using var left = Process.GetProcessById(pid);
+                left.Kill();
+            }
+        }
+    }
+
+    // A stand-in web UI. Serve asks the tool for its version as it starts, so that is answered and nothing else is: the
+    // lines given are what the started web UI does.
+    private static void WriteScript(string path, params string[] lines)
+    {
+        File.WriteAllLines(path, ["#!/bin/sh", "[ \"$1\" = --version ] && exit 0", .. lines]);
+
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+    }
+
+    private static async Task SignalAsync(string signal, Process broker, CancellationToken ct)
+    {
+        using var kill = Process.Start("/bin/sh", ["-c", $"kill -{signal} {broker.Id}"]);
+
+        await kill.WaitForExitAsync(ct);
+    }
+
+    private static bool Alive(int pid)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+
+            return !process.HasExited;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    private static async Task<string> BannerAsync(StringBuilder said, TimeSpan patience, CancellationToken ct)
+    {
+        var deadline = Stopwatch.StartNew();
+
+        while (!Read(said).Contains("Web UI:", StringComparison.Ordinal) && deadline.Elapsed < patience)
+        {
+            await Task.Delay(100, ct);
+        }
+
+        var output = Read(said);
+
+        Assert.True(
+            output.Contains("Web UI:", StringComparison.Ordinal),
+            $"no Web UI line within {patience.TotalSeconds:0}s. It said: {output}");
+
+        return output;
+    }
+
+    private Process Serve(bool withWebUi, out StringBuilder said, string? path = null, string? webUiAt = null)
     {
         string[] arguments = withWebUi
-            ? ["serve", "--config", _root, "--with-web-ui", "--web-ui", _webUiAt]
+            ? ["serve", "--config", _root, "--with-web-ui", "--web-ui", webUiAt ?? _webUiAt]
             : ["serve", "--config", _root];
 
-        var process = ToolProcess.Launch([("PATH", ChildLifetimeTests.WebUiOnPath())], arguments);
+        var process = ToolProcess.Launch([("PATH", path ?? ChildLifetimeTests.WebUiOnPath())], arguments);
         var output = new StringBuilder();
 
         void Keep(object sender, DataReceivedEventArgs line)
