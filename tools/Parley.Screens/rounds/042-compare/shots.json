@@ -1,0 +1,215 @@
+// Feature 042: the same pages at desktop, tablet and phone sizes, light and dark, for comparing directions.
+// Run once as the console ships, then once per direction with --stylesheet.
+{
+  "theme": "light",
+  "scale": 1,
+  "maximumBytes": 0,
+  "shots": [
+    {
+      "file": "conversation-desktop-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "A conversation: messages, a placed file, the person's follow-up.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "conversation-desktop-dark.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "dark",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "A conversation: messages, a placed file, the person's follow-up.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "conversation-tablet-light.png",
+      "width": 820,
+      "height": 1180,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "A conversation: messages, a placed file, the person's follow-up.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "conversation-tablet-dark.png",
+      "width": 820,
+      "height": 1180,
+      "theme": "dark",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "A conversation: messages, a placed file, the person's follow-up.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "conversation-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "A conversation: messages, a placed file, the person's follow-up.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "conversation-phone-dark.png",
+      "width": 390,
+      "height": 844,
+      "theme": "dark",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "A conversation: messages, a placed file, the person's follow-up.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "inbox-desktop-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Inbox?scope={project}",
+      "shows": "The Inbox, a waiting question opened to its answer box.",
+      "actions": [
+        {
+          "click": "details.dgrid-row > summary"
+        }
+      ]
+    },
+    {
+      "file": "inbox-desktop-dark.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "dark",
+      "path": "/Inbox?scope={project}",
+      "shows": "The Inbox, a waiting question opened to its answer box.",
+      "actions": [
+        {
+          "click": "details.dgrid-row > summary"
+        }
+      ]
+    },
+    {
+      "file": "inbox-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Inbox?scope={project}",
+      "shows": "The Inbox, a waiting question opened to its answer box."
+    },
+    {
+      "file": "inbox-phone-dark.png",
+      "width": 390,
+      "height": 844,
+      "theme": "dark",
+      "path": "/Inbox?scope={project}",
+      "shows": "The Inbox, a waiting question opened to its answer box."
+    },
+    {
+      "file": "agents-desktop-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/?tab=agents&project={project}",
+      "shows": "The agents and their states."
+    },
+    {
+      "file": "agents-desktop-dark.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "dark",
+      "path": "/?tab=agents&project={project}",
+      "shows": "The agents and their states."
+    },
+    {
+      "file": "agents-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/?tab=agents&project={project}",
+      "shows": "The agents and their states."
+    },
+    {
+      "file": "agents-phone-dark.png",
+      "width": 390,
+      "height": 844,
+      "theme": "dark",
+      "path": "/?tab=agents&project={project}",
+      "shows": "The agents and their states."
+    },
+    {
+      "file": "graph-desktop-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "The graph panel pinned beside a conversation.",
+      "graph": true,
+      "storage": {
+        "parley.nav": "collapsed",
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "graph-desktop-dark.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "dark",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "The graph panel pinned beside a conversation.",
+      "graph": true,
+      "storage": {
+        "parley.nav": "collapsed",
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    }
+  ]
+}

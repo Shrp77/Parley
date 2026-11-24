@@ -89,15 +89,20 @@ internal sealed class Camera : IAsyncDisposable
     /// <param name="list">The list it belongs to, for the theme and scale.</param>
     /// <param name="shot">The shot.</param>
     /// <param name="url">The page, placeholders already filled in.</param>
+    /// <param name="overlay">
+    /// CSS laid over the page after it loads, such as a design direction's tokens (<c>--stylesheet</c>), or null for the
+    /// console as it ships.
+    /// </param>
     /// <returns>The PNG, stripped and checked for size.</returns>
     /// <exception cref="InvalidDataException">The capture is not the size or weight the list asks for.</exception>
-    public async Task<byte[]> TakeAsync(ShotList list, Shot shot, Uri url)
+    public async Task<byte[]> TakeAsync(ShotList list, Shot shot, Uri url, string? overlay = null)
     {
+        var wanted = shot.ThemeIn(list);
         var context = await _browser.NewContextAsync(new BrowserNewContextOptions
         {
             ViewportSize = new ViewportSize { Width = shot.Width, Height = shot.Height },
             DeviceScaleFactor = list.Scale,
-            ColorScheme = string.Equals(list.Theme, "dark", StringComparison.Ordinal) ? ColorScheme.Dark : ColorScheme.Light,
+            ColorScheme = string.Equals(wanted, "dark", StringComparison.Ordinal) ? ColorScheme.Dark : ColorScheme.Light,
             ReducedMotion = ReducedMotion.Reduce,
 
             // The machine's own time zone and locale, deliberately: the console writes times on the server in the
@@ -110,7 +115,7 @@ internal sealed class Camera : IAsyncDisposable
 
         var entries = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["parley.theme"] = list.Theme,
+            ["parley.theme"] = wanted,
             ["parley.graph"] = JsonSerializer.Serialize(new { pinned = shot.Graph, open = shot.Graph }),
         };
 
@@ -140,9 +145,15 @@ internal sealed class Camera : IAsyncDisposable
         // for the theme, the one every shot depends on.
         var theme = await page.EvaluateAsync<string?>("document.documentElement.getAttribute('data-theme')").ConfigureAwait(false);
 
-        if (!string.Equals(theme, list.Theme, StringComparison.Ordinal))
+        if (!string.Equals(theme, wanted, StringComparison.Ordinal))
         {
-            throw new InvalidDataException($"{shot.File}: the page drew theme '{theme}', not '{list.Theme}'; has the console's parley.theme key changed?");
+            throw new InvalidDataException($"{shot.File}: the page drew theme '{theme}', not '{wanted}'; has the console's parley.theme key changed?");
+        }
+
+        // Last in the head, so its custom properties win over the console's own at the same specificity.
+        if (overlay is not null)
+        {
+            _ = await page.AddStyleTagAsync(new PageAddStyleTagOptions { Content = overlay }).ConfigureAwait(false);
         }
 
         foreach (var action in shot.Actions ?? [])

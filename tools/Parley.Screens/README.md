@@ -24,6 +24,9 @@ round, so a round that stops reading fails the push run. `capture` writes the PN
 
 - `--out <dir>` writes somewhere else.
 - `--only a.png,b.png` takes just those shots. The other lines in `sha256.txt` are kept.
+- `--stylesheet look.css` lays a stylesheet over every page before it is captured, so a design direction can be
+  photographed on the real console without being built into it. Run the same round once per stylesheet, each with
+  its own `--out`.
 - `--browser msedge` (the default), `chrome`, or `chromium`. The first two use the browser already installed.
   `chromium` needs Playwright's own build, fetched once with
   `pwsh tools/Parley.Screens/bin/Debug/net10.0/playwright.ps1 install chromium`.
@@ -76,6 +79,7 @@ names only a conversation its sender is already part of, or a new one.
 shot has a `file` name, an exact `width` and `height`, a `path` on the console, and what it `shows` in words.
 It can also have:
 
+- `theme` to take this shot in `light` or `dark` when it differs from the list's, so one list can hold both.
 - `graph: true` to pin the graph panel open.
 - `storage` for other choices a person's browser keeps. `{ "parley.nav": "collapsed" }` folds the navigation
   rail and `{ "parley-convo-composer": "closed" }` folds a conversation's message box. Prefer this to clicking a

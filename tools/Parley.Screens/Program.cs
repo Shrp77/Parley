@@ -7,6 +7,7 @@ const string Usage = """
 
       parley-screens check <round>
       parley-screens capture <round> [--out <dir>] [--only <file,...>] [--browser msedge|chrome|chromium]
+                                     [--stylesheet <file.css>]
       parley-screens hold <round> [--browser ...]
 
     <round> is a folder holding scenario.json (the sample data, played into the broker) and shots.json
@@ -61,6 +62,23 @@ if (string.Equals(command, "check", StringComparison.Ordinal))
 }
 
 var browser = options.GetValueOrDefault("browser", "msedge");
+
+// A stylesheet laid over every page, such as a design direction's tokens, so a look can be photographed on the real
+// console without being built into it.
+string? overlay = null;
+
+if (options.TryGetValue("stylesheet", out var sheet))
+{
+    try
+    {
+        overlay = await File.ReadAllTextAsync(Path.GetFullPath(sheet)).ConfigureAwait(false);
+    }
+    catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+    {
+        Console.Error.WriteLine($"parley-screens: the stylesheet could not be read: {unreadable.Message}");
+        return 65;
+    }
+}
 var output = Path.GetFullPath(options.GetValueOrDefault("out", Path.Combine(RepositoryRoot(), "artifacts", "screens", Path.GetFileName(round))));
 var only = options.TryGetValue("only", out var named)
     ? named.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.OrdinalIgnoreCase)
@@ -124,7 +142,7 @@ try
 
         try
         {
-            var png = await camera.TakeAsync(shots, shot, new Uri(deployment.ConsoleAddress + placeholders.Expand(shot.Path))).ConfigureAwait(false);
+            var png = await camera.TakeAsync(shots, shot, new Uri(deployment.ConsoleAddress + placeholders.Expand(shot.Path)), overlay).ConfigureAwait(false);
             var hash = Camera.Sha256(png);
 
             await File.WriteAllBytesAsync(target, png, stop.Token).ConfigureAwait(false);
@@ -182,7 +200,7 @@ static Dictionary<string, string>? Options(string[] rest)
 
     for (var i = 0; i < rest.Length; i += 2)
     {
-        if (i + 1 >= rest.Length || rest[i] is not ("--out" or "--only" or "--browser"))
+        if (i + 1 >= rest.Length || rest[i] is not ("--out" or "--only" or "--browser" or "--stylesheet"))
         {
             return null;
         }

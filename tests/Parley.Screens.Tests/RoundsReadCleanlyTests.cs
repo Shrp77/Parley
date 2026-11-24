@@ -97,6 +97,29 @@ public sealed class RoundsReadCleanlyTests : IDisposable
     }
 
     [Fact]
+    public void A_shot_may_take_its_own_theme_and_no_other_word()
+    {
+        var path = Path.Combine(_folder, "shots.json");
+        File.WriteAllText(path, """
+            { "theme": "light", "scale": 1, "maximumBytes": 0,
+              "shots": [ { "file": "a.png", "width": 800, "height": 600, "path": "/Inbox", "theme": "dark" },
+                         { "file": "b.png", "width": 800, "height": 600, "path": "/Inbox" } ] }
+            """);
+
+        var list = ShotList.Load(path);
+
+        Assert.Equal("dark", list.Shots[0].ThemeIn(list));
+        Assert.Equal("light", list.Shots[1].ThemeIn(list));
+
+        File.WriteAllText(path, """
+            { "theme": "light", "scale": 1, "maximumBytes": 0,
+              "shots": [ { "file": "a.png", "width": 800, "height": 600, "path": "/Inbox", "theme": "dusk" } ] }
+            """);
+
+        Assert.Contains("theme must be dark or light", Assert.Throws<InvalidDataException>(() => ShotList.Load(path)).Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_member_written_twice_is_refused()
     {
         var path = Path.Combine(_folder, "shots.json");

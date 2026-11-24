@@ -57,6 +57,11 @@ internal sealed record ShotList(string Theme, int Scale, int MaximumBytes, IRead
                 problems.Add($"{shot.File}: path must start with /");
             }
 
+            if (shot.Theme is not (null or "dark" or "light"))
+            {
+                problems.Add($"{shot.File}: theme must be dark or light, or left out for the list's");
+            }
+
             foreach (var action in shot.Actions ?? [])
             {
                 if (action.Problem() is { } problem)
@@ -95,6 +100,7 @@ internal sealed record ShotList(string Theme, int Scale, int MaximumBytes, IRead
 /// example <c>"parley.nav": "collapsed"</c> to fold the navigation rail.
 /// </param>
 /// <param name="Actions">What to do on the page before the capture, in order.</param>
+/// <param name="Theme">This shot's theme, <c>dark</c> or <c>light</c>, when it differs from the list's; null for the list's.</param>
 internal sealed record Shot(
     string File,
     int Width,
@@ -103,7 +109,14 @@ internal sealed record Shot(
     string? Shows = null,
     bool Graph = false,
     IReadOnlyDictionary<string, string>? Storage = null,
-    IReadOnlyList<ShotAction>? Actions = null);
+    IReadOnlyList<ShotAction>? Actions = null,
+    string? Theme = null)
+{
+    /// <summary>The theme this shot is taken in.</summary>
+    /// <param name="list">The list it belongs to.</param>
+    /// <returns>The shot's own theme, or the list's.</returns>
+    public string ThemeIn(ShotList list) => Theme ?? list.Theme;
+}
 
 /// <summary>One thing done on a page before its capture. Exactly one member is set.</summary>
 /// <param name="Click">A selector to click.</param>
