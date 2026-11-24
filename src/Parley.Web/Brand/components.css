@@ -2047,15 +2047,24 @@ body { background: var(--md-ext-page-background); background-attachment: fixed; 
 header {
     margin-inline: calc(-1 * var(--page-pad));
     padding-inline: var(--page-pad);
-    background: color-mix(in srgb, var(--md-sys-color-surface) 72%, transparent);
-    backdrop-filter: blur(16px) saturate(1.2);
-    border-bottom-color: var(--rule);
+    background: var(--md-ext-frame);
+    border-bottom: 0;
 }
 
-.rail {
-    background: color-mix(in srgb, var(--md-sys-color-surface-container-lowest) 70%, transparent);
-    backdrop-filter: blur(16px);
-    box-shadow: var(--md-sys-elevation-1);
+/* The side menu and the top bar are one surface, the frame, and the page sits inset in it as a sheet whose top corner
+   by the menu is rounded rather than square (the person's feedback on feature 042). The corner is the frame's colour
+   drawn as a quarter circle cut away, just below the bar's left end; the bar is sticky, so it travels with it. */
+.rail { background: var(--md-ext-frame); }
+
+header::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 100%;
+    width: var(--md-sys-shape-corner-extra-large);
+    height: var(--md-sys-shape-corner-extra-large);
+    background: radial-gradient(circle at 100% 100%, transparent calc(var(--md-sys-shape-corner-extra-large) - 0.5px), var(--md-ext-frame) var(--md-sys-shape-corner-extra-large));
+    pointer-events: none;
 }
 
 /* Cards: nearly opaque, lifted by a soft shadow, with only a glint for an edge. A message keeps its agent's colour down
@@ -2077,3 +2086,13 @@ button.quiet, .button.quiet, .rail button, .rail-toggle { box-shadow: none; }
 
 /* When the page was read sits in the top bar beside the build, so the page below keeps its whole width. */
 header .as-of { float: none; margin: 0; white-space: nowrap; }
+
+/* The colour choice on the Settings page: each palette as a strip of its main colour, its accent and its card surface. */
+.palettes { display: flex; flex-wrap: wrap; gap: 0.6rem 1.2rem; align-items: center; }
+.palette-choice { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 3rem; }
+.swatch { display: inline-flex; overflow: hidden; border-radius: var(--md-sys-shape-corner-small); box-shadow: var(--md-sys-elevation-1); }
+.swatch span { width: 1.1rem; height: 1.8rem; }
+#custom-swatch span { width: 3.3rem; }
+.palette-own { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 0.8rem 1.4rem; align-items: center; padding: 0.4rem 0 0.2rem; }
+.palette-own input[type="color"] { width: 3rem; height: 2.2rem; padding: 0; border: 0; background: none; vertical-align: middle; }
+.palette-own[hidden] { display: none; }

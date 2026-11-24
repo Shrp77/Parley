@@ -323,6 +323,25 @@ public static class ConsoleHost
         }
 
         app.MapGet("/favicon.ico", (HttpContext context) => Image(context, Brand[0].Resource, Brand[0].ContentType));
+
+        // The person's palette as a stylesheet (feature 042): a ready-made one by name, or one built from a base hue,
+        // chroma and harmony. The query comes from the person's browser storage, so only a known name or whole numbers in
+        // range are taken, and nothing from it but computed colours reaches the response.
+        app.MapGet("/brand/palette.css", (HttpContext context) =>
+        {
+            var query = context.Request.Query;
+            var palette = Palettes.Palette.FromQuery(
+                query["name"].FirstOrDefault(), query["hue"].FirstOrDefault(), query["chroma"].FirstOrDefault(), query["harmony"].FirstOrDefault());
+
+            if (palette is null)
+            {
+                return Results.BadRequest();
+            }
+
+            context.Response.Headers.CacheControl = "public, max-age=86400";
+
+            return Results.Text(Palettes.Scheme.Stylesheet(palette), "text/css; charset=utf-8");
+        });
     }
 
     /// <summary>Reads one embedded file, as a response.</summary>

@@ -48,6 +48,8 @@
     /* A card on the page (Frost, feature 042): the lowest container, slightly see-through so the page's tint shows at its
        edges, and frosted where the browser can blur what is behind it. Mostly opaque, so text on it keeps its contrast. */
     --md-ext-color-card: color-mix(in srgb, var(--md-sys-color-surface-container-lowest) 88%, transparent);
+    /* The frame, the side menu and the top bar as one surface, so the page below reads as a sheet inset in it. */
+    --md-ext-frame: var(--md-sys-color-surface-container-lowest);
     /* The page behind the cards: a mist of the tertiary colour at the top, fading into the surface. */
     --md-ext-page-background: linear-gradient(180deg, color-mix(in srgb, var(--md-sys-color-tertiary-container) 55%, var(--md-sys-color-surface)) 0%, var(--md-sys-color-surface) 60%);
     /* The eight agent colours: today's hues re-toned in HCT to tone 40 here and 75 in dark, so each reads against the
@@ -105,6 +107,7 @@
         --md-ext-color-present: #6fd59b;
         --md-ext-color-card: color-mix(in srgb, var(--md-sys-color-surface-container-high) 85%, transparent);
         --md-ext-page-background: linear-gradient(180deg, color-mix(in srgb, var(--md-sys-color-secondary-container) 45%, var(--md-sys-color-surface)) 0%, var(--md-sys-color-surface) 60%);
+        --md-ext-frame: var(--md-sys-color-surface-container-low);
         --md-ext-slot-0: #a1b6ff;
         --md-ext-slot-1: #64cba7;
         --md-ext-slot-2: #ffa26f;
@@ -153,6 +156,7 @@
         --md-ext-color-present: #6fd59b;
         --md-ext-color-card: color-mix(in srgb, var(--md-sys-color-surface-container-high) 85%, transparent);
         --md-ext-page-background: linear-gradient(180deg, color-mix(in srgb, var(--md-sys-color-secondary-container) 45%, var(--md-sys-color-surface)) 0%, var(--md-sys-color-surface) 60%);
+        --md-ext-frame: var(--md-sys-color-surface-container-low);
         --md-ext-slot-0: #a1b6ff;
         --md-ext-slot-1: #64cba7;
         --md-ext-slot-2: #ffa26f;

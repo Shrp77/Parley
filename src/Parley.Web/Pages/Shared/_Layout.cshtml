@@ -79,6 +79,20 @@
     @* The styles are served from the assembly, as the fonts are, under a name that changes with every build so a
        browser never keeps an old one after an install (feature 042, pass 0). *@
     <link rel="stylesheet" href="/brand/tokens.css?v=@Uri.EscapeDataString(Parley.Web.WebBuild.Version)" />
+    @* The person's palette (feature 042), chosen on the Settings page and kept in this browser: the default unless the
+       script below finds a choice, which it swaps in before the page is drawn. Only a ready-made name, or a base hue,
+       chroma and harmony written as numbers and a word, is taken from storage; the console checks them again. *@
+    <link rel="stylesheet" id="palette" href="/brand/palette.css?name=frost&amp;v=@Uri.EscapeDataString(Parley.Web.WebBuild.Version)" />
+    <script>
+        (function () {
+            try {
+                var chosen = localStorage.getItem("parley.palette");
+                if (chosen && /^(name=[a-z-]{1,32}|hue=\d{1,3}&chroma=\d{1,3}&harmony=[a-z-]{1,32})$/.test(chosen)) {
+                    document.getElementById("palette").href = "/brand/palette.css?" + chosen + "&v=@Uri.EscapeDataString(Parley.Web.WebBuild.Version)";
+                }
+            } catch (e) { }
+        })();
+    </script>
     <link rel="stylesheet" href="/brand/components.css?v=@Uri.EscapeDataString(Parley.Web.WebBuild.Version)" />
     @* List views refresh themselves by reloading; a transcript never reloads. It follows its
        conversation instead, replacing only the region that changed and keeping the message a reader
