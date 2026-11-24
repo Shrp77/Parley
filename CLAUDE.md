@@ -42,7 +42,10 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
   the broker asks a node to start an agent (`BrokerRuntime.Ask`), and cleared by a person's `unfreeze` or, unless the person asked
   it to outlast one, by the broker's next start, which lets it lapse and clears it once the start it owes has been asked. It took
   migration 011.
-Current plan: `specs/041-agent-freeze-and-graph/plan.md`
+- Feature 042, the web console's theme and layout refresh (a look the person picks from 2–3 directions shown as screenshots,
+  and a layout for phone, tablet and desktop, on the Material 3 base, with no behaviour change), is in planning:
+  `specs/042-theme-and-layout-refresh/`. The person's inspiration images are in the git-ignored `artifacts/inspiration/`.
+Current plan: `specs/042-theme-and-layout-refresh/plan.md`
 <!-- SPECKIT END -->
 - A person speaks to an agent only with a Request. An agent's row menu in the terminal has one
   ownership entry, *What this agent is responsible for* (`Alt+n`).

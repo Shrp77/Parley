@@ -265,7 +265,9 @@ does not feel crowded, and the graph pinned beside a conversation leaves the con
   shipped with the console and needs no network to load.
 - **The screenshot tool (`tools/Parley.Screens`, PR #113) is used for every round**, with phone and tablet sizes added to
   its shot list. If it has not merged when the first round is due, it is run from its branch.
-- **The person's inspiration images arrive in the conversation `UI-refresh-and-fixes`.** If they have not arrived when
+- **The person's inspiration images arrive in `artifacts/inspiration/` on this machine**, with a text file saying what
+  they like about each; that folder is ignored by git, so pictures of other products never enter this public
+  repository. If they have not arrived when
   the directions are prepared, the directions are built from the brief alone and the images are applied in a second
   round.
 - **The compact density setting stays.** The new default spacing is roomier on large screens, and the compact choice on
