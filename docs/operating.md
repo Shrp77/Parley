@@ -6,7 +6,9 @@ it, and how to look after it.
 ## Two ways in, and they show the same thing
 
 - **The web console** is a page in your browser. The broker starts it at
-  <http://127.0.0.1:5280>. It also runs on its own as `parley-web-ui`.
+  <http://127.0.0.1:5280>. It also runs on its own as `parley-web-ui`. `parley web-ui --open`
+  opens the console the broker is serving in your browser, and starts nothing. If you moved the
+  console to another address, give that address too: `parley web-ui --open <address>`.
 - **The terminal** is `parley` (the same as `parley-terminal`), and `parley` on its own opens it.
   It needs no browser, which suits a server you reach over SSH.
 
@@ -590,6 +592,7 @@ parley open                         every conversation with an exchange still op
 parley waiting <agent|role>         how many messages and polls await an agent
 parley files place|list|remove|prune|open|folder|problems|dismiss
 parley web-ui [<url>]               the web console
+parley web-ui --open [<url>]        open the console a broker is already serving, in your browser
 parley terminal                     the terminal (the same as `parley` with no arguments)
 parley --help                       the same list
 ```

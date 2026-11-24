@@ -107,7 +107,11 @@ port can export conversations and start agents. A tunnel adds the missing authen
 ## Can I run it on a server and use it from my laptop?
 
 Yes. Run the broker on the server and open an SSH tunnel to it. On the server itself, the terminal
-works over SSH, and the web console can be reached through a tunnel too.
+works over SSH, and the web console can be reached through a tunnel too. You can also open the
+web console from another of your devices by a name a tool such as Tailscale forwards to it, once
+you list that name in `settings.json`. See
+[Configuration](configuration.md#reaching-the-console-by-another-name). Never forward the broker's
+own port that way.
 
 ## Can two projects share a repository?
 
