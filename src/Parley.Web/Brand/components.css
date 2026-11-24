@@ -2032,3 +2032,45 @@ header .build { font: var(--md-sys-typescale-body-small); }
     nav { gap: 0.6rem; }
     ol.points > li { padding-left: 0.5rem; }
 }
+
+/* ---- Frost (feature 042) ---------------------------------------------------------------------------------------------
+   The look the person chose: depth from surfaces and soft shadows instead of lines. The page carries a mist of the
+   tertiary colour; cards, the side menu and the top bar are frosted surfaces lifted off it; controls sit a little
+   above what they are on. Colour is left to what needs attention. Every colour here is a token. */
+
+body { background: var(--md-ext-page-background); background-attachment: fixed; }
+
+.page { padding-inline: var(--page-pad); }
+
+/* The top bar runs the whole width of the page, from the side menu to the window's edge, rather than stopping at the
+   page's padding: it spans the padding and puts it back inside. */
+header {
+    margin-inline: calc(-1 * var(--page-pad));
+    padding-inline: var(--page-pad);
+    background: color-mix(in srgb, var(--md-sys-color-surface) 72%, transparent);
+    backdrop-filter: blur(16px) saturate(1.2);
+    border-bottom-color: var(--rule);
+}
+
+.rail {
+    background: color-mix(in srgb, var(--md-sys-color-surface-container-lowest) 70%, transparent);
+    backdrop-filter: blur(16px);
+    box-shadow: var(--md-sys-elevation-1);
+}
+
+/* Cards: nearly opaque, lifted by a soft shadow, with only a glint for an edge. A message keeps its agent's colour down
+   its leading edge, which is how a reader tells the speakers apart at a glance. No blur here: on the conversation page a
+   blurred card inside the scrolling transcript drew as a blank block in Chromium, and at 88% opacity a card's blur
+   barely shows. The frosted glass is the top bar's and the side menu's. */
+.bubble, .letter, .card-section, .view-card, .grid, .convo-head, .act-cards li, .settings-section fieldset,
+.history-searches, .waiting-on-you, .waiting-elsewhere, .convo-links, .default-expander {
+    border-color: var(--rule);
+    border-radius: var(--md-sys-shape-corner-large);
+    box-shadow: var(--md-sys-elevation-1);
+}
+
+.bubble { border-left-width: 3px; border-left-color: var(--agent); }
+
+/* Controls stand a little above the surface they are on. */
+button, .button, .chip, main nav.page-links a, .inbox-views a { box-shadow: var(--md-sys-elevation-1); }
+button.quiet, .button.quiet, .rail button, .rail-toggle { box-shadow: none; }

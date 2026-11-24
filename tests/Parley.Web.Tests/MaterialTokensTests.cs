@@ -65,9 +65,12 @@ public sealed partial class MaterialTokensTests
     }
 
     [Fact]
-    public void The_seed_is_the_primary_container_so_the_console_keeps_its_blue()
+    public void The_colours_are_frost_as_the_person_chose()
     {
-        Assert.Contains("--md-sys-color-primary-container: #2b5cd9;", Light, StringComparison.Ordinal);
+        // The person chose Direction B, Frost, on 2026-11-24 (specs/042-theme-and-layout-refresh/decision.md), in place of
+        // the scheme seeded from #2b5cd9. Its colours come from directions/generate.py; this pins that they landed.
+        Assert.Contains("--md-sys-color-primary-container: #cfe5fe;", Light, StringComparison.Ordinal);
+        Assert.DoesNotContain("#2b5cd9", Light, StringComparison.Ordinal);
     }
 
     [Theory]

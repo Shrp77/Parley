@@ -119,7 +119,7 @@ Each pass ends with a screenshot round (FR-024) shown to the person beside the p
 |---|---|---|
 | 0. Extract (done) | The inline CSS moved to two stylesheets, `tokens.css` and `components.css`, unchanged. The 042-compare round matched pixel for pixel except where clock times are drawn (at most 0.12% of a picture). Tests that read the layout's CSS read the stylesheets too (`ScriptSource.Page`, `ScriptSource.WithStylesAsync`). | Pixel comparison of the round; every existing test. |
 | 1. Directions | 2–3 token files under `directions/`; a round per direction at 4 sizes × 2 themes; the person picks (`decision.md`). | Contrast test run against each direction's tokens. |
-| 2. Colour and surfaces | Frost's surfaces, shadows and spacing land in `tokens.css` and the components; borders give way to surface levels; colour reserved for meaning; the top bar runs edge to edge. | ContrastTests; MaterialTokensTests. |
+| 2. Colour and surfaces (done) | Frost's surfaces, shadows and spacing land in `tokens.css` and the components; borders give way to surface levels; colour reserved for meaning; the top bar runs edge to edge. | ContrastTests; MaterialTokensTests. |
 | 2b. Palettes | The palette rule in C# (R9), `/brand/palette.css`, the ready-made palettes, and the colour choice on the Settings page. | ContrastTests over every palette and a sweep of base colours. |
 | 3. Type | Type scale and roles; message measure; metadata quieter; dark-mode grade. | ContrastTests; type-scale test. |
 | 4. Layout (after the theme, per the owner) | Size classes; navigation bar, rail and drawer; lists to cards; full-width conversation; graph panel placement; touch targets. | SizeClassesTests; TouchTargetsTests; the 320 and 390 rounds. |
