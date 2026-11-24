@@ -10,7 +10,8 @@ and some flair on the controls, keeping Material 3 as the base. Asked about the 
 - Light and dark get equal care: "we shouldn't dictate what the user can / can't do."
 - Density and size: "it's nigh impossible to use on a phone, on a tablet in portrait it's a bit better, on landscape or a
   desktop, it's a bit compact."
-- The owner has inspiration images, to be placed in the Parley conversation `UI-refresh-and-fixes`.
+- The owner has inspiration images, several showing different things they like, which they place in `artifacts/inspiration/`
+  on this machine with a text file describing what they like about each.
 
 Feature 035 moved the console to Material 3 (`specs/035-material-3-web-ui/`, with its page-by-page audit in `audit.md`).
 This feature keeps that base and changes how it looks and how it fits each screen. It changes nothing the console does.
