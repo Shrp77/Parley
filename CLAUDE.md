@@ -101,6 +101,10 @@ src/Parley.Mcp           `parley-mcp`, the agent's adapter.
 src/FilePlacement.cs     Source files linked into several projects (Parley.Client, Parley.Mcp
 src/InboxCollection.cs   and tests), not a project: the transport holds no hand-written code.
 tests/                   One project per source project; notes below.
+tools/Parley.Screens     `parley-screens`, not shipped: the web console's screenshots, from a broker
+                         and console of its own in a temp folder. A round is rounds/<name>/
+                         scenario.json and shots.json; its README says how. The one project that
+                         references the broker and the console together, which is why it is not in src.
 plugins/parley           The Claude Code integration. .claude-plugin/marketplace.json is
                          its catalogue.
 ```

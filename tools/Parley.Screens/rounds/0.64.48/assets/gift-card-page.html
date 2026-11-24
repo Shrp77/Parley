@@ -1,0 +1,44 @@
+<!doctype html>
+<!-- A mock of a storefront's gift card page, which the scenario's website agent places as gift-card-page.png. Invented. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { width: 960px; height: 640px; font-family: "Segoe UI", Arial, sans-serif; background: #faf7f2; color: #2d2a26; }
+  header { display: flex; justify-content: space-between; align-items: center; padding: 22px 40px; background: #2d2a26; color: #faf7f2; }
+  header b { font-size: 22px; letter-spacing: 1px; }
+  header span { font-size: 14px; opacity: .8; margin-left: 24px; }
+  main { padding: 40px; }
+  h1 { font-size: 34px; margin-bottom: 8px; }
+  p.lead { font-size: 17px; color: #6b645c; margin-bottom: 32px; }
+  .cards { display: flex; gap: 24px; margin-bottom: 32px; }
+  .card { flex: 1; height: 170px; border-radius: 14px; padding: 20px; color: #fff; display: flex; flex-direction: column; justify-content: space-between; }
+  .card b { font-size: 40px; }
+  .card small { font-size: 14px; opacity: .9; }
+  .c10 { background: linear-gradient(135deg, #4e8f6d, #2f6b4f); }
+  .c25 { background: linear-gradient(135deg, #c2703d, #9a4f22); outline: 4px solid #2d2a26; outline-offset: 4px; }
+  .c50 { background: linear-gradient(135deg, #5a5fa8, #393d7d); }
+  .row { display: flex; gap: 16px; align-items: center; }
+  .field { flex: 1; height: 48px; border: 1px solid #cfc7bc; border-radius: 8px; background: #fff; padding: 13px 16px; font-size: 15px; color: #8c857c; }
+  .buy { height: 48px; padding: 0 32px; border-radius: 8px; background: #2d2a26; color: #faf7f2; font-size: 16px; font-weight: 600; display: flex; align-items: center; }
+</style>
+</head>
+<body>
+<header><b>SHOP</b><div><span>New in</span><span>Clothing</span><span>Books</span><span>Gift cards</span><span>Basket (0)</span></div></header>
+<main>
+  <h1>Gift cards</h1>
+  <p class="lead">Sent by email, redeemable against any order.</p>
+  <div class="cards">
+    <div class="card c10"><small>Gift card</small><b>£10</b></div>
+    <div class="card c25"><small>Gift card</small><b>£25</b></div>
+    <div class="card c50"><small>Gift card</small><b>£50</b></div>
+  </div>
+  <div class="row">
+    <div class="field">Recipient's email</div>
+    <div class="field">A message (optional)</div>
+    <div class="buy">Add to basket · £25</div>
+  </div>
+</main>
+</body>
+</html>
