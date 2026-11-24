@@ -210,6 +210,90 @@
           "scroll": "top"
         }
       ]
+    },
+    {
+      "file": "settings-desktop-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Settings",
+      "shows": "The Settings page: theme, the colour choice with each palette's swatch, and density."
+    },
+    {
+      "file": "settings-desktop-dark.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "dark",
+      "path": "/Settings",
+      "shows": "The Settings page: theme, the colour choice with each palette's swatch, and density."
+    },
+    {
+      "file": "palette-ocean-conversation-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "storage": {
+        "parley-convo-composer": "closed",
+        "parley.palette": "name=ocean"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ],
+      "shows": "A conversation with the ocean palette chosen on the Settings page."
+    },
+    {
+      "file": "palette-ocean-conversation-dark.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "dark",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "storage": {
+        "parley-convo-composer": "closed",
+        "parley.palette": "name=ocean"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ],
+      "shows": "A conversation with the ocean palette chosen on the Settings page."
+    },
+    {
+      "file": "palette-ember-conversation-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "storage": {
+        "parley-convo-composer": "closed",
+        "parley.palette": "name=ember"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ],
+      "shows": "A conversation with the ember palette chosen on the Settings page."
+    },
+    {
+      "file": "palette-ember-conversation-dark.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "dark",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "storage": {
+        "parley-convo-composer": "closed",
+        "parley.palette": "name=ember"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ],
+      "shows": "A conversation with the ember palette chosen on the Settings page."
     }
   ]
 }
