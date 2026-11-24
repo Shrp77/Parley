@@ -2074,3 +2074,6 @@ header {
 /* Controls stand a little above the surface they are on. */
 button, .button, .chip, main nav.page-links a, .inbox-views a { box-shadow: var(--md-sys-elevation-1); }
 button.quiet, .button.quiet, .rail button, .rail-toggle { box-shadow: none; }
+
+/* When the page was read sits in the top bar beside the build, so the page below keeps its whole width. */
+header .as-of { float: none; margin: 0; white-space: nowrap; }

@@ -266,6 +266,13 @@
         }
         @* Which build is running, small and out of the way: it is how a person tells an install has taken. *@
         <span class="build" title="The web console build">parley-web-ui @Parley.Web.WebBuild.Version</span>
+        @* When the page's facts were read, beside the build in the top bar rather than in a line of its own above the page,
+           where it took width from the transcript (the person's feedback on feature 042). A page whose title row says it,
+           or whose grid does, draws it there instead. *@
+        @if (ViewData["AsOf"] is string asOf && ViewData["Grid"] is not true && ViewData["AsOfInTitle"] is not true)
+        {
+            <span class="as-of" role="status">As of @asOf.</span>
+        }
         <nav aria-label="Console">
             @{
                 var unread = Notices.Unread();
@@ -349,10 +356,6 @@
             </p>
         }
 
-        @if (ViewData["AsOf"] is string asOf && ViewData["Grid"] is not true && ViewData["AsOfInTitle"] is not true)
-        {
-            <p class="as-of" role="status">As of @asOf.</p>
-        }
         @RenderBody()
     </main>
     </div>
