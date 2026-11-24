@@ -11,10 +11,54 @@ namespace Parley.Web.Tests;
 /// </remarks>
 internal static class ScriptSource
 {
-    /// <summary>The text of a file in the repository.</summary>
+    /// <summary>The text of a file in the repository; for the layout, with the stylesheets it links.</summary>
     /// <param name="relative">The path from the repository's root.</param>
     /// <returns>The file's text.</returns>
-    public static string Page(string relative) => File.ReadAllText(RepositoryPath(relative));
+    /// <remarks>
+    /// The layout's styles were one inline block until feature 042 moved them into <c>Brand/tokens.css</c> and
+    /// <c>Brand/components.css</c>, which the layout links. Checks of the frame's rules still read "the layout", so the
+    /// layout is read with its stylesheets appended in the spelling the block had: Razor's <c>@@</c> for an at-rule, and
+    /// the block's eight-space indent. Each check then holds the same rule it held, wherever the rule now lives.
+    /// </remarks>
+    public static string Page(string relative)
+    {
+        var text = File.ReadAllText(RepositoryPath(relative));
+
+        return relative.EndsWith("Shared/_Layout.cshtml", StringComparison.Ordinal) ? text + Environment.NewLine + Styles() : text;
+    }
+
+    /// <summary>A served page with the stylesheets it links appended, each fetched from the same console.</summary>
+    /// <param name="client">A client of the console that served the page.</param>
+    /// <param name="page">The page as served.</param>
+    /// <returns>The page, then each linked stylesheet as served.</returns>
+    /// <remarks>
+    /// A check of what a person's browser gets is a check of the page and its stylesheets together, so a rule is found
+    /// whether it is inline or linked, and a linked stylesheet that is not served fails the fetch.
+    /// </remarks>
+    public static async Task<string> WithStylesAsync(HttpClient client, string page)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+
+        var served = new System.Text.StringBuilder(page);
+
+        foreach (Match link in Regex.Matches(page, "<link rel=\"stylesheet\" href=\"([^\"]+)\"", RegexOptions.None, TimeSpan.FromSeconds(2)))
+        {
+            var href = System.Net.WebUtility.HtmlDecode(link.Groups[1].Value);
+
+            _ = served.AppendLine().Append(await client.GetStringAsync(new Uri(href, UriKind.Relative), TestContext.Current.CancellationToken));
+        }
+
+        return served.ToString();
+    }
+
+    /// <summary>The console's stylesheets, in the spelling of the layout's former inline block.</summary>
+    /// <returns>tokens.css then components.css, each line indented eight spaces, with <c>@</c> written <c>@@</c>.</returns>
+    public static string Styles() =>
+        string.Join(
+            Environment.NewLine,
+            new[] { "src/Parley.Web/Brand/tokens.css", "src/Parley.Web/Brand/components.css" }
+                .SelectMany(sheet => File.ReadAllLines(RepositoryPath(sheet)))
+                .Select(line => (line.Length == 0 ? line : "        " + line).Replace("@", "@@", StringComparison.Ordinal)));
 
     /// <summary>The one inline script in a page whose code holds a piece of text, as code.</summary>
     /// <param name="page">The page's source.</param>

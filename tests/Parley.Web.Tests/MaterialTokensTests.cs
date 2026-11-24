@@ -25,7 +25,7 @@ public sealed partial class MaterialTokensTests
     [GeneratedRegex(@"#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(")]
     private static partial Regex AColour();
 
-    private static string Layout => File.ReadAllText(RepositoryPath("src/Parley.Web/Pages/Shared/_Layout.cshtml"));
+    private static string Layout => ScriptSource.Page("src/Parley.Web/Pages/Shared/_Layout.cshtml");
 
     private static string Light => Layout[..Layout.IndexOf("@@media (prefers-color-scheme: dark)", StringComparison.Ordinal)];
 
@@ -77,7 +77,7 @@ public sealed partial class MaterialTokensTests
     [InlineData("src/Parley.Web/Pages/Projects/Enrol.cshtml")]
     public void No_rule_outside_the_tokens_names_a_colour_of_its_own(string page)
     {
-        var text = File.ReadAllText(RepositoryPath(page));
+        var text = ScriptSource.Page(page);
         var rules = page.EndsWith("_Layout.cshtml", StringComparison.Ordinal) ? text[text.IndexOf(OlderNames, StringComparison.Ordinal)..] : text;
 
         // The one exception: a <select>'s chevron, drawn as an image for browsers that cannot restyle the control, where

@@ -24,24 +24,28 @@ namespace Parley.Web.Tests;
 public sealed class LaunchTests
 {
     [Fact]
-    public async Task The_console_is_styled_by_the_page_rather_than_by_a_file()
+    public async Task The_console_is_styled_by_what_it_carries_rather_than_by_a_file_beside_it()
     {
-        // It was a file, and the file did not survive `dotnet pack` into the tool that starts
-        // this console: the page rendered unstyled from an installed `parley console` while
-        // working perfectly from the build output. At 365 bytes the fix is to stop having a file,
-        // which removes the class of problem rather than the instance.
+        // It was a file beside the binary, and the file did not survive `dotnet pack` into the tool that
+        // starts this console: the page rendered unstyled from an installed `parley console` while
+        // working perfectly from the build output. The styles were then made part of the page.
         //
-        // Asserted against what is served, so it covers the styling arriving at all rather than
-        // the mechanism it arrives by.
+        // Feature 042 moved them out of the page again, into stylesheets carried inside the assembly as
+        // resources, as the fonts already are, so they go wherever the assembly goes and the class of
+        // problem stays removed. Asserted against what is served, so it covers the styling arriving at
+        // all: the page links the stylesheets, and each one answers with the console's rules.
         using var console = new Microsoft.AspNetCore.Mvc.Testing
             .WebApplicationFactory<Program>();
 
         using var client = console.CreateClient();
 
-        var served = await client.GetStringAsync(
+        var page = await client.GetStringAsync(
             new Uri("/", UriKind.Relative), TestContext.Current.CancellationToken);
+        var served = await ScriptSource.WithStylesAsync(client, page);
 
-        Assert.Contains("<style>", served, StringComparison.Ordinal);
+        Assert.Contains("/brand/tokens.css?v=", page, StringComparison.Ordinal);
+        Assert.Contains("/brand/components.css?v=", page, StringComparison.Ordinal);
+        Assert.Contains("--md-sys-color-primary", served, StringComparison.Ordinal);
         Assert.Contains(".unreachable", served, StringComparison.Ordinal);
         Assert.DoesNotContain("console.css", served, StringComparison.Ordinal);
     }

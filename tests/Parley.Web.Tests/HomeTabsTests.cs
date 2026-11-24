@@ -54,11 +54,17 @@ public sealed class HomeTabsTests
         {
             var page = await client.GetStringAsync(new Uri(path, UriKind.Relative), TestContext.Current.CancellationToken);
 
-            var create = page.IndexOf("view-create", StringComparison.Ordinal);
-            var filters = page.IndexOf("view-filters", StringComparison.Ordinal);
-            var head = page.IndexOf("dgrid-head", StringComparison.Ordinal);
+            // In the page's markup, by their class attributes. This once passed on the names in the inline stylesheet,
+            // which came first in the page; feature 042 moved the styles out, and the markup is what was meant.
+            var create = page.IndexOf("view-create\"", StringComparison.Ordinal);
+            var filters = page.IndexOf("view-filters\"", StringComparison.Ordinal);
+            var head = page.IndexOf("class=\"dgrid-head\"", StringComparison.Ordinal);
 
-            Assert.True(create >= 0 && create < filters && filters < head, $"{path}: create, filters and the grid header must appear in that order");
+            Assert.True(filters >= 0 && filters < head, $"{path}: the filters must come before the grid header");
+
+            // All Agents has nothing to create: registering an agent is done inside a project, so its create card is drawn
+            // only there. Where a create card is drawn, it comes first.
+            Assert.True(create < filters, $"{path}: a create card must come before the filters");
         }
     }
 

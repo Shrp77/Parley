@@ -286,7 +286,7 @@ public static class ConsoleHost
             && string.Equals(context.Request.Headers["Sec-Fetch-Dest"], "iframe", StringComparison.Ordinal);
     }
 
-    /// <summary>The brand images and the icon font, and the names they are reached by.</summary>
+    /// <summary>The brand images, the fonts and the stylesheets, and the names they are reached by.</summary>
     /// <remarks>
     /// A fixed table rather than a name composed from the route. The alternative reads a
     /// manifest resource named by whatever a caller asked for, which is the same shape as
@@ -303,7 +303,9 @@ public static class ConsoleHost
         ("wordmark.png", "Parley.Web.Brand.wordmark.png", "image/png"),
         ("material-symbols.woff2", "Parley.Web.Brand.material-symbols.woff2", "font/woff2"),
         ("roboto-flex.woff2", "Parley.Web.Brand.roboto-flex.woff2", "font/woff2"),
-        ("roboto-flex-license.txt", "Parley.Web.Brand.RobotoFlex-OFL.txt", "text/plain; charset=utf-8")
+        ("roboto-flex-license.txt", "Parley.Web.Brand.RobotoFlex-OFL.txt", "text/plain; charset=utf-8"),
+        ("tokens.css", "Parley.Web.Brand.tokens.css", "text/css; charset=utf-8"),
+        ("components.css", "Parley.Web.Brand.components.css", "text/css; charset=utf-8")
     ];
 
     /// <summary>Serves the brand images out of the assembly.</summary>
