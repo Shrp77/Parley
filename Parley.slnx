@@ -41,5 +41,9 @@
     <Project Path="tests/Parley.Web.Tests/Parley.Web.Tests.csproj" />
     <Project Path="tests/Parley.Terminal.Tests/Parley.Terminal.Tests.csproj" />
     <Project Path="tests/Parley.WebUi.Tests/Parley.WebUi.Tests.csproj" />
+    <Project Path="tests/Parley.Screens.Tests/Parley.Screens.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Parley.Screens/Parley.Screens.csproj" />
   </Folder>
 </Solution>
