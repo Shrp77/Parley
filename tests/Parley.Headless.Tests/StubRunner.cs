@@ -205,6 +205,11 @@ internal static class StubRunner
 
             unix.Add("  if [ \"$n\" -eq " + number + " ]; then");
             unix.AddRange(turns[turn].Select(line => "    " + Print(line)));
+
+            // An empty then-branch is a syntax error in sh, which then runs nothing at all: a turn that writes nothing
+            // (a prompt the runner folds into a turn of its own) would fail every turn on Linux and macOS. PowerShell
+            // takes an empty block, so Windows never showed it.
+            unix.Add("    :");
             unix.Add("  fi");
         }
 

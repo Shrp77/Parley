@@ -91,7 +91,7 @@ parley autostart remove               stop doing that
 parley autostart status               say whether it is set up, and what it serves
 parley up                             run this machine's node, so its agents can be started
 parley web-ui --open [<url>]          open the web UI the broker serves in a browser
-                                      (answered by parley itself; it starts nothing)
+                                      (answered by the broker's own tool; it starts nothing)
 parley web-ui                         run the web UI on its own, when the broker does not
                                       (its own tool: parley-web-ui, installed separately)
 parley                                the terminal; needs a real one

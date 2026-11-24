@@ -17,6 +17,13 @@ public sealed class TheBrowserNeverWalksIntoALinkToAShareTests : IDisposable
     /// <summary>Removes the folder, links as links.</summary>
     public void Dispose()
     {
+        // Elsewhere the test skips before it makes a link, so the folder is plain; and there is no cmd.exe to ask.
+        if (!OperatingSystem.IsWindows())
+        {
+            Directory.Delete(_root, recursive: true);
+            return;
+        }
+
         // rmdir removes links as links; a recursive .NET walk would follow them to the share.
         using var rd = Process.Start(new ProcessStartInfo("cmd.exe", ["/c", "rmdir", "/s", "/q", _root]) { UseShellExecute = false })!;
         rd.WaitForExit();
