@@ -13,6 +13,29 @@ public sealed class MovesOverTheWireTests
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
+    public async Task Where_an_agents_next_message_went_crosses_the_wire_in_an_export()
+    {
+        const string person = "human-user@test";
+
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var seat = await AttachedClient.AttachAsync(broker, person, cancellationToken: Ct, adapter: Parley.Core.PersonSeat.Adapter);
+        await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+        var operators = broker.ConnectAsOperator();
+
+        var asked = Assert.Single((await seat.Client.RequestAsync(Requests.Open(person, Orders, "that command failed", "in-flight"), cancellationToken: Ct)).Outcomes).ExchangeId;
+
+        _ = await orders.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Orders }, cancellationToken: Ct);
+        _ = await orders.Client.ResultAsync(Requests.Result(Orders, asked), cancellationToken: Ct);
+        _ = await orders.Client.RequestAsync(Requests.Open(Orders, Billing, "is the script yours?", "sync-around"), cancellationToken: Ct);
+
+        var noted = Assert.Single((await operators.ExportAsync(new Wire.ExportRequest { ConversationId = "in-flight" }, cancellationToken: Ct)).WroteElsewhere);
+
+        Assert.Equal((Orders, Billing, "sync-around"), (noted.From, noted.To, noted.ConversationId));
+        Assert.True(noted.Message > noted.AfterMessage && noted.AfterMessage > 0);
+    }
+
+    [Fact]
     public async Task A_moved_exchange_carries_on_in_its_new_conversation_and_its_agent_is_told_once()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);

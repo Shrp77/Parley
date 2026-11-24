@@ -65,8 +65,38 @@ public static class Standing
     /// <summary>Running only as a process Parley did not start, so Parley cannot give it turns (SPEC.md §11.7).</summary>
     public const string Outside = "open outside Parley, so Parley cannot give it turns";
 
+    /// <summary>Running as a process a node that is gone started, so Parley cannot give it turns or stop it (SPEC.md §11.1).</summary>
+    public const string Left = "left running by a node that is gone, so Parley cannot give it turns";
+
     /// <summary>It is retired, by a person or because its workspace was found gone.</summary>
     public const string Retired = "retired";
+
+    /// <summary>
+    /// A person has frozen it and its process has ended (SPEC.md §14): nothing starts it until they unfreeze it or the broker
+    /// next starts, which a logon brings.
+    /// </summary>
+    public const string Frozen = "frozen by you; nothing starts it until you unfreeze it or the broker next starts";
+
+    /// <summary>As <see cref="Frozen"/>, and the person asked that a logon not lift it (SPEC.md §14).</summary>
+    public const string FrozenKept = "frozen by you, and stays frozen when the broker starts again; nothing starts it until you unfreeze it";
+
+    /// <summary>A person has frozen it and its process has not ended yet: its node waits for the turn (SPEC.md §14).</summary>
+    public const string Freezing = "frozen by you, stopping once its turn ends";
+
+    /// <summary>
+    /// A person has frozen it and a process a node that is gone left is still running: nothing holds that process to stop it,
+    /// so only a person's Kill ends it (SPEC.md §11.1, §14).
+    /// </summary>
+    public const string FrozenLeft = "frozen by you; left running by a node that is gone, so only Kill ends it";
+
+    /// <summary>A person has frozen it and a session opened outside Parley is still attached, which Parley cannot end (§11.7).</summary>
+    public const string FrozenOutside = "frozen by you; open outside Parley, so Parley cannot end it";
+
+    /// <summary>Whether a standing phrase says the agent is frozen, in any of its ways.</summary>
+    /// <param name="standing">The phrase.</param>
+    /// <returns><see langword="true"/> for a frozen agent.</returns>
+    public static bool IsFrozen(string standing) =>
+        standing is Frozen or FrozenKept or Freezing or FrozenLeft or FrozenOutside;
 
     /// <summary>A turn is running for it now (SPEC.md §11.6).</summary>
     public const string Working = "working";
@@ -167,6 +197,14 @@ public static class Standing
                 // The person reads here or away and nothing else: whether anybody is there is the one fact a
                 // peer asking them needs.
                 seat ? (agent.Presence == AgentPresence.Here ? Here : Away)
+                    // A freeze outranks what the turns say, but not what holds the process: "stopping once its turn ends"
+                    // is true only of a process a node holds (review, lens 3 run B on d99806d9).
+                    : agent.Frozen && !retired
+                        ? (!running ? (agent.KeepFrozen ? FrozenKept : Frozen)
+                            : agent.Unsupervised ? FrozenLeft
+                            : agent.OpenOutside ? FrozenOutside
+                            : Freezing)
+                    : agent.Unsupervised && !retired ? Left
                     : agent.OpenOutside && !retired ? Outside
                     : !retired && FromTurns(agent, running) is { } turn ? turn
                     : Phrase(retired, running, agent.Presence, startable, everRun: true),
@@ -223,6 +261,12 @@ public static class Standing
         if (turns.RunningSince is not null)
         {
             return Working;
+        }
+
+        // Not idle: its turn ended while work it started runs on, and it takes that up itself (SPEC.md §11.6).
+        if (running && turns.BackgroundTasks > 0)
+        {
+            return Activities.WaitingOnBackground(turns.BackgroundTasks);
         }
 
         if (turns.LastEnded is not null && turns.LastPermissionDenials > 0)

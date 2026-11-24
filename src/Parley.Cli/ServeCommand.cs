@@ -45,7 +45,8 @@ public static class ServeCommand
     /// <param name="alongside">
     /// Something to run alongside the brokers that is <em>not</em> bound to any one of them: the
     /// web UI, which reads this machine's manifest rather than a single endpoint.
-    /// Run once, and handed the first started broker's addresses as its fallback.
+    /// Run once, and handed the first started broker's addresses as its fallback, then the broker's output and its
+    /// error output (both copied into the log).
     /// </param>
     /// <param name="reread">
     /// Reads the manifest again, returning null when it has not changed or cannot be read, or
@@ -91,7 +92,7 @@ public static class ServeCommand
         TextWriter output,
         TextWriter error,
         Func<ProjectSettings, IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? nodeFor = null,
-        Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? alongside = null,
+        Func<IReadOnlyList<string>, TextWriter, TextWriter, CancellationToken, Task<int>>? alongside = null,
         Func<IReadOnlyList<ProjectSettings>?>? reread = null,
         bool checkInstall = false,
         bool heartbeat = false,
@@ -155,7 +156,7 @@ public static class ServeCommand
 
             try
             {
-                runtime = BrokerRuntime.Open(project.Name, project.Store, BrokerOptions.Default, TimeProvider.System);
+                runtime = BrokerRuntime.Open(project.Name, project.Store, BrokerOptions.Default with { ResumePolicy = Core.ResumePolicy.Always }, TimeProvider.System);
             }
             catch (StoreHeldException held)
             {
@@ -464,7 +465,7 @@ public static class ServeCommand
             if (alongside is not null)
             {
                 // No broker to fall back to while no project is named: the web UI reads the manifest and says so.
-                beside.Add(alongside(started.Count > 0 ? started[0].Server.Addresses : [], output, cancellationToken));
+                beside.Add(alongside(started.Count > 0 ? started[0].Server.Addresses : [], output, error, cancellationToken));
             }
 
             if (reread is not null)
@@ -883,7 +884,7 @@ public static class ServeCommand
         {
             await output.WriteLineAsync(
                 $"{who} stopped: {Inert.Line(failure.Message)}. The broker is still serving; " +
-                "nothing on this machine will be started until `parley up` runs again.")
+                "nothing on this machine will be started until the broker is restarted or `parley up` runs.")
                 .ConfigureAwait(false);
 
             return Unavailable;

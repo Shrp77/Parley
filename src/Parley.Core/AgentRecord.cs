@@ -82,6 +82,13 @@ namespace Parley.Core;
 /// reports and never an authority: it lets an attach under a new name rename the row it already holds, and only
 /// from the same repository on the same machine. It never decides who may attach.
 /// </param>
+/// <param name="Unsupervised">
+/// Running as a process a node started and a node that is gone still owns (SPEC.md §11.1): it presented a launch token no
+/// node now holds. True even when a process the current node started is attached beside it; otherwise
+/// <paramref name="OpenOutside"/> is also true. Observed from the attachments the broker holds; on the operator's registry only.
+/// </param>
+/// <param name="KeepFrozen">Whether the person asked that the freeze outlast a logon (SPEC.md §14); false when it is not frozen.</param>
+/// <param name="FrozenUtc">When a person froze it in this project, or null when it is not frozen (SPEC.md §14).</param>
 /// <remarks>
 /// Credentials are deliberately not a field here, and should not become one. The broker
 /// persists no credential reference or value for any agent (SPEC.md §12); a field on this
@@ -102,8 +109,15 @@ public sealed record AgentRecord(
     OwnershipSource? OwnsSource = null,
     TurnStanding? Turns = null,
     bool OpenOutside = false,
-    AgentIdentity Identity = default)
+    AgentIdentity Identity = default,
+    bool Unsupervised = false,
+    DateTimeOffset? FrozenUtc = null,
+    bool KeepFrozen = false)
 {
+    /// <summary>Whether a person has frozen the agent in this project (SPEC.md §14), so nothing starts it until they unfreeze it or, unless <see cref="KeepFrozen"/>, the broker next starts.</summary>
+    /// <remarks>Derived from <see cref="FrozenUtc"/>, which is the one fact; a flag beside it would be a second one to disagree.</remarks>
+    public bool Frozen => FrozenUtc is not null;
+
     /// <summary>Whether this row is the facilitator's (SPEC.md principle 2.11).</summary>
     /// <remarks>
     /// Derived from the adapter rather than carried as a field, because storage ties that adapter to the reserved

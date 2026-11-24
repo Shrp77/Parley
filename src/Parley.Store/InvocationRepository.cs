@@ -299,8 +299,8 @@ public sealed class InvocationRepository(SqliteConnection connection)
         command.CommandText =
             """
             SELECT i.agent, i.started_utc, i.elapsed_ms, i.exit_code, i.timed_out, i.permission_denials
-              FROM invocations i
-             WHERE i.id = (SELECT max(id) FROM invocations WHERE agent = i.agent);
+              FROM agents a
+              JOIN invocations i ON i.id = (SELECT max(id) FROM invocations WHERE agent = a.name);
             """;
 
         var latest = new List<LatestTurn>();

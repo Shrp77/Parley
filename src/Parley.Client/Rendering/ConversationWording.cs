@@ -73,6 +73,18 @@ public static class ConversationWording
             $"Exchange {pair.Exchange} was settled by exchange {pair.SettledBy}. One of them is now in {pair.Conversation}.");
     }
 
+    /// <summary>A line saying an agent's next message went to another conversation (SPEC.md §5.0).</summary>
+    /// <param name="wrote">What the broker reported.</param>
+    /// <returns>The sentence. It says what happened next and nothing about why, which the broker cannot see.</returns>
+    public static string WroteElsewhereLine(WroteElsewhere wrote)
+    {
+        ArgumentNullException.ThrowIfNull(wrote);
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{wrote.From.Value}'s next message went to {wrote.To.Value} in {wrote.Conversation}, not here.");
+    }
+
     private static string Amount(MoveRecord move)
     {
         var exchanges = move.Exchanges.Count;

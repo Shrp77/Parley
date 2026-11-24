@@ -41,10 +41,17 @@ internal sealed class LoopbackBroker : IAsyncDisposable
     /// <summary>Starts a broker over an in-memory store.</summary>
     /// <param name="cancellationToken">Cancels startup.</param>
     /// <param name="clock">The clock to stamp from, or null for the system one.</param>
+    /// <param name="options">The broker's options, or null for the defaults a test broker gets (which never wake on a restart).</param>
+    /// <param name="restartWakeDelay">
+    /// How long a machine's first join waits before the restart wake, or null for none: a test that is not about that wait
+    /// gets the wake at the join, and <see cref="JoinedNodeClient.JoinAsync"/> waits for it.
+    /// </param>
     /// <returns>The running broker.</returns>
     public static async Task<LoopbackBroker> StartAsync(
         CancellationToken cancellationToken,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        BrokerOptions? options = null,
+        TimeSpan? restartWakeDelay = null)
     {
         // **Settable for the same reason the patience above is.** The wake ceiling is two minutes,
         // and a test that waited it out would be deleted by whoever next ran the suite -- so the
@@ -52,13 +59,35 @@ internal sealed class LoopbackBroker : IAsyncDisposable
         // reach. Defaults to the system clock, so every existing test is unaffected.
         clock ??= TimeProvider.System;
 
-        var runtime = BrokerRuntime.OpenInMemory(BrokerOptions.Default, clock);
+        var runtime = BrokerRuntime.OpenInMemory(options ?? BrokerOptions.Default, clock);
+
+        runtime.RestartWakeDelay = restartWakeDelay ?? TimeSpan.Zero;
 
         var server = await ParleyServer
             .StartAsync(runtime, "http://127.0.0.1:0", cancellationToken, Diagnostics())
             .ConfigureAwait(false);
 
         return new LoopbackBroker(server, clock);
+    }
+
+    /// <summary>Starts a broker over a store file, so a second one over the same file is a restart.</summary>
+    /// <param name="store">The store's path.</param>
+    /// <param name="cancellationToken">Cancels startup.</param>
+    /// <param name="restartWakeDelay">How long a machine's first join waits before its wakes, or null for none, as for <see cref="StartAsync"/>.</param>
+    /// <param name="options">The broker's options, or null for the defaults.</param>
+    /// <returns>The running broker.</returns>
+    public static async Task<LoopbackBroker> StartOnAsync(
+        string store, CancellationToken cancellationToken, TimeSpan? restartWakeDelay = null, BrokerOptions? options = null)
+    {
+        var runtime = BrokerRuntime.Open(Parley.Core.ProjectName.Create("test"), store, options ?? BrokerOptions.Default, TimeProvider.System);
+
+        runtime.RestartWakeDelay = restartWakeDelay ?? TimeSpan.Zero;
+
+        var server = await ParleyServer
+            .StartAsync(runtime, "http://127.0.0.1:0", cancellationToken, Diagnostics())
+            .ConfigureAwait(false);
+
+        return new LoopbackBroker(server, TimeProvider.System);
     }
 
     /// <summary>
@@ -301,6 +330,7 @@ internal sealed class AttachedClient : IAsyncDisposable
     /// </param>
     /// <param name="identity">The repository's identifier, when its launch configuration carries one (SPEC.md §4.1.1).</param>
     /// <param name="over">A channel to attach over, shared with other calls; a new one when <see langword="null"/>.</param>
+    /// <param name="processId">The process the adapter says hosts it, as a label; none when 0.</param>
     /// <returns>The attached client.</returns>
     public static async Task<AttachedClient> AttachAsync(
         LoopbackBroker broker,
@@ -312,7 +342,8 @@ internal sealed class AttachedClient : IAsyncDisposable
         string? launchToken = null,
         JoinedNodeClient? startedBy = null,
         string? identity = null,
-        GrpcChannel? over = null)
+        GrpcChannel? over = null,
+        long processId = 0)
     {
         if (startedBy is not null)
         {
@@ -348,7 +379,10 @@ internal sealed class AttachedClient : IAsyncDisposable
                 LaunchToken = launchToken ?? string.Empty,
 
                 // Reported as a label, never as authority (§4.1.1).
-                Identity = identity ?? string.Empty
+                Identity = identity ?? string.Empty,
+
+                // The process that hosts the adapter, a label too (§11.1); none when 0.
+                ProcessId = processId
             },
             cancellationToken: cancellationToken);
 
@@ -513,6 +547,9 @@ internal sealed class JoinedNodeClient : IAsyncDisposable
     /// <summary>Gets the machine name.</summary>
     public string Machine { get; }
 
+    /// <summary>Gets whether the join stream is still open.</summary>
+    public bool StillJoined => !_pump.IsCompleted;
+
     /// <summary>Joins a machine and waits until the broker has recorded it.</summary>
     /// <param name="broker">The broker.</param>
     /// <param name="machine">The machine name.</param>
@@ -521,6 +558,9 @@ internal sealed class JoinedNodeClient : IAsyncDisposable
     /// <param name="facts">What the node observed about itself.</param>
     /// <param name="reportsTurns">Whether this node says it reports the turns it gives (SPEC.md §11.6).</param>
     /// <param name="identities">The identifiers of the checkouts it can launch, which let it be asked for one by what it is.</param>
+    /// <param name="waitForRestartWake">
+    /// Whether to wait for the restart wake the join scheduled, so a test sees what the join woke before it goes on.
+    /// </param>
     /// <returns>The joined node.</returns>
     public static async Task<JoinedNodeClient> JoinAsync(
         LoopbackBroker broker,
@@ -529,7 +569,8 @@ internal sealed class JoinedNodeClient : IAsyncDisposable
         CancellationToken cancellationToken = default,
         Wire.NodeFacts? facts = null,
         bool reportsTurns = false,
-        IEnumerable<string>? identities = null)
+        IEnumerable<string>? identities = null,
+        bool waitForRestartWake = true)
     {
         var nodes = broker.ConnectAsNode();
 
@@ -555,6 +596,11 @@ internal sealed class JoinedNodeClient : IAsyncDisposable
         {
             throw new InvalidOperationException(
                 $"The first command on the join stream for '{machine}' was not an acknowledgement.");
+        }
+
+        if (waitForRestartWake)
+        {
+            await broker.Runtime.RestartWakeOf(machine).WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         return new JoinedNodeClient(nodes, machine, stream);
@@ -629,6 +675,19 @@ internal sealed class JoinedNodeClient : IAsyncDisposable
         }
 
         return await CountCommandsAsync(settle).ConfigureAwait(false);
+    }
+
+    /// <summary>Gets every command that has reached the node so far, in the order they came.</summary>
+    /// <remarks>For a test that sends many at once and needs each agent's own order, which the latest alone cannot give.</remarks>
+    public IReadOnlyList<Wire.NodeCommand> Commands
+    {
+        get
+        {
+            lock (_commands)
+            {
+                return [.. _commands];
+            }
+        }
     }
 
     /// <summary>Waits for a command to arrive.</summary>

@@ -107,4 +107,57 @@ public sealed class RoomOnThePageTests
 
         Assert.DoesNotContain("Not in it yet", page, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task Not_in_it_yet_folds_on_its_own_holding_only_the_agents_that_have_not_taken_part()
+    {
+        using var console = Project();
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+        var start = page.IndexOf("/not-in-it\"", StringComparison.Ordinal);
+
+        Assert.True(start > 0, "no group of its own");
+
+        var group = page[start..page.IndexOf("</details>", start, StringComparison.Ordinal)];
+
+        Assert.Contains("Not in it yet", group, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"count\">2</span>", group, StringComparison.Ordinal);
+        Assert.Contains("class=\"group-box\"", group, StringComparison.Ordinal);
+        Assert.Contains($"value=\"{Inventory}\"", group, StringComparison.Ordinal);
+        Assert.Contains($"value=\"{Ledger}\"", group, StringComparison.Ordinal);
+        Assert.DoesNotContain($"value=\"{Orders}\"", group, StringComparison.Ordinal);
+        Assert.DoesNotContain($"value=\"{Billing}\"", group, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task In_every_group_the_groups_inside_it_come_before_its_single_names()
+    {
+        using var console = Project();
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+        var start = page.IndexOf("aria-label=\"Who to talk to\"", StringComparison.Ordinal);
+        var to = page[start..page.IndexOf("</aside>", start, StringComparison.Ordinal)];
+
+        // Inside a state, "Not in it yet" before the agents that took part; under a machine, its states before the person.
+        Assert.True(to.IndexOf("/not-in-it\"", StringComparison.Ordinal) < to.IndexOf($"value=\"{Orders}\"", StringComparison.Ordinal), "an agent before the group beside it");
+        Assert.True(to.LastIndexOf("data-group=\"test/", StringComparison.Ordinal) < to.IndexOf($"value=\"{Orders}\"", StringComparison.Ordinal), "a name before a group");
+        Assert.True(to.IndexOf("data-group=\"alpha/", StringComparison.Ordinal) < 0 || to.IndexOf("data-group=\"alpha/", StringComparison.Ordinal) < to.IndexOf("value=\"human-user@alpha\"", StringComparison.Ordinal), "the person before a group");
+    }
+
+    [Fact]
+    public async Task Every_heading_that_folds_shows_that_it_does()
+    {
+        using var console = Project();
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+        var to = page[page.IndexOf("aria-label=\"Who to talk to\"", StringComparison.Ordinal)..page.IndexOf("</aside>", page.IndexOf("aria-label=\"Who to talk to\"", StringComparison.Ordinal), StringComparison.Ordinal)];
+
+        var headings = to.Split("<summary>").Length - 1;
+
+        Assert.True(headings >= 3, $"only {headings} headings");
+        Assert.Equal(headings, to.Split("<span class=\"chev icon\"").Length - 1);
+    }
 }

@@ -173,6 +173,55 @@ public sealed class FilesPlacingTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task The_path_field_names_every_type_that_can_be_placed()
+    {
+        // Without the guard the field said "(.md or .txt)", so a person was never told an image can be placed and
+        // believed the broker would refuse one (review, lens 3 round 35).
+        await _files.PlaceAsync(Billing, "rates.md", "twenty percent", "pricing");
+
+        using var driving = Driving.Open();
+        using var shell = await FilesOnScreen.OpenAsync(driving, _files, _directory.FullName);
+
+        await ConversationFilesAsync(driving, shell);
+
+        var list = (ChoiceDialog)driving.Find(Files.ConversationTitle);
+
+        driving.Row(list.Choices, FilesPlacing.Choice);
+        driving.Enter();
+
+        var form = (FormDialog)driving.Find(FilesPlacing.Title + " in pricing");
+
+        driving.App.LayoutAndDraw(true);
+
+        // The label wraps, so what the dialog draws is read as one run of text: each screen row it covers, with its border
+        // and shadow taken out.
+        var frame = form.FrameToScreen();
+        var rows = driving.Text().Replace("\r", string.Empty, StringComparison.Ordinal).Split('\n');
+        var inside = rows
+            .Skip(frame.Y)
+            .Take(frame.Height)
+            .Select(row => row.Length > frame.X ? row[frame.X..Math.Min(row.Length, frame.Right)] : string.Empty)
+            .Select(row => new string([.. row.Select(c => c >= (char)0x2500 && c <= (char)0x259F ? ' ' : c)]));
+        var drawn = string.Join(' ', string.Join(' ', inside).Split(' ', StringSplitOptions.RemoveEmptyEntries));
+
+        const string Asked = "The file's path on this machine (";
+        var start = drawn.IndexOf(Asked, StringComparison.Ordinal);
+
+        Assert.True(start >= 0, drawn);
+
+        var end = drawn.IndexOf("):", start, StringComparison.Ordinal);
+
+        Assert.True(end > start, drawn);
+
+        var named = drawn[(start + Asked.Length)..end]
+            .Split([',', ' '], StringSplitOptions.RemoveEmptyEntries)
+            .Where(word => word.StartsWith('.'))
+            .ToList();
+
+        Assert.Equal(SharedFileName.AllowedExtensions, named);
+    }
+
+    [Fact]
     public async Task Other_content_under_a_name_already_placed_is_refused_in_the_brokers_words()
     {
         await _files.PlaceAsync(Billing, "notes.md", "theirs", "pricing");

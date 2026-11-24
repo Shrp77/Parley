@@ -1,0 +1,355 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using Parley.Core;
+using Parley.Headless;
+using Xunit;
+using Wire = Parley.Transport;
+
+namespace Parley.Cli.Tests;
+
+/// <summary>
+/// What a node does when a person ends a process a node that is gone left running (SPEC.md §11.1).
+/// </summary>
+/// <remarks>
+/// The process is a label an adapter gave, so what is held here is what the node checks before it ends anything: only a
+/// running process named <c>claude</c>, never this node, never one it hosts, never a number that names nothing. The stand-in
+/// is a copy of an ordinary program that sleeps, given the agent's name.
+/// </remarks>
+[Integration]
+public sealed class NodeKillTests : IDisposable
+{
+    private readonly string _folder = Directory.CreateTempSubdirectory("parley-node-kill").FullName;
+
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    public void Dispose()
+    {
+        // A program file stays held for a moment after its process has gone, so the delete is tried until it holds or
+        // the deadline passes: a folder left behind is never a failed test.
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+
+        while (true)
+        {
+            try
+            {
+                Directory.Delete(_folder, recursive: true);
+
+                return;
+            }
+            catch (DirectoryNotFoundException)
+            {
+                return;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                if (DateTime.UtcNow >= deadline)
+                {
+                    return;
+                }
+
+                Thread.Sleep(50);
+            }
+        }
+    }
+
+    /// <summary>Ends a stand-in and waits until it has gone, so nothing of it holds the folder.</summary>
+    private static void End(Process standIn)
+    {
+        try
+        {
+            standIn.Kill(entireProcessTree: true);
+        }
+        catch (InvalidOperationException)
+        {
+            // It had already gone.
+        }
+
+        Assert.True(standIn.WaitForExit(TimeSpan.FromSeconds(10)), "the stand-in is still running");
+    }
+
+    /// <summary>Starts a copy of a program that stays up, under a name of its own, and returns the process.</summary>
+    /// <remarks>
+    /// Off Windows the copy is of the shell, told to loop. A copy of <c>sleep</c> used to do: where the system's tools are one
+    /// program that looks at the name it was run under, a copy under any other name exits at once saying it knows no such
+    /// program, and these tests then passed or failed by whether they looked before it had gone.
+    /// </remarks>
+    private Process Sleeper(string name)
+    {
+        var source = OperatingSystem.IsWindows()
+            ? Path.Combine(Environment.SystemDirectory, "ping.exe")
+            : "/bin/sh";
+
+        if (!File.Exists(source))
+        {
+            Assert.Skip($"{source} is not here, so there is no stand-in to run.");
+        }
+
+        var copy = Path.Combine(_folder, name + (OperatingSystem.IsWindows() ? ".exe" : string.Empty));
+
+        File.Copy(source, copy);
+
+        var started = new ProcessStartInfo(copy)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+        };
+
+        if (OperatingSystem.IsWindows())
+        {
+            started.ArgumentList.Add("-n");
+            started.ArgumentList.Add("120");
+            started.ArgumentList.Add("127.0.0.1");
+        }
+        else
+        {
+            // The loop is a file, and its path the one argument, so a test that makes a command line of these still can.
+            var loop = Path.Combine(_folder, name + "-loop.sh");
+
+            File.WriteAllLines(loop, ["n=0", "while [ $n -lt 120 ]; do sleep 1; n=$((n+1)); done"]);
+            started.ArgumentList.Add(loop);
+        }
+
+        return Process.Start(started) ?? throw new InvalidOperationException("The stand-in did not start.");
+    }
+
+    private static async Task<string> KillAsync(long process, ConcurrentDictionary<AgentIdentity, ResidentAgent>? residents = null)
+    {
+        var said = new StringWriter();
+
+        await NodeCommand.KillAsync(
+            new Wire.KillProcess { Agent = "docs@alpha", ProcessId = process, Because = "stuck" },
+            residents ?? new ConcurrentDictionary<AgentIdentity, ResidentAgent>(),
+            said);
+
+        return said.ToString();
+    }
+
+    [Fact]
+    public async Task A_process_named_for_the_agents_own_kind_is_ended()
+    {
+        using var left = Sleeper("claude");
+
+        var said = await KillAsync(left.Id);
+
+        Assert.Contains($"ended process {left.Id}", said, StringComparison.Ordinal);
+        Assert.True(left.WaitForExit(TimeSpan.FromSeconds(10)), "it is still running");
+    }
+
+    [Fact]
+    public async Task A_process_of_any_other_kind_is_left_alone_however_the_adapter_named_it()
+    {
+        using var other = Sleeper("somebodys-program");
+
+        try
+        {
+            var said = await KillAsync(other.Id);
+
+            Assert.Contains("not an agent's own kind of process", said, StringComparison.Ordinal);
+            Assert.False(other.HasExited, "it was ended");
+        }
+        finally
+        {
+            End(other);
+        }
+    }
+
+    [Fact]
+    public async Task The_node_never_ends_itself()
+    {
+        var said = await KillAsync(Environment.ProcessId);
+
+        Assert.Contains("this node", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_process_the_node_hosts_is_stopped_and_not_killed()
+    {
+        var residents = new ConcurrentDictionary<AgentIdentity, ResidentAgent>();
+
+        // A hosted agent that is named claude, so only the hosting check can refuse it.
+        string command;
+
+        using (var standIn = Sleeper("claude"))
+        {
+            command = $"\"{standIn.StartInfo.FileName}\" {string.Join(' ', standIn.StartInfo.ArgumentList)}";
+
+            // Started only for its command line. Left running it holds its own program file for two minutes, and the
+            // folder cannot be deleted while it does.
+            End(standIn);
+        }
+
+        var resident = ResidentAgent.Start(AgentName.Create("docs@alpha"), InvocationCommand.Parse(command), _folder, TimeProvider.System);
+
+        residents[AgentIdentity.Mint()] = resident;
+
+        try
+        {
+            var said = await KillAsync(resident.ProcessId, residents);
+
+            Assert.Contains("one this node hosts", said, StringComparison.Ordinal);
+            Assert.True(resident.IsAlive, "it was ended");
+        }
+        finally
+        {
+            await resident.DisposeAsync();
+        }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(-5)]
+    public async Task A_number_that_cannot_be_a_process_ends_nothing(long process)
+    {
+        var said = await KillAsync(process);
+
+        Assert.Contains("named no process that can be one", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_process_that_has_already_gone_is_said_not_to_be_running()
+    {
+        using var gone = Sleeper("claude");
+        var id = gone.Id;
+
+        End(gone);
+
+        var said = await KillAsync(id);
+
+        Assert.Contains($"process {id} is not running", said, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The name of the process an adapter named is the agent's choice: it can run its adapter under a copy of any program,
+    /// named anything a file may be. Printed as it is, a line separator, a next-line or a bidirectional override in it
+    /// forges a line of the node's log or reorders the one it is in (review, lens 2 run B on d99806d9).
+    /// </summary>
+    [Fact]
+    public async Task The_name_of_a_process_left_alone_is_printed_inert()
+    {
+        var hostile = "zz" + (char)0x2028 + "forged" + (char)0x0085 + "x" + (char)0x202E + "y";
+
+        using var other = Sleeper(hostile);
+
+        try
+        {
+            var said = await KillAsync(other.Id);
+
+            Assert.Contains("not an agent's own kind of process", said, StringComparison.Ordinal);
+            Assert.DoesNotContain(said.TrimEnd().EnumerateRunes(), Parley.Core.PrintableLine.Breaks);
+            Assert.False(other.HasExited, "it was ended");
+        }
+        finally
+        {
+            End(other);
+        }
+    }
+
+
+    /// <summary>
+    /// A process whose tree the node cannot wholly end (a child running as another user, which <c>sudo</c> leaves) made
+    /// <see cref="Process.Kill(bool)"/> throw an <see cref="AggregateException"/> that nothing caught, and the node's loop
+    /// ended with it: under <c>serve --with-node</c> nothing on the machine was started again until the broker restarted,
+    /// and under <c>parley up</c> every agent the node ran was stopped (review, lens 2 on 6fde4ef3, Linux).
+    /// </summary>
+    [Fact]
+    public async Task A_tree_the_node_cannot_wholly_end_is_said_and_the_node_goes_on()
+    {
+        if (OperatingSystem.IsWindows() || string.Equals(Environment.UserName, "root", StringComparison.Ordinal)
+            || !File.Exists("/usr/bin/sudo"))
+        {
+            Assert.Skip("Needs a user other than root who may run sudo without a password, as CI's Linux runners are.");
+        }
+
+        var loop = Path.Combine(_folder, "tree.sh");
+
+        File.WriteAllLines(loop, ["sudo -n -u nobody sleep 37 &", "n=0", "while [ $n -lt 120 ]; do sleep 1; n=$((n+1)); done"]);
+
+        var copy = Path.Combine(_folder, "claude");
+
+        File.Copy("/bin/sh", copy);
+
+        using var left = Process.Start(new ProcessStartInfo(copy) { ArgumentList = { loop }, UseShellExecute = false })
+            ?? throw new InvalidOperationException("The stand-in did not start.");
+
+        try
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+
+            while (!HasAChildOfAnotherUser(left.Id))
+            {
+                if (DateTime.UtcNow > deadline)
+                {
+                    Assert.Skip("sudo -n started no process as another user here.");
+                }
+
+                await Task.Delay(50, Ct);
+            }
+
+            var said = await KillAsync(left.Id);
+
+            Assert.Contains($"process {left.Id}", said, StringComparison.Ordinal);
+            Assert.DoesNotContain(said.TrimEnd().EnumerateRunes(), Parley.Core.PrintableLine.Breaks);
+        }
+        finally
+        {
+            // Not the whole tree: the other user's child is exactly what cannot be ended from here.
+            try
+            {
+                left.Kill();
+            }
+            catch (InvalidOperationException)
+            {
+                // It had already gone, which is what a passing run leaves.
+            }
+
+            using var sweep = Process.Start(new ProcessStartInfo("sudo") { ArgumentList = { "-n", "pkill", "-f", "sleep 37" } });
+            sweep?.WaitForExit(10_000);
+        }
+    }
+
+    // Whether a process below the given one runs with another real user, which this account cannot signal. sudo itself
+    // keeps the caller's real user; the command it runs does not.
+    private static bool HasAChildOfAnotherUser(int parent)
+    {
+        static string? Field(string[] status, string name) =>
+            status.FirstOrDefault(line => line.StartsWith(name, StringComparison.Ordinal))
+                ?.Split('\t', StringSplitOptions.RemoveEmptyEntries)[1];
+
+        var own = Field(File.ReadAllLines("/proc/self/status"), "Uid:");
+        var table = new List<(string Pid, string? Parent, string? Uid)>();
+
+        foreach (var folder in Directory.EnumerateDirectories("/proc"))
+        {
+            try
+            {
+                var status = File.ReadAllLines(Path.Combine(folder, "status"));
+
+                table.Add((Path.GetFileName(folder), Field(status, "PPid:"), Field(status, "Uid:")));
+            }
+            catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+            {
+                // A process that went, or one this account may not read.
+            }
+        }
+
+        var below = new HashSet<string>(StringComparer.Ordinal) { parent.ToString(System.Globalization.CultureInfo.InvariantCulture) };
+        var grew = true;
+
+        while (grew)
+        {
+            grew = false;
+
+            foreach (var (pid, up, _) in table)
+            {
+                if (up is not null && below.Contains(up) && below.Add(pid))
+                {
+                    grew = true;
+                }
+            }
+        }
+
+        return table.Any(row => below.Contains(row.Pid) && row.Uid is not null && row.Uid != own);
+    }
+}

@@ -80,8 +80,10 @@ meant. `parley use` says which project a command would act on, and why.
 
 `parley enroll` takes the directory that **holds** the repositories, so for this one it is the
 parent directory. It lists the git repositories directly under it and asks which to enroll, so
-the person ticks only this repository. It needs a real terminal, which a session's shell is not:
-ask the user to run it themselves, for example with the `!` prefix.
+the person ticks only this repository. It needs a real terminal; neither this session's shell nor
+its `!` prefix is one, because both capture the output. Ask the user to run it in a terminal window
+of their own, or to use the terminal's *Enroll agents from folders* (Alt+f) or the web console's
+*Register an agent*.
 
 ```
 parley enroll <the parent directory>

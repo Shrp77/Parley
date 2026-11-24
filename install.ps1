@@ -38,8 +38,8 @@
     Windows and to web-ui elsewhere.
 
     The surfaces are separate tools so that changing one does not stop the broker: Windows
-    cannot replace a running executable, and stopping the broker ends every resident agent
-    on the machine along with everything each had learned. Being separate, they are also
+    cannot replace a running executable, and stopping the broker ends its node, which leaves
+    every agent that node started running with nothing holding it. Being separate, they are also
     skippable, and a machine that only runs agents has no reason for either.
 
     A surface not named here is not removed. It is left at whatever version it already had,
@@ -51,10 +51,11 @@
     -Only parley-terminal replaces the terminal and does not stop the broker, because
     the broker's binary is not among the files being unlinked.
 
-    That matters more than it sounds. SPEC.md section 11.1 says three things end a resident agent,
-    and the first is the node stopping and telling every agent it started to quit -- and the
-    process is what held everything the agent had learned. Restarting a broker to change a
-    terminal costs every agent's accumulated context on the machine.
+    That matters more than it sounds. SPEC.md section 11.1 says a process outlives the node that
+    started it, and a node that is replaced knows none of the processes its predecessor started.
+    Restarting a broker to change a terminal leaves every running agent on the machine as a
+    process no node holds: it reads as left running, takes no turns, and is not started again
+    until it ends, by itself once its work does or with Kill process.
 
 .PARAMETER Force
     Ends whatever is holding Parley's files, rather than refusing and saying what to close.
@@ -301,8 +302,9 @@ function Stop-Broker {
 
     # **A web UI whose broker has gone is an orphan, and it is this script that orphaned it.**
     # Stopping a scheduled task terminates the process; it does not ask it to exit, so the broker
-    # never reaches the code that ends the child it started. The child keeps running, keeps the
-    # port, and keeps `parley-web-ui.exe` mapped -- which refuses the very install that stopped
+    # never reaches the code that ends the child it started. A broker from 0.64.45 on hands its web UI
+    # a pipe that closes when the broker dies, so its child ends too; one from before kept running,
+    # kept the port, and kept `parley-web-ui.exe` mapped -- which refused the very install that stopped
     # the broker, every time, with a refusal naming a process the person never started and cannot see.
     #
     # **Told apart by its parent rather than by its name**, because a web UI somebody started by
@@ -791,9 +793,9 @@ Write-Note 'nothing is holding the tool store'
 # reports success -- so it has to stop. But it only has to stop for its own binary.
 #
 # **This is the whole point of the split, and it is one `if`.** A run that replaces only the
-# terminal unlinks a file the broker never opened, so there is nothing to stop: SPEC.md section 11.1
-# has the node telling every agent it started to quit, and each of those processes is what held
-# everything that agent had learned. Restarting a broker to change a terminal spends all of it.
+# terminal unlinks a file the broker never opened, so there is nothing to stop: stopping the broker
+# ends its node, which leaves every agent it started running as a process no node holds, taking no
+# turns until it is ended. Restarting a broker to change a terminal costs every one of them that.
 #
 # Decided above, where the holder check needed the same answer: the web UI is only excluded from
 # that check because this is about to stop it. Two computations of one thing agree until one is
@@ -802,10 +804,10 @@ Write-Note 'nothing is holding the tool store'
 if ($replacingBroker) {
     # **What stopping it will interrupt, said before it is stopped.**
     #
-    # SPEC.md section 11.1: the node stopping tells every agent it started to quit, and the process
-    # is what held everything each of them had learned. A Request already drained into an agent's
-    # inbox is marked delivered, and killing the agent that holds it leaves the exchange open and
-    # owed with nothing running to answer it; nothing times out, so it waits and is flagged.
+    # SPEC.md section 11.1: a process outlives the node that started it, so on Windows the agents the
+    # node started are left running with no node holding them and take no turns. A Request already
+    # drained into such an agent's inbox is marked delivered, and the exchange stays open and owed
+    # with nothing able to give the agent a turn; nothing times out, so it waits and is flagged.
     #
     # **Asked of the broker, never of the store.** Only the broker opens the database (section 4),
     # and reading it here for a progress message would break the one boundary this whole
@@ -859,7 +861,7 @@ if ($replacingBroker) {
         $lines = @($inFlight | Where-Object { $_ -is [string] -and $_.Trim() })
 
         if ($lines.Count -gt 0) {
-            Write-Warning "$($lines.Count) conversation(s) have an exchange still open. Stopping the broker ends every agent it started. When an agent's turn ends its open exchange stays open and is flagged to the person:"
+            Write-Warning "$($lines.Count) conversation(s) have an exchange still open. Installing ends the broker and its node. Every Parley adapter has already been ended, so no agent the node started is still connected: one part-way through a turn finishes it without Parley's tools, and one that owes open work is started again once the broker is back. An open exchange stays open and is flagged to the person:"
 
             foreach ($line in $lines) {
                 Write-Host "      $line" -ForegroundColor DarkGray
@@ -1022,8 +1024,8 @@ foreach ($says in $reported) {
 # **Skipped entirely when the broker is not being replaced, and this is the half that is easy to
 # miss.** Not stopping the broker earlier is worthless if the script re-registers the
 # autostart entry down here: `autostart install` replaces the scheduled task, which restarts the
-# process, which ends every resident agent on the machine along with everything each had
-# learned. The stop would have been avoided and the cost paid anyway, hundreds of lines later.
+# process, which leaves every agent its node started running with nothing holding it. The stop
+# would have been avoided and the cost paid anyway, hundreds of lines later.
 #
 # Nothing here is needed for a surface: a terminal is not registered with a supervisor, does not
 # listen on a port, and has no store. There is nothing to configure and nothing to prove.

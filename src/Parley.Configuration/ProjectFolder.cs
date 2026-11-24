@@ -288,7 +288,9 @@ public static class ProjectFolder
         "anywhere else in the file rather than here.",
     ];
 
-    private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
+    // The serializer indents with the platform's newline, which is CRLF on Windows: an LF file came back with a CRLF body
+    // and one bare LF at the end. Written with LF always, and made CRLF below only when the file already was.
+    private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true, NewLine = "\n" };
 
     /// <summary>Reads a string member, or null when it is absent or not a string.</summary>
     private static string? Text(JsonObject entry, string member) =>
@@ -348,7 +350,7 @@ public static class ProjectFolder
     /// <see cref="FileShare.Delete"/>. Neither half works alone.
     /// </para>
     /// </remarks>
-    private static void Commit(string path, JsonObject document)
+    internal static void Commit(string path, JsonObject document)
     {
         var existed = File.Exists(path);
         var mark = existed && HasByteOrderMark(path);

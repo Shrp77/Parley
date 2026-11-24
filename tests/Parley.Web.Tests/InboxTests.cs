@@ -43,10 +43,12 @@ public sealed class InboxTests
     {
         // By reading the page rather than driving it: no console here holds a live seat with work owed. The boxes used to
         // come back empty, so a reply over the limit lost everything typed. Conversations/Detail and the terminal keep it.
-        Assert.Contains("@Model.KeptText(item.Message.ExchangeId, id)</textarea>", Page, StringComparison.Ordinal);
-        Assert.Contains("Model.Clarification : null)</textarea>", Page, StringComparison.Ordinal);
-        Assert.Contains("open=\"@Model.Kept(item.Message.ExchangeId)\"", Page, StringComparison.Ordinal);
-        Assert.Contains("_refused = !sent.Says.StartsWith", Model, StringComparison.Ordinal);
+        Assert.Contains("Model.KeptText(projectName, item.Message.ExchangeId, id),", Page, StringComparison.Ordinal);
+        Assert.Contains("Model.Kept(projectName, item.Message.ExchangeId) ? Model.Clarification : null,", Page, StringComparison.Ordinal);
+        Assert.Contains(">@Model.Value</textarea>", File.ReadAllText(RepositoryPath("src/Parley.Web/Pages/Shared/_Composer.cshtml")), StringComparison.Ordinal);
+        Assert.Contains("open=\"@Model.Kept(projectName, item.Message.ExchangeId)\"", Page, StringComparison.Ordinal);
+        // Off the send's flag: its words were matched once, and a Result that went ("Sent, and…") read as refused.
+        Assert.Contains("_refused = !sent.Closed;", Model, StringComparison.Ordinal);
     }
 
     // `The_inbox_sends_nobody_who_has_not_joined` was here: it expected a redirect to Join. There is no

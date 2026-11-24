@@ -177,10 +177,21 @@ internal static class StubRunner
     /// Writes a stub that answers its nth prompt with the nth group of lines, verbatim, and returns its command template.
     /// </summary>
     /// <param name="directory">Where to put the script.</param>
-    /// <param name="turns">The lines to write for each prompt, in order. None may hold a single quote.</param>
+    /// <param name="turns">
+    /// The lines to write for each prompt, in order. None may hold a single quote. A line made with <see cref="Pause"/>
+    /// waits instead of writing.
+    /// </param>
     /// <returns>The template.</returns>
     internal static string Scripted(string directory, params string[][] turns)
     {
+        static string Emit(string line) => line.StartsWith(PauseMark, StringComparison.Ordinal)
+            ? "Start-Sleep -Seconds " + line[PauseMark.Length..]
+            : StubRunner.Emit(line);
+
+        static string Print(string line) => line.StartsWith(PauseMark, StringComparison.Ordinal)
+            ? "sleep " + line[PauseMark.Length..]
+            : StubRunner.Print(line);
+
         var windows = new List<string> { Emit(Init), "$n = 0", "while ($null -ne ($line = [Console]::In.ReadLine())) {", "  $n++" };
         var unix = new List<string> { Print(Init), "n=0", "while IFS= read -r line; do", "  n=$((n+1))" };
 
@@ -194,6 +205,11 @@ internal static class StubRunner
 
             unix.Add("  if [ \"$n\" -eq " + number + " ]; then");
             unix.AddRange(turns[turn].Select(line => "    " + Print(line)));
+
+            // An empty then-branch is a syntax error in sh, which then runs nothing at all: a turn that writes nothing
+            // (a prompt the runner folds into a turn of its own) would fail every turn on Linux and macOS. PowerShell
+            // takes an empty block, so Windows never showed it.
+            unix.Add("    :");
             unix.Add("  fi");
         }
 
@@ -202,6 +218,13 @@ internal static class StubRunner
 
         return Write(directory, windows, unix);
     }
+
+    /// <summary>A line for <see cref="Scripted"/> that waits rather than writes.</summary>
+    /// <param name="seconds">How long.</param>
+    /// <returns>The line.</returns>
+    internal static string Pause(int seconds) => PauseMark + seconds.ToString(CultureInfo.InvariantCulture);
+
+    private const string PauseMark = "pause:";
 
     /// <summary>Writes a stub that never reads its input, and returns its command template.</summary>
     /// <param name="directory">Where to put the script.</param>

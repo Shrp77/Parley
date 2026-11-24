@@ -42,6 +42,7 @@ public sealed class RepositoryPathsTests : IDisposable
     [InlineData("docs ")]
     [InlineData("docs  ")]
     [InlineData("docs\u3000")]
+    [InlineData("docs..")]
     public void A_path_through_a_folder_ending_in_a_space_is_refused(string name)
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "Win32 path rules");

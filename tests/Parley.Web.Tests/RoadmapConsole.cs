@@ -33,6 +33,9 @@ public sealed class RoadmapConsole : WebApplicationFactory<Program>
     /// <summary>The broker's script.</summary>
     public RoadmapBroker Broker { get; } = new();
 
+    /// <summary>A deployment root to follow, so pages that read or write it (settings.json) have one; none by default.</summary>
+    public string? Root { get; init; }
+
     /// <inheritdoc/>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -42,10 +45,21 @@ public sealed class RoadmapConsole : WebApplicationFactory<Program>
         {
             services.RemoveAll<BrokerDirectory>();
 
-            services.AddSingleton(_ => new BrokerDirectory(
-                [new ProjectSettings(ProjectName.Create(Project), "alpha.db", "http://127.0.0.1:5407", null)],
-                address => GrpcChannel.ForAddress(
-                    address, new GrpcChannelOptions { HttpHandler = Broker, DisposeHttpClient = false })));
+            GrpcChannel Connect(string address) =>
+                GrpcChannel.ForAddress(address, new GrpcChannelOptions { HttpHandler = Broker, DisposeHttpClient = false });
+
+            if (Root is { } root)
+            {
+                Parley.Configuration.ProjectManifest.Write(
+                    root, [new ProjectSettings(ProjectName.Create(Project), "alpha.db", "http://127.0.0.1:5407", null)]);
+                services.AddSingleton(_ => BrokerDirectory.FollowingRoot(root, Connect));
+            }
+            else
+            {
+                services.AddSingleton(_ => new BrokerDirectory(
+                    [new ProjectSettings(ProjectName.Create(Project), "alpha.db", "http://127.0.0.1:5407", null)],
+                    Connect));
+            }
         });
     }
 }
@@ -67,6 +81,14 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <summary>The conversations every list returns.</summary>
     public List<Wire.ConversationSummary> Conversations { get; } = [];
 
+    /// <summary>How many conversations one listing returns before it hands back a token for the rest; 0 returns them all at once.</summary>
+    /// <remarks>The broker lists fifty at a time, so a page that reads only the first answer reads only the newest fifty.</remarks>
+    public int ConversationPageSize { get; set; }
+
+    /// <summary>Whether a listing leaves archived conversations out unless it asks for them, as the broker does.</summary>
+    /// <remarks>Off unless a test sets it, so a fixture that marks a conversation archived only to draw it is still listed.</remarks>
+    public bool OmitsArchived { get; set; }
+
     /// <summary>The agents the registry lists, none by default.</summary>
     public List<Wire.RegistryRow> Registry { get; } = [];
 
@@ -79,8 +101,62 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <summary>Every edit it was asked for.</summary>
     public List<Wire.EditRoadmapRequest> Edited { get; } = [];
 
+    /// <summary>Who waits on whom, as <c>DescribeWaiting</c> answers; none by default.</summary>
+    public List<Wire.WaitingEdge> Edges { get; } = [];
+
+    /// <summary>Messages an export of their conversation carries; none by default.</summary>
+    public List<Wire.Message> ExportMessages { get; } = [];
+
     /// <summary>Exchanges every export carries, as when retention has removed a conversation's messages and kept them.</summary>
     public List<Wire.ExchangeSnapshot> ExportExchanges { get; } = [];
+
+    /// <summary>What <c>DescribeFlags</c> answers; none by default.</summary>
+    public List<Wire.FlagView> Flags { get; } = [];
+
+    /// <summary>Every Result the person sent, in order. Each one taken closes its exchange, as the broker does.</summary>
+    public List<Wire.ResultRequest> Resulted { get; } = [];
+
+    /// <summary>Every Clarify sent as the person.</summary>
+    public List<Wire.ClarifyRequest> Clarified { get; } = [];
+
+    /// <summary>Every stop a person asked for.</summary>
+    public List<Wire.StopRequest> Stopped { get; } = [];
+
+    /// <summary>The starts a person asked for.</summary>
+    public List<Wire.StartRequest> Started { get; } = [];
+
+    /// <summary>What a start is answered with: false for a node that was not asked.</summary>
+    public bool StartAccepted { get; set; } = true;
+
+    /// <summary>
+    /// When set, a start is refused as the broker refuses one it will not ask for (a frozen agent, or one open outside
+    /// Parley): the call ends <c>FAILED_PRECONDITION</c> with this sentence as its detail.
+    /// </summary>
+    public string? StartRefusal { get; set; }
+
+    /// <summary>Every conversation a person asked to be ended, with the reason given.</summary>
+    public List<Wire.ForceConcludeRequest> Concluded { get; } = [];
+
+    /// <summary>The conversations an ending changes nothing in, as one already closed.</summary>
+    public HashSet<string> AlreadyClosed { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Every restart a person asked for.</summary>
+    public List<Wire.StopRequest> Restarted { get; } = [];
+
+    /// <summary>Every kill of a process a node that is gone left running it was asked for.</summary>
+    public List<Wire.StopRequest> Killed { get; } = [];
+
+    /// <summary>When set, a kill is refused <c>FAILED_PRECONDITION</c> with this sentence, as the broker refuses one it will not send.</summary>
+    public string? KillRefusal { get; set; }
+
+    /// <summary>Every freeze of an agent a person asked for, with whether it was to outlast a start of the broker.</summary>
+    public List<Wire.FreezeRequest> Frozen { get; } = [];
+
+    /// <summary>Every unfreeze of an agent a person asked for.</summary>
+    public List<Wire.AgentRequest> Unfrozen { get; } = [];
+
+    /// <summary>What a freeze says became of the agent's process, in the wire's words; <c>not_running</c> by default.</summary>
+    public string FreezeProcess { get; set; } = "not_running";
 
     /// <summary>When set, the proposals read is not implemented, as a broker older than roadmaps would answer.</summary>
     public bool Old { get; set; }
@@ -97,6 +173,108 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// </summary>
     public bool Seats { get; set; }
 
+    /// <summary>What the broker says it did about the receiver of a Request.</summary>
+    public Wire.WakeOutcome RequestWake { get; set; }
+
+    /// <summary>Every placement as the person, with its header and bytes.</summary>
+    public List<(Wire.PlaceFileHeader Header, byte[] Bytes)> Placed { get; } = [];
+
+    /// <summary>What a placement comes to, given its header and bytes.</summary>
+    public Func<Wire.PlaceFileHeader, byte[], Wire.PlaceFileReply> Placing { get; set; } =
+        (header, bytes) => new Wire.PlaceFileReply
+        {
+            Outcome = Wire.PlaceOutcome.Placed,
+            Rejection = Wire.FileRejection.None,
+            ConversationId = header.ConversationId,
+            Name = header.Name,
+            SizeBytes = bytes.Length,
+            Sha256 = Parley.Core.ContentHash.Of(bytes).Value,
+        };
+
+    private HttpResponseMessage PlaceStreaming(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var pipe = new System.IO.Pipelines.Pipe();
+
+        var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+        {
+            Version = System.Net.HttpVersion.Version20,
+            RequestMessage = request,
+            Content = new StreamContent(pipe.Reader.AsStream()),
+        };
+
+        response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/grpc");
+
+        _ = Task.Run(
+            async () =>
+            {
+                var answers = pipe.Writer.AsStream();
+
+                try
+                {
+                    await WriteAnswerAsync(answers, new Wire.PlaceFileAnswer { GoAhead = new Wire.Empty() }, cancellationToken);
+
+                    var body = await request.Content!.ReadAsByteArrayAsync(cancellationToken);
+                    Wire.PlaceFileReply reply;
+
+                    lock (_lock)
+                    {
+                        reply = Place(body);
+                    }
+
+                    await WriteAnswerAsync(answers, new Wire.PlaceFileAnswer { Reply = reply }, cancellationToken);
+                    response.TrailingHeaders.Add("grpc-status", "0");
+                    await pipe.Writer.CompleteAsync();
+                }
+                catch (Exception failed)
+                {
+                    await pipe.Writer.CompleteAsync(failed);
+                }
+            },
+            cancellationToken);
+
+        return response;
+    }
+
+    private static async Task WriteAnswerAsync(Stream answers, Wire.PlaceFileAnswer answer, CancellationToken cancellationToken)
+    {
+        var message = answer.ToByteArray();
+        var prefix = new byte[5];
+
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(prefix.AsSpan(1), (uint)message.Length);
+        await answers.WriteAsync(prefix, cancellationToken);
+        await answers.WriteAsync(message, cancellationToken);
+        await answers.FlushAsync(cancellationToken);
+    }
+
+    private Wire.PlaceFileReply Place(byte[] body)
+    {
+        Wire.PlaceFileHeader? header = null;
+        using var bytes = new MemoryStream();
+
+        for (var at = 0; at + 5 <= body.Length;)
+        {
+            var length = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(body.AsSpan(at + 1, 4));
+            var frame = Wire.PlaceFileFrame.Parser.ParseFrom(body.AsSpan(at + 5, length));
+
+            if (frame.FrameCase == Wire.PlaceFileFrame.FrameOneofCase.Header)
+            {
+                header = frame.Header;
+            }
+            else
+            {
+                frame.Chunk.WriteTo(bytes);
+            }
+
+            at += 5 + length;
+        }
+
+        var content = bytes.ToArray();
+
+        Placed.Add((header!, content));
+
+        return Placing(header!, content);
+    }
+
     /// <summary>When set with <see cref="Seats"/>, the seat's stream says, after the attach, that the store is being rewritten.</summary>
     public bool Tidying { get; set; }
 
@@ -108,6 +286,9 @@ public sealed class RoadmapBroker : HttpMessageHandler
 
     /// <summary>Every operation asked of this broker, by its path.</summary>
     public System.Collections.Concurrent.ConcurrentQueue<string> Paths { get; } = new();
+
+    /// <summary>How many messages the person's seat is told are waiting. This script serves no delivery stream.</summary>
+    public int MessagesWaiting { get; set; }
 
     /// <summary>Every spin-off asked for.</summary>
     public List<Wire.SpinOffRequest> SpunOff { get; } = [];
@@ -162,6 +343,11 @@ public sealed class RoadmapBroker : HttpMessageHandler
 
         ArgumentNullException.ThrowIfNull(request);
 
+        if (Seats && request.RequestUri!.AbsolutePath == "/parley.v1.Operators/PlacePersonsFile")
+        {
+            return PlaceStreaming(request, cancellationToken);
+        }
+
         var body = request.Content is null ? [] : await request.Content.ReadAsByteArrayAsync(cancellationToken);
         var payload = body.Length > 5 ? body.AsSpan(5).ToArray() : [];
 
@@ -203,6 +389,25 @@ public sealed class RoadmapBroker : HttpMessageHandler
                 Requested.Add(open);
             }
 
+            if (Seats && request.RequestUri!.AbsolutePath == "/parley.v1.Agents/Clarify")
+            {
+                Clarified.Add(Wire.ClarifyRequest.Parser.ParseFrom(payload));
+            }
+
+            if (Seats && request.RequestUri!.AbsolutePath == "/parley.v1.Agents/Result")
+            {
+                var result = Wire.ResultRequest.Parser.ParseFrom(payload);
+                Resulted.Add(result);
+
+                // Closed as the broker closes it: nobody waits on anybody over it any more.
+                _ = Edges.RemoveAll(edge => edge.ExchangeId == result.ExchangeId);
+
+                foreach (var exchange in ExportExchanges.Where(exchange => exchange.ExchangeId == result.ExchangeId))
+                {
+                    exchange.State = Wire.ExchangeState.Closed;
+                }
+            }
+
             reply = request.RequestUri!.AbsolutePath switch
             {
                 "/parley.v1.Operators/Proposals" => Old ? null : ListProposals(Wire.ProposalsRequest.Parser.ParseFrom(payload)),
@@ -216,21 +421,37 @@ public sealed class RoadmapBroker : HttpMessageHandler
                 "/parley.v1.Operators/DeclineProposal" => Decline(Wire.ProposalRequest.Parser.ParseFrom(payload).Id),
                 "/parley.v1.Operators/EditRoadmap" => Edit(Wire.EditRoadmapRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/DescribeRegistry" => new Wire.RegistryReply { Rows = { Registry } },
-                "/parley.v1.Operators/DescribeWaiting" => new Wire.WaitingReply(),
-                "/parley.v1.Operators/ListConversations" => new Wire.ListConversationsReply { Conversations = { Conversations } },
+                "/parley.v1.Operators/DescribeWaiting" => new Wire.WaitingReply { Edges = { Edges } },
+                "/parley.v1.Operators/ListConversations" => Listed(Wire.ListConversationsRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/Export" => Export(Wire.ExportRequest.Parser.ParseFrom(payload).ConversationId),
                 "/parley.v1.Operators/Implements" => new Wire.ImplementsReply { ProtocolVersion = Parley.Core.ProtocolVersion.Current },
                 "/parley.v1.Operators/SpinOff" => Spun(Wire.SpinOffRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/AbandonSpinOff" => Taken(Wire.SpinOffRequest.Parser.ParseFrom(payload)),
+                "/parley.v1.Operators/Start" => AskedToStart(Wire.StartRequest.Parser.ParseFrom(payload)),
+                "/parley.v1.Operators/ForceConclude" => AskedToEnd(Wire.ForceConcludeRequest.Parser.ParseFrom(payload)),
+                "/parley.v1.Operators/Stop" => Asked(Stopped, Wire.StopRequest.Parser.ParseFrom(payload)),
+                "/parley.v1.Operators/Restart" => Asked(Restarted, Wire.StopRequest.Parser.ParseFrom(payload)),
+                "/parley.v1.Operators/Kill" => Asked(Killed, Wire.StopRequest.Parser.ParseFrom(payload)),
+                "/parley.v1.Operators/Freeze" => AskedToFreeze(Wire.FreezeRequest.Parser.ParseFrom(payload)),
+                "/parley.v1.Operators/Unfreeze" => AskedToUnfreeze(Wire.AgentRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Agents/Request" when Seats && RefusesRequestsTo.Contains(Requested[^1].To) => new Wire.RequestReply
                 {
                     Outcomes = { new Wire.RequestOutcome { Ok = false, Rejection = Wire.RequestRejection.Duplicate } },
                 },
                 "/parley.v1.Agents/Request" when Seats => new Wire.RequestReply
                 {
-                    Outcomes = { new Wire.RequestOutcome { Ok = true, ExchangeId = 7, ConversationId = "rm1-1" } },
+                    Outcomes = { new Wire.RequestOutcome { Ok = true, ExchangeId = 7, ConversationId = "rm1-1", Wake = RequestWake } },
                 },
-                "/parley.v1.Agents/Waiting" when Seats => new Wire.Notice(),
+                "/parley.v1.Agents/Waiting" when Seats => new Wire.Notice { MessagesWaiting = MessagesWaiting },
+                "/parley.v1.Agents/Result" when Seats => new Wire.SayReply { Ok = true, MessageId = 900 },
+                "/parley.v1.Agents/Clarify" when Seats => new Wire.SayReply { Ok = true, MessageId = 901 },
+                "/parley.v1.Operators/DescribeFlags" => new Wire.FlagsReply { Flags = { Flags } },
+                "/parley.v1.Operators/LocateExchange" => new Wire.LocateExchangeReply
+                {
+                    ConversationId = ExportMessages
+                        .FirstOrDefault(m => m.ExchangeId == Wire.LocateExchangeRequest.Parser.ParseFrom(payload).ExchangeId)
+                        ?.ConversationId ?? string.Empty,
+                },
                 _ => null,
             };
         }
@@ -246,6 +467,25 @@ public sealed class RoadmapBroker : HttpMessageHandler
 
         response.Content.Headers.ContentType = new MediaTypeHeaderValue("application/grpc");
 
+        var refusal = request.RequestUri!.AbsolutePath switch
+        {
+            "/parley.v1.Operators/Start" => StartRefusal,
+            "/parley.v1.Operators/Kill" => KillRefusal,
+            _ => null,
+        };
+
+        if (refusal is not null)
+        {
+            // A refusal carries no message: only the status and its sentence, which the wire sends percent-encoded. 9 is
+            // FAILED_PRECONDITION.
+            response.Content = new ByteArrayContent([]);
+            response.Content.Headers.ContentType = new MediaTypeHeaderValue("application/grpc");
+            response.TrailingHeaders.Add("grpc-status", "9");
+            response.TrailingHeaders.Add("grpc-message", Uri.EscapeDataString(refusal));
+
+            return response;
+        }
+
         // 12 is UNIMPLEMENTED.
         response.TrailingHeaders.Add("grpc-status", (reply is null ? 12 : 0).ToString(CultureInfo.InvariantCulture));
 
@@ -257,6 +497,41 @@ public sealed class RoadmapBroker : HttpMessageHandler
         SpunOff.Add(asked);
 
         return new Wire.SpinOffReply { Refused = SpinOffRefusal };
+    }
+
+    private Wire.DidItReply AskedToEnd(Wire.ForceConcludeRequest asked)
+    {
+        Concluded.Add(asked);
+
+        return new Wire.DidItReply { Changed = !AlreadyClosed.Contains(asked.ConversationId) };
+    }
+
+    private Wire.DidItReply AskedToStart(Wire.StartRequest asked)
+    {
+        Started.Add(asked);
+
+        return new Wire.DidItReply { Changed = StartAccepted };
+    }
+
+    private Wire.FreezeReply AskedToFreeze(Wire.FreezeRequest asked)
+    {
+        Frozen.Add(asked);
+
+        return new Wire.FreezeReply { Changed = true, Process = FreezeProcess };
+    }
+
+    private Wire.DidItReply AskedToUnfreeze(Wire.AgentRequest asked)
+    {
+        Unfrozen.Add(asked);
+
+        return new Wire.DidItReply { Changed = true };
+    }
+
+    private static Wire.DidItReply Asked(List<Wire.StopRequest> into, Wire.StopRequest asked)
+    {
+        into.Add(asked);
+
+        return new Wire.DidItReply { Changed = true };
     }
 
     private Wire.DidItReply Taken(Wire.SpinOffRequest asked)
@@ -390,6 +665,7 @@ public sealed class RoadmapBroker : HttpMessageHandler
         var reply = new Wire.ExportReply();
 
         reply.Exchanges.AddRange(ExportExchanges);
+        reply.Messages.AddRange(ExportMessages.Where(m => m.ConversationId == conversation));
 
         foreach (var detail in Details.Values)
         {
@@ -404,6 +680,29 @@ public sealed class RoadmapBroker : HttpMessageHandler
                     Removed = item.RemovedRevision != 0,
                 };
             }
+        }
+
+        return reply;
+    }
+
+    /// <summary>Answers a listing: everything at once, or a page at a time and without the archived when a test asked for that.</summary>
+    /// <param name="request">What was asked.</param>
+    /// <returns>The conversations, and a token when more follow.</returns>
+    private Wire.ListConversationsReply Listed(Wire.ListConversationsRequest request)
+    {
+        var listed = Conversations.Where(c => !OmitsArchived || request.IncludeArchived || !c.Archived).ToList();
+
+        if (ConversationPageSize <= 0)
+        {
+            return new Wire.ListConversationsReply { Conversations = { listed } };
+        }
+
+        var from = int.TryParse(request.PageToken, NumberStyles.None, CultureInfo.InvariantCulture, out var at) ? at : 0;
+        var reply = new Wire.ListConversationsReply { Conversations = { listed.Skip(from).Take(ConversationPageSize) } };
+
+        if (from + ConversationPageSize < listed.Count)
+        {
+            reply.NextPageToken = (from + ConversationPageSize).ToString(CultureInfo.InvariantCulture);
         }
 
         return reply;

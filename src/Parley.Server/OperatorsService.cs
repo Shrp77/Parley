@@ -278,8 +278,11 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         {
             throw new RpcException(new Status(
                 StatusCode.FailedPrecondition,
-                $"'{agent.Value}' is already open outside Parley — somebody started it in an editor — so starting another " +
-                "would put two models in one checkout. Close that session first, or prompt it there."));
+                _runtime.Unsupervised(agent)
+                    ? $"'{agent.Value}' is already running, left by a node that is gone, so starting another would put two " +
+                      "models in one checkout. End that process with kill first, and the next work for it starts it again."
+                    : $"'{agent.Value}' is already open outside Parley — somebody started it in an editor — so starting " +
+                      "another would put two models in one checkout. Close that session first, or prompt it there."));
         }
 
         var registry = await Console((console, _, ct) => console.DescribeRegistryAsync(ct), context)
@@ -290,10 +293,183 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             return new Wire.DidItReply { Changed = false };
         }
 
+        // SPEC.md §14: nothing starts a frozen agent, a person's Start included. Said, not silently declined.
+        if (_runtime.IsFrozen(agent))
+        {
+            throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"'{agent.Value}' is frozen, so nothing starts it. Unfreeze it first."));
+        }
+
         var started = _runtime.RequestAttention(
             agent, string.IsNullOrWhiteSpace(request.Because) ? "the person asked for it" : request.Because);
 
         return new Wire.DidItReply { Changed = started };
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The node waits for the current turn to end, so this says only that it was asked (SPEC.md §11.1). The agent is
+    /// started again by the next work for it, as any agent is: a freeze or retirement, not this, keeps one out.
+    /// </remarks>
+    public override Task<Wire.DidItReply> Stop(Wire.StopRequest request, ServerCallContext context) =>
+        StopOrRestart(request, context, restart: false);
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The same as <see cref="Stop"/>, then started again with its launch configuration read afresh. An agent that is
+    /// not running is not started by this: that is <see cref="Start"/>.
+    /// </remarks>
+    public override Task<Wire.DidItReply> Restart(Wire.StopRequest request, ServerCallContext context) =>
+        StopOrRestart(request, context, restart: true);
+
+    private Task<Wire.DidItReply> StopOrRestart(Wire.StopRequest request, ServerCallContext context, bool restart)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var agent = Acted(request.Agent);
+        var because = string.IsNullOrWhiteSpace(request.Because) ? "the person asked for it" : request.Because;
+
+        // SPEC.md §14: nothing starts a frozen agent, and a restart starts it again. One still finishing its turn is already
+        // being stopped by the freeze, so there is nothing a stop would add either.
+        if (restart && _runtime.IsFrozen(agent))
+        {
+            throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"'{agent.Value}' is frozen, so nothing starts it again. Unfreeze it first."));
+        }
+
+        return _runtime.RequestStop(agent, restart, because) switch
+        {
+            StopOutcome.Sent => Task.FromResult(new Wire.DidItReply { Changed = true }),
+            StopOutcome.NotRunning => Task.FromResult(new Wire.DidItReply { Changed = false }),
+            StopOutcome.OpenOutside => throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                // SPEC.md §11.7: a process a node started and a node that is gone still owns is not somebody's editor, and
+                // blaming one who never opened it was the defect; the way to end it is kill.
+                _runtime.Unsupervised(agent)
+                    ? $"'{agent.Value}' is running, left by a node that is gone, so no node holds a process of it to stop. End "
+                      + "it with kill, which ends only a process a node started."
+                    : $"'{agent.Value}' is open outside Parley — somebody started it in an editor — so Parley holds no process "
+                      + "of it to stop. Close it where it was opened.")),
+            _ => throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"No node on '{agent.Machine}' can stop '{agent.Value}': its node is not connected, or does not list it "
+                + "among what it can start. Run `parley up` on that machine, or restart the broker there.")),
+        };
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Does not wait for a turn: the process is one no node holds, so nothing can say when one ends (SPEC.md §11.1). What it
+    /// was doing is lost, and the next work for the agent starts it again as any agent is started.
+    /// </remarks>
+    public override Task<Wire.DidItReply> Kill(Wire.StopRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var agent = Acted(request.Agent);
+        var because = string.IsNullOrWhiteSpace(request.Because) ? "the person asked for it" : request.Because;
+
+        return _runtime.RequestKill(agent, because) switch
+        {
+            KillOutcome.Sent => Task.FromResult(new Wire.DidItReply { Changed = true }),
+            KillOutcome.NotLeftRunning => throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"'{agent.Value}' is not running as a process a node left behind, so there is nothing to end here. One "
+                + "open in somebody's editor is theirs to close, and one a node supervises is stopped, not killed.")),
+            KillOutcome.NoProcess => throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"'{agent.Value}' was left running by a node that is gone, but its adapter did not say which process hosts "
+                + "it, so none can be named. End its `claude` process by hand, or wait for it to finish.")),
+            _ => throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"No node is joined for '{agent.Machine}', so nothing there can end the process of '{agent.Value}'. Run "
+                + "`parley up` on that machine, or restart the broker there.")),
+        };
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Recorded before the node is asked, so a turn that ends and a message that arrives in between both find the freeze
+    /// (SPEC.md §14). The process is ended by the existing stop, which waits for the turn and never ends one a node did not start.
+    /// </remarks>
+    public override async Task<Wire.FreezeReply> Freeze(Wire.FreezeRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var agent = Acted(request.Agent);
+        var registry = await Console((console, _, ct) => console.DescribeRegistryAsync(ct), context).ConfigureAwait(false);
+
+        if (registry.All(row => row.Name != agent))
+        {
+            throw new RpcException(new Status(
+                StatusCode.NotFound, $"Nothing has registered under '{agent.Value}', so there is nothing to freeze."));
+        }
+
+        // Marked only when a row took the freeze: one already frozen is marked already, and a row that went between the look
+        // and the write (a purge) must not leave its name frozen with nothing stored to lift. Marked inside the same turn at the
+        // store as the write, so a freeze and an unfreeze that cross cannot leave the store saying one thing and the broker another.
+        var changed = await Console(
+            async (console, now, ct) =>
+            {
+                var took = await console.FreezeAgentAsync(agent, now, _runtime.RunId, request.KeepFrozen, ct).ConfigureAwait(false);
+
+                if (took)
+                {
+                    _runtime.MarkFrozen(agent, true);
+                }
+
+                return took;
+            },
+            context).ConfigureAwait(false);
+
+        // A process a node that is gone left is not somebody's editor: said apart, so the person is told only Kill ends it
+        // (review, lens 3 run 2 on 6fde4ef3).
+        var process = _runtime.RequestStop(agent, restart: false, "a person froze it") switch
+        {
+            StopOutcome.Sent => "stopping",
+            StopOutcome.OpenOutside when _runtime.Unsupervised(agent) => "left_running",
+            StopOutcome.OpenOutside => "open_outside",
+            StopOutcome.NoNode => "no_node",
+            _ => "not_running"
+        };
+
+        return new Wire.FreezeReply { Changed = changed, Process = process };
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Then the agent is asked to start if it owes open work, as after a restart, or if anything arrived for it while it was
+    /// frozen, whose wake was declined (SPEC.md §14); one with nothing to do stays as it is until work arrives.
+    /// </remarks>
+    public override async Task<Wire.DidItReply> Unfreeze(Wire.AgentRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var agent = Acted(request.Agent);
+        // Cleared in the same turn at the store as the write, for the reason Freeze marks there.
+        var changed = await Console(
+            async (console, _, ct) =>
+            {
+                var lifted = await console.UnfreezeAgentAsync(agent, ct).ConfigureAwait(false);
+
+                _runtime.MarkFrozen(agent, false);
+
+                return lifted;
+            },
+            context).ConfigureAwait(false);
+
+        if (changed)
+        {
+            await _runtime.UnfrozenAsync(agent).ConfigureAwait(false);
+        }
+
+        return new Wire.DidItReply { Changed = changed };
     }
 
     /// <inheritdoc/>
@@ -475,6 +651,17 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
         var outcome = await Console((console, _, ct) => console.PurgeAsync(agent, ct), context).ConfigureAwait(false);
 
+        // A freeze is a column of the row. When the row has gone the freeze has gone, and an agent registered later under the
+        // same name must not find itself frozen with nothing on any surface to unfreeze.
+        // Not cancelled, like the folders below: the rows have gone whatever the caller does since.
+        var remains = await _runtime.UseConnectionAsync(
+            (connection, _, ct) => new OperatorConsole(connection).DescribeRegistryAsync(ct), CancellationToken.None).ConfigureAwait(false);
+
+        if (remains.All(row => row.Name != agent))
+        {
+            _runtime.MarkFrozen(agent, false);
+        }
+
         // Not cancelled from here: the rows have gone, so their folders go whatever the caller does.
         var after = await RecordedFoldersAsync(CancellationToken.None).ConfigureAwait(false);
         var folders = before.Except(after, StringComparer.Ordinal).ToList();
@@ -510,8 +697,15 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
                 _runtime.TurnRunningSince(row.Name),
                 latest.TryGetValue(row.Name, out var last) ? last.EndedUtc : null,
                 last?.Clean ?? false,
-                last?.PermissionDenials ?? 0),
+                last?.PermissionDenials ?? 0,
+                _runtime.BackgroundTasks(row.Name)),
             OpenOutside = _runtime.OpenOutside(row.Name),
+            Unsupervised = _runtime.Unsupervised(row.Name),
+
+            // **Frozen as the broker honours it** (SPEC.md §14): a freeze that lapsed at this start stays stored until the
+            // start it owes has been asked for, and it is not a freeze meanwhile, so it is not shown as one.
+            FrozenUtc = _runtime.IsFrozen(row.Name) ? row.FrozenUtc : null,
+            KeepFrozen = _runtime.IsFrozen(row.Name) && row.KeepFrozen,
         })));
 
         return reply;
@@ -681,7 +875,8 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var exported = await Console((console, _, ct) => console.ExportAsync(Identified(request.ConversationId), ct), context)
+        var exported = await Console(
+            (console, _, ct) => console.ExportAsync(Identified(request.ConversationId), ct, request.LatestOnly), context)
             .ConfigureAwait(false);
 
         var reply = new Wire.ExportReply();
@@ -734,6 +929,25 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             ExchangeId = s.Exchange,
             SettledBy = s.SettledBy,
             ConversationId = s.Conversation,
+        }));
+
+        reply.WroteElsewhere.AddRange((exported.WroteElsewhere ?? []).Select(w => new Wire.WroteElsewhere
+        {
+            Message = w.Message,
+            AfterMessage = w.AfterMessage,
+            From = w.From.Value,
+            To = w.To.Value,
+            ConversationId = w.Conversation,
+        }));
+
+        reply.Reads.AddRange((exported.Reads ?? []).Select(r => new Wire.HistoryReadRow
+        {
+            Reader = r.Reader.Value,
+            ExchangeId = r.ExchangeId ?? 0,
+            Words = r.Words ?? string.Empty,
+            Matches = r.Matches ?? 0,
+            CreatedUtc = r.CreatedUtc.ToString("O", CultureInfo.InvariantCulture),
+            Count = r.Count,
         }));
 
         reply.Messages.AddRange(exported.Messages.Select(Conversions.Out));
@@ -885,6 +1099,18 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     }
 
     /// <inheritdoc/>
+    public override async Task<Wire.LocateExchangeReply> LocateExchange(Wire.LocateExchangeRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var conversation = await Console(
+            (console, _, ct) => console.LocateExchangeAsync(request.ExchangeId, ct), context).ConfigureAwait(false);
+
+        return new Wire.LocateExchangeReply { ConversationId = conversation ?? string.Empty };
+    }
+
+    /// <inheritdoc/>
     public override async Task<Wire.WaitingReply> DescribeWaiting(Wire.Empty request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -971,7 +1197,8 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
                 HasOpenExchange = summary.HasOpenExchange,
                 Archived = summary.Archived,
                 Parent = summary.Parent ?? string.Empty,
-                Closed = summary.Closed
+                Closed = summary.Closed,
+                LastClosedUtc = summary.LastClosedUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty
             };
 
             if (summary.Item is { } item)
@@ -1068,6 +1295,23 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(context);
 
         return new FileWork(_runtime).DescribeAsync(request, context.CancellationToken);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// As the person, which is why this is here and not on <c>Agents</c>: an agent's fetch is recorded, and the person
+    /// viewing an image records nothing (SPEC.md §9.5).
+    /// </remarks>
+    public override Task ReadSharedFile(
+        Wire.ReadSharedFileRequest request,
+        IServerStreamWriter<Wire.FetchFileFrame> responseStream,
+        ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(responseStream);
+        ArgumentNullException.ThrowIfNull(context);
+
+        return new FileWork(_runtime).ReadAsync(request, responseStream, context.CancellationToken);
     }
 
     /// <inheritdoc/>

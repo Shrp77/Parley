@@ -52,7 +52,9 @@ public sealed class AgentRepository(SqliteConnection connection)
                        a.status         AS Status,
                        o.statement      AS OwnsAccepted,
                        o.source         AS OwnsSource,
-                       a.identity       AS Identity
+                       a.identity       AS Identity,
+                       a.frozen_utc       AS FrozenUtc,
+                       a.keep_frozen      AS KeepFrozen
                 FROM agents AS a
                 LEFT JOIN nodes AS n ON n.machine = a.machine
                 -- **Left joined, because most agents have no accepted line and that is not a
@@ -1085,6 +1087,99 @@ public sealed class AgentRepository(SqliteConnection connection)
                 new { Name = name.Value },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
+    /// <summary>Records that a person has frozen an agent, so nothing starts it until they unfreeze it or, unless kept, the broker next starts (SPEC.md §14).</summary>
+    /// <param name="name">The agent.</param>
+    /// <param name="nowUtc">When it was frozen.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <param name="run">The run of the broker freezing it, so a later start can tell this freeze is an earlier run's.</param>
+    /// <param name="keepFrozen">Whether the freeze outlasts a start of the broker.</param>
+    /// <returns>
+    /// One if it was not frozen before, or its freeze had lapsed; zero if it was frozen already or is not registered.
+    /// </returns>
+    /// <remarks>
+    /// <para>Guarded on the current value, so the count is a truthful answer to "did this change anything".</para>
+    /// <para>
+    /// <b>A lapsed freeze is not a freeze.</b> One an earlier run made and did not keep lapsed when this run started, and stays
+    /// stored only until the start it owes has been asked for (<see cref="ClearLapseAsync"/>). The person freezing it again is
+    /// a new freeze, recorded under this run, which that payment then leaves alone. Only when a run is given: without one the
+    /// row cannot be told apart from a freeze this run made.
+    /// </para>
+    /// </remarks>
+    public async Task<int> FreezeAsync(
+        AgentName name, DateTimeOffset nowUtc, string? run = null, bool keepFrozen = false,
+        CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "UPDATE agents SET frozen_utc = @Now, frozen_run = @Run, keep_frozen = @Keep "
+                + "WHERE name = @Name "
+                + "AND (frozen_utc IS NULL OR (@Run IS NOT NULL AND keep_frozen = 0 AND frozen_run IS NOT @Run)) "
+                + "AND adapter NOT IN ('parley-console', 'parley-facilitator');",
+                new
+                {
+                    Now = nowUtc.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture),
+                    Run = run,
+                    Keep = keepFrozen ? 1 : 0,
+                    Name = name.Value
+                },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+    /// <summary>Clears a freeze.</summary>
+    /// <param name="name">The agent.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>One if it was frozen, zero otherwise.</returns>
+    public async Task<int> UnfreezeAsync(AgentName name, CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "UPDATE agents SET frozen_utc = NULL, frozen_run = NULL, keep_frozen = 0 WHERE name = @Name AND frozen_utc IS NOT NULL;",
+                new { Name = name.Value },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+    /// <summary>The agents whose freeze an earlier run of the broker made and did not keep: lapsed now (SPEC.md §14).</summary>
+    /// <param name="currentRun">The run the broker is in now.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The agents whose freeze has lapsed.</returns>
+    /// <remarks>
+    /// <para>
+    /// A person's freeze is a decision to keep an agent stopped through the restart they are about to make, and a start of the
+    /// broker is the evidence that restart happened, so it lets the freeze lapse. A freeze marked to outlast one does not.
+    /// </para>
+    /// <para>
+    /// <b>Read, not cleared.</b> A lapse owes the agent a start for what arrived while it was frozen, and nothing can be started
+    /// until its machine's node joins. Cleared here, a second start of the broker before that join found nothing lapsed and the
+    /// debt was gone (review, lens 1 run A on 6257cf80). The row stays as it is until <see cref="ClearLapseAsync"/>.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<AgentName>> LapsedAsync(
+        string currentRun, CancellationToken cancellationToken = default)
+    {
+        var names = await _connection.QueryAsync<string>(
+            new CommandDefinition(
+                "SELECT name FROM agents "
+                + "WHERE frozen_utc IS NOT NULL AND keep_frozen = 0 AND frozen_run IS NOT @Run;",
+                new { Run = currentRun },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return [.. names.Select(AgentName.Create)];
+    }
+
+    /// <summary>Clears a lapsed freeze once the start it owed has been asked for (SPEC.md §14).</summary>
+    /// <param name="name">The agent.</param>
+    /// <param name="currentRun">The run the broker is in now.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>One if a lapsed freeze was cleared, zero otherwise.</returns>
+    /// <remarks>
+    /// Guarded on what made it a lapse, in the one statement, so a person who froze the agent again in this run, kept or not,
+    /// keeps that freeze: it is stored under this run and no longer matches.
+    /// </remarks>
+    public async Task<int> ClearLapseAsync(
+        AgentName name, string currentRun, CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "UPDATE agents SET frozen_utc = NULL, frozen_run = NULL, keep_frozen = 0 "
+                + "WHERE name = @Name AND frozen_utc IS NOT NULL AND keep_frozen = 0 AND frozen_run IS NOT @Run;",
+                new { Name = name.Value, Run = currentRun },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
     /// <summary>
     /// Withdraws a retirement, returning the agent to service.
     /// </summary>
@@ -1275,6 +1370,11 @@ public sealed class AgentRepository(SqliteConnection connection)
         // An exchange that ceases to exist is not news to its other party about where it went (SPEC.md §14).
         await RazeAsync("move_notices",
             "DELETE FROM move_notices WHERE exchange_id IN (SELECT id FROM doomed_exchanges);")
+            .ConfigureAwait(false);
+
+        // Who read an exchange goes with it (SPEC.md 10.2: destroy removes the record of readers, and a purge destroys).
+        await RazeAsync("history_reads",
+            "DELETE FROM history_reads WHERE kind = 'exchange' AND exchange_id IN (SELECT id FROM doomed_exchanges);")
             .ConfigureAwait(false);
 
         // A move can leave what was settled in a conversation that stays (SPEC.md 5.0). Nothing can name what is gone, so it
@@ -1483,6 +1583,12 @@ public sealed class AgentRepository(SqliteConnection connection)
         /// <summary>The repository's identifier as stored, or null when the agent presented none.</summary>
         public string? Identity { get; init; }
 
+        /// <summary>When a person froze the agent, as stored, or null when it is not frozen.</summary>
+        public string? FrozenUtc { get; init; }
+
+        /// <summary>Whether the person asked that the freeze outlast a logon.</summary>
+        public long KeepFrozen { get; init; }
+
         /// <summary>Parses a stored tier token.</summary>
         /// <param name="value">The token read from storage.</param>
         /// <returns>The corresponding tier.</returns>
@@ -1533,7 +1639,10 @@ public sealed class AgentRepository(SqliteConnection connection)
             AgentLiveness.Read(name, NodeConnected != 0, Connected != 0),
             OwnsAccepted,
             OwnsSource is null ? null : ParseSource(OwnsSource),
-            Identity: AgentIdentity.TryRead(Identity, out var identity) ? identity : default);
+            Identity: AgentIdentity.TryRead(Identity, out var identity) ? identity : default,
+            FrozenUtc: DateTimeOffset.TryParse(FrozenUtc, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal, out var frozen) ? frozen : null,
+            KeepFrozen: KeepFrozen != 0);
 
         /// <summary>Parses a stored ownership source.</summary>
         /// <param name="value">The token read from storage.</param>

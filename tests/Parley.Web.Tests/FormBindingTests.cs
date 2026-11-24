@@ -59,6 +59,20 @@ public sealed class FormBindingTests
     }
 
     [Fact]
+    public void No_page_binds_its_properties_wholesale()
+    {
+        // [BindProperties] on the class binds every public settable property from every source,
+        // query included, and leaves no per-property attribute for the check above to read: a
+        // property whose [BindProperty, FromForm] was dropped in favour of it passed.
+        var wholesale = Pages()
+            .Where(page => page.GetCustomAttribute<BindPropertiesAttribute>(inherit: true) is not null)
+            .Select(page => page.Name)
+            .ToList();
+
+        Assert.True(wholesale.Count == 0, "Bound wholesale with [BindProperties]: " + string.Join(", ", wholesale));
+    }
+
+    [Fact]
     public void The_check_finds_the_pages()
     {
         // Guarded, because a reflection scan that found no page would pass both tests above by checking nothing.

@@ -59,6 +59,124 @@ public sealed class RowMenuTests
         Assert.DoesNotContain(offered, label => label.Contains("urge", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_running_agent_offers_stop_and_restart_only_when_Parley_started_it(bool startedByParley)
+    {
+        // SPEC.md §11.1's fourth way an agent ends. One open outside Parley belongs to whoever opened it: no node holds
+        // its process, so the menu leaves both out rather than offering what the broker would refuse.
+        await using var seated = await OnAgentsAsync();
+        using var channel = Grpc.Net.Client.GrpcChannel.ForAddress(seated.Address);
+        var nodes = new Parley.Transport.Nodes.NodesClient(channel);
+        var agents = new Parley.Transport.Agents.AgentsClient(channel);
+        var orders = Seated.Orders;
+
+        using var joined = nodes.Join(
+            new Parley.Transport.JoinRequest
+            {
+                Machine = orders.Machine,
+                StartableRoles = { orders.Role },
+                ProtocolVersion = Parley.Core.ProtocolVersion.Current,
+                ReportsTurns = true,
+            },
+            cancellationToken: Ct);
+
+        Assert.True(await joined.ResponseStream.MoveNext(Ct), "the node was never told it joined");
+
+        if (startedByParley)
+        {
+            _ = await nodes.ReportLaunchAsync(
+                new Parley.Transport.LaunchReport { Machine = orders.Machine, Agent = orders.Value, Token = "t-1" },
+                cancellationToken: Ct);
+        }
+
+        using var attached = agents.Attach(
+            new Parley.Transport.AttachRequest
+            {
+                Agent = orders.Value,
+                Adapter = "test",
+                Tier = Parley.Transport.AgentTier.Pull,
+                ProtocolVersion = Parley.Core.ProtocolVersion.Current,
+                LaunchToken = startedByParley ? "t-1" : string.Empty,
+            },
+            cancellationToken: Ct);
+
+        Assert.True(await attached.ResponseStream.MoveNext(Ct), "the attach stream said nothing");
+
+        await seated.Shell.RefreshAsync(Ct);
+        await seated.Shell.Settled;
+        await Walking.GoAsync(seated.Shell, Viewing.Project);
+        seated.Focus<AgentsRegion>();
+
+        var offered = Open(seated, orders.Value);
+
+        Assert.Equal(startedByParley, offered.Contains(Shell.StopThisTitle + orders.Value));
+        Assert.Equal(startedByParley, offered.Contains(Shell.RestartThisTitle + orders.Value));
+
+        // Neither a supervised process nor somebody's editor is one to kill.
+        Assert.DoesNotContain(Shell.KillThisTitle + orders.Value, offered);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task One_a_node_that_is_gone_left_running_offers_kill_and_neither_stop_nor_restart(bool frozen)
+    {
+        // Frozen too: a freeze does not make a left process anybody's to stop, and its row once offered Stop and Restart and
+        // no Kill (review, lens 3 run B on d99806d9).
+        // SPEC.md §11.1. It carries a launch token no node now holds: nothing holds its process to wait for a turn, so
+        // the menu offers the one thing that can be done, and not what the broker would refuse.
+        await using var seated = await OnAgentsAsync();
+        using var channel = Grpc.Net.Client.GrpcChannel.ForAddress(seated.Address);
+        var nodes = new Parley.Transport.Nodes.NodesClient(channel);
+        var agents = new Parley.Transport.Agents.AgentsClient(channel);
+        var orders = Seated.Orders;
+
+        using var joined = nodes.Join(
+            new Parley.Transport.JoinRequest
+            {
+                Machine = orders.Machine,
+                StartableRoles = { orders.Role },
+                ProtocolVersion = Parley.Core.ProtocolVersion.Current,
+                ReportsTurns = true,
+            },
+            cancellationToken: Ct);
+
+        Assert.True(await joined.ResponseStream.MoveNext(Ct), "the node was never told it joined");
+
+        using var attached = agents.Attach(
+            new Parley.Transport.AttachRequest
+            {
+                Agent = orders.Value,
+                Adapter = "test",
+                Tier = Parley.Transport.AgentTier.Pull,
+                ProtocolVersion = Parley.Core.ProtocolVersion.Current,
+                LaunchToken = "from-a-node-that-is-gone",
+                ProcessId = 4242,
+            },
+            cancellationToken: Ct);
+
+        Assert.True(await attached.ResponseStream.MoveNext(Ct), "the attach stream said nothing");
+
+        if (frozen)
+        {
+            Assert.True((await seated.Operators.FreezeAsync(orders, cancellationToken: Ct)).Changed);
+        }
+
+        await seated.Shell.RefreshAsync(Ct);
+        await seated.Shell.Settled;
+        await Walking.GoAsync(seated.Shell, Viewing.Project);
+        seated.Focus<AgentsRegion>();
+
+        var offered = Open(seated, orders.Value);
+
+        Assert.Contains(Shell.KillThisTitle + orders.Value, offered);
+        Assert.DoesNotContain(Shell.StopThisTitle + orders.Value, offered);
+        Assert.DoesNotContain(Shell.RestartThisTitle + orders.Value, offered);
+        Assert.DoesNotContain("Start " + orders.Value, offered);
+    }
+
     [Fact]
     public async Task Choosing_an_agents_conversations_filters_the_list_says_so_and_Esc_clears_it()
     {

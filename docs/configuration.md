@@ -52,6 +52,46 @@ parley use                                           # which project a command h
 The choice lasts until that terminal closes. There is deliberately no saved "current project".
 Chosen in one window, it could silently apply to a destructive command in another.
 
+### Settings for every project
+
+A few settings belong to Parley on this machine rather than to one project. Change them on the
+web console's **Settings** page, at the foot of the strip on the left.
+
+- **How many days the Inbox's *Closed* view covers.** Seven unless you change it, from 1 to 365.
+  It is kept in `settings.json` beside the `projects` folder, so the terminal's Inbox uses the
+  same number.
+- **The console's theme and density.** These are kept in your browser only.
+
+### Reaching the console by another name
+
+The web console only listens on this machine. You can still open it from another of your devices
+through a tool that forwards a name to it, such as Tailscale's `tailscale serve`. The console
+refuses any name it does not know, so list that name in `settings.json`, beside the `projects`
+folder:
+
+```json
+{
+  "webUi": {
+    "hosts": [ "mymachine.tailnet-name.ts.net" ]
+  }
+}
+```
+
+Then restart the broker, or the web UI, so the console reads it. When it starts, it says which
+names it also answers to.
+
+- **Write each name out in full.** A wildcard such as `*.ts.net`, an IP address or a port is left
+  out, and the console says so when it starts. Up to 16 names are taken.
+- **Forward it over HTTPS** (plain `tailscale serve` does). Over plain HTTP a browser does not say
+  which site asked for a page, so Parley refuses every request that comes in under a listed name
+  that way.
+- **Give the console a name of its own.** Anything else served under the same name counts as the
+  console's own page, so it could act through it.
+- **Anyone who can reach that name acts as you.** The console has no sign-in. With Tailscale,
+  your tailnet's access rules decide who that is.
+- **Never make the name public.** Tailscale Funnel, or any tunnel open to the internet, would let
+  anyone act as you.
+
 ### Running the broker
 
 `parley serve` runs the broker for every project, and `parley autostart install` registers it to
@@ -68,7 +108,8 @@ install script runs `autostart install` for you.
 The process the entry starts also runs this machine's node in every project and starts the web console
 on `127.0.0.1:5280`. `autostart install --web-ui <url>` moves the console and `autostart install
 --no-web-ui` leaves it out. A `parley serve` you start yourself runs neither unless given `--with-node`
-and `--with-web-ui`. If the
+and `--with-web-ui`. A node it runs that loses its connection to the broker keeps its agents and joins
+again by itself, as `parley up --keep-trying` does. If the
 console cannot start, because the address is taken or the tool is not installed, the broker says
 so and keeps serving.
 
@@ -169,15 +210,17 @@ line. Parley writes it into the launch configuration, records it as accepted aut
 restarts the agent once it is idle so its peers see it. Nothing is restarted mid-turn. An answer
 that cannot be a line as written, that the agent said was blocked, or that comes from an agent on
 another machine, waits for you.
-Turn Auto Accept off, in **Configuration** (`F3`) or the Project menu, and every answer waits for
-you.
+Turn Auto Accept off, in the terminal's **Configuration** (`F3`) or Project menu, or at the top of
+the web console's **Review ownership** page, and every answer waits for you.
 
 **Checking and correcting lines.** The ownership review (`Alt+v` on the agents pane in the
-terminal, or **Review ownership** on a project's page in the web console) shows each agent's
+terminal, or **Review ownership** in a project's Settings in the web console) shows each agent's
 line, whether a person or nobody has read it, and any answer waiting. From there you can accept,
 edit or discard an answer, write a line yourself, reply if the agent asked something back, or have
 the facilitator ask again. `Alt+n` on an agent shows what it has said and lets you edit its line
-in place. `Alt+e` asks every agent at once. The web console offers the same.
+in place. `Alt+e` asks every agent at once. The web console offers the same: *What this agent is
+responsible for* on an agent's page, and *Ask every agent again what it owns* in a project's
+Settings.
 
 **No tool an agent has writes the line directly.** It answers Parley's question, and the answer
 becomes the line only by acceptance: Auto Accept's, recorded as `automatic`, or yours. With Auto
@@ -241,17 +284,21 @@ parley up
 
 Leave it running. Ctrl+C stops the node and every agent it started. An agent is also told to quit
 when you retire it, or when you remove its launch setting and open the repository once, so that a
-withdrawal reaches a process that is already running.
+withdrawal reaches a process that is already running. You can also stop, restart or freeze one
+agent from the terminal or the web console; see
+[Running a deployment](operating.md#stopping-and-restarting-an-agent).
 
 **It responds and does not initiate.** A node starts agents that have something waiting: a result
-they owe, or any message they have not collected. With nothing waiting it starts nobody. The first
+they owe, or any message they have not collected. With nothing waiting it starts nobody. When the
+broker has just started, each agent that owes open work is started once, so work interrupted by a
+reboot or an install carries on. While an agent is frozen, nothing starts it. The first
 request still comes from a person or an agent with a reason to ask. After that the loop needs no
 one: the receiver is started to do the work, a clarification hands the turn back, and the
 requester is started in its turn.
 
 **It spends money while nobody is watching.** That is the feature and the risk in one sentence.
 Every turn is a real session on your account. The broker records each turn: count, duration,
-cost, and how often an agent ran and still owed exactly what it owed, which is the shape a runaway
+the cost the runner reports (for Claude Code, the session's running total at the end of that turn), and how often an agent ran and still owed exactly what it owed, which is the shape a runaway
 takes before it looks like one. No screen shows those figures yet, so your provider's bill is
 where you see the cost; `parley up` prints a turn that failed.
 
@@ -327,6 +374,9 @@ only text on an exchange that is still open outlives it. A message nobody collec
 older than the cap, so lowering `PARLEY_RETENTION_MAX_AGE_HOURS` can delete mail an agent never
 picked up.
 
+The record of which agents read or searched the history keeps no message text. A line of it goes
+once its agent has not read again for the age cap.
+
 To keep a conversation beyond the policy, export it. The export is a file you own.
 
 Clarifications are not capped. An exchange can go back and forth for as long as its two sides
@@ -335,7 +385,7 @@ need. The terminal's health view reports how deep exchanges actually go.
 ## Message size
 
 A message past 16,000 characters is delivered whole, and its sender is told it was long. A message
-past 512,000 characters is refused. That limit lives in the database, so no code path can route
+past 512,000 characters is refused. The broker refuses it before the store is asked, and the database holds a second wall, so no code path can route
 around it. It is a context-poisoning defence, not a buffer size: what one agent sends lands in
 another's working memory. Both count the message as stored, so line breaks and quotes count twice.
 

@@ -1,0 +1,47 @@
+@page
+@model Parley.Web.Pages.Exchanges.PanelModel
+@{
+    Layout = null;
+    var detail = Model.Detail;
+}
+@* One exchange, for the panel a reference opens under its line (spec 036). A fragment: the console's script puts it in
+   place. Every message is drawn through the one message view, so a reference inside opens a panel of its own. *@
+<div class="exchange-panel-body" data-project="@Model.Project">
+    @if (Model.Problem is { Length: > 0 } problem)
+    {
+        <p class="unreachable">Exchange #@Model.Id could not be read: @problem</p>
+    }
+    else if (detail is null || !detail.Found)
+    {
+        <p class="exchange-panel-state">There is no exchange #@Model.Id in @Model.Project.</p>
+    }
+    else
+    {
+        <p class="exchange-panel-state">
+            <strong>Exchange #@detail.Exchange</strong>
+            <span>in @detail.Conversation.</span>
+            <span>@detail.State(Model.Ended)</span>
+            <a href="/Conversations/Detail?project=@Uri.EscapeDataString(Model.Project ?? string.Empty)&amp;id=@Uri.EscapeDataString(detail.Conversation ?? string.Empty)@(detail.Messages.Count > 0 ? $"#m{detail.Messages[^1].Id}" : string.Empty)" target="_top">Open it in its conversation</a>
+        </p>
+
+        @if (detail.Messages.Count == 0)
+        {
+            <p>Its words were removed by retention. What is kept is when it opened and closed, and how it ended.</p>
+        }
+
+        <ol class="exchange-panel-messages">
+            @foreach (var message in detail.Messages)
+            {
+                <li>
+                    <p class="attribution">
+                        <strong>@Parley.Client.Rendering.Speaker.From(message)</strong>
+                        <span class="arrow">to</span>
+                        <strong>@Parley.Client.Rendering.Speaker.To(message)</strong>
+                        <span class="stamp">@message.Type, @Parley.Client.Rendering.LocalTime.Clock(message.CreatedUtc)</span>
+                    </p>
+                    <partial name="_MessageBody" model="@Parley.Client.Rendering.Payload.Read(message.PayloadJson)" />
+                </li>
+            }
+        </ol>
+    }
+</div>

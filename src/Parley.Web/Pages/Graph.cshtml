@@ -1,0 +1,141 @@
+@page
+@model Parley.Web.Pages.GraphModel
+@using Parley.Client.Views
+@{
+    Layout = null;
+    var graph = Model.Graph;
+    var byId = graph.Nodes.ToDictionary(node => node.Id, StringComparer.Ordinal);
+    static string Enc(string value) => Uri.EscapeDataString(value);
+}
+@* The graph of what is being worked on (spec 041). A fragment: the console's script puts it in the panel. Every fact in the
+   picture is also in the list below it, so nothing depends on seeing a colour or a line. *@
+<div class="pg" data-asof="@Model.AsOf.ToString("O")">
+    @if (graph.Nodes.Count == 0)
+    {
+        <p>This console serves no project yet.</p>
+    }
+    else
+    {
+        <svg class="pg-svg" viewBox="0 0 @graph.Width @graph.Height" width="@graph.Width" height="@graph.Height" role="img"
+             aria-label="Projects, the agents in them and the conversations they are in. The same facts follow as a list.">
+            @foreach (var band in graph.Bands)
+            {
+                <rect class="pg-band" x="2" y="@band.Top" width="@(graph.Width - 4)" height="@band.Height" rx="10" />
+            }
+
+            @foreach (var edge in graph.Edges)
+            {
+                var from = byId[edge.From];
+                var to = byId[edge.To];
+                var closed = from.Closed || to.Closed;
+                var x1 = from.X + from.Width;
+                var y1 = from.Y + (from.Height / 2);
+                var x2 = to.X;
+                var y2 = to.Y + (to.Height / 2);
+
+                @if (edge.Kind == "spinoff")
+                {
+                    <path class="pg-edge pg-spinoff" data-closed="@(closed ? "true" : null)" d="M @from.X @y1 C @(from.X - 40) @y1, @(to.X - 40) @y2, @to.X @y2" />
+                }
+                else
+                {
+                    <path class="pg-edge pg-@edge.Kind" data-closed="@(closed ? "true" : null)" d="M @x1 @y1 C @(x1 + 60) @y1, @(x2 - 60) @y2, @x2 @y2" />
+                }
+            }
+
+            @foreach (var node in graph.Nodes)
+            {
+                var project = Enc(node.Project);
+
+                @if (node.Kind == GraphKind.Project)
+                {
+                    <g class="pg-node pg-project@(node.Muted ? " pg-muted" : "")">
+                        <title>@node.Full: @node.State</title>
+                        <rect x="@node.X" y="@node.Y" width="@node.Width" height="@node.Height" rx="8" />
+                        <a href="/Projects/Agents?project=@project"><text x="@(node.X + 10)" y="@(node.Y + 17)" class="pg-label">@node.Label</text></a>
+                        <a href="/Projects/Act?project=@project&amp;action=freezeall&amp;subject=@project"><text x="@(node.X + 10)" y="@(node.Y + 33)" class="pg-link">Freeze all</text></a>
+                        <a href="/Projects/Act?project=@project&amp;action=unfreezeall&amp;subject=@project"><text x="@(node.X + 72)" y="@(node.Y + 33)" class="pg-link">Unfreeze all</text></a>
+                    </g>
+                }
+                else if (node.Kind == GraphKind.Agent)
+                {
+                    <g class="pg-node pg-agent@(node.Frozen ? " pg-frozen" : "")@(node.Muted ? " pg-muted" : "")">
+                        <title>@node.Full: @node.State@(node.Background > 0 ? $"; {node.Background} background {(node.Background == 1 ? "task" : "tasks")}" : "")</title>
+                        <rect x="@node.X" y="@node.Y" width="@node.Width" height="@node.Height" rx="8" />
+                        <a href="/Projects/Agent?project=@project&amp;agent=@Enc(node.Full)"><text x="@(node.X + 10)" y="@(node.Y + 16)" class="pg-label">@node.Label</text></a>
+                        <text x="@(node.X + 10)" y="@(node.Y + 32)" class="pg-state">@Pg.Short(node.State)</text>
+                        @for (var task = 0; task < Math.Min(node.Background, 5); task++)
+                        {
+                            @* A background task, drawn as a small node of its own; its name is not known, only that it runs. *@
+                            <circle class="pg-task" cx="@(node.X + node.Width - 14 - (task * 12))" cy="@(node.Y + 12)" r="4"><title>A background task</title></circle>
+                        }
+                        @if (node.Background > 5)
+                        {
+                            <g><text class="pg-state" x="@(node.X + node.Width - 14 - (5 * 12) - 14)" y="@(node.Y + 15)">+@(node.Background - 5)</text></g>
+                        }
+                        @if (node.Actionable)
+                        {
+                            <a href="/Projects/Act?project=@project&amp;action=@(node.Frozen ? "unfreeze" : "freeze")&amp;subject=@Enc(node.Full)"><text x="@(node.X + node.Width - 10)" y="@(node.Y + 33)" text-anchor="end" class="pg-link">@(node.Frozen ? "Unfreeze" : "Freeze")</text></a>
+                        }
+                    </g>
+                }
+                else
+                {
+                    <g class="pg-node pg-conversation@(node.Muted ? " pg-muted" : "")" data-closed="@(node.Closed ? "true" : null)">
+                        <title>@node.Full: @node.State</title>
+                        <rect x="@node.X" y="@node.Y" width="@node.Width" height="@node.Height" rx="8" />
+                        <a href="/Conversations/Detail?project=@project&amp;id=@Enc(node.Full)"><text x="@(node.X + 10)" y="@(node.Y + 16)" class="pg-label">@node.Label</text></a>
+                        <text x="@(node.X + 10)" y="@(node.Y + 32)" class="pg-state">@Pg.Short(node.State)</text>
+                    </g>
+                }
+            }
+        </svg>
+
+        @foreach (var band in graph.Bands.Where(b => b.NotDrawn > 0 || b.Problem is not null))
+        {
+            <p class="pg-note" role="status">
+                <strong>@band.Name:</strong>
+                @if (band.Problem is { Length: > 0 } problem)
+                {
+                    <span>could not be read in full. @problem</span>
+                }
+                @if (band.NotDrawn > 0)
+                {
+                    <span>@band.NotDrawn more @(band.NotDrawn == 1 ? "conversation is" : "conversations are") not drawn. <a href="/Projects/Agents?project=@Enc(band.Name)&amp;showArchived=true">See them all</a>.</span>
+                }
+            </p>
+        }
+
+        <details class="pg-list">
+            <summary>The same, as a list</summary>
+            @foreach (var band in graph.Bands)
+            {
+                <h3>@band.Name</h3>
+                <ul>
+                    @foreach (var node in graph.Nodes.Where(n => n.Project == band.Name && n.Kind == GraphKind.Agent))
+                    {
+                        <li><strong>@node.Full</strong>: @node.State@(node.Background > 0 ? $"; {node.Background} background {(node.Background == 1 ? "task" : "tasks")}" : "")</li>
+                    }
+                </ul>
+                <ul>
+                    @foreach (var node in graph.Nodes.Where(n => n.Project == band.Name && n.Kind == GraphKind.Conversation))
+                    {
+                        var parties = graph.Edges.Where(e => e.To == node.Id && e.Kind == "party").Select(e => byId[e.From].Full).ToList();
+                        var parent = graph.Edges.FirstOrDefault(e => e.From == node.Id && e.Kind == "spinoff");
+
+                        <li data-closed="@(node.Closed ? "true" : null)">
+                            <a href="/Conversations/Detail?project=@Enc(band.Name)&amp;id=@Enc(node.Full)">@node.Full</a>: @node.State@(parties.Count > 0 ? "; " + string.Join(", ", parties) : "")@(parent is not null ? "; spun off from " + byId[parent.To].Full : "")
+                        </li>
+                    }
+                </ul>
+            }
+        </details>
+    }
+</div>
+@functions {
+    private static class Pg
+    {
+        /// <summary>Cuts a state to what fits on a node; the whole is in the node's title and the list.</summary>
+        public static string Short(string state) => state.Length <= 34 ? state : string.Concat(state.AsSpan(0, 33), "…");
+    }
+}

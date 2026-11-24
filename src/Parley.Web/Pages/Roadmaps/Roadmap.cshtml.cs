@@ -99,8 +99,46 @@ public sealed class RoadmapModel(BrokerDirectory directory) : PageModel
         Roadmap = roadmap;
         Standing = ItemStates.Of(roadmap, waiting.Value, PersonSeat.On(project.Name));
         Agents = [.. roadmap.Items.Where(i => !i.Removed).Select(i => i.IntendedAgent).OfType<AgentName>().Distinct()];
+        Checks = await ChecksAsync(broker, roadmap.Number, token).ConfigureAwait(false);
 
         return Page();
+    }
+
+    /// <summary>The conversations in which the agents were asked about this roadmap, newest first.</summary>
+    /// <remarks>Found by name, which is only how they are offered; a list that could not be read offers none.</remarks>
+    public IReadOnlyList<ConversationSummary> Checks { get; private set; } = [];
+
+    /// <summary>The most pages of conversations read looking for checks, so a long history cannot hold the page.</summary>
+    private const int MostPages = 10;
+
+    private static async Task<IReadOnlyList<ConversationSummary>> ChecksAsync(BrokerClient broker, int number, CancellationToken token)
+    {
+        var prefix = CheckModel.Prefix(number);
+        var found = new List<ConversationSummary>();
+        string? page = null;
+
+        for (var read = 0; read < MostPages; read++)
+        {
+            var next = page;
+            var listed = await BrokerDirectory.ReadAsync(async () =>
+                await broker.ConversationsAsync(pageToken: next, includeArchived: true, cancellationToken: token).ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            if (listed.Value is not { } conversations)
+            {
+                break;
+            }
+
+            found.AddRange(conversations.Items.Where(c => c.Id.StartsWith(prefix, StringComparison.Ordinal)));
+            page = conversations.NextPageToken;
+
+            if (string.IsNullOrEmpty(page))
+            {
+                break;
+            }
+        }
+
+        return [.. found.OrderByDescending(c => c.FirstActivityUtc)];
     }
 
     /// <summary>Where an item's conversation is, with its text and agents ready when it has not started.</summary>

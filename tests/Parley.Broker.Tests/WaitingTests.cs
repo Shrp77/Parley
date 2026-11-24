@@ -58,6 +58,16 @@ public sealed class WaitingTests : IDisposable
     }
 
     [Fact]
+    public async Task An_exchange_is_found_in_its_conversation_by_number_alone()
+    {
+        // So a message that names "exchange #N" can be opened where it is mentioned (spec 036, FR-020).
+        var sent = await Send(Orders, Billing, 1);
+
+        Assert.Equal(sent.Request!.ConversationId, await _console.LocateExchangeAsync(sent.Exchange!.Id, Ct));
+        Assert.Null(await _console.LocateExchangeAsync(sent.Exchange.Id + 1000, Ct));
+    }
+
+    [Fact]
     public async Task The_requester_waits_on_the_receiver()
     {
         var sent = await Send(Orders, Billing, 1);

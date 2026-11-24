@@ -19,7 +19,8 @@ You need the .NET 10 SDK.
 
 ```
 dotnet build
-dotnet test
+pwsh scripts/test.ps1                 # unit tests, seconds
+pwsh scripts/test.ps1 -Category Smoke # all but the slow ones, under five minutes
 ```
 
 A green build is the whole lint gate. Warnings are errors, every public member must be documented,

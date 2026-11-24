@@ -429,6 +429,27 @@ public sealed class ANodeKeepsTryingTests : IAsyncDisposable
     }
 
     [Fact]
+    public void The_node_serve_hosts_keeps_trying()
+    {
+        // The logon entry runs `serve --with-node`, and nobody is watching it. Its node was hosted without this, so a
+        // stream that dropped while the broker kept serving ended the node for good and left every agent in the project
+        // stranded until the entry was restarted. Read from the source, as ShutdownTests reads the same file: the hosted
+        // node is a local function of the entry point, and its own broker cannot be made to drop it from a test.
+        var source = string.Join(' ', RepositoryFile.Read("src/Parley.Cli/Program.cs")
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+        var hosting = source.IndexOf("Task<int> HostingNodeFor(", StringComparison.Ordinal);
+        Assert.True(hosting >= 0, "serve no longer hosts a node through HostingNodeFor; move this guard with it.");
+
+        var call = source.IndexOf("NodeCommand.RunAsync(", hosting, StringComparison.Ordinal);
+        Assert.True(call >= 0, "HostingNodeFor no longer starts a node.");
+
+        var end = source.IndexOf(';', call);
+
+        Assert.Contains("keepTrying: true", source[call..end], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Another_command_does_not_have_the_flag()
     {
         var (code, _, error) = ToolProcess.RunFully(OnThatMachine, "registry", "--keep-trying");

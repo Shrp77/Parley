@@ -75,10 +75,13 @@ public sealed class LimitedCollectionTests
                     new Wire.DrainInboxRequest { Agent = "orders@alpha", Limit = 1 }, cancellationToken: token);
 
                 Assert.Single(reply.Messages);
-            }
 
-            Assert.True(broker.Runtime.AttentionPending(Orders));
-            Assert.Equal(2, await node.CountCommandsAsync(2, Settle));
+                // Looked at while the resident is still there: what is held is that the short collection asked again. Once
+                // its process goes with the rest uncollected, the turn that asking left is asked for again as a start
+                // (SPEC.md §11.1), which is another command and another test's.
+                Assert.True(broker.Runtime.AttentionPending(Orders));
+                Assert.Equal(2, await node.CountCommandsAsync(2, Settle));
+            }
         }
     }
 

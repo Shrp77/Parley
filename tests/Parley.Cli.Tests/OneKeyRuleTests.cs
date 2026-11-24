@@ -14,12 +14,13 @@ namespace Parley.Cli.Tests;
 /// scan comes to report an enrolled repository as enrolled nowhere.
 /// </para>
 /// <para>
-/// <b>Written as an enumeration rather than a ban, because two of the occurrences are not keys at
-/// all.</b> The broker's executable is called <c>parley</c> and the terminal's window is titled
-/// <c>parley</c>; both are the same six letters and neither is a server key. A check that forbade the
+/// <b>Written as an enumeration rather than a ban, because three of the occurrences are not keys at
+/// all.</b> The broker's executable is called <c>parley</c>, the terminal's window is titled
+/// <c>parley</c>, and copies of placed files go in a folder named <c>parley</c>; all are the same six
+/// letters and none is a server key. A check that forbade the
 /// literal outright would have to be suppressed in several places, and a suppressed check is one
 /// nobody reads. This one names what is allowed, so a new occurrence anywhere fails and somebody
-/// decides which of the four things it is.
+/// decides which of these things it is.
 /// </para>
 /// <para>
 /// <b>There are four illustrations.</b> The README,
@@ -41,6 +42,7 @@ public sealed class OneKeyRuleTests
         ["LaunchKey.cs"] = "the key itself, which is the whole point of the type",
         ["AutostartPlan.cs"] = "the broker's executable name, when nothing else names it",
         ["Program.cs"] = "the adapter's header comment, illustrating a launch configuration",
+        ["LocalLauncher.cs"] = "the folder under this user's application data that copies of placed files go in",
     };
 
     [Fact]

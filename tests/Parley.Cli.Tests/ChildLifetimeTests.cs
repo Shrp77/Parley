@@ -189,7 +189,7 @@ public sealed class ChildLifetimeTests
     /// web stack, and a test project that dragged it in would put it back in the same output
     /// directory the broker runs from.
     /// </remarks>
-    private static string WebUiOnPath()
+    internal static string WebUiOnPath()
     {
         var here = new DirectoryInfo(AppContext.BaseDirectory);
         var framework = here.Name;

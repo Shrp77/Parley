@@ -86,11 +86,23 @@ public sealed class ScriptedExport : HttpMessageHandler
     /// <summary>Split settled pairs every export carries.</summary>
     public List<Wire.SettledElsewhere> SettledElsewhere { get; } = [];
 
+    /// <summary>What every export says an agent wrote in another conversation.</summary>
+    public List<Wire.WroteElsewhere> WroteElsewhere { get; } = [];
+
+    /// <summary>What agents read of the past, which the export carries for the person (SPEC.md §5.8).</summary>
+    public List<Wire.HistoryReadRow> Reads { get; } = [];
+
+    /// <summary>Every export asked for: the conversation, and whether only its summary was.</summary>
+    public List<(string Conversation, bool LatestOnly)> ExportsAsked { get; } = [];
+
     /// <summary>Every listing of conversations asked for.</summary>
     public List<Wire.ListConversationsRequest> Listings { get; } = [];
 
     /// <summary>Whether a listing comes in two pages, the second holding another conversation.</summary>
     public bool TwoPages { get; set; }
+
+    /// <summary>The files every listing of the conversation's files returns.</summary>
+    public List<Wire.SharedFileView> Files { get; } = [];
 
     /// <summary>The move records every export carries.</summary>
     public List<Wire.MoveRecord> Moves { get; } = [];
@@ -202,9 +214,11 @@ public sealed class ScriptedExport : HttpMessageHandler
         {
             reply = request.RequestUri!.AbsolutePath switch
             {
-                "/parley.v1.Operators/Export" => Export(),
+                "/parley.v1.Operators/Export" => Export(Wire.ExportRequest.Parser.ParseFrom(sent.AsSpan(5))),
+                "/parley.v1.Operators/LocateExchange" => Located(Wire.LocateExchangeRequest.Parser.ParseFrom(sent.AsSpan(5))),
                 "/parley.v1.Operators/DescribeRegistry" => Rows(),
                 "/parley.v1.Operators/DescribeWaiting" => Waiting(),
+                "/parley.v1.Operators/ListSharedFiles" => new Wire.FilesReply { Files = { Files }, TotalFiles = Files.Count },
                 "/parley.v1.Operators/ListConversations" => Conversations(Wire.ListConversationsRequest.Parser.ParseFrom(sent.AsSpan(5))),
                 "/parley.v1.Operators/PreviewMove" => Preview(Wire.PreviewMoveRequest.Parser.ParseFrom(sent.AsSpan(5))),
                 "/parley.v1.Operators/MoveExchanges" => Moved(Wire.MoveExchangesRequest.Parser.ParseFrom(sent.AsSpan(5))),
@@ -284,9 +298,13 @@ public sealed class ScriptedExport : HttpMessageHandler
         return reply;
     }
 
-    private Wire.ExportReply Export()
+    private Wire.LocateExchangeReply Located(Wire.LocateExchangeRequest asked) =>
+        new() { ConversationId = Messages.FirstOrDefault(m => m.ExchangeId == asked.ExchangeId)?.ConversationId ?? string.Empty };
+
+    private Wire.ExportReply Export(Wire.ExportRequest asked)
     {
         Exports++;
+        ExportsAsked.Add((asked.ConversationId, asked.LatestOnly));
 
         var reply = new Wire.ExportReply();
 
@@ -294,6 +312,8 @@ public sealed class ScriptedExport : HttpMessageHandler
         reply.Exchanges.AddRange(Exchanges);
         reply.Moves.AddRange(Moves);
         reply.SettledElsewhere.AddRange(SettledElsewhere);
+        reply.WroteElsewhere.AddRange(WroteElsewhere);
+        reply.Reads.AddRange(Reads);
         reply.Parent = Parent;
         reply.ParentByMove = ParentByMove;
         reply.Children.AddRange(Children);

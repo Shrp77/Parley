@@ -235,4 +235,21 @@ public sealed class ProjectContextTests : IDisposable
 
         Assert.Empty(RepositoryProjects.Read(repository));
     }
+
+    [Fact]
+    public void A_launch_configuration_larger_than_the_json_bound_is_not_read()
+    {
+        // Without the bound every command typed in a repository read its .mcp.json whole, however large an agent made it,
+        // and a valid one past the bound still chose the project (review, lens 3 round 36).
+        var entry = """{ "mcpServers": { "parley-beta": { "env": { "PARLEY_AGENT": "orders" } } } }""";
+
+        // The same entry within the bound names the project, so what is refused below is only the size. A little over
+        // 1 MiB of spaces, in this test's own temp folder, which Dispose deletes.
+        Assert.Equal(new[] { "beta" }, RepositoryProjects.Read(Repository("small", entry)));
+
+        var large = Repository("large", entry + new string(' ', Parley.Configuration.StrictJson.MostBytes));
+
+        Assert.True(new FileInfo(Path.Combine(large, ".mcp.json")).Length > Parley.Configuration.StrictJson.MostBytes);
+        Assert.Empty(RepositoryProjects.Read(large));
+    }
 }

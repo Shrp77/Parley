@@ -16,7 +16,7 @@ public sealed class SpinOffAndMovePagesTests
 
     private const string Alert = "class=\"unreachable\" role=\"alert\"";
 
-    private const string EmptyBox = """<textarea id="says" name="Says"[^>]*>\s*</textarea>""";
+    private const string EmptyBox = """<textarea data-composer id="says" name="Says"[^>]*>\s*</textarea>""";
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -219,6 +219,54 @@ public sealed class SpinOffAndMovePagesTests
     }
 
     [Fact]
+    public async Task A_quote_goes_out_under_a_line_saying_what_this_conversation_is_for()
+    {
+        using var console = Seated();
+        using var client = console.CreateClient();
+
+        var (response, _) = await PostAsync(
+            client,
+            Spin(),
+            ("Name", "disk-cleanup"),
+            ("Says", "orders@test said in shared:\n> The disk is full.\n"),
+            ("Targets", Orders));
+
+        Assert.True(response.IsSuccessStatusCode, response.StatusCode.ToString());
+
+        var ask = System.Text.Json.JsonDocument.Parse(Assert.Single(console.Broker.Requested).PayloadJson).RootElement.GetProperty("ask").GetString()!;
+
+        Assert.StartsWith(
+            "Side conversation disk-cleanup has been stood up to discuss the following conversation entry from shared.\n\n",
+            ask,
+            StringComparison.Ordinal);
+        Assert.Contains("> The disk is full.", ask, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_send_that_reached_nobody_leaves_the_box_as_written_with_no_line_added()
+    {
+        using var console = Seated();
+        console.Broker.RefusesRequestsTo.Add(Orders);
+        using var client = console.CreateClient();
+
+        var (_, body) = await PostAsync(client, Spin(), Spinning(Orders));
+
+        Assert.DoesNotContain("Side conversation disk-cleanup", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_person_is_told_about_the_line_before_sending()
+    {
+        using var console = Console();
+        using var client = console.CreateClient();
+
+        Assert.Contains(
+            Parley.Client.Rendering.Quoting.OpeningIsAdded,
+            await client.GetStringAsync(At(Spin("&from=1")), Ct),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_spin_off_with_no_message_opens_empty()
     {
         using var console = Console();
@@ -310,6 +358,145 @@ public sealed class SpinOffAndMovePagesTests
         Assert.Equal(("disk-cleanup", Orders), (sent.ConversationId, sent.To));
         Assert.Contains("my own words", sent.PayloadJson, StringComparison.Ordinal);
         Assert.Empty(console.Broker.Abandoned);
+    }
+
+    private static readonly byte[] Png = [0x89, 0x50, 0x4E, 0x47, 1, 2, 3];
+
+    /// <summary>Posts the spin-off form as a browser does with a file in the box: multipart, the file under <c>Attachments</c>.</summary>
+    private static async Task<(HttpResponseMessage Response, string Body)> PostWithAFileAsync(
+        HttpClient client, string fileName, byte[] bytes, params (string Name, string Value)[] fields)
+    {
+        var form = await client.GetStringAsync(At(Spin()), Ct);
+        using var content = new MultipartFormDataContent
+        {
+            { new StringContent(Token(form)), "__RequestVerificationToken" },
+        };
+
+        foreach (var (name, value) in fields)
+        {
+            content.Add(new StringContent(value, System.Text.Encoding.UTF8), name);
+        }
+
+        var part = new ByteArrayContent(bytes);
+
+        part.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+        content.Add(part, "Attachments", fileName);
+
+        var response = await client.PostAsync(At(Spin()), content, Ct);
+
+        return (response, await response.Content.ReadAsStringAsync(Ct));
+    }
+
+    private static string AskOf(Wire.OpenRequest sent) =>
+        System.Text.Json.JsonDocument.Parse(sent.PayloadJson).RootElement.GetProperty("ask").GetString()!;
+
+    [Fact]
+    public async Task A_spin_off_with_a_file_sends_the_words_first_then_places_the_file_there_and_names_it_to_whoever_took_them()
+    {
+        // The new conversation does not exist until its first Request is sent, so it has nowhere to hold a file: the words
+        // go first, then the file is placed in it and a second message names it (SPEC.md §9.5). Billing refused the words,
+        // so the files are named to orders alone. Nothing held this: with the files never sent, every test passed.
+        using var console = Seated();
+        console.Broker.RefusesRequestsTo.Add(Billing);
+
+        var requestedWhenPlaced = -1;
+
+        console.Broker.Placing = (header, bytes) =>
+        {
+            requestedWhenPlaced = console.Broker.Requested.Count;
+
+            return new Wire.PlaceFileReply
+            {
+                Outcome = Wire.PlaceOutcome.Placed,
+                Rejection = Wire.FileRejection.None,
+                ConversationId = header.ConversationId,
+                Name = header.Name,
+                SizeBytes = bytes.Length,
+                Sha256 = Parley.Core.ContentHash.Of(bytes).Value,
+            };
+        };
+
+        using var client = NoRedirects(console);
+
+        var (response, _) = await PostWithAFileAsync(client, "shot.png", Png, Spinning(Orders, Billing));
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Contains("id=disk-cleanup", response.Headers.Location!.ToString(), StringComparison.Ordinal);
+
+        // The file is placed once, in the new conversation, as sent, and only after the words that started it.
+        var (header, bytes) = Assert.Single(console.Broker.Placed);
+
+        Assert.Equal(("disk-cleanup", "shot.png"), (header.ConversationId, header.Name));
+        Assert.Equal(Png, bytes);
+        Assert.Equal(2, requestedWhenPlaced);
+
+        // The words to orders, the words billing refused, then the files, to orders alone.
+        Assert.Equal(3, console.Broker.Requested.Count);
+
+        var words = console.Broker.Requested[0];
+        var files = console.Broker.Requested[2];
+
+        Assert.Equal(Billing, console.Broker.Requested[1].To);
+        Assert.Equal(("disk-cleanup", Orders), (words.ConversationId, words.To));
+        Assert.Contains("my own words", AskOf(words), StringComparison.Ordinal);
+        Assert.DoesNotContain("shot.png", AskOf(words), StringComparison.Ordinal);
+
+        Assert.Equal(("disk-cleanup", Orders), (files.ConversationId, files.To));
+        Assert.Contains($"shot.png (sha256: {Parley.Core.ContentHash.Of(Png).Value})", AskOf(files), StringComparison.Ordinal);
+        Assert.Empty(console.Broker.Abandoned);
+    }
+
+    [Fact]
+    public async Task A_spin_off_nobody_took_places_none_of_its_files_and_says_to_attach_them_again()
+    {
+        // Every recipient refused, so the conversation was never started and its files had nowhere to go. A browser cannot
+        // fill a file field again, so a page that said nothing would send the retry without them.
+        using var console = Seated();
+        console.Broker.RefusesRequestsTo.Add(Orders);
+        using var client = console.CreateClient();
+
+        var (_, body) = await PostWithAFileAsync(client, "shot.png", Png, Spinning(Orders));
+
+        Assert.Empty(console.Broker.Placed);
+
+        // The one Request is the words orders refused: no second message names a file nobody holds.
+        Assert.DoesNotContain("shot.png", AskOf(Assert.Single(console.Broker.Requested)), StringComparison.Ordinal);
+        Assert.Equal("disk-cleanup", Assert.Single(console.Broker.Abandoned).Child);
+        Assert.Matches("role=\"alert\">[^<]*the files you attached were not placed\\. Attach them again when you send\\.", body);
+        Assert.Contains("my own words", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_spin_off_nobody_took_with_no_file_says_nothing_about_files()
+    {
+        using var console = Seated();
+        console.Broker.RefusesRequestsTo.Add(Orders);
+        using var client = console.CreateClient();
+
+        var (_, body) = await PostAsync(client, Spin(), Spinning(Orders));
+
+        Assert.DoesNotContain("Attach them again", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_spin_off_with_no_file_sends_one_message_and_tells_the_bell_of_nothing_that_failed()
+    {
+        // With no file there is no second message, and nothing to say about one. Sent anyway, the message naming no file was
+        // refused as empty and the bell said, under the agent's name, that nothing was sent, after a send that went.
+        using var console = Seated();
+        using var client = NoRedirects(console);
+
+        var (response, _) = await PostAsync(client, Spin(), Spinning(Orders));
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Single(console.Broker.Requested);
+        Assert.Empty(console.Broker.Placed);
+
+        var told = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions
+            .GetRequiredService<Parley.Web.Notifications.NotificationLog>(console.Services).All();
+
+        Assert.NotEmpty(told);
+        Assert.All(told, one => Assert.True(one.Good, one.Text));
     }
 
     [Fact]
@@ -799,6 +986,62 @@ public sealed class SpinOffAndMovePagesTests
         var page = await client.GetStringAsync(At(Move("&x=1")), Ct);
 
         Assert.DoesNotContain("<option value=\"shared\"", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_agents_next_message_elsewhere_is_said_after_the_message_it_followed_and_links_to_it()
+    {
+        using var console = new TranscriptConsole();
+        console.Broker.Request(1, Orders, "billing@test", "first");
+        console.Broker.Request(5, Orders, "billing@test", "second");
+        console.Broker.WroteElsewhere.Add(new Wire.WroteElsewhere { Message = 3, AfterMessage = 1, From = Orders, To = "billing@test", ConversationId = "sync-around" });
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At($"/Conversations/Detail?project={Project}&id=shared"), Ct);
+        var note = page.IndexOf("next message went to billing@test in sync-around", StringComparison.Ordinal);
+
+        Assert.True(note > page.IndexOf("id=\"m1\"", StringComparison.Ordinal) && note < page.IndexOf("id=\"m5\"", StringComparison.Ordinal), "not between the two messages");
+        Assert.Contains("id=sync-around#m3\"", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_note_after_the_newest_message_is_drawn_and_any_export_file_carries_it()
+    {
+        using var console = new TranscriptConsole();
+        console.Broker.Request(1, Orders, "billing@test", "only");
+        console.Broker.WroteElsewhere.Add(new Wire.WroteElsewhere { Message = 3, AfterMessage = 1, From = Orders, To = "billing@test", ConversationId = "sync-around" });
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(At($"/Conversations/Detail?project={Project}&id=shared"), Ct);
+
+        Assert.Contains("next message went to billing@test in sync-around", page[..page.IndexOf("</ol>", page.IndexOf("id=\"m1\"", StringComparison.Ordinal), StringComparison.Ordinal)], StringComparison.Ordinal);
+
+        var export = new Parley.Core.ConversationExport(
+            [],
+            [],
+            WroteElsewhere: [new Parley.Core.WroteElsewhere(3, 1, Parley.Core.AgentName.Create(Orders), Parley.Core.AgentName.Create("billing@test"), "sync-around")]);
+
+        var file = System.Text.Encoding.UTF8.GetString(Parley.Web.Pages.Conversations.DetailModel.RawExport("shared", export));
+
+        foreach (var expected in new[] { "wroteElsewhere", "afterMessage", "sync-around" })
+        {
+            Assert.Contains(expected, file, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void The_text_export_carries_where_an_agents_next_message_went()
+    {
+        // Without the WroteElsewhere lines in Transcript.Write, the Export TXT file left out "next message went to ..."
+        // that the page and the JSON file both say (SPEC.md §10.2) (review, lens 3 round 32).
+        var export = new Parley.Core.ConversationExport(
+            [],
+            [],
+            WroteElsewhere: [new Parley.Core.WroteElsewhere(3, 1, Parley.Core.AgentName.Create(Orders), Parley.Core.AgentName.Create("billing@test"), "sync-around")]);
+
+        var file = System.Text.Encoding.UTF8.GetString(Parley.Web.Pages.Conversations.DetailModel.TextExport("shared", Project, export));
+
+        Assert.Contains("next message went to billing@test in sync-around", file, StringComparison.Ordinal);
     }
 
     [Fact]

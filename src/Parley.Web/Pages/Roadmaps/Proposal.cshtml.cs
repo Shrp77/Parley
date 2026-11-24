@@ -96,9 +96,47 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
         if (Proposal is not null)
         {
             Text = RoadmapTextCodec.Write(Proposal.Content);
+
+            if (Keep && Match is not null)
+            {
+                await NumberUnchangedAsync(Match).ConfigureAwait(false);
+            }
         }
 
         return Page();
+    }
+
+    /// <summary>Whether to number the lines whose words are items the matching roadmap has, so a revision keeps them.</summary>
+    /// <remarks>Asked for by a link on this page. It only fills the box: the person reads it and confirms, or does not.</remarks>
+    [BindProperty(SupportsGet = true)]
+    public bool Keep { get; set; }
+
+    /// <summary>How many lines were numbered, once they were; null when it was not asked or could not be done.</summary>
+    public int? Kept { get; private set; }
+
+    private async Task NumberUnchangedAsync(RoadmapSummary match)
+    {
+        var current = await BrokerDirectory.ReadAsync(async () =>
+            await new BrokerClient(directory.ClientFor(directory.Find(Project)!))
+                .RoadmapAsync(match.Id, HttpContext.RequestAborted).ConfigureAwait(false))
+            .ConfigureAwait(false);
+
+        if (current.Value is not { } roadmap)
+        {
+            Problem = current.Problem ?? "The roadmap it would revise could not be read, so no line was numbered.";
+
+            return;
+        }
+
+        var (content, kept) = ProposalText.KeepingUnchanged(Proposal!.Content, roadmap);
+
+        Text = RoadmapTextCodec.Write(content);
+        Kept = kept;
+
+        // Numbered lines mean something only in a revision, shown at the revision just read.
+        Target = match.Id.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        Revision = roadmap.Revision;
+        RevisionOf = match.Id;
     }
 
     /// <summary>Confirms the proposal with the content the person sent.</summary>

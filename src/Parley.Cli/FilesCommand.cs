@@ -32,8 +32,8 @@ namespace Parley.Cli;
 /// disk, so it asks nothing first.
 /// </para>
 /// <para>
-/// Opening launches on this machine only when the broker says the location is here; anywhere else it says which
-/// machine and which path, and launches nothing (<see cref="LocalLauncher"/>).
+/// Opening launches the placed file in place when the broker says the location is here; anywhere else it reads the file
+/// through the broker and opens a checked copy (<see cref="LocalLauncher.OpenPlacedAsync"/>). A folder opens only in place.
 /// </para>
 /// </remarks>
 /// <param name="broker">The project's broker.</param>
@@ -247,7 +247,8 @@ public sealed class FilesCommand(
 
         try
         {
-            var content = File.OpenRead(path);
+            // Through the placement's own open, which refuses a pipe off Windows rather than waiting on it.
+            var content = Parley.Configuration.PlaceableFile.OpenRead(path);
 
             await using (content.ConfigureAwait(false))
             {
@@ -391,9 +392,16 @@ public sealed class FilesCommand(
                 continue;
             }
 
-            var launched = _launcher.OpenFile(location);
+            // In place on the broker's machine, a checked copy anywhere else, as the terminal and the web console do.
+            var launched = await _launcher.OpenPlacedAsync(_broker, options.Conversation, name, null, location, cancellationToken)
+                .ConfigureAwait(false);
 
             await _output.WriteLineAsync(Inert.Line(launched.Said)).ConfigureAwait(false);
+
+            if (!launched.Opened)
+            {
+                code = NothingDone;
+            }
         }
 
         return code;

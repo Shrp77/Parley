@@ -41,9 +41,9 @@
 #                                install exactly these tools and leave every other one alone.
 #                                --only parley-terminal replaces the terminal and does not stop
 #                                the broker, because the broker's binary is not among the files
-#                                being unlinked. SPEC.md section 11.1 says the node stopping tells
-#                                every agent it started to quit, and the process is what held
-#                                everything that agent had learned.
+#                                being unlinked. Stopping the broker ends its node, and under
+#                                systemd or launchd the agents that node started end with it,
+#                                part-way through whatever they were doing.
 #   ./install.sh --force         end whatever is holding the tools, rather than refusing
 #   ./install.sh --hidden        register a logon entry that opens no console window, by
 #                                passing --hidden to `parley autostart install`. The entry
@@ -604,9 +604,10 @@ note "nothing is holding the tool store"
 # stop. But it only has to stop for its own binary.
 #
 # **This is the whole point of the split, and it is one `if`.** A run that replaces only the
-# terminal unlinks a file the broker never opened, so there is nothing to stop: SPEC.md section 11.1
-# has the node telling every agent it started to quit, and each of those processes is what held
-# everything that agent had learned. Restarting a broker to change a terminal spends all of it.
+# terminal unlinks a file the broker never opened, so there is nothing to stop: stopping the broker
+# ends its node, and under systemd or launchd the agents that node started end with it, each of them
+# the process that held everything that agent had learned. Restarting a broker to change a terminal
+# spends all of it.
 replacing_broker=0
 
 for i in "${!commands[@]}"; do
@@ -618,10 +619,10 @@ done
 if [ "$replacing_broker" = "1" ]; then
     # **What stopping it will interrupt, said before it is stopped.**
     #
-    # SPEC.md section 11.1: the node stopping tells every agent it started to quit, and the process
-    # is what held everything each of them had learned. A Request already drained into an agent's
-    # inbox is marked delivered, and killing the agent that holds it leaves the exchange open and
-    # owed with nothing running to answer it; nothing times out, so it waits and is flagged.
+    # Stopping the broker ends its node, and under systemd or launchd the agents that node started end
+    # with it. The process is what held everything each of them had learned. A Request already drained
+    # into an agent's inbox is marked delivered, and ending the agent that holds it leaves the exchange
+    # open and owed with nothing running to answer it; nothing times out, so it waits and is flagged.
     #
     # **Asked of the broker, never of the store.** Only the broker opens the database (section 4),
     # and reading it here for a progress message would break the one boundary this architecture is
@@ -667,9 +668,12 @@ if [ "$replacing_broker" = "1" ]; then
         if [ -n "$in_flight" ]; then
             count="$(printf '%s\n' "$in_flight" | grep -c . || true)"
 
-            echo "warning: $count conversation(s) have an exchange still open. Stopping the broker" >&2
-            echo "         ends every agent it started. When an agent's turn ends its open exchange" >&2
-            echo "         stays open and is flagged to the person:" >&2
+            echo "warning: $count conversation(s) have an exchange still open. Installing ends the" >&2
+            echo "         broker and its node. Under systemd or launchd the agents the node started end" >&2
+            echo "         with it, part-way through a turn if one is running. Every Parley adapter has" >&2
+            echo "         already been ended, so no agent is still connected; one that owes open work is" >&2
+            echo "         started again once the broker is back. An open exchange stays open and is" >&2
+            echo "         flagged to the person:" >&2
 
             printf '%s\n' "$in_flight" | while IFS= read -r line; do
                 [ -n "$line" ] && echo "      $line" >&2
@@ -848,8 +852,8 @@ done
 # **Skipped entirely when the broker is not being replaced, and this is the half that is easy to
 # miss.** Not stopping the broker earlier is worthless if the script re-registers the
 # autostart entry down here: `autostart install` replaces the unit or launch agent, which
-# restarts the process, which ends every resident agent on the machine along with everything each
-# had learned. The stop would have been avoided and the cost paid anyway, hundreds of lines later.
+# restarts the process, and under systemd or launchd the agents its node started end with it.
+# The stop would have been avoided and the cost paid anyway, hundreds of lines later.
 #
 # Nothing here is needed for a surface: a terminal is not registered with a supervisor, does not
 # listen on a port, and has no store. There is nothing to configure and nothing to prove.

@@ -90,7 +90,7 @@ public sealed class SecondServeTests : IDisposable
 
                     return Task.FromResult(0);
                 },
-                alongside: (_, _, _) =>
+                alongside: (_, _, _, _) =>
                 {
                     _ = Interlocked.Increment(ref webUis);
 

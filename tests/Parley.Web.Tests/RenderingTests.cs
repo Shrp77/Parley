@@ -105,6 +105,20 @@ public sealed class RenderingTests : IClassFixture<WebApplicationFactory<Program
     }
 
     [Fact]
+    public void Only_the_markdown_renderer_makes_raw_markup()
+    {
+        var makers = Directory.GetFiles(RepositoryPath("src/Parley.Web"), "*.*", SearchOption.AllDirectories)
+            .Where(p => p.EndsWith(".cs", StringComparison.Ordinal) || p.EndsWith(".cshtml", StringComparison.Ordinal))
+            .Where(p => !p.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !p.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .Where(p => File.ReadAllText(p).Contains("new HtmlString", StringComparison.Ordinal))
+            .Select(Path.GetFileName)
+            .ToList();
+
+        Assert.Equal(["MarkdownText.cs"], makers);
+    }
+
+    [Fact]
     public void The_console_has_no_route_to_a_store()
     {
         // §4 gives the database to one process. A second reader is the corruption that section

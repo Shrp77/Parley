@@ -67,6 +67,20 @@
         </section>
     }
 
+    @if (Model.SearchLines.Count > 0)
+    {
+        @* What each of the project's agents searched the history for lately, for the person only (SPEC.md §5.8). *@
+        <section class="history-searches" aria-label="Searches of the history">
+            <h2>Searched the history</h2>
+            <ul>
+                @foreach (var line in Model.SearchLines)
+                {
+                    <li>@line</li>
+                }
+            </ul>
+        </section>
+    }
+
     @* What is waiting in the project's other conversations is read far less often than this region, so the page's script
        keeps it and puts it back here each time this region is replaced. *@
     <div id="elsewhere"></div>

@@ -114,6 +114,41 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
         }
     }
 
+    /// <summary>Reports that an agent began a turn on its own, because background work it started finished (SPEC.md §11.6).</summary>
+    /// <param name="agent">The agent, as this project names it.</param>
+    /// <param name="began">When the turn began.</param>
+    /// <returns>A task that completes when it has been reported, or could not be.</returns>
+    internal Task BeganOnItsOwnAsync(Parley.Core.AgentName agent, DateTimeOffset began) =>
+        SendAsync(new Wire.TurnReport
+        {
+            Machine = machine,
+            Agent = agent.Value,
+            Started = new Wire.TurnStarted { StartedUtc = Stamp(began) },
+        });
+
+    /// <summary>Reports that a turn an agent began on its own ended.</summary>
+    /// <param name="agent">The agent, as this project names it.</param>
+    /// <param name="began">When the turn began, which pairs the end with its start.</param>
+    /// <param name="outcome">How it ended.</param>
+    /// <returns>A task that completes when it has been reported, or could not be.</returns>
+    internal Task EndedOnItsOwnAsync(Parley.Core.AgentName agent, DateTimeOffset began, TurnOutcome outcome) =>
+        ReportEndAsync(agent, began, outcome);
+
+    /// <summary>Reports how many background tasks an agent has running now (SPEC.md §11.6).</summary>
+    /// <param name="agent">The agent, as this project names it.</param>
+    /// <param name="tasks">How many.</param>
+    /// <param name="stillTrue">Whether the count is still the one to say, asked before a retry; null to always retry.</param>
+    /// <returns>A task that completes when it has been reported, or could not be.</returns>
+    internal Task BackgroundAsync(Parley.Core.AgentName agent, int tasks, Func<bool>? stillTrue = null) =>
+        SendAsync(
+            new Wire.TurnReport
+            {
+                Machine = machine,
+                Agent = agent.Value,
+                Background = new Wire.BackgroundWork { Tasks = tasks },
+            },
+            stillTrue);
+
     private Task ReportEndAsync(Parley.Core.AgentName agent, DateTimeOffset started, TurnOutcome? outcome) =>
         SendAsync(new Wire.TurnReport
         {
@@ -186,6 +221,15 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
             {
                 await ReportRunningAsync(identity, role, token, resident.Workspace, () => Current(resident, token))
                     .ConfigureAwait(false);
+
+                // A rejoin clears the broker's count of background work; work still running would read as idle until it
+                // ended, which has no bound (review, lens 1 run 2 on ae1d0e0f).
+                if (resident.BackgroundTasks is var tasks and > 0 && Parley.Core.AgentName.TryJoin(role, machine, out var named))
+                {
+                    // Not retried once the count has moved: a retry landing behind the pump's newer report would show work
+                    // that has ended (review, lens 1 run B on d99806d9).
+                    await BackgroundAsync(named, tasks, () => resident.BackgroundTasks == tasks).ConfigureAwait(false);
+                }
             }
         }
     }
@@ -290,11 +334,11 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
         value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
 
 #pragma warning disable CA1031 // A report must never fail a turn, whatever went wrong sending it.
-    private async Task SendAsync(Wire.TurnReport report)
+    private async Task SendAsync(Wire.TurnReport report, Func<bool>? stillTrue = null)
     {
         try
         {
-            _ = await PatientlyAsync(async deadline => await nodes.ReportTurnAsync(report, deadline: deadline))
+            _ = await PatientlyAsync(async deadline => await nodes.ReportTurnAsync(report, deadline: deadline), stillTrue)
                 .ConfigureAwait(false);
         }
         catch (Exception failure)

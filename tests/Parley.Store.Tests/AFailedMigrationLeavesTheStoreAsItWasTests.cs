@@ -4,7 +4,7 @@ using Xunit;
 namespace Parley.Store.Tests;
 
 /// <summary>
-/// That migration 002 failing at its last statements leaves the store as it was, and a later attempt succeeds
+/// That a migration failing at its last statements leaves the store as it was, and a later attempt succeeds
 /// (SPEC.md §9.2: a migration is one transaction with the version bump).
 /// </summary>
 /// <remarks>
@@ -77,6 +77,42 @@ public sealed class AFailedMigrationLeavesTheStoreAsItWasTests : IDisposable
         Assert.Equal("7", Text(connection, "SELECT seq FROM sqlite_sequence WHERE name = 'roadmap_proposals';"));
         Assert.Equal("0", Text(connection, "SELECT count(*) FROM pragma_foreign_key_check;"));
         Assert.Equal("ok", Text(connection, "PRAGMA integrity_check;"));
+        Assert.Empty(StoreShape.Problems(connection));
+    }
+
+    [Fact]
+    public void A_migration_failing_after_an_added_column_on_a_strict_table_is_refused_whole()
+    {
+        // 008 adds a column to a STRICT table first. The provider read that statement as one returning rows and ran the
+        // rest while disposing the reader, swallowing their errors: a later statement failing (a nearly full disk) left
+        // the column committed, the backfill and index missing, and the store reported upgraded (review, lens 2 round 34).
+        var path = Path.Combine(_directory, "parley.db");
+
+        using var connection = ParleyDatabase.Open(path);
+        SchemaMigrator.Migrate(connection);
+
+        // Back to schema 7, with a name 008's last statement wants already taken, so 008 fails at its end.
+        Exec(connection, """
+            DROP TABLE history_reads;
+            ALTER TABLE agents DROP COLUMN keep_frozen;
+            ALTER TABLE agents DROP COLUMN frozen_run;
+            ALTER TABLE agents DROP COLUMN frozen_utc;
+            DROP INDEX ix_conversation_move_exchanges_exchange;
+            ALTER TABLE conversation_moves DROP COLUMN last_message;
+            CREATE INDEX ix_conversation_move_exchanges_exchange ON conversation_moves(moved_utc);
+            PRAGMA user_version = 7;
+            """);
+
+        Assert.ThrowsAny<SqliteException>(() => SchemaMigrator.Migrate(connection));
+
+        Assert.Equal(7, SchemaMigrator.GetUserVersion(connection));
+        Assert.Equal("0", Text(connection, "SELECT count(*) FROM pragma_table_info('conversation_moves') WHERE name = 'last_message';"));
+
+        // Free the name, and the same connection upgrades.
+        Exec(connection, "DROP INDEX ix_conversation_move_exchanges_exchange;");
+
+        Assert.Equal(SchemaMigrator.LatestVersion - 7, SchemaMigrator.Migrate(connection));
+        Assert.Equal(SchemaMigrator.LatestVersion, SchemaMigrator.GetUserVersion(connection));
         Assert.Empty(StoreShape.Problems(connection));
     }
 

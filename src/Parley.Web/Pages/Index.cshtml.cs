@@ -25,12 +25,53 @@ public sealed record ProjectRowState(ProjectSettings Project, ProjectHealth? Hea
 /// <param name="Now">What it is doing now, which the row says.</param>
 public sealed record AgentRow(string Project, AgentRecord Agent, string State, Parley.Client.Views.AgentNow Now);
 
-/// <summary>What one project's agents are, as a fragment of the agents grid draws them.</summary>
+/// <summary>One agent, as the agents grid draws it: a line, however many projects list it.</summary>
+/// <param name="Name">The agent's name, <c>role@machine</c>, which is what makes two projects' rows the one agent.</param>
+/// <param name="Rows">The agent in each project that lists it and the filters leave in, in the machine's order.</param>
+/// <remarks>
+/// An agent is the repository somebody opened, and a repository may be enrolled in several projects, so the view is
+/// agent-centric: the projects are on the line, never a line each.
+/// </remarks>
+public sealed record AgentLine(AgentName Name, IReadOnlyList<AgentRow> Rows)
+{
+    /// <summary>The row that says what the agent is doing: the most active of them, since one process serves every project.</summary>
+    public AgentRow Best => Rows.OrderBy(row => row.Now.Rank).First();
+
+    /// <summary>What the agent says it owns, from the first project that has it said.</summary>
+    public string Owns => Rows.Select(row => row.Agent.Owns).FirstOrDefault(owns => !string.IsNullOrWhiteSpace(owns)) ?? string.Empty;
+
+    /// <summary>Makes a line of every agent the rows are of, most active first.</summary>
+    /// <param name="rows">An agent's row in each project that lists it, for every agent, in any order.</param>
+    /// <returns>One line for each agent name, then by machine and role.</returns>
+    /// <remarks>
+    /// The name is the whole of the identity here: <c>role@machine</c> is one repository on one machine, whichever projects
+    /// it is enrolled in. Rows keep the order they were given, which is the machine's order of projects.
+    /// </remarks>
+    public static IReadOnlyList<AgentLine> Group(IEnumerable<AgentRow> rows)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+
+        return
+        [
+            .. rows
+                .GroupBy(row => row.Agent.Name.Value, StringComparer.Ordinal)
+                .Select(group => new AgentLine(group.First().Agent.Name, [.. group]))
+                .OrderBy(line => line.Best.Now.Rank)
+                .ThenBy(line => line.Name.Machine, StringComparer.Ordinal)
+                .ThenBy(line => line.Name.Role, StringComparer.Ordinal)
+        ];
+    }
+}
+
+/// <summary>A project whose agents could not be read.</summary>
 /// <param name="Project">The project.</param>
-/// <param name="Rows">The agents the filters leave in; empty when none, or when the registry could not be read.</param>
-/// <param name="Unread">Whether the registry could not be read, so the agents are not known.</param>
-/// <param name="Problem">Why it could not be read, in the broker's own words, when it could not.</param>
-public sealed record AgentGroup(string Project, IReadOnlyList<AgentRow> Rows, bool Unread, string? Problem = null);
+/// <param name="Problem">Why, in the broker's own words.</param>
+public sealed record UnreadProject(string Project, string? Problem);
+
+/// <summary>The agents grid: a line for each agent, and the projects that could not be read.</summary>
+/// <param name="Lines">The agents the filters leave in.</param>
+/// <param name="Unread">The projects whose registry could not be read, so their agents are not known.</param>
+public sealed record AgentTable(IReadOnlyList<AgentLine> Lines, IReadOnlyList<UnreadProject> Unread);
 
 /// <summary>
 /// The projects this machine is configured for.
@@ -163,7 +204,7 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
     /// A broker that is down costs the page its timeout, and a machine with several of them down would make the
     /// page wait for the slowest. Nothing needed to draw a row depends on what a broker says, so the rows are drawn
     /// at once with an intermediate status and the page fills each in as that project answers
-    /// (<see cref="OnGetRowAsync"/>, <see cref="OnGetAgentsAsync"/>).
+    /// (<see cref="OnGetRowAsync"/>, <see cref="OnGetAgentTableAsync"/>).
     /// </para>
     /// <para>
     /// Whether a project answers is a fact about now, so the status filter is applied by the page as the answers
@@ -176,6 +217,16 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
         ManifestProblem = directory.ManifestProblem;
         AsOf = DateTimeOffset.Now;
 
+        ScopeToTheProjectItIsIn();
+    }
+
+    /// <summary>Holds the agents tab to the project it was opened inside, when the address names one.</summary>
+    /// <remarks>
+    /// Run by the page and by the answer that fills its grid alike. The grid's answer is a named handler, which does not run
+    /// <see cref="OnGet"/>, so "Agents in alpha" once listed every project's agents and reported other projects' failures.
+    /// </remarks>
+    private void ScopeToTheProjectItIsIn()
+    {
         if (AgentsTab && directory.Find(Request.Query["project"].ToString()) is { } inside)
         {
             InProject = inside;
@@ -333,8 +384,7 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
                     name = Path.GetFileName(full),
                     full,
                     // A child, or its .git, that is a link off this machine is listed and never looked into.
-                    repo = !OffMachineLinks.LeadsOffThisMachine(Path.Combine(full, ".git"))
-                        && (Directory.Exists(Path.Combine(full, ".git")) || System.IO.File.Exists(Path.Combine(full, ".git"))),
+                    repo = LocalOpen.Entry(Path.Combine(full, ".git")) == LocalOpenStatus.Opened,
                 })
                 .OrderBy(folder => folder.name, StringComparer.OrdinalIgnoreCase)
                 .Take(Cap)
@@ -348,37 +398,61 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
         }
     }
 
-    /// <summary>Asks one project's broker for its agents, and draws their rows.</summary>
-    /// <param name="name">The project.</param>
-    /// <returns>The rows the filters leave in, as a fragment to put in place of the project's placeholder.</returns>
-    public async Task<IActionResult> OnGetAgentsAsync(string? name)
-    {
-        if (directory.Find(name) is not { } project)
-        {
-            return NotFound();
-        }
+    /// <summary>The longest one project's broker is waited for, so one that is down delays the grid by no more than this.</summary>
+    private static readonly TimeSpan BrokerPatience = TimeSpan.FromSeconds(6);
 
+    /// <summary>Asks every project's broker for its agents at once, and draws a line for each agent.</summary>
+    /// <returns>The grid's lines the filters leave in, as a fragment the page puts in place of what it showed.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>One answer for the whole grid, so the page can refresh it in place.</b> The grid used to be a place held for each
+    /// project and filled as it answered, and the page reloaded to refresh, so every refresh drew "Reading…" first. The page
+    /// now asks for this on a timer and swaps the lines only when they differ.
+    /// </para>
+    /// <para>
+    /// Each broker is read at the same time and given <see cref="BrokerPatience"/>, so a project that is down is said and the
+    /// others are drawn.
+    /// </para>
+    /// </remarks>
+    public async Task<IActionResult> OnGetAgentTableAsync()
+    {
         var token = HttpContext.RequestAborted;
 
-        var registry = await BrokerDirectory.ReadAsync(async () =>
-            await new BrokerClient(directory.ClientFor(project)).RegistryAsync(token).ConfigureAwait(false)).ConfigureAwait(false);
+        ScopeToTheProjectItIsIn();
 
-        if (registry.Value is null)
+        var scoped = directory.Projects.Where(project => string.IsNullOrEmpty(Scope) || Scope == project.Name.Value);
+
+        var reads = await Task.WhenAll(scoped.Select(async project =>
         {
-            return Partial("_AgentRows", new AgentGroup(project.Name.Value, [], Unread: true, registry.Problem));
-        }
+            using var limit = CancellationTokenSource.CreateLinkedTokenSource(token);
+            limit.CancelAfter(BrokerPatience);
 
-        var rows = registry.Value
-            .Where(agent => !agent.Facilitator && agent.Name.Role != "human-user")
-            .Select(agent => new AgentRow(
-                project.Name.Value, agent, Roster.State(agent), Parley.Client.Views.Activities.Now(agent, DateTimeOffset.UtcNow)))
-            .Where(Matches)
-            .OrderBy(row => row.Now.Rank)
-            .ThenBy(row => row.Agent.Name.Machine, StringComparer.Ordinal)
-            .ThenBy(row => row.Agent.Name.Role, StringComparer.Ordinal)
-            .ToList();
+            try
+            {
+                var read = await BrokerDirectory.ReadAsync(async () =>
+                    await new BrokerClient(directory.ClientFor(project)).RegistryAsync(limit.Token).ConfigureAwait(false))
+                    .ConfigureAwait(false);
 
-        return Partial("_AgentRows", new AgentGroup(project.Name.Value, rows, Unread: false));
+                return (Project: project.Name.Value, Read: read);
+            }
+            catch (OperationCanceledException) when (!token.IsCancellationRequested)
+            {
+                return (Project: project.Name.Value, Read: ProjectRead<IReadOnlyList<AgentRecord>>.Unreachable("Its broker did not answer in time."));
+            }
+        })).ConfigureAwait(false);
+
+        var now = DateTimeOffset.UtcNow;
+
+        var lines = AgentLine.Group(reads
+            .Where(read => read.Read.Value is not null)
+            .SelectMany(read => read.Read.Value!
+                .Where(agent => !agent.Facilitator && agent.Name.Role != "human-user")
+                .Select(agent => new AgentRow(read.Project, agent, Roster.State(agent), Parley.Client.Views.Activities.Now(agent, now))))
+            .Where(Matches));
+
+        return Partial("_AgentLines", new AgentTable(
+            lines,
+            [.. reads.Where(read => read.Read.Value is null).Select(read => new UnreadProject(read.Project, read.Read.Problem))]));
     }
 
     /// <summary>Names a new project on this machine.</summary>

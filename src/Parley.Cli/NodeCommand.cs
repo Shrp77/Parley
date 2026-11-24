@@ -132,7 +132,7 @@ public static class NodeCommand
         // **Whoever makes this table is whoever stops it.** The table is shared across every project one
         // process hosts, so sweeping it whenever any node loop returns would send away every agent on the
         // machine, including the ones still serving other projects: `serve` stops and restarts a project
-        // whose store or endpoint changed, and `project remove` ends one outright. SPEC.md §12 says what
+        // whose store or endpoint changed, and `project remove` ends one outright. SPEC.md §11.1 says what
         // that costs — the process is what held everything each agent had learned.
         var ours = residents is null;
 
@@ -281,6 +281,17 @@ public static class NodeCommand
                                     .ConfigureAwait(false);
                                 break;
 
+                            case Wire.NodeCommand.CommandOneofCase.Stop:
+                                await StopAsync(
+                                    command.Stop, catalogue, project, residents, output, cancellationToken,
+                                    new TurnReporter(nodes, request.Machine, output))
+                                    .ConfigureAwait(false);
+                                break;
+
+                            case Wire.NodeCommand.CommandOneofCase.Kill:
+                                await KillAsync(command.Kill, residents, output).ConfigureAwait(false);
+                                break;
+
                             default:
                                 // A command this build does not know can only be a bug: the wire
                                 // changes in step with the node. Named loudly and failed, but the
@@ -375,6 +386,12 @@ public static class NodeCommand
         catch (OperationCanceledException)
         {
             // Ctrl+C, which is how this command is meant to end.
+        }
+        catch (RpcException failure) when (failure.StatusCode == StatusCode.Cancelled && cancellationToken.IsCancellationRequested)
+        {
+            // **Ctrl+C, SIGTERM or SIGHUP, arriving as the node's stream ending.** The stream is cancelled from this side,
+            // which gRPC reports as an RpcException rather than an OperationCanceledException: told as "the broker refused
+            // that" and exit 74, a `systemctl stop` of `parley up` read as a failed stop (review, lens 1 run A on 6561e9ea).
         }
         catch (RpcException failure) when (failure.StatusCode == StatusCode.Unavailable)
         {
@@ -511,8 +528,13 @@ public static class NodeCommand
     /// <summary>The names a node offers, in a stable order, for a report.</summary>
     /// <param name="names">What it announced.</param>
     /// <returns>The names, or a phrase saying there are none.</returns>
+    /// <remarks>
+    /// Inert: a name is taken from a repository's launch configuration, which its agent can edit, and is not held to the name
+    /// grammar there, so an escape sequence or a line separator in it forged a line of the node's log (review, lens 2 run C
+    /// on fc26cb8a).
+    /// </remarks>
     private static string Listed(IReadOnlyList<string> names) =>
-        names.Count == 0 ? "nothing" : string.Join(", ", names);
+        names.Count == 0 ? "nothing" : Inert.Line(string.Join(", ", names));
 
     /// <summary>Reports what the broker knows about this machine.</summary>
     /// <param name="joined">The acknowledgement.</param>
@@ -536,7 +558,7 @@ public static class NodeCommand
     /// like a machine nobody has listed any agents on yet.
     /// </para>
     /// </remarks>
-    private static async Task ReportJoinedAsync(
+    internal static async Task ReportJoinedAsync(
         Wire.Joined joined,
         NodeCatalogue catalogue,
         string? project,
@@ -548,7 +570,7 @@ public static class NodeCommand
 
         var startable = announceable.Names.Count == 0
             ? string.Create(CultureInfo.InvariantCulture, $"nothing (no agents in {catalogueFile})")
-            : string.Join(", ", announceable.Names);
+            : Inert.Line(string.Join(", ", announceable.Names));
 
         await output.WriteLineAsync(string.Create(
             CultureInfo.InvariantCulture,
@@ -561,7 +583,7 @@ public static class NodeCommand
         foreach (var contested in announceable.Contested)
         {
             await output.WriteLineAsync(
-                $"  {contested}: claimed by more than one catalogued workspace, so nothing answers to it "
+                $"  {Inert.Line(contested)}: claimed by more than one catalogued workspace, so nothing answers to it "
                 + "here. Enrol one of them under another name, or re-mint its identity.")
                 .ConfigureAwait(false);
         }
@@ -711,6 +733,21 @@ public static class NodeCommand
 
             if (residents.TryGetValue(identity, out var existing))
             {
+                if (existing.IsAlive && existing.IsStopping)
+                {
+                    // **Being stopped, and not gone yet.** Its input is closed, so a turn given to it now comes back as a
+                    // process that died, and the stop then starts nothing: the broker was told the agent was started and
+                    // nothing ran. The stop is told a start is wanted and makes it once the process has gone
+                    // (RefreshWhenIdleAsync), under this same gate, so the two cannot miss each other.
+                    existing.StartAskedWhileStopping = true;
+
+                    await output.WriteLineAsync(
+                        $"  {agent.Value}: asked for while it is being stopped, so it is started again once it has gone.")
+                        .ConfigureAwait(false);
+
+                    return;
+                }
+
                 if (existing.IsAlive)
                 {
                     // Already here, and "here" is machine-wide rather than this node's own. This is also how
@@ -756,6 +793,20 @@ public static class NodeCommand
                 return;
             }
 
+            // **Never started in a folder that leads off this machine.** The agent can make its own folder a link to a share
+            // after it was enrolled, and starting a process there makes Windows offer the person's sign-in to that host
+            // (review, lens 2 round 15). Asked by opening each part as itself (LocalOpen), so a link is not followed to
+            // judge it either. Said and not retired: the folder is not gone, it is somewhere this node will not go.
+            if (catalogue.WorkspaceFor(identity) is { Length: > 0 } elsewhere
+                && LocalOpen.Folder(elsewhere) != LocalOpenStatus.Opened)
+            {
+                await output.WriteLineAsync(
+                    $"  {agent.Value}: not started — its workspace {Inert.Line(elsewhere)} leads to another machine or could not be checked.")
+                    .ConfigureAwait(false);
+
+                return;
+            }
+
             try
             {
                 var invocation = InvocationCommand.Parse(command);
@@ -763,7 +814,8 @@ public static class NodeCommand
 
                 // Named to the broker first, so the process it starts is known as Parley's (SPEC.md §11.7).
                 var launched = reporter is null ? null : await reporter.LaunchAsync(agent).ConfigureAwait(false);
-                var resident = ResidentAgent.Start(agent, invocation, workspace, TimeProvider.System, launched);
+                var resident = Watched(
+                    ResidentAgent.Start(agent, invocation, workspace, TimeProvider.System, launched), identity, residents, output);
                 residents[identity] = resident;
 
                 // Every project joined here that starts this checkout knows it as Parley's too (this one again, with
@@ -805,7 +857,7 @@ public static class NodeCommand
 
         try
         {
-            full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(workspace));
+            full = Path.TrimEndingDirectorySeparator(OffMachineLinks.FullPath(workspace));
         }
         catch (Exception unreadable) when (unreadable is ArgumentException or NotSupportedException or PathTooLongException)
         {
@@ -914,8 +966,8 @@ public static class NodeCommand
         if (OperatingSystem.IsWindows())
         {
             return string.Equals(
-                Path.GetPathRoot(Path.GetFullPath(folder)),
-                Path.GetPathRoot(Path.GetFullPath(home)),
+                Path.GetPathRoot(OffMachineLinks.FullPath(folder)),
+                Path.GetPathRoot(OffMachineLinks.FullPath(home)),
                 StringComparison.OrdinalIgnoreCase);
         }
 
@@ -1347,62 +1399,374 @@ public static class NodeCommand
         TurnReporter? reporter = null)
     {
         ArgumentNullException.ThrowIfNull(refresh);
-        ArgumentNullException.ThrowIfNull(catalogue);
+
+        await ReplaceWhenIdleAsync(
+            refresh.Agent, refresh.Identity, Ending.Refresh, catalogue, project, residents, output, cancellationToken,
+            reporter).ConfigureAwait(false);
+    }
+
+    /// <summary>Stops an agent this node started once its turn is over, as a person asked, and restarts it if asked to.</summary>
+    /// <param name="stop">The command.</param>
+    /// <param name="catalogue">What this machine can start, which is what resolves a name.</param>
+    /// <param name="project">The project this node serves, or null to accept every claim.</param>
+    /// <param name="residents">The agents running here.</param>
+    /// <param name="output">Where to report.</param>
+    /// <param name="cancellationToken">Stops the node, and with it the wait.</param>
+    /// <param name="reporter">Reports a restarted agent's first turn to the broker, when there is a broker to tell.</param>
+    /// <returns>A task that completes once the stop has been handed off.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>A person's, where a refresh is the broker's</b> (SPEC.md §11.1), and the same mechanism: wait for the turn
+    /// lock off this loop, then end the process under <see cref="Residency"/>. A turn is bounded by the node's patience,
+    /// so the wait is too.
+    /// </para>
+    /// <para>
+    /// <b>A stop starts nothing of its own.</b> The next work for the agent starts it again through the ordinary start,
+    /// which is what the person is told; a start that arrives while the process is still going is made once it has gone.
+    /// </para>
+    /// </remarks>
+    internal static async Task StopAsync(
+        Wire.StopAgent stop,
+        NodeCatalogue catalogue,
+        string? project,
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents,
+        TextWriter output,
+        CancellationToken cancellationToken,
+        TurnReporter? reporter = null)
+    {
+        ArgumentNullException.ThrowIfNull(stop);
+
+        await ReplaceWhenIdleAsync(
+            stop.Agent, stop.Identity, stop.Restart ? Ending.Restart : Ending.Stop, catalogue, project, residents, output,
+            cancellationToken, reporter).ConfigureAwait(false);
+    }
+
+    /// <summary>Ends a process a node that is gone left running, which a person asked for (SPEC.md §11.1).</summary>
+    /// <param name="kill">What the broker said: the agent, and the process its adapter named.</param>
+    /// <param name="residents">The agents running here, none of which this ends.</param>
+    /// <param name="output">Where to report.</param>
+    /// <returns>A task that completes once the process has ended or been refused.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The process is a label an adapter gave and is checked before anything is ended.</b> It must be a running process
+    /// named <c>claude</c>, which is what the node starts for an agent; it must not be one this node hosts, which is
+    /// stopped, not killed; and it must not be this node. Whatever else is named is refused and said, so an adapter that
+    /// named the wrong process, or a number that has since been reused, ends nothing.
+    /// </para>
+    /// <para>
+    /// <b>It does not wait for a turn.</b> No node holds the process, so nothing can say when one ends. The whole tree
+    /// ends, which is what the agent's own shells and tests are part of.
+    /// </para>
+    /// </remarks>
+    internal static async Task KillAsync(
+        Wire.KillProcess kill,
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents,
+        TextWriter output)
+    {
+        ArgumentNullException.ThrowIfNull(kill);
         ArgumentNullException.ThrowIfNull(residents);
         ArgumentNullException.ThrowIfNull(output);
 
-        if (!AgentName.TryCreate(refresh.Agent, out var agent)
-            || !Resolve(catalogue, project, agent, refresh.Identity, out var identity, out _))
+        await output.WriteLineAsync($"  {kill.Agent}: {EndProcess(kill, residents)}").ConfigureAwait(false);
+    }
+
+    private static string EndProcess(Wire.KillProcess asked, ConcurrentDictionary<AgentIdentity, ResidentAgent> residents)
+    {
+        if (asked.ProcessId is <= 1 or > int.MaxValue)
         {
-            return;
+            return "not ended: the broker named no process that can be one.";
         }
 
-        if (!residents.TryGetValue(identity, out var resident) || !resident.IsAlive)
-        {
-            await output.WriteLineAsync(
-                $"  {agent.Value}: not refreshed — this node is not running it, so it reads its new ownership line " +
-                "the next time it starts.").ConfigureAwait(false);
+        var id = (int)asked.ProcessId;
 
-            return;
+        if (id == Environment.ProcessId)
+        {
+            return "not ended: the process named is this node.";
         }
 
-        _ = Observed(RefreshWhenIdleAsync(
-            agent, identity, resident, catalogue, residents, output, cancellationToken, reporter));
+        if (residents.Values.Any(resident => resident.ProcessId == id))
+        {
+            return $"not ended: process {id} is one this node hosts. Stop it instead, which waits for its turn.";
+        }
 
-#pragma warning disable CA1031 // Do not catch general exception types
-        static async Task Observed(Task refreshing)
+        System.Diagnostics.Process process;
+
+        try
+        {
+            process = System.Diagnostics.Process.GetProcessById(id);
+        }
+        catch (ArgumentException)
+        {
+            return $"nothing to end: process {id} is not running.";
+        }
+
+        using (process)
         {
             try
             {
-                await refreshing.ConfigureAwait(false);
+                if (!string.Equals(process.ProcessName, "claude", StringComparison.OrdinalIgnoreCase))
+                {
+                    return $"not ended: process {id} is '{Inert.Line(process.ProcessName)}', not an agent's own kind of process.";
+                }
+
+                process.Kill(entireProcessTree: true);
+
+                return process.WaitForExit(TimeSpan.FromSeconds(5))
+                    ? $"ended process {id} ({Inert.Line(asked.Because)})."
+                    : $"asked process {id} to end ({Inert.Line(asked.Because)}); it has not yet.";
             }
-            catch
+            catch (AggregateException incomplete)
             {
-                // The same boundary DispatchTurn's Observe is, for the same reason: nothing awaits this, and a node must
-                // not be taken off the air by the reporting of one agent's refresh.
+                // Off Windows, a tree holding a process this account cannot signal (a child sudo runs as another user) throws
+                // this after ending what it could. Uncaught, it ended the node's loop: nothing on the machine was started again,
+                // or every agent the node ran was stopped (review, lens 2 run 1 on 6fde4ef3, Linux).
+                return process.WaitForExit(TimeSpan.FromSeconds(5))
+                    ? $"ended process {id} ({Inert.Line(asked.Because)}), but not every process it started: {Inert.Line(incomplete.InnerExceptions[0].Message)}."
+                    : $"not ended: process {id}: {Inert.Line(incomplete.Message)}";
+            }
+            catch (Exception failure) when (failure is InvalidOperationException
+                or System.ComponentModel.Win32Exception or NotSupportedException)
+            {
+                return $"not ended: process {id}: {Inert.Line(failure.Message)}";
             }
         }
-#pragma warning restore CA1031
     }
 
-    /// <summary>Waits for an agent's turn to end, stops it, and starts it again.</summary>
-    /// <returns>A task that completes when the new process is running, or the refresh was abandoned.</returns>
-    private static async Task RefreshWhenIdleAsync(
-        AgentName agent,
-        AgentIdentity identity,
-        ResidentAgent resident,
+    /// <summary>Finds the resident a refresh, restart or stop is for, and hands its ending off the loop.</summary>
+    /// <param name="named">The agent's name, as the wire carried it.</param>
+    /// <param name="identityText">Its identity, as the wire carried it, or empty.</param>
+    /// <param name="ending">What the ending is for.</param>
+    /// <param name="catalogue">What this machine can start, which is what resolves a name.</param>
+    /// <param name="project">The project this node serves, or null to accept every claim.</param>
+    /// <param name="residents">The agents running here.</param>
+    /// <param name="output">Where to report.</param>
+    /// <param name="cancellationToken">Stops the node, and with it the wait.</param>
+    /// <param name="reporter">Reports a restarted agent's first turn to the broker, when there is a broker to tell.</param>
+    /// <returns>A task that completes once the ending has been handed off.</returns>
+    private static async Task ReplaceWhenIdleAsync(
+        string named,
+        string identityText,
+        Ending ending,
         NodeCatalogue catalogue,
+        string? project,
         ConcurrentDictionary<AgentIdentity, ResidentAgent> residents,
         TextWriter output,
         CancellationToken cancellationToken,
         TurnReporter? reporter)
     {
-        _ = await resident.ShutdownWhenIdleAsync(ShutdownGrace, cancellationToken).ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(catalogue);
+        ArgumentNullException.ThrowIfNull(residents);
+        ArgumentNullException.ThrowIfNull(output);
+
+        if (!AgentName.TryCreate(named, out var agent)
+            || !Resolve(catalogue, project, agent, identityText, out var identity, out _))
+        {
+            return;
+        }
+
+        // **The last ending asked of a resident is the one done** (review, lens 1 run C on Linux: a person's stop then restart,
+        // restart then stop, or a refresh then a stop, during one turn, kept the first and dropped the second without a word).
+        // One waiter per resident: a later ending only replaces what it will do, read under the same gate the waiter takes,
+        // so the two cannot miss each other, and a process that has already exited but not yet been taken still counts.
+        string? said = null;
+        ResidentAgent? resident = null;
+        var asker = new Asker(agent, catalogue, output, reporter, cancellationToken);
 
         await Residency.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
+            if (residents.TryGetValue(identity, out var held) && EndingsAsked.TryGetValue(held, out var asked))
+            {
+                said = Supersede(asked, ending, asker);
+            }
+            else if (held is null || !held.IsAlive)
+            {
+                said = ending.NotRunning;
+            }
+            else
+            {
+                EndingsAsked.Add(held, new EndingAsked(ending, asker));
+                resident = held;
+            }
+        }
+        finally
+        {
+            _ = Residency.Release();
+        }
+
+        if (resident is null)
+        {
+            await output.WriteLineAsync($"  {agent.Value}: {said}").ConfigureAwait(false);
+
+            return;
+        }
+
+        _ = Observed(RefreshWhenIdleAsync(identity, resident, ending, asker, residents));
+    }
+
+    /// <summary>Awaits an ending's waiter that nothing else awaits.</summary>
+    /// <param name="refreshing">The waiter.</param>
+    /// <returns>A task that completes when the waiter has, whatever it threw.</returns>
+#pragma warning disable CA1031 // Do not catch general exception types
+    private static async Task Observed(Task refreshing)
+    {
+        try
+        {
+            await refreshing.ConfigureAwait(false);
+        }
+        catch
+        {
+            // The same boundary DispatchTurn's Observe is, for the same reason: nothing awaits this, and a node must
+            // not be taken off the air by the reporting of one agent's refresh.
+        }
+    }
+#pragma warning restore CA1031
+
+    /// <summary>Who asked for an ending: the node loop it is done for, and what that loop reports and starts with.</summary>
+    /// <param name="Agent">The agent's name, as that node resolved it.</param>
+    /// <param name="Catalogue">What that node's machine can start.</param>
+    /// <param name="Output">Where that node reports.</param>
+    /// <param name="Reporter">Reports a restarted agent's first turn to that node's broker, when there is one to tell.</param>
+    /// <param name="Token">Stops that node.</param>
+    /// <remarks>
+    /// <b>One residents table serves every project <c>parley serve</c> runs, each with its own node loop</b>, so the asker
+    /// of the ending a waiter does need not be the one whose loop started the waiter. The waiter does the ending in its
+    /// asker's name, and when the loop it runs on stops, it is handed to the latest asker's (review, lens 1 run B on
+    /// 5de89187: a later ending from another project was dropped when the first project's node stopped).
+    /// </remarks>
+    private sealed record Asker(
+        AgentName Agent,
+        NodeCatalogue Catalogue,
+        TextWriter Output,
+        TurnReporter? Reporter,
+        CancellationToken Token);
+
+    /// <summary>What ending a resident is for, and how each step of it is said.</summary>
+    /// <param name="NotRunning">Said when this node holds no live process for it.</param>
+    /// <param name="Restarts">Whether it is started again once it has stopped.</param>
+    /// <param name="Stopped">Said once it has stopped, when it is not started again.</param>
+    /// <param name="Restarted">Said once it is running again.</param>
+    /// <param name="For">What it was stopped for, in the lines that say it was not started again.</param>
+    private sealed record Ending(string NotRunning, bool Restarts, string Stopped, string Restarted, string For)
+    {
+        /// <summary>The broker's one restart, for an agent's first line accepted automatically.</summary>
+        public static readonly Ending Refresh = new(
+            "not refreshed — this node is not running it, so it reads its new ownership line the next time it starts.",
+            Restarts: true,
+            string.Empty,
+            "restarted once its turn was over, so it reads its new ownership line.",
+            "a refresh");
+
+        /// <summary>A person's restart.</summary>
+        public static readonly Ending Restart = new(
+            "not restarted — this node is not running it.",
+            Restarts: true,
+            string.Empty,
+            "restarted once its turn was over, as a person asked.",
+            "a restart");
+
+        /// <summary>A person's stop.</summary>
+        public static readonly Ending Stop = new(
+            "not stopped — this node is not running it.",
+            Restarts: false,
+            "stopped once its turn was over, as a person asked. The next work for it starts it again, unless it is frozen.",
+            string.Empty,
+            "a stop");
+    }
+
+    /// <summary>The ending a resident's one waiter will do once its turn is over: the latest asked.</summary>
+    /// <param name="latest">The ending asked first.</param>
+    /// <param name="asker">Who asked it.</param>
+    /// <remarks>Read and written only under <see cref="Residency"/>.</remarks>
+    private sealed class EndingAsked(Ending latest, Asker asker)
+    {
+        /// <summary>Gets or sets the ending the waiter does.</summary>
+        public Ending Latest { get; set; } = latest;
+
+        /// <summary>Gets or sets who asked the ending the waiter does, in whose name it is done.</summary>
+        public Asker Asker { get; set; } = asker;
+    }
+
+    /// <summary>The resident each waiting ending is for; a resident with none has no waiter.</summary>
+    /// <remarks>Weak, so a resident that is gone takes its entry with it.</remarks>
+    private static readonly ConditionalWeakTable<ResidentAgent, EndingAsked> EndingsAsked = new();
+
+    /// <summary>Records an ending asked while another waits for the same resident's turn, and says what will be done.</summary>
+    /// <param name="asked">What the waiter will do.</param>
+    /// <param name="ending">The ending asked now.</param>
+    /// <param name="asker">Who asked it.</param>
+    /// <returns>The line to report.</returns>
+    /// <remarks>
+    /// <b>The latest wins, except a refresh.</b> A person's later word replaces their earlier one or the broker's refresh, and
+    /// its asker becomes the one it is done for: that node's catalogue starts a restart, and that node's loop keeps the
+    /// waiter going if the first asker's stops. A refresh needs only that the process end before the agent next starts,
+    /// which any ending already waiting gives it, so it never undoes a person's stop and replaces nothing.
+    /// </remarks>
+    private static string Supersede(EndingAsked asked, Ending ending, Asker asker)
+    {
+        var earlier = asked.Latest;
+
+        if (ReferenceEquals(ending, Ending.Refresh))
+        {
+            return $"not refreshed on its own — {earlier.For} already waits for its turn to end, and it reads its new "
+                + "ownership line the next time it starts.";
+        }
+
+        asked.Latest = ending;
+        asked.Asker = asker;
+
+        return ReferenceEquals(earlier, ending)
+            ? $"{ending.For} was asked again; it is still waiting for its turn to end."
+            : $"{ending.For} was asked while {earlier.For} waited for its turn to end, so {ending.For} is what is done.";
+    }
+
+    /// <summary>Waits for an agent's turn to end, stops it, and starts it again unless it was only stopped.</summary>
+    /// <returns>A task that completes when the new process is running, or it was stopped and left.</returns>
+    private static async Task RefreshWhenIdleAsync(
+        AgentIdentity identity,
+        ResidentAgent resident,
+        Ending ending,
+        Asker asker,
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents)
+    {
+        try
+        {
+            _ = await resident.ShutdownWhenIdleAsync(ShutdownGrace, asker.Token).ConfigureAwait(false);
+
+            await Residency.WaitAsync(asker.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (asker.Token.IsCancellationRequested)
+        {
+            // The node loop this waiter ran on has stopped. A later asker's may not have, and the waiter goes on in its name.
+            if (await HandedOnAsync(identity, resident, residents).ConfigureAwait(false))
+            {
+                return;
+            }
+
+            throw;
+        }
+        catch
+        {
+            // No waiter now, so an ending asked later is not handed to one that will never act on it.
+            _ = EndingsAsked.Remove(resident);
+
+            throw;
+        }
+
+        try
+        {
+            // **The latest ending asked, and its asker, taken under the gate they were written under** (Supersede), so one
+            // asked after this finds the resident gone and says so rather than being handed to a waiter that has already read.
+            if (EndingsAsked.TryGetValue(resident, out var asked))
+            {
+                ending = asked.Latest;
+                asker = asked.Asker;
+                _ = EndingsAsked.Remove(resident);
+            }
+
+            var (agent, catalogue, output, reporter, cancellationToken) = asker;
+
             // A start that got here first found the process gone and replaced it, which already reads the launch
             // configuration afresh — so there is nothing left to do, and the corpse is the start's to dispose.
             if (!residents.TryGetValue(identity, out var current) || !ReferenceEquals(current, resident))
@@ -1412,6 +1776,20 @@ public static class NodeCommand
 
             _ = residents.TryRemove(identity, out _);
             await resident.DisposeAsync().ConfigureAwait(false);
+
+            // A stop starts nothing, unless a start was asked for while the process was going (StartAsync): that start was
+            // not made then, so it is made now, as a restart is.
+            var wanted = !ending.Restarts && resident.StartAskedWhileStopping;
+
+            if (!ending.Restarts)
+            {
+                await output.WriteLineAsync($"  {agent.Value}: {ending.Stopped}").ConfigureAwait(false);
+
+                if (!wanted)
+                {
+                    return;
+                }
+            }
 
             // A node that has swept starts nothing more (see StartAsync).
             if (Shut.TryGetValue(residents, out _))
@@ -1425,19 +1803,36 @@ public static class NodeCommand
             if (catalogue.CommandFor(identity) is not { } command)
             {
                 await output.WriteLineAsync(
-                    $"  {agent.Value}: stopped for a refresh, and this machine no longer has a way to start it.")
+                    $"  {agent.Value}: stopped for {ending.For}, and this machine no longer has a way to start it.")
                     .ConfigureAwait(false);
 
                 return;
             }
 
+            // As at a start (StartAsync): never restarted in a folder that leads off this machine. The agent's own answer
+            // asks for this restart, and its folder can have been swapped for a link to a share in the meantime (review,
+            // lens 2 round 16).
+            if (catalogue.WorkspaceFor(identity) is { Length: > 0 } elsewhere
+                && LocalOpen.Folder(elsewhere) != LocalOpenStatus.Opened)
+            {
+                await output.WriteLineAsync(
+                    $"  {agent.Value}: stopped for {ending.For}, and not restarted — its workspace {Inert.Line(elsewhere)} "
+                    + "leads to another machine or could not be checked.").ConfigureAwait(false);
+
+                return;
+            }
+
             var launched = reporter is null ? null : await reporter.LaunchAsync(agent).ConfigureAwait(false);
-            var restarted = ResidentAgent.Start(
-                agent,
-                InvocationCommand.Parse(command),
-                catalogue.WorkspaceFor(identity) ?? Directory.GetCurrentDirectory(),
-                TimeProvider.System,
-                launched);
+            var restarted = Watched(
+                ResidentAgent.Start(
+                    agent,
+                    InvocationCommand.Parse(command),
+                    catalogue.WorkspaceFor(identity) ?? Directory.GetCurrentDirectory(),
+                    TimeProvider.System,
+                    launched),
+                identity,
+                residents,
+                output);
 
             residents[identity] = restarted;
 
@@ -1446,7 +1841,7 @@ public static class NodeCommand
             await TellJoinedAsync(residents, identity, restarted).ConfigureAwait(false);
 
             await output.WriteLineAsync(
-                $"  {agent.Value}: restarted once its turn was over, so it reads its new ownership line.")
+                $"  {agent.Value}: {(wanted ? "started again, for the start that was asked for while it was stopping." : ending.Restarted)}")
                 .ConfigureAwait(false);
 
             // **And given a turn, as a fresh start is** (StartAsync). A turn asked for while the old process was stopping
@@ -1460,6 +1855,65 @@ public static class NodeCommand
         }
     }
 
+    /// <summary>Hands a waiter whose node loop has stopped to the latest asker's, or ends it.</summary>
+    /// <param name="identity">The agent.</param>
+    /// <param name="resident">The process the waiter was waiting to end.</param>
+    /// <param name="residents">The agents running here.</param>
+    /// <returns>True when a new waiter goes on in the latest asker's name; false when there is no waiter now.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The last ending asked during one turn is done</b> (SPEC.md §11.1), and the loop that started the waiter is not
+    /// always the latest asker's: <c>parley serve</c> keeps one residents table for every project, and a project's node
+    /// stops when the project is removed or its broker is restarted. Without this the later ending was dropped after the
+    /// node had said it was what is done, and the old process ran on, a frozen one included.
+    /// </para>
+    /// <para>
+    /// <b>Taken with no token</b>, since the one the waiter had is the one that has just been cancelled, and under the gate
+    /// <see cref="Supersede"/> writes under, so an ending asked meanwhile is either read here or finds no waiter and starts
+    /// its own. A waiter is handed on only while its resident is still the one in the table and the latest asker's loop is
+    /// still running; anything else ends it, as a stopping node always did.
+    /// </para>
+    /// </remarks>
+    private static async Task<bool> HandedOnAsync(
+        AgentIdentity identity,
+        ResidentAgent resident,
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents)
+    {
+        Ending? ending = null;
+        Asker? next = null;
+
+        await Residency.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+
+        try
+        {
+            if (EndingsAsked.TryGetValue(resident, out var asked)
+                && !asked.Asker.Token.IsCancellationRequested
+                && residents.TryGetValue(identity, out var current)
+                && ReferenceEquals(current, resident))
+            {
+                ending = asked.Latest;
+                next = asked.Asker;
+            }
+            else
+            {
+                _ = EndingsAsked.Remove(resident);
+            }
+        }
+        finally
+        {
+            _ = Residency.Release();
+        }
+
+        if (ending is null || next is null)
+        {
+            return false;
+        }
+
+        _ = Observed(RefreshWhenIdleAsync(identity, resident, ending, next, residents));
+
+        return true;
+    }
+
     /// <summary>Ends one resident and says so.</summary>
     /// <param name="resident">The agent.</param>
     /// <param name="named">What to call it in the report.</param>
@@ -1470,7 +1924,16 @@ public static class NodeCommand
         _ = await resident.ShutdownAsync(ShutdownGrace).ConfigureAwait(false);
         await resident.DisposeAsync().ConfigureAwait(false);
 
-        await output.WriteLineAsync($"  {named}: stopped.").ConfigureAwait(false);
+        try
+        {
+            await output.WriteLineAsync($"  {named}: stopped.").ConfigureAwait(false);
+        }
+        catch (IOException)
+        {
+            // **The terminal has gone, which is why this sweep runs.** After a hangup every write to it fails; thrown, the
+            // first line aborted the process and every agent after the first was never told to quit (review, lens 1 run A
+            // on 6561e9ea). The agent has stopped either way; only the line about it is lost.
+        }
     }
 
     /// <summary>Stops every agent this node started.</summary>
@@ -1478,7 +1941,7 @@ public static class NodeCommand
     /// <param name="output">Where to report.</param>
     /// <returns>A task that completes when they have all stopped.</returns>
     /// <remarks>
-    /// SPEC.md §11.1 gives a resident agent three ways to end, and this is one of them: the
+    /// SPEC.md §11.1 gives a resident agent four ways to end, and this is one of them: the
     /// supervisor that started it telling it to stop. Leaving them running would be worse than
     /// untidy — they would hold sessions the broker still counts, and nothing would be left that
     /// could stop them.
@@ -1492,7 +1955,7 @@ public static class NodeCommand
         // resident happens inside `Residency`, so without this a start already past that gate lands its
         // process in the table *after* the sweep has walked it — and this is the last thing the process
         // does, so nothing sweeps again. That is an agent still running with nothing left that would stop
-        // it, which breaks the promise SPEC.md §12 makes: stopping a node tells every agent it started
+        // it, which breaks the promise SPEC.md §11.1 makes: stopping a node tells every agent it started
         // to quit.
         await Residency.WaitAsync().ConfigureAwait(false);
 
@@ -1559,6 +2022,83 @@ public static class NodeCommand
                     identity, role, token, resident.Workspace, () => TurnReporter.Current(resident, token))
                 .ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Tells every project joined from this table that starts a checkout what its process does on its own: its background
+    /// work, and the turns it begins itself when that work finishes (SPEC.md §11.6).
+    /// </summary>
+    /// <param name="resident">The process, just started.</param>
+    /// <param name="identity">The checkout.</param>
+    /// <param name="residents">The table.</param>
+    /// <param name="output">Where to say it.</param>
+    /// <returns>The same process.</returns>
+    /// <remarks>
+    /// <b>Every project that starts it, as a launch is told</b>, not only the one whose wake started it: one checkout is
+    /// one process for every project, and its background work is the process's, so each would otherwise read it as idle.
+    /// The board is read at each report, so a project that joins later hears the next one.
+    /// </remarks>
+    internal static ResidentAgent Watched(
+        ResidentAgent resident,
+        AgentIdentity identity,
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents,
+        TextWriter output)
+    {
+        ArgumentNullException.ThrowIfNull(resident);
+        ArgumentNullException.ThrowIfNull(residents);
+        ArgumentNullException.ThrowIfNull(output);
+
+        resident.OwnTurnPatience = TurnTimeout;
+
+        List<(TurnReporter Reporter, AgentName Named)> Projects()
+        {
+            var projects = new List<(TurnReporter, AgentName)>();
+
+            foreach (var (reporter, role) in Boards.GetOrCreateValue(residents).Starting(identity))
+            {
+                if (AgentName.TryJoin(role, resident.Name.Machine, out var named))
+                {
+                    projects.Add((reporter, named));
+                }
+            }
+
+            return projects;
+        }
+
+        resident.Watch(new OwnWork(
+            async began =>
+            {
+                await output.WriteLineAsync(
+                    $"  {resident.Name.Value}: began a turn on its own, as background work it started finished.")
+                    .ConfigureAwait(false);
+
+                foreach (var (reporter, named) in Projects())
+                {
+                    await reporter.BeganOnItsOwnAsync(named, began).ConfigureAwait(false);
+                }
+            },
+            async (began, outcome) =>
+            {
+                foreach (var (reporter, named) in Projects())
+                {
+                    await reporter.EndedOnItsOwnAsync(named, began, outcome).ConfigureAwait(false);
+                }
+            },
+            async tasks =>
+            {
+                await output.WriteLineAsync(
+                    tasks == 0
+                        ? $"  {resident.Name.Value}: its background work has finished."
+                        : $"  {resident.Name.Value}: {tasks} background task{(tasks == 1 ? string.Empty : "s")} running.")
+                    .ConfigureAwait(false);
+
+                foreach (var (reporter, named) in Projects())
+                {
+                    await reporter.BackgroundAsync(named, tasks).ConfigureAwait(false);
+                }
+            }));
+
+        return resident;
     }
 
     /// <summary>The node loops joined from one table, each with what its project calls the checkouts it starts.</summary>

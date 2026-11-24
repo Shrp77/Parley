@@ -1,4 +1,5 @@
 using System.Net;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Parley.Core;
 using Xunit;
@@ -176,6 +177,48 @@ public sealed class FilesPageTests : IDisposable
     }
 
     [Fact]
+    public async Task Opening_a_file_on_another_machine_opens_a_checked_copy_read_through_the_broker()
+    {
+        // The console at the end of a tunnel: the broker's disk is not this one, so it reads the file and opens a copy,
+        // as the terminal does, rather than naming a path on a machine the person is not at (SPEC.md §10.2).
+        var bytes = "net of tax"u8.ToArray();
+
+        _console.Broker.Files.Add(View("pricing", "brief.md", bytes.Length, Convert.ToHexStringLower(SHA256.HashData(bytes)), "billing@alpha"));
+        _console.Broker.Contents["brief.md"] = bytes;
+        _console.Broker.Where = _ => new Wire.FileLocationReply { Ok = true, Machine = "broker-host", Path = "/srv/parley/brief.md" };
+
+        using var client = _console.CreateClient();
+
+        var (status, body) = await PostAsync(client, "Open&file=brief.md&inConversation=pricing", []);
+
+        Assert.Equal(HttpStatusCode.OK, status);
+
+        var (path, folder) = Assert.Single(_console.Launched);
+        Assert.False(folder);
+        Assert.StartsWith(_console.Copies, path, StringComparison.Ordinal);
+        Assert.Equal(bytes, await File.ReadAllBytesAsync(path, Ct));
+        Assert.Equal("pricing", Assert.Single(_console.Broker.Read).ConversationId);
+        Assert.Contains("Opened a copy of brief.md", Status(body), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Bytes_that_do_not_hash_to_the_placed_file_are_never_copied_or_opened()
+    {
+        // notes.md was placed with another hash: whatever the broker streams under its name is not that file.
+        // Exactly the placed size, so only the hash can tell: a longer stream is refused for its length first.
+        _console.Broker.Contents["notes.md"] = "not placed"u8.ToArray();
+        _console.Broker.Where = _ => new Wire.FileLocationReply { Ok = true, Machine = "broker-host", Path = "/srv/parley/notes.md" };
+
+        using var client = _console.CreateClient();
+
+        var (_, body) = await PostAsync(client, "Open&file=notes.md&inConversation=pricing", []);
+
+        Assert.Empty(_console.Launched);
+        Assert.False(Directory.Exists(_console.Copies) && Directory.EnumerateFiles(_console.Copies, "*", SearchOption.AllDirectories).Any());
+        Assert.Contains("changed", Status(body), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Opening_the_folder_launches_the_folder_of_the_conversation_being_viewed()
     {
         var folder = Directory.CreateTempSubdirectory("parley-files-page-").FullName;
@@ -236,6 +279,23 @@ public sealed class FilesPageTests : IDisposable
         return status.Success
             ? WebUtility.HtmlDecode(status.Groups[1].Value)
             : "(no outcome on the page) " + WebUtility.HtmlDecode(Regex.Replace(body, "<[^>]+>", " ", RegexOptions.None, TimeSpan.FromSeconds(2)));
+    }
+
+    [Fact]
+    public async Task The_upload_picker_offers_images_as_well_as_text()
+    {
+        // Without this the picker offered only .md and .txt after images could be placed (SPEC.md §9.5), so a person could
+        // not choose a picture to upload from the page (review, lens 3 round 41).
+        using var client = _console.CreateClient();
+
+        var body = await client.GetStringAsync(new Uri(Page, UriKind.Relative), Ct);
+        var picker = Regex.Match(
+            body, """<input id="upload" name="upload" type="file" accept="(?<accept>[^"]*)" """, RegexOptions.None, TimeSpan.FromSeconds(2));
+
+        Assert.True(picker.Success, "the upload picker is not on the page");
+        Assert.Equal(
+            [".gif", ".jpeg", ".jpg", ".md", ".png", ".txt", ".webp"],
+            picker.Groups["accept"].Value.Split(',', StringSplitOptions.TrimEntries).Order(StringComparer.Ordinal));
     }
 
     private static Wire.SharedFileView View(string conversation, string name, long size, string hash, string placedBy) => new()

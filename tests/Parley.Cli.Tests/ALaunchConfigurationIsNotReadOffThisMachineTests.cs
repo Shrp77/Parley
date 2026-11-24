@@ -60,6 +60,30 @@ public sealed class ALaunchConfigurationIsNotReadOffThisMachineTests : IDisposab
     }
 
     [Fact]
+    public void A_launch_configuration_linked_to_a_file_on_this_machine_is_still_read()
+    {
+        // The refusal is for links that leave the machine. Opened without following any link at all, a .mcp.json kept
+        // elsewhere on the same disk and linked into the repository read as unreadable, and the agent lost every name.
+        var target = Path.Combine(_elsewhere.FullName, "kept.json");
+        File.WriteAllText(
+            target,
+            """{"mcpServers":{"parley-acme":{"command":"parley-mcp","env":{"PARLEY_AGENT":"orders","PARLEY_PROJECT":"acme"}}}}""");
+        try
+        {
+            _ = File.CreateSymbolicLink(Path.Combine(_workspace.FullName, LaunchConfiguration.FileName), target);
+        }
+        catch (Exception refused) when (refused is IOException or UnauthorizedAccessException)
+        {
+            Assert.Skip("This machine does not let this user make a symbolic link (Windows without Developer Mode).");
+        }
+
+        Assert.True(LaunchConfiguration.TryRead(_workspace.FullName, out var configuration, out var problem), problem);
+
+        Assert.Null(problem);
+        Assert.Equal(new LaunchMembership("acme", "orders"), Assert.Single(configuration.Memberships));
+    }
+
+    [Fact]
     public void A_command_typed_in_the_repository_does_not_look_its_launch_configuration_up()
     {
         _ = _workspace.CreateSubdirectory(".git");

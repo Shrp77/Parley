@@ -15,7 +15,7 @@ namespace Parley.Configuration;
 /// client, a placeholder can vanish from under a fetch, and a path there reaches somebody else's servers.
 /// </para>
 /// <para>
-/// Decided from what can be read without opening the folder: its links (<see cref="OffMachineLinks"/>), the kind of
+/// Decided from what can be read without following a link off this machine: its links (<see cref="OffMachineLinks"/>), the kind of
 /// drive it is on, and where the sync clients installed on this machine keep their folders. A sync client not named
 /// here is not caught; the list is the ones in common use.
 /// </para>
@@ -44,7 +44,7 @@ public static class LocalStorage
 
         try
         {
-            full = Path.GetFullPath(OffMachineLinks.Typed(path));
+            full = OffMachineLinks.FullPath(OffMachineLinks.Typed(path));
         }
         catch (Exception unusable) when (unusable is ArgumentException or NotSupportedException or PathTooLongException)
         {
@@ -59,8 +59,9 @@ public static class LocalStorage
 
         // What a folder is on is decided where it really is: a subst drive letter and a link each lead somewhere the
         // text does not say (review, lens 1 run 69). The walk decides what each drive letter is from its name before
-        // reading anything on it, so only a path it ends on is asked its drive's kind.
-        if (OffMachineLinks.LeadsOffThisMachine(full, out var reached))
+        // reading anything on it, so only a path it ends on is asked its drive's kind. Walked by opening each part as
+        // itself (LocalOpen), so a folder an agent flips to a link while it is judged is never followed (lens 3 round 10).
+        if (LocalOpen.Reach(full, out var reached) == LocalOpenStatus.OffThisMachine)
         {
             return Said(path, OffMachineLinks.IsNetworkLetter(full) ? "a network drive" : Unfollowed);
         }
@@ -81,7 +82,8 @@ public static class LocalStorage
         return null;
     }
 
-    // A link that leads off this machine, and one whose target is missing, hidden or a stream, are refused alike.
+    // A link that leads off this machine, and one whose target is hidden or a stream, are refused alike. On Windows a link
+    // to a local folder not there yet is judged by where it leads, as a folder not yet made is.
     private const string Unfollowed = "another machine, a device, or a link Parley cannot follow";
 
     private static string Through(string full, string reached) =>
@@ -139,7 +141,9 @@ public static class LocalStorage
         // /var, which is /private/var), so each is compared as written and where it leads, as the folder is.
         foreach (var (root, name) in roots)
         {
-            string[] spellings = OffMachineLinks.LeadsOffThisMachine(root, out var resolved) ? [root] : [root, resolved];
+            // Where each really is, spelled long, as the folder is (LocalOpen.Reach): a root the environment spells short
+            // (`ONEDRI~1`) matches the long name the folder's walk gives (review, lens 2 round 16).
+            string[] spellings = LocalOpen.Reach(root, out var resolved) == LocalOpenStatus.OffThisMachine ? [root] : [root, resolved];
 
             if (spellings.Any(spelling => Within(full, Path.TrimEndingDirectorySeparator(spelling), comparison)))
             {

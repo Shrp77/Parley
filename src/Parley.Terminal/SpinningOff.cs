@@ -16,7 +16,7 @@ internal static class SpinningOff
 
     /// <summary>What the person is told when asked for the name.</summary>
     internal const string Door =
-        "A new conversation, linked to this one. Nothing is sent until you press Enter in the box.";
+        "A new conversation, linked to this one. Nothing is sent until you press Enter in the box. " + Parley.Client.Rendering.Quoting.OpeningIsAdded;
 
     /// <summary>Why a name cannot be spun off to, told before the person writes anything rather than at the send.</summary>
     /// <param name="name">The name asked for.</param>

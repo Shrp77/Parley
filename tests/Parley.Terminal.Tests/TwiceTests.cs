@@ -147,17 +147,26 @@ public sealed class TwiceTests : IAsyncDisposable
         Assert.True(outcome.Seated, outcome.Problem);
 
         var seated = outcome.Hold!;
-        var broker = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
 
-        await broker.StartAsync(Orders, T0, cancellationToken);
+        // Through the runtime's gate. The served broker shares this connection, and the seat just taken is still being
+        // read on the server's side, so a broker of the test's own on the bare connection was a second writer racing it:
+        // SQLite's command list was changed from two threads at once (seen on Windows CI).
+        var sent = await _broker.Runtime.UseConnectionAsync(
+            async (connection, _, ct) =>
+            {
+                var broker = new Broker.Broker(connection, Parley.Broker.BrokerOptions.Default);
 
-        var sent = await broker.RequestAsync(
-            Orders,
-            seated.Seat.Name,
-            "model-a",
-            """{"ask":"Is it safe to release?"}""",
-            T0.AddMinutes(1),
-            "chat",
+                await broker.StartAsync(Orders, T0, ct);
+
+                return await broker.RequestAsync(
+                    Orders,
+                    seated.Seat.Name,
+                    "model-a",
+                    """{"ask":"Is it safe to release?"}""",
+                    T0.AddMinutes(1),
+                    "chat",
+                    ct);
+            },
             cancellationToken);
 
         Assert.True(sent.Exchange is not null, $"the request was refused: {sent.Admission.Rejection}");

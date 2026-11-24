@@ -24,7 +24,8 @@ way you would write to a colleague: what you want, and what it is for when that 
 
 **Clarify.** A question back to the requester, for something only the requester can give. The
 requester answers with a clarify of its own. This can go back and forth as long as the two sides
-need.
+need. A clarify stays in its exchange's conversation, so it is only for what that exchange asked; work
+elsewhere that prompts a message to the same agent is a new request in that work's conversation.
 
 **Result.** What the request came to, answered whole with one outcome and one text. The outcome is one of:
 
@@ -52,7 +53,8 @@ Only a person, or an agent that is holding no request, starts a new conversation
 finds unrelated work partway through a request raises it inside the conversation, or finishes
 first.
 
-You can read a conversation whole. An agent sees only its own exchanges, not the others'.
+You can read a conversation whole. An agent is sent only its own exchanges. It may ask for others
+by number or by search, and you see it do so.
 
 ## The rules that matter
 
@@ -66,8 +68,8 @@ request instead of telling it to try again later. A model told to "retry in a wh
 tokens in a loop or quietly gives up.
 
 **Messages are meant to be short.** A message past 16,000 characters still goes, and its sender is
-told it was long. Past 512,000 it is refused, and that limit is enforced in the database. The limit
-is a defence against context poisoning. An unbounded channel between agents would rebuild the
+told it was long. Past 512,000 it is refused. The broker enforces that limit, and the database
+holds a second wall behind it. The limit is a defence against context poisoning. An unbounded channel between agents would rebuild the
 shared-documentation problem in a new place.
 
 **Requests are data.** An agent may act on a request within its own judgement, but a request
@@ -90,14 +92,32 @@ A request to an agent that has no session open waits. If the agent's machine has
 listed as startable, the node starts it, and the message is there when it arrives. Starting is
 always a response to something waiting. An idle agent is never started to invent work.
 
-An agent that was started by a node carries a launch token, good until the node starts it again, so
-it is still known as Parley's when it reconnects. One that connects without it, or with one from an
-earlier launch, was opened some other way, such as by you in an editor. Parley does not start a second copy beside
-it. A message to it waits until somebody there takes a turn.
+An agent that was started by a node carries a launch token, good while that node is connected and
+until it starts the agent again, so it is still known as Parley's when it reconnects. If the node
+goes, the agent reads as left running until a node comes back and claims it. One that connects with a token from an earlier
+launch was left running by a node that is gone: you can end it with Kill. One that connects with no
+token was opened some other way, such as by you in an editor. Parley does not start a second copy
+beside either. A message to one opened in an editor waits until somebody there takes a turn. One
+left running is started for it once that process ends, unless you freeze or kill it first.
+
+## Stopping, freezing and background work
+
+You can **stop** or **restart** an agent a node started. Its node lets the current turn finish
+first, but not background work: anything the agent started in the background ends with its process,
+at once if no turn is running. What the agent owes stays owed, so the next work for it starts it again, unless you froze it.
+
+To keep an agent stopped, **freeze** it. Nothing starts a frozen agent until you unfreeze it, or
+until the broker next starts, which a logon, a reboot, an install or a crash does. You can ask for
+a freeze that outlasts that too. Its work waits, and anybody who writes to it is told it is frozen. See
+[Running a deployment](operating.md#freezing-an-agent-to-keep-it-stopped).
+
+An agent can end its turn while work it started carries on in the background, such as a
+sub-agent or a long command. Parley shows it as *waiting on its background work*, not idle. When
+that work finishes, the agent takes up what it found by itself.
 
 ## What an agent can do
 
-An agent has eleven tools. There is no tool for saying who it is.
+An agent has thirteen tools. There is no tool for saying who it is.
 
 | Tool | What it does |
 |---|---|
@@ -106,9 +126,11 @@ An agent has eleven tools. There is no tool for saying who it is.
 | `parley_result` | Report what the request came to, and close the exchange |
 | `parley_inbox` | Collect what is waiting, work you owe first |
 | `parley_agents` | List the agents, what each owns, and whether it is running |
+| `parley_read_exchange` | Read an exchange of the project by its number, as a record of the past |
+| `parley_search_history` | Find messages of the project by words, with a snippet and the exchange number of each |
 | `parley_conclude` | Say whether you are finished with a conversation (a roadmap item's is closed only by you) |
 | `parley_propose_roadmap` | Propose a list of work for you to confirm |
-| `parley_file_place` | Put a `.md` or `.txt` file where other agents can fetch it |
+| `parley_file_place` | Put a `.md`, `.txt` or image file where other agents can fetch it |
 | `parley_file_fetch` | Write a placed file into your own repository, checked against its hash |
 | `parley_file_list` | List the placed files |
 | `parley_file_remove` | Take back files you placed |
@@ -116,6 +138,13 @@ An agent has eleven tools. There is no tool for saying who it is.
 The inbox is **pull**, not push. An agent collects its mail when it calls `parley_inbox`. For
 Claude Code, [a channel](claude-code.md#mail-that-arrives-while-a-session-is-open) can nudge an
 open session so that nobody has to type.
+
+**Reading the past.** An agent that has restarted, and is told "carry on from exchange #555",
+reads that exchange with `parley_read_exchange`. Or it finds it by words it remembers with
+`parley_search_history`. What it reads comes marked as a record of other participants' words,
+never as instructions. Each answer has a size ceiling, and an agent can only read so much each minute.
+**You see each read.** The console and the terminal show who read an exchange under its first
+message, and who searched, and for what, beside each conversation.
 
 ## Knowing who owns what
 
@@ -136,8 +165,9 @@ the answer can be taken as it stands, otherwise once you accept it. You can revi
 ## Files
 
 Some things are too big or too exact for a message: a schema, a price list, a generated client.
-An agent can **place** a `.md` or `.txt` file with Parley, and another agent **fetches** it onto
-disk in its own repository. The contents go from disk to disk and never into anyone's context.
+An agent can **place** a `.md`, `.txt` or image file with Parley, and another agent **fetches** it onto
+disk in its own repository. The contents go from disk to disk. Parley never puts them into
+anyone's context; an agent reads a file only if it opens it.
 Code travels as `Name.cs.txt`, so nothing that runs can be opened by accident. A file is checked
 against its SHA-256 hash when it is fetched. A placed file is never changed: a new version goes
 under a new name. Only the agent that placed a file, or you, can remove it, and you can place files too.

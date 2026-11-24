@@ -8,59 +8,48 @@ namespace Parley.Web.Seating;
 /// <remarks>One implementation for the Inbox and the conversation page, so the two cannot list different things.</remarks>
 internal static class PersonOwes
 {
+    /// <summary>Counts what waits on the person in every project given.</summary>
+    /// <param name="seats">The book, for the seat this console took in a project.</param>
+    /// <param name="directory">The projects, and a client for each.</param>
+    /// <param name="token">Cancels the reads.</param>
+    /// <returns>How many exchanges wait on the person's answer, and whether every project answered.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Read from the edges alone</b>, one call a project, because the frame asks it on every page. The Inbox reads the
+    /// same edges through <see cref="WaitingOnThePerson.OnMe"/> and then each conversation for the words, so the count is the number of rows
+    /// that page draws.
+    /// </para>
+    /// <para>
+    /// The name is the seat this console took when it has taken one, and otherwise the one the broker provides
+    /// (SPEC.md §12.3): what waits on the person waits against the name, and a project whose registry could not be read
+    /// may still answer this.
+    /// </para>
+    /// </remarks>
+    public static async Task<(int Waiting, bool Certain)> CountAsync(
+        SeatBook seats, BrokerDirectory directory, CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(seats);
+        ArgumentNullException.ThrowIfNull(directory);
+
+        // All at once: in sequence the cost is the sum of the timeouts of the brokers that are down.
+        var reads = await Task.WhenAll(directory.Projects.Select(async project =>
+        {
+            var me = seats.Known(project.Name.Value)?.Name ?? PersonSeat.On(project.Name);
+
+            return await BrokerDirectory.ReadAsync(async () =>
+                await WaitingOnThePerson.CountAsync(new BrokerClient(directory.ClientFor(project)), me, token).ConfigureAwait(false))
+                .ConfigureAwait(false);
+        })).ConfigureAwait(false);
+
+        return (reads.Where(read => read.Reachable).Sum(read => read.Value), reads.All(read => read.Reachable));
+    }
+
     /// <summary>Reads what is waiting on the person, each as the agent's latest message in that exchange.</summary>
     /// <param name="broker">The project's broker.</param>
     /// <param name="me">The person's seat.</param>
     /// <param name="token">Cancels the reads.</param>
     /// <returns>The messages, oldest first, in the shape a page draws a message in.</returns>
-    /// <remarks>
-    /// <para>
-    /// The wait-for graph says which exchanges an agent is waiting on the person for, and only the conversation says what was
-    /// asked, so the conversations the person is party to that have an open exchange are read and
-    /// <see cref="WaitingOnYou"/> picks the questions out of them, the derivation the conversation page and the terminal use.
-    /// </para>
-    /// <para>
-    /// Nothing is read when nothing waits on the person, which is the common case and costs one call. Nothing here
-    /// collects, so reading this marks nothing delivered.
-    /// </para>
-    /// </remarks>
-    public static async Task<IReadOnlyList<Delivered>> ReadAsync(BrokerClient broker, AgentName me, CancellationToken token)
-    {
-        var waiting = await broker.WaitingAsync(token).ConfigureAwait(false);
-        var onMe = waiting.Where(edge => edge.WaitedOn == me && edge.Waiter != me).ToList();
-
-        if (onMe.Count == 0)
-        {
-            return [];
-        }
-
-        var open = new List<string>();
-        string? next = null;
-
-        do
-        {
-            var page = await broker
-                .ConversationsAsync(me, pageToken: next, includeArchived: true, cancellationToken: token)
-                .ConfigureAwait(false);
-
-            open.AddRange(page.Items.Where(c => c.HasOpenExchange).Select(c => c.Id));
-            next = page.NextPageToken;
-        }
-        while (next is { Length: > 0 });
-
-        var exports = await Task.WhenAll(
-            open.Select(id => broker.ExportAsync(id, token))).ConfigureAwait(false);
-
-        return
-        [
-            .. exports
-                .SelectMany(export => WaitingOnYou.From(export, onMe, me)
-                    .SelectMany(on => on.Questions)
-                    .Where(question => question.At is not null)
-                    .Select(question => export.Messages.FirstOrDefault(m => m.Id == question.At))
-                    .OfType<Message>())
-                .OrderBy(message => message.CreatedUtc)
-                .Select(message => new Delivered(message)),
-        ];
-    }
+    /// <remarks>The shared read, <see cref="WaitingOnThePerson.ReadAsync"/>, so the terminal lists the same questions.</remarks>
+    public static Task<IReadOnlyList<Delivered>> ReadAsync(BrokerClient broker, AgentName me, CancellationToken token) =>
+        WaitingOnThePerson.ReadAsync(broker, me, token);
 }

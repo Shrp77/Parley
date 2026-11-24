@@ -191,6 +191,23 @@ public sealed class BrokerDirectory : IDisposable
             fallbackEndpoint,
             Connect);
 
+    /// <summary>Builds a directory that follows a deployment root, opening channels the way the caller says.</summary>
+    /// <param name="root">The deployment root to read, now and whenever it changes.</param>
+    /// <param name="connect">Opens a channel to an endpoint.</param>
+    /// <returns>The directory.</returns>
+    /// <remarks>
+    /// For a host that supplies its own channels, such as a test with its broker in process: what a surface reads from
+    /// the root (settings.json among it) is then the same as on a machine, where a directory built from a list has no
+    /// root at all.
+    /// </remarks>
+    public static BrokerDirectory FollowingRoot(string root, Func<string, GrpcChannel> connect)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(root);
+        ArgumentNullException.ThrowIfNull(connect);
+
+        return new BrokerDirectory(root, null, connect);
+    }
+
     /// <summary>Reads one manifest into a snapshot.</summary>
     /// <param name="path">The manifest to read.</param>
     /// <param name="fallback">A broker to offer when it names no projects.</param>

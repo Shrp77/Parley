@@ -33,9 +33,9 @@ public sealed class HomeTabsTests
 
         // The page is drawn before any broker is asked; the agents of a project arrive as a fragment.
         var shell = await client.GetStringAsync(new Uri("/?tab=agents", UriKind.Relative), TestContext.Current.CancellationToken);
-        var page = await client.GetStringAsync(new Uri("/?tab=agents&handler=Agents&name=alpha", UriKind.Relative), TestContext.Current.CancellationToken);
+        var page = await client.GetStringAsync(new Uri("/?tab=agents&handler=AgentTable", UriKind.Relative), TestContext.Current.CancellationToken);
 
-        Assert.Contains("Reading alpha", shell, StringComparison.Ordinal);
+        Assert.Contains("Reading the agents", shell, StringComparison.Ordinal);
         Assert.DoesNotContain("orders", shell, StringComparison.Ordinal);
         Assert.Contains("orders", page, StringComparison.Ordinal);
         Assert.DoesNotContain("human-user@alpha", page, StringComparison.Ordinal);
@@ -73,8 +73,8 @@ public sealed class HomeTabsTests
         ]);
         using var client = console.CreateClient();
 
-        var all = await client.GetStringAsync(new Uri("/?tab=agents&handler=Agents&name=alpha", UriKind.Relative), TestContext.Current.CancellationToken);
-        var text = await client.GetStringAsync(new Uri("/?tab=agents&q=bill&handler=Agents&name=alpha", UriKind.Relative), TestContext.Current.CancellationToken);
+        var all = await client.GetStringAsync(new Uri("/?tab=agents&handler=AgentTable", UriKind.Relative), TestContext.Current.CancellationToken);
+        var text = await client.GetStringAsync(new Uri("/?tab=agents&q=bill&handler=AgentTable", UriKind.Relative), TestContext.Current.CancellationToken);
         var elsewhere = await client.GetStringAsync(new Uri("/?tab=agents&scope=no-such-project", UriKind.Relative), TestContext.Current.CancellationToken);
 
         Assert.Contains(">orders<", all, StringComparison.Ordinal);
@@ -82,7 +82,6 @@ public sealed class HomeTabsTests
         Assert.Contains(">billing<", text, StringComparison.Ordinal);
         Assert.DoesNotContain(">orders<", text, StringComparison.Ordinal);
         Assert.DoesNotContain(">billing<", elsewhere, StringComparison.Ordinal);
-        Assert.DoesNotContain("Reading alpha", elsewhere, StringComparison.Ordinal);
         Assert.Contains("No agent matches these filters.", elsewhere, StringComparison.Ordinal);
     }
 

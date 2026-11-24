@@ -1,0 +1,51 @@
+@model Parley.Client.Rendering.Payload
+@* **What a message says, drawn one way everywhere a message is shown** (owner, 2026-11-06: the Inbox showed a message's
+   Markdown as plain text while its conversation rendered it). Every page that shows what somebody said draws it through
+   this partial, so a change to how a message reads is made once. Who sent it, when, and what can be done about it stay
+   with each page, which differ on purpose.
+
+   An agent wrote this, and it is content: nothing here may alter the page or imitate a label the console speaks. Razor
+   encodes what is written directly, and MarkdownText decides what a message's Markdown may become. *@
+@if (Model.Raw is { Length: > 0 } raw)
+{
+    <pre>@raw</pre>
+}
+else
+{
+    @if (Model.Said is { Length: > 0 } body)
+    {
+        <div class="said">@MarkdownText.Render(body)</div>
+    }
+
+    @if (Model.Points.Count > 0)
+    {
+        <ol class="points">
+            @foreach (var point in Model.Points)
+            {
+                <li>
+                    @if (point.Id is { Length: > 0 } label)
+                    {
+                        <span class="label">@label</span>
+                    }
+                    <div class="point-text said">@MarkdownText.Render(point.Text)</div>
+                    @if (point.Outcome is { Length: > 0 } || point.Sources.Count > 0)
+                    {
+                        @* On a line of their own: beside the text, several chips left it a narrow column. *@
+                        <span class="chits">
+                            @if (point.Outcome is { Length: > 0 } verdict)
+                            {
+                                @* The word the receiver chose, shown rather than summarised: "blocked" and "done" are
+                                   different outcomes and only one of them is finished. *@
+                                <span class="verdict">@(point.Blocker is { } blocker ? $"{verdict}: {blocker.Replace('_', ' ')}" : verdict)</span>
+                            }
+                            @if (point.Sources.Count > 0)
+                            {
+                                <span class="verdict">relied on @string.Join(", ", point.Sources)</span>
+                            }
+                        </span>
+                    }
+                </li>
+            }
+        </ol>
+    }
+}

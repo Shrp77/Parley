@@ -360,8 +360,8 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
         var move = await _connection.ExecuteScalarAsync<long>(
             new CommandDefinition(
                 """
-                INSERT INTO conversation_moves (source, destination, moved_by, moved_utc, first_message, messages)
-                VALUES (@Source, @Destination, @MovedBy, @When, @First, @Messages)
+                INSERT INTO conversation_moves (source, destination, moved_by, moved_utc, first_message, messages, last_message)
+                VALUES (@Source, @Destination, @MovedBy, @When, @First, @Messages, (SELECT MAX(id) FROM messages))
                 RETURNING id;
                 """,
                 new
@@ -495,6 +495,113 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         return [.. rows.Select(r => new SettledElsewhere(r.Exchange, r.SettledBy, r.Conversation))];
+    }
+
+    /// <summary>Reads where an agent's next message after this conversation went instead (SPEC.md §5.0).</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Each such message, in the broker's order.</returns>
+    /// <remarks>
+    /// <b>The last thing the agent sent or received before writing was here</b>, which is as near as the record comes to what
+    /// prompted it. Its reply to something that reached it elsewhere does not count, nor do the replies that follow, so a
+    /// busy pair talking in another conversation does not fill this one with notes. Results are left out because a Result
+    /// answers the exchange it closes. Only messages from the conversation's first onward are read, since an export is read
+    /// every few seconds while a page follows it.
+    /// <para>
+    /// <b>Read where each message was written, not where it is now.</b> A move rewrites its messages' conversation, so
+    /// read as they stand a moved message looked like the agent writing elsewhere, and the transcript blamed the agent for
+    /// the person's move. Each message is placed by the source of the first move of its exchange made after it was
+    /// written (by message id, which a move records: migration 008), or where it is when none was; so a move invents no note, and a message written after a move, on the
+    /// exchange where it now is, is still noted when it was written elsewhere.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<WroteElsewhere>> GetWroteElsewhereAsync(
+        string conversationId, CancellationToken cancellationToken = default)
+    {
+        var rows = await _connection.QueryAsync<WroteElsewhereRow>(
+            new CommandDefinition(
+                """
+                WITH exchanges_here AS (
+                    -- The exchanges any message written in this conversation can be on: one now here, or one a move took
+                    -- out of it. A message's written place is its conversation or a move's source, so none lies outside.
+                    SELECT DISTINCT exchange_id FROM messages WHERE conversation_id = @Id
+                    UNION
+                    SELECT e.exchange_id
+                      FROM conversation_moves m
+                      JOIN conversation_move_exchanges e ON e.move_id = m.id
+                     WHERE m.source = @Id OR m.destination = @Id
+                ), written AS (
+                    -- Where each message was written: a move rewrites conversation_id, so a message on an exchange
+                    -- moved after it was written is placed by that move's source, the first such move's. "After" is by
+                    -- message id, which follows the broker's order exactly; a timestamp can tie with a move.
+                    SELECT msg.id, msg.from_agent, msg.to_agent,
+                           COALESCE(
+                               (SELECT m.source
+                                  FROM conversation_move_exchanges e
+                                  JOIN conversation_moves m ON m.id = e.move_id
+                                 WHERE e.exchange_id = msg.exchange_id
+                                   AND COALESCE(m.last_message, 0) >= msg.id
+                                 ORDER BY m.id
+                                 LIMIT 1),
+                               msg.conversation_id) AS conversation_id
+                      FROM messages msg
+                     WHERE msg.exchange_id IN (SELECT exchange_id FROM exchanges_here)
+                       -- From the earliest message on any of those exchanges, not the earliest still here: a move of
+                       -- the conversation's first exchanges leaves what stays beginning after a message written here.
+                       AND msg.id >= (SELECT MIN(id) FROM messages WHERE exchange_id IN (SELECT exchange_id FROM exchanges_here))
+                ), before AS (
+                    -- Each agent's messages written in this conversation, sent or received: the "last thing it saw here".
+                    SELECT id, from_agent AS agent FROM written WHERE conversation_id = @Id
+                    UNION ALL
+                    SELECT id, to_agent FROM written WHERE conversation_id = @Id
+                ), following AS (
+                    -- The very next message that agent sent or received anywhere, by the by-agent indexes, so the cost
+                    -- follows what was written in this conversation and not how much the store holds after it.
+                    SELECT b.id AS before_id, b.agent,
+                           (SELECT MIN(x) FROM (
+                               SELECT MIN(id) AS x FROM messages WHERE from_agent = b.agent AND id > b.id
+                               UNION ALL
+                               SELECT MIN(id) FROM messages WHERE to_agent = b.agent AND id > b.id)) AS next_id
+                      FROM before b
+                )
+                SELECT n.id AS Message, f.before_id AS AfterMessage, n.from_agent AS Author, n.to_agent AS Recipient,
+                       COALESCE(
+                           (SELECT m.source
+                              FROM conversation_move_exchanges e
+                              JOIN conversation_moves m ON m.id = e.move_id
+                             WHERE e.exchange_id = n.exchange_id
+                               AND COALESCE(m.last_message, 0) >= n.id
+                             ORDER BY m.id
+                             LIMIT 1),
+                           n.conversation_id) AS Conversation
+                  FROM following f
+                  JOIN messages n ON n.id = f.next_id AND n.from_agent = f.agent
+                 WHERE n.type IN ('request', 'clarify')
+                   AND n.from_agent NOT LIKE @Person AND n.to_agent NOT LIKE @Person
+                   AND n.from_agent NOT LIKE @Facilitator AND n.to_agent NOT LIKE @Facilitator
+                   AND Conversation <> @Id
+                   -- "Straight after" only while nothing between is gone. Retention, a destroy or a purge removes
+                   -- messages, and the next one still in the store need not be the next one the agent saw. The record
+                   -- of lengths keeps every message's sender and recipient after its words are gone, so a gone message
+                   -- of this agent's in between drops the note; an id in between in neither table (a purge removes
+                   -- both) drops it too, since nothing then says whose it was.
+                   AND NOT EXISTS (SELECT 1 FROM message_lengths l
+                                    WHERE l.message_id > f.before_id AND l.message_id < n.id
+                                      AND (l.from_agent = f.agent OR l.to_agent = f.agent))
+                   AND (SELECT COUNT(*) FROM message_lengths l
+                         WHERE l.message_id > f.before_id AND l.message_id < n.id) = n.id - f.before_id - 1
+                 ORDER BY n.id;
+                """,
+                new
+                {
+                    Id = conversationId,
+                    Person = PersonSeat.Role + "@%",
+                    Facilitator = Facilitation.Role + "@%",
+                },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return [.. rows.Select(r => new WroteElsewhere(
+            r.Message, r.AfterMessage, AgentName.Create(r.Author), AgentName.Create(r.Recipient), r.Conversation))];
     }
 
     /// <summary>Reads the move notices waiting for an agent, oldest first, marking nothing.</summary>
@@ -785,6 +892,19 @@ public sealed partial class ConversationMoveRepository(SqliteConnection connecti
         public long Exchange { get; init; }
 
         public long SettledBy { get; init; }
+
+        public string Conversation { get; init; } = string.Empty;
+    }
+
+    private sealed class WroteElsewhereRow
+    {
+        public long Message { get; init; }
+
+        public long AfterMessage { get; init; }
+
+        public string Author { get; init; } = string.Empty;
+
+        public string Recipient { get; init; } = string.Empty;
 
         public string Conversation { get; init; } = string.Empty;
     }

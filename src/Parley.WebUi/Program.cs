@@ -20,6 +20,10 @@ parley-web-ui: the operator's web UI.
   <url>, --listen     Where to listen. Defaults to http://127.0.0.1:5280.
   --broker <address>  A broker to offer when this machine's manifest names no project.
                       PARLEY_BROKER says the same; the flag wins.
+  --until-input-closes
+                      Stop when standard input closes. A broker passes it with a pipe, so
+                      the web UI ends with the broker even when the broker is killed.
+                      With it, one line on standard output says when it is serving.
   --version, -v       The build and the protocol it speaks.
   --help, -h          This.
 
@@ -55,6 +59,9 @@ if (arguments.Exists(argument => argument is "--version" or "-v"))
 }
 
 string? missingValue = null;
+
+// Taken before the unknown-option check, because it has no value to take with it.
+var untilInputCloses = arguments.Remove("--until-input-closes");
 
 var listenOn = TakeOption("--listen", "-l");
 // PARLEY_BROKER says the same as --broker, as it does to the terminal and to `parley`; the flag wins.
@@ -103,9 +110,68 @@ if (address is not null && !Uri.TryCreate(address, UriKind.Absolute, out _))
 await Console.Out.WriteLineAsync(
     $"Parley web UI on {address ?? WebUiAddress.Loopback}. Ctrl+C stops it.").ConfigureAwait(false);
 
+// **Ends with the broker that started it, however that broker ended.** The broker holds the other end of this
+// process's standard input and never writes to it. When the broker stops in order it closes the pipe; when it is
+// killed outright the operating system closes it. Either way the read below returns end of input and the web UI
+// stops, rather than holding its port with the settings of a broker that is gone, which is what made the next
+// broker's web UI fail to bind. Only on the flag: a web UI run by hand reads nothing from its terminal.
+using var parentGone = new CancellationTokenSource();
+
+if (untilInputCloses)
+{
+    _ = Task.Run(
+        async () =>
+        {
+            try
+            {
+                var input = Console.OpenStandardInput();
+
+                await using (input.ConfigureAwait(false))
+                {
+                    var buffer = new byte[256];
+
+                    while (await input.ReadAsync(buffer).ConfigureAwait(false) > 0)
+                    {
+                        // Nothing is written on purpose; anything that is, is ignored.
+                    }
+                }
+            }
+            catch (IOException)
+            {
+                // A broken pipe is the parent gone too.
+            }
+
+            try
+            {
+                await parentGone.CancelAsync().ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
+                // The web UI already stopped for another reason.
+            }
+        },
+        CancellationToken.None);
+}
+
 try
 {
-    await ConsoleHost.RunAsync([], address, Console.Error, brokerAddress).ConfigureAwait(false);
+    // **A broker is told when this is serving, and only a broker.** It waits for this line before it names the address
+    // to a person: a connection accepted at the address could be another program's. Written by hand it would be noise,
+    // so only on the flag a broker passes.
+    await ConsoleHost.RunAsync(
+        [],
+        address,
+        Console.Error,
+        brokerAddress,
+        untilInputCloses
+            ? async bound =>
+            {
+                await Console.Out.WriteLineAsync(WebUiAddress.ServingMarker + string.Join(';', bound))
+                    .ConfigureAwait(false);
+                await Console.Out.FlushAsync().ConfigureAwait(false);
+            }
+            : null,
+        parentGone.Token).ConfigureAwait(false);
 
     return 0;
 }

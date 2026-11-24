@@ -41,6 +41,29 @@ public sealed class OnlyLocalStorageTests : IDisposable
             ? _home
             : set.FirstOrDefault(pair => string.Equals(pair.Name, name, StringComparison.Ordinal)).Value;
 
+    [Fact]
+    public void A_short_name_spelling_of_a_synced_folder_is_judged_as_the_folder_it_is()
+    {
+        // GetFullPath expanded short names, and the text-only tidying that replaced it does not: `PARLEY~1\OneDrive\orders`
+        // stopped matching the home folder's OneDrive and was admitted (review, lens 2 round 15). The walk now reads each
+        // part's own long name from its handle.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "8.3 names");
+        var repository = Directory.CreateDirectory(Path.Combine(_home, "OneDrive", "orders")).FullName;
+        var shortHome = new char[1024];
+        var length = GetShortPathName(_home, shortHome, (uint)shortHome.Length);
+        var spelled = new string(shortHome, 0, (int)length);
+
+        Assert.SkipUnless(length > 0 && !string.Equals(spelled, _home, StringComparison.OrdinalIgnoreCase), "this volume keeps no 8.3 names");
+        Assert.Contains("~", spelled, StringComparison.Ordinal);
+        Assert.True(Directory.Exists(repository));
+
+        Assert.Contains("on OneDrive", LocalStorage.Problem(Path.Combine(spelled, "OneDrive", "orders"), Environment()), StringComparison.Ordinal);
+    }
+
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", EntryPoint = "GetShortPathNameW", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetShortPathName(string longPath, [System.Runtime.InteropServices.Out] char[] shortPath, uint length);
+
     [Theory]
     [InlineData("Dropbox", "Dropbox")]
     [InlineData("iCloudDrive", "iCloud Drive")]

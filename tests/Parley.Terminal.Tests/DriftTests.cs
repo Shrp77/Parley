@@ -90,6 +90,19 @@ public sealed class DriftTests
             "No surface binds: " + string.Join(", ", orphaned));
     }
 
+    /// <summary>Operations a surface reaches only through one shared implementation in Parley.Client, and which.</summary>
+    /// <remarks>
+    /// Named, not inferred: reading a placed file to open a copy is <c>LocalLauncher.OpenPlacedAsync</c>, the one way every
+    /// surface opens a file through the broker (SPEC.md §10.2), so a surface binds the read by calling that. A new entry is a decision.
+    /// </remarks>
+    private static readonly Dictionary<string, string> ReachedThrough = new(StringComparer.Ordinal)
+    {
+        ["ReadSharedFileAsync"] = "OpenPlacedAsync",
+    };
+
+    private static bool Binds(string source, string name) =>
+        Calls(source, name) || (ReachedThrough.TryGetValue(name, out var shared) && Calls(source, shared));
+
     [Fact]
     public void Every_operation_is_bound_by_both_surfaces()
     {
@@ -98,8 +111,8 @@ public sealed class DriftTests
         var terminal = Text("src", "Parley.Terminal");
 
         var unbound = Operations()
-            .Where(name => !Calls(console, name)
-                        || !Calls(terminal, name))
+            .Where(name => !Binds(console, name)
+                        || !Binds(terminal, name))
             .ToList();
 
         Assert.True(

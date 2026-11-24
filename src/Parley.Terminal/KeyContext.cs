@@ -93,6 +93,15 @@ internal enum KeyContext
 
     /// <summary>A dialog: the last thing the message line said, whole, read-only.</summary>
     SayingDialog,
+
+    /// <summary>A dialog: the agents asked which of their questions are still open, and where each stands, read-only.</summary>
+    StillOpenDialog,
+
+    /// <summary>A dialog: the Inbox's three views, with a row's conversation and a follow-up from it.</summary>
+    InboxDialog,
+
+    /// <summary>A dialog: the exchanges a message names, read-only.</summary>
+    ExchangeDialog,
 }
 
 /// <summary>A place on the surface, and the layers that are live in it as well.</summary>

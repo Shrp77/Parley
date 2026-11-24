@@ -240,16 +240,18 @@ public sealed class ConversationPanelTests
     }
 
     [Fact]
-    public async Task The_other_conversations_list_reads_every_page_archived_ones_included()
+    public async Task The_other_conversations_list_finds_each_question_by_its_exchange_so_no_page_or_archive_can_hide_one()
     {
+        // It used to list every page of conversations, archived included, and read each one with an open exchange whole. A
+        // question is found by the exchange the wait-for graph names, wherever its conversation is: no listing is read at all.
         using var console = Asked();
         console.Broker.TwoPages = true;
         using var client = console.CreateClient();
 
-        _ = await client.GetStringAsync(Elsewhere("other"), TestContext.Current.CancellationToken);
+        var list = await client.GetStringAsync(Elsewhere("other"), TestContext.Current.CancellationToken);
 
-        Assert.Equal(2, console.Broker.Listings.Count);
-        Assert.All(console.Broker.Listings, asked => Assert.True(asked.IncludeArchived));
+        Assert.Empty(console.Broker.Listings);
+        Assert.Contains("<strong>shared</strong> (1)", list, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -301,6 +303,28 @@ public sealed class ConversationPanelTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_new_conversation_says_so_to_the_script_that_ticks_the_default_agent()
+    {
+        // The page's script ticks the project's default agent only in `.recipients[data-new="true"]`. Without the marker a
+        // new conversation started with nobody ticked; with it on every conversation, the default was ticked into one that
+        // already had its own people (review, lens 3 round 41).
+        using (var fresh = new TranscriptConsole())
+        using (var client = fresh.CreateClient())
+        {
+            var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+
+            Assert.Contains("<aside class=\"recipients\" aria-label=\"Who to talk to\" data-new=\"true\">", page, StringComparison.Ordinal);
+        }
+
+        using var asked = Asked();
+        using var spoken = asked.CreateClient();
+
+        var said = await spoken.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+
+        Assert.Contains("<aside class=\"recipients\" aria-label=\"Who to talk to\" data-new=\"false\">", said, StringComparison.Ordinal);
     }
 
     private static string Seen(string html)

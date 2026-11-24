@@ -1,0 +1,53 @@
+@model Parley.Web.Pages.Conversations.PlacedItem
+@using Parley.Client.Files
+@using Parley.Web.Pages.Conversations
+@* One placed file, in the transcript where it was placed and in Media (SPEC.md §9.5).
+
+   An image is a link to its own bytes holding a thumbnail of them: with the page's script it opens the full view, and
+   without one it opens the image on its own, under the policy that lets nothing in it run. The browser scales the
+   original, because making a smaller copy would mean decoding another participant's bytes here. A thumbnail that will
+   not load (bytes that are not the format the name says are refused) becomes a tile, by the page's script.
+
+   Nothing here differs between two renders of the same file, because the followed region is compared by digest. *@
+@{
+    var file = Model.File;
+    var name = file.Name.Value;
+    var placer = Placements.Placer(file);
+    var when = Parley.Client.Rendering.LocalTime.Clock(file.PlacedUtc);
+}
+<figure class="placed-card">
+    @if (Placements.IsImage(file))
+    {
+        @if (Placements.ShownInline(file))
+        {
+            var src = MediaModel.ImageUrl(Url, Model.Project, Model.Conversation, file);
+            <a class="thumb" href="@src" target="_blank" rel="noopener" data-full="@src"
+               data-caption="@($"{name} · placed by {placer} · {Placements.Size(file.SizeBytes)} · {when}")">
+                <img src="@src" alt="@($"{name}, placed by {placer}")" loading="lazy" decoding="async" />
+            </a>
+        }
+        else
+        {
+            <p class="thumb-tile">
+                <span class="icon" aria-hidden="true">attach_file</span>
+                @name is @Placements.Size(file.SizeBytes), larger than is shown here.
+                <a href="@MediaModel.ImageUrl(Url, Model.Project, Model.Conversation, file, large: true)" target="_blank" rel="noopener">Show anyway</a>
+            </p>
+        }
+    }
+    else
+    {
+        <a class="file-tile" target="_top" href="@Url.Page("/Projects/Files", new { project = Model.Project, conversation = Model.Conversation })"
+           title="Open it from this conversation's files">
+            <span class="icon" aria-hidden="true">description</span>
+            <span>@name</span>
+        </a>
+    }
+    <figcaption>
+        <strong>@placer</strong> placed @name · @Placements.Size(file.SizeBytes) · <span class="stamp">@when</span>
+        @if (Model.InMedia)
+        {
+            <span> · <a target="_top" href="@Url.Page("/Conversations/Detail", null, new { project = Model.Project, id = Model.Conversation }, null, null, MediaModel.Anchor(file))">Show in conversation</a></span>
+        }
+    </figcaption>
+</figure>

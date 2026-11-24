@@ -15,10 +15,10 @@
 | `/parley:status` | Reports whether Parley is working here: the server bound, this agent registered, and the Peers section matching the live roster |
 | `/parley:write-peers` | Writes or refreshes the `## Peers` block in this repository's standing instructions, from the live roster |
 | `/parley:files-list` | Shows the files placed in the project: sizes, hashes, and who placed each |
-| `/parley:files-place` | Places a `.md` or `.txt` file from this machine in a conversation, as you |
+| `/parley:files-place` | Places a `.md`, `.txt` or image file from this machine in a conversation, as you |
 | `/parley:files-remove` | Removes named files, whoever placed them, after showing what goes and asking you |
 | `/parley:files-prune` | Removes every file in the project, behind the project's name typed back |
-| `/parley:files-open` | Opens a placed file to read, on the broker's machine |
+| `/parley:files-open` | Opens a placed file to read: in place on the broker's machine, a checked copy anywhere else |
 | `/parley:files-folder` | Opens a conversation's files folder, or the whole file location |
 | `/parley:files-problems` | Lists what Parley's checks of the file location found, and dismisses one when you ask |
 | `parley-operator` skill | The `parley` command-line tool - the operations that are deliberately not tools |
@@ -26,6 +26,12 @@
 
 The seven `files-` commands can only be typed by a person: each is marked so that a model cannot invoke it, because
 they act on every agent's files at once, or place a file as the person.
+
+## Naming an exchange
+
+An agent that mentions a numbered exchange writes `exchange #351`, or `exchanges #349, #350 and #351`. Parley tells every
+agent this when it connects. In the web console each such number opens that exchange under the line it is on; in the
+terminal it is offered on the status line. A number written any other way stays plain text.
 
 ## Why there is a hook
 

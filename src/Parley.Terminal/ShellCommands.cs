@@ -259,6 +259,26 @@ internal sealed partial class Shell : IKeyTable<Shell>
             Chord: Key.Space,
             Says: s => s.Room.SelectedUnstarted is not null ? StartFromRoomTitle : IncludeTitle),
 
+        // **Asking which of the person's questions are still open** (owner, 2026-11-06), the console's Inbox button. On the
+        // conversations list and in the room, where the questions are; needs the seat, because it asks as the person.
+        new(KeyContext.Conversations, StillOpenKey, StillOpenTitle, s => s.AskWhichAreStillOpen(), s => s.Held is not null, Owing.Requesting),
+        new(KeyContext.Room, StillOpenKey, StillOpenTitle, s => s.AskWhichAreStillOpen(), s => s.Held is not null, Owing.Requesting),
+
+        // **The Inbox** (spec 036): what waits on the person, what is in flight, and what closed, as the console's views.
+        // Reading needs no seat; a follow-up from it does, and says so.
+        new(KeyContext.Conversations, InboxKey, InboxTitle, s => s.OpenInbox(), s => s.Current is not null),
+        new(KeyContext.Room, InboxKey, InboxTitle, s => s.OpenInbox(), s => s.Current is not null),
+
+        // **An exchange a message names** ("exchange #351", spec 036): live only on a message that names one, and named for
+        // the exchange it opens, so the status line is how a reference is told from plain text here.
+        new(
+            KeyContext.Transcript,
+            ReferenceKey,
+            ReferenceTitle,
+            s => s.OpenReferences(),
+            s => s.ReferencesUnder.Count > 0,
+            Says: s => s.ReferenceSays),
+
         // **Confirmed roadmaps.** Enter on one opens it; named, since a key the surface takes and does not name is one
         // nobody finds.
         new(KeyContext.Plans, default, PlansRegion.OpenTitle, s => s.OpenSelectedPlan(), s => s.Plans.Selected is not null, Chord: Key.Enter),
@@ -310,6 +330,7 @@ internal sealed partial class Shell : IKeyTable<Shell>
             s => s.Conversations.Selected is not null,
             Says: s => s.Conversations.Selected is { Archived: true } ? UnarchiveTitle : ArchiveTitle),
         new(KeyContext.Conversations, 'l', Files.ConversationTitle, s => s.ShowConversationFiles(), s => s.Conversations.Selected is not null),
+        new(KeyContext.Conversations, 'e', Media.Title, s => s.ShowConversationMedia(), s => s.Conversations.Selected is not null),
         new(KeyContext.Conversations, 'f', Closing.Title, s => s.CloseSelected(), s => s.Conversations.Selected is not null),
         new(KeyContext.Conversations, 'd', Destroying.Title, s => s.DestroySelected(), s => s.Conversations.Selected is not null),
 
@@ -328,6 +349,9 @@ internal sealed partial class Shell : IKeyTable<Shell>
         new(KeyContext.Transcript, 'b', SpinningOff.Title, s => s.SpinOff(), s => s.Held is not null && s.Transcript.Open is not null),
         new(KeyContext.Transcript, 'v', Moving.Title, s => s.MoveEntries(), s => s.Transcript.Open is not null),
         new(KeyContext.Transcript, 'l', Shell.RelatedTitle, s => s.GoToRelated(), s => s.Transcript.Open is not null),
+
+        // Reading only, so it needs no seat: the images and files placed in what is open (SPEC.md §9.5).
+        new(KeyContext.Transcript, 'e', Media.Title, s => s.ShowOpenMedia(), s => s.Transcript.Open is not null),
         new(KeyContext.Transcript, 'k', Participation.RequestTitle, s => s.SendRequest(), s => s.Held is not null, Owing.Requesting),
 
         // **Copying does not need a seat**: reading a conversation and taking a copy of what you read are the same act,

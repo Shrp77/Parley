@@ -91,6 +91,19 @@ public sealed class OwnershipLineTests : IDisposable
     }
 
     [Fact]
+    public async Task A_workspace_off_this_machine_is_said_to_be_off_it()
+    {
+        // Without the guard a workspace on a share was told "there is no repository there. Re-enrol it if it moved", which
+        // sends the person looking for a folder that never moved (review, lens 3 round 31).
+        var said = await OwnershipLine.WriteAsync(
+            $@"\\192.0.2.{Random.Shared.Next(2, 254)}\share\orders", null, Here(), "Invoicing.", TestContext.Current.CancellationToken);
+
+        Assert.NotNull(said);
+        Assert.Contains("not a folder on this machine. Nothing has been written", said, StringComparison.Ordinal);
+        Assert.DoesNotContain("no repository there", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_line_can_be_taken_back_out()
     {
         // Declining is not the same as writing an empty line, and an agent with no line

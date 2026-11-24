@@ -1,6 +1,6 @@
 ﻿# Parley Protocol Specification
 
-**Version:** 0.13
+**Version:** 0.20
 **Status:** Unstable. Breaking changes expected before 1.0.
 **License:** Apache-2.0
 
@@ -53,7 +53,9 @@ language they are written in.
    do its part — the contract, the interface, the package and version, the result — and not
    everything the sender knows. A file is not an exception: its bytes go to disk in the
    fetching agent's repository and never into a model's context, and what crosses about a file
-   — its name, size and content hash, in lists and notices — is bounded like any other text.
+   — its name, size and content hash, in lists and notices — is bounded like any other text. So is what an
+   agent reads of the project's past, an exchange by number or the matches of a search (§10.1): it is bounded, framed as a
+   record and never as mail, and shown to the person who runs the deployment.
 3. **The protocol is the product; the transport is an implementation detail.** Today's
    gRPC over a loopback socket may be replaced by HTTP, pipes, or a vendor-native mechanism. The message
    discipline, exchange state machine, and rules of engagement are what carry value.
@@ -96,6 +98,8 @@ language they are written in.
     asking another, that one asking a third, a question coming back to the first. The broker
     attaches the conversation; an agent does not choose it (principle 2.4). Only the person may
     move an exchange to another conversation (§5.0), and everything it causes from then on goes there.
+    - An agent writing because of work in one conversation writes in that conversation, even to an
+      agent it also has an older open exchange with elsewhere (§5.0).
     - An agent holding requests from one conversation sends every request it makes into that
       conversation, naming nothing.
     - An agent holding requests from several conversations names which one each new request
@@ -146,7 +150,7 @@ language they are written in.
 | **Conversation** | Every exchange belonging to one line of work: the request that began it and everything that request caused. Started only by a person, by an agent holding no request, or by the facilitator (principle 2.10). See §5.0. |
 | **Pair** | An unordered set of exactly two agents. Identifies traffic between them; see §7.1. |
 | **File location** | The place beside a broker's store where placed files live, one folder per conversation that has files. See §9.5. |
-| **Shared file** | A `.md` or `.txt` file in a conversation's folder, placed by an agent or by the person; only its placing agent or the person removes it. Never changed once placed: a new version is a new file. Fetched onto disk, never into a model's context. |
+| **Shared file** | A `.md`, `.txt` or image file in a conversation's folder, placed by an agent or by the person; only its placing agent or the person removes it. Never changed once placed: a new version is a new file. Fetched onto disk; Parley never puts one into a model's context, and a model that opens one reads it (§9.5). |
 | **Content hash** | The SHA-256 of a shared file's content, computed by the broker as it arrives. The same hash is the same content; it attests nothing about who wrote it. |
 | **Gone notice** | What an agent that fetched a file finds in its inbox when the file later goes, and what its placer finds too when it is found missing or tampered with — taken or changed on disk by something other than Parley. Not a message: it opens nothing and owes nothing. See §9.5. |
 | **Quarantine** | Where a sweep moves a placed file found tampered with: beside the file location, the person's, and never served. See §9.5. |
@@ -530,6 +534,20 @@ holds — a Request it has received and not yet sent a Result for:
 
 A Clarify or a Result always takes its exchange's conversation, as it stands when it is written.
 
+**So a Clarify is only for what its own exchange asked.** An agent with an exchange still open
+elsewhere can reach the same agent through it, and the words would land in that older conversation.
+Anything that work in this conversation prompts is a Request in this conversation, however closely
+the older exchange touched the subject. It is sent before the agent's Result, while the agent still
+holds the request it belongs to, naming the conversation if it holds requests from several.
+
+**The broker cannot enforce that**, because it sees who may write on an exchange and not what prompted
+the words. So what happened is shown instead. `export` reports each Request or Clarify an agent wrote to
+another agent in a different conversation when the last message it sent or received before that was in
+this one. It gives names and numbers, no text, and places them after that last message, so a person
+reading this conversation can follow the line of work to where it went. It describes the order
+of messages and claims nothing about why: an agent may have moved on to unrelated work. A message to or
+from the person, or the facilitator, is not reported, since they are not an agent's line of work moving.
+
 **Only the person moves an exchange** (`move_exchanges`, §10.2). A topic can turn out not to belong
 where it was raised, and the person is the one who follows the whole line of work, so the person may
 take exchanges out of a conversation into a new one or an open one. What this section refuses an agent
@@ -552,8 +570,9 @@ operation moves an exchange or names where one goes.
   from where its exchanges are now, so the rules above apply to the result, and one left holding
   requests in two conversations names which, as any such agent does.
 - **Neither conversation hides it.** The broker records each move (§9.2): which exchanges, from where, to
-  where, when and by whom, with no message text. Both conversations show it where the entries were, and
-  `export` carries it. An export taken before a move no longer matches, and the record is what explains why.
+  where, when and by whom, and where it falls among the messages, with no message text. Both conversations show it where the entries were, and
+  `export` carries which exchanges, where, when and by whom; where it falls is the broker's own, used to tell where a moved
+  message was written. An export taken before a move no longer matches, and the record is what explains why.
 - **Membership follows** (below). A poll running in either conversation is voided, as new activity
   voids one, because who would be asked has changed.
 - **Files stay.** A placed file keeps its conversation (§9.5), so a file named in a moved exchange is
@@ -573,7 +592,10 @@ moves stay on record.
 **A conversation may have a parent** (`spin_off`, §10.2). A person who wants a focused conversation about
 something raised in another starts one from it, and the broker records the link before anything is sent,
 so a Request can never arrive in a spin-off with no link behind it. If that Request reaches nobody, the link is taken
-back, so no record says a conversation was started when nothing was said in it. A conversation made by a move has its
+back, so no record says a conversation was started when nothing was said in it. **A surface opens a spin-off's first Request
+with a line naming both conversations and, when a message is quoted, saying it is there to discuss that entry.** A quote alone
+tells an agent nothing, and it has no access to the parent. The surface tells the person this before they send, since the line
+goes out under their name. A conversation made by a move has its
 source as its parent too. A conversation has at most one parent and any number of children, to any depth.
 The link is the person's map and nothing else: it gives no agent any access to the other conversation, no
 agent operation reads or sets it, and nothing cascades along it. Closing or destroying one conversation
@@ -603,13 +625,14 @@ placed a file in it. After a move, an agent with neither left in a conversation 
 `orders` asks `billing` to stop recomputing a price; `billing` asks `inventory` which price
 it reports; `inventory` asks `orders` a question back. Three participants, one conversation.
 
-**The person running the deployment reads a conversation whole; a participant reads its own
-exchanges.** §10.2 gives the person every message in a conversation, in order, under its
-author's identity. §10.1 gives a participant no way to read exchanges it is not party to. The
-difference is principle 2.2 applied to a conversation: each agent receives what it needs for
-its part, through requests addressed to it, and not every other agent's traffic. What a
-participant needs from somebody else's exchange reaches it the ordinary way — in a Result,
-from the agent that holds it.
+**The person running the deployment reads a conversation whole; a participant is sent its own
+exchanges, and may ask for any other by number.** §10.2 gives the person every message in a
+conversation, in order, under its author's identity. A participant is sent only what is addressed
+to it, which is principle 2.2 applied to a conversation: each agent receives what it needs for its
+part, through requests addressed to it, and not every other agent's traffic. It may read any
+exchange of its project by number, or find one by words, as a framed and bounded record the person
+can see it read (§5.8, §10.1); nothing is pushed to it. What a participant needs from somebody
+else's exchange still reaches it the ordinary way, in a Result, from the agent that holds it.
 
 **A conversation ends by consensus or by the person, and in no other way** (principle 2.8).
 Nothing closes a conversation for being quiet.
@@ -690,7 +713,8 @@ that participant a Request in the same conversation (§5.0) and carries on with 
 still open. Clarify exists so that asking the requester back does not open a second exchange
 waiting on the first: one edge flips instead of two pointing at each other, and the person
 reading the conversation sees one exchange going back and forth rather than two tangled into a
-loop (§7.2).
+loop (§7.2). The requester of an older exchange is no exception when the need comes from other
+work: that is a Request, in the conversation of that work (§5.0).
 
 **Depth is not capped.** Clarification is how two participants converge, and a limit that stops
 them converging before they have is the arbitrary cut-off principle 2.8 rules out. Each exchange is
@@ -776,7 +800,9 @@ it, which a message expecting nothing back never told anybody (principle 2.7).
 running is given a turn, by the machine that holds it (§4). What the sender is told alongside
 the exchange identifier is what became of the receiver: started, already running, already being
 seen to, not reachable from here, **open outside Parley** (§11.7) — it reads the message when somebody
-prompts it — or **with the person**. **None of these is a refusal.** The
+prompts it — **left running** by a node that is gone (§11.1) — it is started for the message once that process
+ends — **frozen** by the person (§14) — it reads the message once it is unfrozen — or **with the
+person**. **None of these is a refusal.** The
 Request is stored before any of it is decided, and an unreachable receiver is flagged to the person
 running the deployment rather than written off (principle 2.8).
 
@@ -802,6 +828,9 @@ again for what it left.
 - **An outstanding asking MUST expire.** A wake that never leads to a collection — a node that
   has gone, a launch that fails — would otherwise silence waking for that agent for good. Expiry
   ends the asking, not the Request: the Request stays open and owed.
+- **A stop, and the end of the process an asking was made of, end the asking too** (§11.1): a
+  person's stop forgets what was asked before it, and a turn asked of a process that ends before
+  taking it is asked for again as a start when what it was asked for is still waiting.
 
 **A Request identical to one still open between the same two participants is refused** (§7.1's
 distinctness), and the sender is handed the exchange already carrying it. Once that exchange has
@@ -870,6 +899,19 @@ exchanges the person's words settled:
   have, and changes nothing else: no message, and the depth does not move. The agent then answers
   it with an ordinary Result.
 
+**Every place a person writes a message to an agent behaves the same.** The rule is drawn by what the words
+become, not by where the box is: text that becomes one of the person's messages (a Request, a reply to a question, a
+Clarify asking back, or a Result on an agent's Request to them) is written in a message box, and every message box on a
+surface takes the same keys, the same attachments (a file pasted, dropped or picked is placed in the conversation and
+named in the message, §9.5; pasted text past the surface's threshold becomes a file), and keeps the words and files a
+refused send leaves, so nothing is typed or attached twice, with one exception: a conversation that has not started has
+nowhere to hold a file, so the words go first, and when nobody takes them the files are not placed and the surface says to
+attach them again. A surface that can also keeps a message box's unsent
+words where the person left them, through a reload or a visit elsewhere, until they are sent. A new place that takes such text is a message box by this
+rule, without being listed. Text that names or describes something is not a message, even when an agent later reads
+it: a conversation's or project's name, an ownership line, a roadmap's text, a reason given when closing. Such a box
+takes no attachments.
+
 **A reply does not close the question; the agent does.** After a reply on its exchange the agent decides
 whether it was enough. If it was, it sends the Result. If it was not, it sends another Clarify. The broker
 closes nothing on the agent's behalf (principle 2.5), and no surface does either.
@@ -902,6 +944,41 @@ deciding for that agent what its work came to, and no agent decides anything for
 2.5). A person is different because a person does not answer
 through a tool that names an exchange, and the agent that asked is the only participant able to say
 its question is answered.
+
+**A person may ask which questions are still open.** A question may have been answered somewhere
+the agent does not see, or stopped mattering. A surface may offer to ask: it sends each agent one
+Request from the person in each conversation where that agent has questions waiting on the person,
+listing them by exchange, and the words are fixed and shown to the person before they send them. It
+is an ordinary Request, so the agent answers it, and a question the agent judges settled it names in
+`settles` as above. The surface closes nothing and reads nothing from the reply; the facilitator's
+questions are not asked about, since it receives nobody's work. An agent whose earlier ask is still
+open is not asked again, unless a question has arrived since that the earlier ask did not list. The
+surface then lists each agent asked and where its answer stands, read from the conversation: waiting
+for its reply, asked something back, replied, or not sent, with how many of its questions are closed.
+
+**A surface's count of what waits on the person counts these questions**: every open exchange an
+agent is waiting on the person for, from the wait-for graph (§10.2 `waiting()`), not the mail not yet
+collected. It is the number of questions the person would find, and it stays until each is answered
+or settled.
+
+**What a surface shows the person follows each exchange after it is answered.** Beside what waits on the
+person, a surface may show what is *in flight*: every open exchange on which the person waits on an agent, because
+the person sent a Request or handed the turn back with a reply. It may also show what *closed*: every exchange the
+person sent or received a message on that closed within a window the person chooses (seven days unless they say
+otherwise), with how it ended. Which of the three an exchange is in is read each time from the wait-for graph and the
+exchange's own state, so it is in exactly one, and none of it is stored: no surface keeps a record of what the person
+has seen. Showing what waits on the person may take delivery of everything waiting for them, as showing a message always
+does, since an inbox has no narrower drain; showing what is in flight or closed collects nothing. An exchange in flight may say where the agent stands, from what the
+registry and the flags report (§10.2 `registry()`, `flags()`); it says that a turn is running, never that the agent is
+working on the person's message. From any of them the person may follow up, which is a new Request to that agent in
+that conversation and never reopens the exchange; the facilitator is not followed up, since it receives nobody's work.
+
+**A message names a numbered exchange in one form**: `exchange #351`, or for several `exchanges #349, #350 and #351`
+(separated by commas, "and" or "or", in any letter case). Every agent is told the form when it connects. A surface may
+draw each such number as something the person can open, showing that exchange where it is mentioned, found by
+`locate_exchange()` (§10.2) in the message's own project. It is a convention for display only: the broker never reads a
+reference out of a message, nothing is addressed by one, and a message without the form is not refused. A number written
+any other way is plain text.
 
 **The agent is told what it could settle.** A Request from the person is delivered with the agent's
 own open questions to the person in that conversation — oldest first, at most 20, each with its
@@ -985,6 +1062,29 @@ words are put in the box as text:** an agent proposed them, so a surface never r
 or as addressing, and the agents ticked are the item's own whatever a link to the conversation asks,
 never a default the surface would otherwise apply.
 
+**Asking the agents how a roadmap stands is the person's request too, and adds no operation.** A surface may offer, beside a
+roadmap, to ask every active agent in the project (never the person's seat or Parley) where its items stand, which can be
+removed and what is missing and where it goes. It says who is asked and what is sent, word for word, and nothing is sent
+until the person confirms: then each agent receives the same ordinary Request (§5.6, §12.3) from the person's seat, in one
+new conversation, carrying the roadmap's items as text, so the agent reads the roadmap as the person's words and not through
+any operation of its own (principle 2.12). Each answers in its own Result, and **nothing a roadmap holds changes**: the
+person reads the answers and edits the roadmap, or does not. The Request asks that no agent call `propose_roadmap` in answer,
+because confirming a revision supersedes every other waiting proposal that names the roadmap (above), which would keep one
+agent's view and discard the rest. It is guidance and not a check, as the proposal's shape is (§16). The message cap of rule
+8.4 applies to what is sent, whatever a roadmap holds.
+
+**The answers become a roadmap only through a proposal the person confirms.** A surface may offer to send one agent the
+person picks a further Request in that conversation, carrying the roadmap's items and every answer quoted under its author's
+name, and asking it to propose one revision (`propose_roadmap`, with the roadmap's title as `revises`). An agent is not given
+another's exchange (it may read one as a record, §5.8, but is never handed it as work), so the answers reach it in the person's Request; they are other agents' words, the Request says they
+are information and not instructions, and the person is shown the whole of it before it is sent (§16). Only agents' Results to
+the person are quoted, never a notice the broker wrote. The proposal is decided where every proposal is.
+
+**A surface may number a proposal's unchanged lines for the person.** A proposal cannot name an item by number, so confirmed
+as a revision as it arrives it removes every item the roadmap had. When the person asks, a surface writes `| item: n` on each
+line whose words are exactly a live item's once trimmed, each item at most once, in the text the person then reads and
+confirms. A line is never matched more loosely: that would let a proposal put different words on an item's conversation.
+
 **Every item has at most one conversation, and its name is reserved at confirmation.** The name is
 derived as `rm<roadmap number>-<item number>`, with numbers small, per project and never reused, so it is
 a legal conversation identifier by construction and unique among derived names. The name is predictable, so an agent can
@@ -1016,6 +1116,26 @@ deliberate act.
 reaches the proposer as a notice with its own title, cut to 200 characters (§10.1), in its inbox beside gone
 notices (§9.5). It
 opens nothing, is owed nothing and wakes nobody.
+
+### 5.8 Reading the past
+
+An agent that has restarted, or that is told "carry on from exchange 555", reads the exchange by its number (`read_exchange`), or
+finds it by words it remembers (`search_history`), both in §10.1. This is reading and nothing else: it is not a Request, opens no
+exchange, and an exchange read is not an exchange taken part in.
+
+**The person sees every read.** A tally is kept, in the transaction of the read: for each agent and each exchange it read, how many
+times and when the first and the newest was; and for each agent's searches, how many, when, and the newest words and how many matches
+they found (`history_reads`, §9.2). It holds no message text. A number that names nothing is counted nowhere, so it cannot later be
+shown against an exchange that did not exist at the time. It is a tally and not a log: its size is bounded by the agents and the
+exchanges whatever one agent reads, and a count is the count. The
+console, the terminal and the text export show it where the person already reads the exchange, as "Read by `x` at t" beneath its
+first message, with one entry for each reader and how often, at most five readers named and the rest counted. Beside each conversation
+they show one line for each agent that searched: how many searches it has made and its newest words and matches, at most eight lines and
+a last line counting the agents past those.
+A search belongs to no one exchange, and a reader is shown once however much it reads, so no agent can push its own reads out of
+view. No agent can read these records, and a record is not a message, a participant or a debt, so it moves nothing.
+Retiring an agent keeps its tally. Purging it removes it, and so does retention: a row an agent has not added to for longer than the
+age cap is removed (§9.4).
 
 ## 6. Exchange state machine
 
@@ -1290,7 +1410,7 @@ in part.
    name of isolation is how a request for work turns into a round of questions.
 4. **A soft limit and a hard limit.** A message of more than 16,000 characters is long: it is delivered
    whole, and its sender is told. A message of more than 512,000 characters is refused, enforced by the
-   broker. Truncation is a protocol error, not a warning. Both count the message as stored.
+   broker. Truncation is a protocol error, not a warning. Both count the message as stored, in UTF-16 units (§9.3).
 
    **The numbers are the owner's decision, and a recorded reduction in this rule's protection.** What
    the hard limit defends is how much of one agent's context can be poured into another's in a single
@@ -1493,6 +1613,18 @@ CREATE TABLE agents (
   -- When its node was first asked to refresh it after a line accepted automatically (§11.1), kept here for the
   -- same reason. Set by tr_refreshing_marks_the_agent.
   refreshed_utc   TEXT    CHECK (refreshed_utc IS NULL OR unixepoch(refreshed_utc) IS NOT NULL),
+  -- When a person froze this agent (§14); NULL when it is not frozen. Nothing starts a frozen agent: not new
+  -- work, not a person's Start or Restart. Only a person writes it. `unfreeze` clears it; the broker's next start lets
+  -- it lapse unless `keep_frozen`, and clears it once the start the lapse owes has been asked for, or a person's
+  -- `kill` of the left process that start waited on has settled it (§14). On the
+  -- agent's row rather than a table of its own, so a purge removes it with
+  -- the row and a rename carries it to the new name.
+  frozen_utc        TEXT    CHECK (frozen_utc IS NULL OR unixepoch(frozen_utc) IS NOT NULL),
+  -- The run of the broker the person froze it under (§14): a number the broker gives itself at every start, so a later start,
+  -- which a logon, a reboot, an install or a crash brings, lets the freeze lapse unless `keep_frozen`.
+  frozen_run      TEXT    CHECK (frozen_run IS NULL OR (frozen_utc IS NOT NULL AND length(frozen_run) = 36)),
+  -- The person's choice that this freeze outlasts a start of the broker; cleared with the freeze.
+  keep_frozen     INTEGER NOT NULL DEFAULT 0 CHECK (keep_frozen IN (0, 1) AND (keep_frozen = 0 OR frozen_utc IS NOT NULL)),
 
   CHECK (adapter_config IS NULL
          OR (json_valid(adapter_config) AND length(adapter_config) <= 4000)),
@@ -2192,12 +2324,14 @@ CREATE TABLE shared_files (
   -- Windows and macOS.
   name_key        TEXT    NOT NULL CHECK (name_key = upper(name)),
   -- As placed, after renaming. Made of letters A to Z, digits, '.', '_' and '-', which every disk on
-  -- the three platforms accepts and which carries no text of the placer's beyond a word, ending .md
-  -- or .txt so that nothing placed has a handler that runs a program (§13). The folder, a separator
+  -- the three platforms accepts and which carries no text of the placer's beyond a word, ending in an
+  -- extension no handler runs a program for (§13). The folder, a separator
   -- and the name together are bounded by tr_shared_file_path_fits.
   name            TEXT    NOT NULL
                   CHECK (length(name) BETWEEN 4 AND 254
-                         AND (lower(name) GLOB '*.md' OR lower(name) GLOB '*.txt')
+                         AND (lower(name) GLOB '*.md' OR lower(name) GLOB '*.txt'
+                              OR lower(name) GLOB '*.png' OR lower(name) GLOB '*.jpg' OR lower(name) GLOB '*.jpeg'
+                              OR lower(name) GLOB '*.gif' OR lower(name) GLOB '*.webp')
                          AND name NOT GLOB '*[^A-Za-z0-9._-]*'
                          AND name NOT GLOB '.*'
                          AND upper(substr(name, 1, instr(name, '.') - 1)) NOT IN
@@ -2775,6 +2909,10 @@ CREATE TABLE conversation_moves (
   moved_utc     TEXT    NOT NULL CHECK (unixepoch(moved_utc) IS NOT NULL),
   first_message INTEGER,
   messages      INTEGER NOT NULL CHECK (messages >= 0),
+  -- The newest message id when the move was made: a message was written before the move exactly when its id is at most
+  -- this, which is how an export tells where a moved message was written. Null when there were no messages. A move
+  -- recorded before schema 8 has the newest message at or before its time instead, which a tie can misplace.
+  last_message  INTEGER,
   CHECK (source <> destination)
 ) STRICT;
 
@@ -2787,6 +2925,8 @@ CREATE TABLE conversation_move_exchanges (
   exchange_id INTEGER NOT NULL,
   PRIMARY KEY (move_id, exchange_id)
 ) STRICT;
+
+CREATE INDEX ix_conversation_move_exchanges_exchange ON conversation_move_exchanges(exchange_id);
 
 -- What one agent is told about one open exchange that moved. Not a message: it opens nothing, is owed
 -- nothing and wakes nobody, as a roadmap notice does not. Both names are bounded by §9.2's rule for a name.
@@ -2801,6 +2941,48 @@ CREATE TABLE move_notices (
 ) STRICT;
 
 CREATE INDEX ix_move_notices_collection ON move_notices(agent, delivered_utc);
+
+-- What the person sees of an agent reading the past (§5.8, §10.1). Never read by an agent. A tally and not a log: one row for each
+-- agent and each exchange it read, and one for each agent's searches, with how many times and when the first and the newest was.
+-- Written in the transaction of the read. It holds no message text. Its size is bounded by the agents and the exchanges whatever
+-- one agent reads. `words` is the newest search's words, bounded and with none of the control or line-separating characters;
+-- this check is a floor, and the broker refuses a wider set (§13) before anything is stored.
+CREATE TABLE history_reads (
+  reader       TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
+  kind         TEXT    NOT NULL CHECK (kind IN ('exchange', 'search')),
+  exchange_id  INTEGER NOT NULL CHECK (exchange_id >= 0),
+  words        TEXT    CHECK (words IS NULL OR (length(words) BETWEEN 1 AND 200
+                         AND words NOT GLOB '*[' ||
+                         char(1) || '-' || char(31) || char(127) || '-' || char(159) || char(173) || '-' || char(173) ||
+                         char(8203) || '-' || char(8207) || char(8232) || '-' || char(8238) ||
+                         char(8288) || '-' || char(8292) || char(8294) || '-' || char(8303) ||
+                         char(65279) || '-' || char(65279) || ']*')),
+  matches      INTEGER CHECK (matches IS NULL OR matches >= 0),
+  total        INTEGER NOT NULL CHECK (total >= 1),
+  first_utc    TEXT    NOT NULL CHECK (unixepoch(first_utc) IS NOT NULL),
+  last_utc     TEXT    NOT NULL CHECK (unixepoch(last_utc) IS NOT NULL),
+  PRIMARY KEY (reader, kind, exchange_id),
+  CHECK ((kind = 'exchange' AND exchange_id > 0 AND words IS NULL AND matches IS NULL)
+      OR (kind = 'search'   AND exchange_id = 0 AND words IS NOT NULL AND matches IS NOT NULL))
+) STRICT;
+
+CREATE INDEX ix_history_reads_exchange ON history_reads(exchange_id);
+CREATE INDEX ix_history_reads_last ON history_reads(last_utc);
+
+-- How the messages, invocations and exchanges are read (migration 010). Each is a lookup a person's page or an agent's read makes
+-- on every use, which without it walked every row of the project: one exchange's messages, one conversation's first and last,
+-- one agent's, what is waiting for an agent, the newest turn of an agent, the exchanges an agent owes, and the exchanges of a
+-- conversation. None changes a row.
+CREATE INDEX ix_messages_exchange                ON messages(exchange_id, id);
+CREATE INDEX ix_messages_conversation            ON messages(conversation_id, id);
+CREATE INDEX ix_messages_conversation_time       ON messages(conversation_id, created_utc);
+CREATE INDEX ix_messages_conversation_from_time  ON messages(conversation_id, from_agent, created_utc);
+CREATE INDEX ix_messages_from                    ON messages(from_agent, id);
+CREATE INDEX ix_messages_to                      ON messages(to_agent, id);
+CREATE INDEX ix_messages_undelivered             ON messages(to_agent, id) WHERE delivered_utc IS NULL;
+CREATE INDEX ix_invocations_agent_id             ON invocations(agent, id);
+CREATE INDEX ix_exchanges_owed_by                ON exchanges(owed_by);
+CREATE INDEX ix_exchanges_conversation           ON exchanges(conversation_id, state, closed_utc);
 
 -- Held here so a code path cannot route around it (§9.3). The broker refuses these first, with a sentence.
 CREATE TRIGGER tr_a_moved_exchange_may_go_there
@@ -2886,7 +3068,19 @@ that needed it; an enumeration written as prose has already decayed.
   otherwise see two unrelated pairs as one.
 - **Message size limit.** Terseness is the context-poisoning defence (rule 8.4), so 512,000
   characters is a constraint rather than a guideline. A refusal is counted and every message's
-  length recorded (§10.2), because a limit nobody measures cannot be judged.
+  length recorded (§10.2), because a limit nobody measures cannot be judged. **A character is a
+  UTF-16 unit**, which is what every surface and the broker count, so text
+  of astral characters (most emoji) counts two each. The broker refuses a longer message before the
+  store is asked, in one place every writer shares. The schema holds the same limit as a second
+  wall but counts Unicode code points, which SQLite can do and a UTF-16 count it cannot, so its
+  bound is never tighter than the broker's; the recorded lengths (`message_lengths`) are
+  therefore in code points, and differ from the units counted for text with astral characters.
+- **A conversation's identifier is held by the broker as well as the schema.** The schema's check
+  reads a text as a C string, so an identifier of a letter, a NUL and anything after it passed it
+  whole; the identifier is written into the header of every envelope its messages arrive in (§13),
+  so the broker refuses any that is not 1 to 64 letters, digits, dots, underscores or hyphens with
+  no two dots together, and the envelope writes a placeholder for one that is not (a row from
+  before this held). The same holds for a payload: it is read one way (§13).
 - **Every message names its responder.** §11.3 is a MUST on every message, and the envelope in
   §13 renders responder identity on every delivery, so a nullable column would leave the envelope
   with a hole the schema permitted. The one message the broker writes itself, a `closed` Result,
@@ -2965,8 +3159,8 @@ design explicitly is not — and the file already carries the full text of every
 between participants, restricted to its owner for that reason (§9.1). A log that grows forever
 grows the blast radius of a leaked database forever with it.
 
-Retention is nonetheless **configurable**, because the operator uses in §10.2 are real and the
-isolation guarantee does not depend on the log being short. Two rules prune, and a floor overrides
+Retention is nonetheless **configurable**, because the operator uses in §10.2 are real and
+what an agent may read of the past does not depend on the log being short. Two rules prune, and a floor overrides
 both.
 
 A move counts as activity in both conversations for the idle rule, so entries moved somewhere new are
@@ -2997,6 +3191,14 @@ rather than an oversight: nothing ends a piece of work but its participants or i
 §6. An exchange that stops moving is flagged, and the person running the deployment closes the
 conversation it sits in, at which point the floor stops applying and the ordinary rules resume. A
 deployment that never closes flagged work keeps its text, and is shown that it has not.
+
+**Records of reads** (§5.8) are not messages and none of the floors means anything for them. A row of the tally an
+agent has not added to for longer than the age cap is removed in the same pass that removes decided notices, whether or not the
+messages it was about are still held (work still owed is kept without limit; its tally is not). The table is bounded by the agents
+and the exchanges however much one agent reads. A row for an exchange that retention removed stays until then, holding only a reader's name
+and numbers. **A destroy removes the rows of the exchanges it deletes, in the same act**: destroy is the person's erase, and a
+record of what was read of an exchange that is gone would outlive the thing it described. A purge removes an agent's own rows
+by the agent's cascade.
 
 **The idle rule.** Once every exchange in a conversation is closed and nothing has been added to it
 for the configured idle period, the line of work is over and its messages are prunable.
@@ -3074,14 +3276,34 @@ not delete when it ran (§14) among them, for which the act logs what it left an
 A destroy's or a purge's delete finishes once its rows have gone, whether or
 not the operator who asked is still there.
 
-**A name ends in `.md` or `.txt`.** Code travels as text — `PriceSnapshot.cs.txt` — so nothing placed
-in a location has a handler that runs a program when a person opens it (§13). Only the name is
-checked; the bytes are never inspected. A name is made of `A`–`Z`, `a`–`z`, `0`–`9`, `.`, `_` and `-`
+**A name ends in `.md`, `.txt`, `.png`, `.jpg`, `.jpeg`, `.gif` or `.webp`.** Code travels as text — `PriceSnapshot.cs.txt` — so nothing placed
+in a location has a handler that runs a program when a person opens it (§13). SVG is not among them, because it can carry
+scripts. Placement checks only the name, and the broker never inspects the bytes.
+
+**Anyone may place an image, and that is a recorded reduction in the control.** A model that opens an image reads any words in
+it, so an image from one agent can carry instructions to another, as a message can, in a form the person reading the
+transcript does not see. Such words are inert data like any payload (§13). A name is made of `A`–`Z`, `a`–`z`, `0`–`9`, `.`, `_` and `-`
 and nothing else, does not begin with a dot, and is not a reserved device name (`CON`, `PRN`, `AUX`,
 `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`, with or without an extension). The folder, a separator and the
 name together are at most 255 characters, the location's own path not counted. Names are compared by a
 key that is the name in upper case, so `Readme.md` and `README.md` are one file, as they are on the
 disks of Windows and macOS.
+
+**An operator surface shows a placed image in its conversation, and that is a second recorded reduction in the control.**
+A person who asks an agent what something looks like should see the answer where they asked, so a surface draws each
+placed image in the conversation's transcript at its placement time, beside the messages, opens it full size, and lists a
+conversation's images and other files in a Media view, newest first. A file's place in the transcript comes from its
+placement record, never from a message's words. A removed file is no longer shown, because no record of it is kept.
+What still holds: a model that opens an image reads any words in it, and showing the image to the person changes nothing
+about that. What is new: another participant's bytes reach the person's browser. What answers it: a surface serves only a
+name ending in an image extension, only from the conversation it is showing, read through `read_shared_file` (§10.2),
+which records nothing; it checks that the leading bytes are the signature of the format the name says (PNG, JPEG, GIF or
+WebP) and serves nothing when they are not, so a file named `.png` that holds a page or a script never reaches a
+browser; it names the type from the extension, turns content sniffing off, and serves under a policy that lets nothing in
+the file load, run or frame anything, whether it is shown in a page or opened on its own; and an image larger than 20 MiB
+is shown only when the person asks for it, up to 256 MiB (`large=true`), the most a surface shows or copies to open. That check is the one place Parley looks inside a placed file, and it is a
+surface's, never the broker's. What remains: a flaw in the browser's own image decoder, including one an image crafted to
+expand to an enormous size could reach under that bound.
 
 **A placement is renamed rather than refused for its characters.** The broker replaces each character
 outside the set with `_`, one for one — a character outside the Basic Multilingual Plane is one
@@ -3212,8 +3434,8 @@ because no size limit is set, and a limit set later should be set from evidence,
 ## 10. Operations
 
 There are two surfaces, and the distance between them is deliberate. §10.1 is what a participant
-may do: send and receive the messages of §5 about its own exchanges, and nothing that reads anyone
-else's. §10.2 is what the person running the deployment may do, which is everything
+may do: send and receive the messages of §5 about its own exchanges, and read the project's past
+as a framed record and nothing more (§5.8). §10.2 is what the person running the deployment may do, which is everything
 (principle 2.9): read every conversation whole, direct any agent, and manage the deployment itself.
 
 ### 10.1 Agent operations
@@ -3225,9 +3447,11 @@ else's. §10.2 is what the person running the deployment may do, which is everyt
 | `clarify(exchange_id, text, settles?)` | Hand the turn on an open exchange to the other participant: ask what was meant, or answer what you were asked (§5.2). On a Request the person opened, `settles` names exchanges the person's words settled (§5.6). |
 | `result(exchange_id, outcome, text, blocker?, sources?, settles?)` | Close an exchange you received, with one outcome for its ask (§5.3): `text` is what was done, the answer, or exactly what blocks it; `blocker` is given only with `blocked`; `sources` names the agents whose Results it relied on. `settles` as for `clarify`; the whole call is refused if any exchange named cannot be settled. |
 | `inbox()` | Drain pending messages, debts first (§7.3). One collection carries about 64,000 characters of messages and never fewer than one, or fewer messages when the caller asks for fewer (§7.3); the rest wait for the next and are counted, because a collection too large to arrive would never be delivered (principle 2.2). Delivered only when acknowledged (§6): a collection whose call ends first is handed over again by the next. Results arrive here, carrying the identifier `request` returned and the Request they close (§4.2, §13). Also surfaces the closure polls outstanding for the caller (§5.0), at most 200, oldest first, with a count of the rest, which stay outstanding until answered, and gone and tampered notices about files the caller fetched or placed, at most 200 at once with a count of the rest (§9.5), any open exchanges of the caller's the person moved to another conversation (§5.0), at most 50 with a count of the rest, and what became of the caller's own roadmap proposals, at most 50 at once with a count of the rest — confirmed, declined or superseded, each with the caller's own title cut to 200 characters as a heading is, never waking anybody (§5.7). A Request from the person arrives with the caller's own open questions to the person in that conversation, at most 20 with a count of the rest (§5.6). A Result answering one member of the caller's Request to a role carries how many that Request reached and how many have answered (§5.5). |
+| `read_exchange(exchange_id, after?)` | Read one exchange of this project by number, as a record of the past: its messages in order, each in its own history envelope (§13), its conversation and how it stands. The exchange need not be one the caller took part in; a store is one project, so no read reaches another. One reply carries about 64,000 characters and never fewer than one message; the rest are counted and `after` continues. Changes nothing a participant can observe: nothing is marked delivered, nobody is woken or given a turn, the caller does not become a participant, and no debt or state moves. Refused, with how long to wait, past the rate in §13. A number that names nothing here reads the same whether it never existed, belongs to another project, or was destroyed or pruned, and returns no text. Recorded for the person (§5.8). |
+| `search_history(words, participant?, conversation?, type?, since?, until?, continue_after?)` | Find messages of this project by words, optionally only those from or to one `participant`: every word, at most eight different ones, must occur in the message's text, ignoring the case of the letters A to Z and no other. Words are plain text and no operator is read, and a word with a control, invisible (format or tag) or line-separating character, or that is not well-formed text, is refused. Returns at most 20 matches, newest first, each with its exchange, message, conversation, sender, recipient, kind, time and a snippet of at most 240 characters, never a whole message, and how many more there are; `continue_after` pages. The caller then reads the exchange it needs with `read_exchange`. Changes nothing, as `read_exchange` changes nothing. Recorded for the person with the words and the number of matches (§5.8). |
 | `conclude(conversation_id, finished)` | Say whether you are finished with a discussion. The first call opens a poll; later calls answer one. Saying finished in a roadmap item's conversation is refused, saying only the person closes it (§5.7). |
 | `file_place(path, name?, conversation_id?)` | Place a file from the caller's own repository (`path`; its bytes go to the broker, `name` defaults to the file's own) in a conversation's folder of the file location (§9.5). The conversation is assigned as a Request's is (§5.0), and placing makes the caller a participant. Returns the conversation, the name placed and, when characters outside the set renamed it, the name asked for, the size and the broker's content hash, and whether the file was placed or already current; or a refusal naming, where one exists, the agent that placed the name, or the file a renamed placement collides with. A name the conversation already holds with other content is refused, whoever placed it: a placed file is never changed, and a new version goes under a new name. A connection to the broker lost during the placement is said apart from any refusal, as `connectiondropped`: lost before the whole file was sent, nothing was placed; lost after, it may have been, and the caller lists the conversation's files before placing it again. |
-| `file_fetch(name, to, conversation_id?, expect_sha256?, replace?)` | Write one whole content of a file into the caller's own repository, at `to` (an existing folder keeps the file's name), never over a different file unless `replace` says so. Refused, writing nothing, when the file's hash is not the one expected, and when the destination is not a `.md` or `.txt` file, lies under a folder an agent's client reads its configuration from (`.git`, `.claude`, `.github`, `.cursor`, `.codex`, `.gemini`, `.windsurf`, `.clinerules`, `.roo`, `.kiro`, `.amazonq`, `.junie`, `.continue`), or is named as standing instructions (`CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENT.md`, `GEMINI.md`, `CONVENTIONS.md`) at any depth (§13); when it holds a colon, which on Windows names a hidden part of another file; and when it ends in a separator naming a folder that is not there. A file that arrives at the destination while the fetch streams is never written over unless replacing was asked for. Refused as tampered, writing nothing and starting a sweep, when the bytes on disk are not the bytes placed; refused too when the file is held for writing by another program or cannot be read. The adapter verifies what it wrote and reports it, and only then is the fetch recorded, so a gone notice follows if the file later goes (§9.5). Never returns the file's contents. |
+| `file_fetch(name, to, conversation_id?, expect_sha256?, replace?)` | Write one whole content of a file into the caller's own repository, at `to` (an existing folder keeps the file's name), never over a different file unless `replace` says so. Refused, writing nothing, when the file's hash is not the one expected, and when the destination is not a kind of file that can be placed (`.md`, `.txt`, `.png`, `.jpg`, `.jpeg`, `.gif` or `.webp`), lies under a folder an agent's client reads its configuration from (`.git`, `.claude`, `.github`, `.cursor`, `.codex`, `.gemini`, `.windsurf`, `.clinerules`, `.roo`, `.kiro`, `.amazonq`, `.junie`, `.continue`), or is named as standing instructions (`CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENT.md`, `GEMINI.md`, `CONVENTIONS.md`) at any depth (§13); when it holds a colon, which on Windows names a hidden part of another file; and when it ends in a separator naming a folder that is not there. A file that arrives at the destination while the fetch streams is never written over unless replacing was asked for. Refused as tampered, writing nothing and starting a sweep, when the bytes on disk are not the bytes placed; refused too when the file is held for writing by another program or cannot be read. The adapter verifies what it wrote and reports it, and only then is the fetch recorded, so a gone notice follows if the file later goes (§9.5). Never returns the file's contents. |
 | `file_list(conversation_id?, page_size?, page_token?)` | The files in the location: conversation, name, size, content hash, placer and when, with totals. Paged, and the broker bounds the page whatever is asked for. |
 | `file_remove(files)` | Remove files the caller placed. Every other name is refused, naming its placer, and so is a file whose size or time on disk is not what was placed, which starts a sweep (§9.5), without preventing the rest. |
 | `propose_roadmap(title, items, conversation_id?, revises?)` | Put forward a roadmap (§5.7): a short title and an ordered list of items, each one line with, where known, the agent it is meant for and the earlier items it needs. `conversation_id` says where it came from, and must be a conversation the caller took part in; `revises` names, by title only, a roadmap it would change. Stores a proposal and nothing else: it opens no exchange, writes no message, and creates no roadmap until a person confirms it. Returns the proposal's identifier. Refused, with a sentence the agent can act on, for an empty list, for a line break in the title or an item, for an intended agent that is not in the project or is Parley, which takes no work (an item may be the person's own, and starting it ticks nobody), for a conversation the caller took no part in, with the same sentence whether or not that conversation exists, and for the person seat and Parley, which propose nothing. There is no operation by which an agent reads, changes, reorders, removes or marks done a roadmap, and none may be added (principle 2.12). |
@@ -3287,21 +3511,30 @@ it no way to find out how.
 
 How these are surfaced to an agent is the adapter's concern.
 
-There is deliberately **no history and no search operation**, and none may be added. A participant
-cannot read the log because nothing exposes it: `inbox()` returns only what is pending and
-addressed to the caller, and sending returns only an identifier for the exchange it opened (§4.2).
-That is principle 2.2 applied to the log — `billing` receives what `orders` sends it, not what
-`orders` told `inventory` — and the person running the deployment, who does need the whole of a
-conversation, reads it through §10.2.
+**An agent may read the project's past, and only read it.** `read_exchange` and `search_history` are the whole of it: an
+exchange by number, and a search for words that returns snippets. They were once refused outright, because `billing`
+receiving what `orders` sends it and not what `orders` told `inventory` is principle 2.2 applied to the log. The owner
+decided on 2026-11-17 that an agent which restarts must be able to find what it was working on, and that the reading
+covers every exchange of the project, not only those the reader took part in. What stays true of the log:
 
-`conclude` does not weaken this. It reads nothing: it states the caller's own position on a
-conversation the caller is already in, and the poll it may raise says only whether the caller is
-finished — never who else participates, how many do, or how any of them answered (§5.0).
+- **Nothing is pushed.** An exchange reaches an agent only when the agent asks for it by number or by words. `inbox()` still
+  returns only what is pending and addressed to the caller.
+- **It is a record, not mail.** Each message comes in a history envelope (§13) that says it is a record of a past message, from
+  whom, when, and asks nothing of the reader; its words are inert data like any participant's.
+- **It is bounded.** A reply, a page, a snippet and a search term have ceilings, and a caller has a rate (§13), because text that
+  crosses is charged to the context of the agent that receives it (principle 2.2).
+- **It changes nothing.** A read marks nothing delivered, wakes nobody, gives no turn, makes no participant, moves no exchange.
+- **It is seen.** Every read is recorded and shown to the person on the exchange it concerns, naming the reader (§5.8). No agent
+  can read who has read what.
+- **It stops where it stopped.** A roadmap is not an exchange and neither operation returns one (principle 2.12). A file's
+  bytes never arrive this way (§9.5). Turn information is never in a reply. A store is one project, so nothing crosses a
+  project.
 
-Retention length is therefore irrelevant to that guarantee. A ninety-day log is exactly as
-unreadable to a participant as a ten-minute one, which is why §9.4 can be configured freely.
+`conclude` reads nothing: it states the caller's own position on a conversation the caller is already in, and the poll it may
+raise says only whether the caller is finished, never who else participates, how many do, or how any of them answered (§5.0).
+Retention is what bounds the history: once the retention policy has removed messages (§9.4) they are gone to a read too, and the records of reads older than the retention period go with them.
 
-**The file operations are the one place a participant sees past its own exchanges, and that is a
+**The file operations are the other place a participant sees past its own exchanges, and that is a
 disclosure made on purpose.** `file_list` names every file in the location, in every conversation, and
 `file_fetch` fetches any of them, because a file is placed to be handed on and the agent that needs it
 may not be party to the exchange that produced it. What is disclosed is names, sizes, hashes, placers and
@@ -3332,16 +3565,17 @@ other could.
 
 | Operation | Description |
 |---|---|
-| `registry()` | The whole registry, including the workspace directory each agent works in, and — beside the line each agent states — the line a person has accepted for it, when one has been accepted and differs. Both halves travel because "accepted but not yet read by peers" is those two differing rather than a flag anybody maintains (see `record_ownership` below): an agent's own line is refreshed from its launch environment on every attach (§12.3), so the two agree again on its next start with nothing to clear. A surface showing the line therefore has what it needs to say which is which. Each row's adapter says **whether it is the facilitator** (principle 2.11) — `parley-facilitator`, which storage ties to the reserved role in both directions, so no second field states it — and a surface shows that row as Parley rather than among agents or seats. Each row also says **how the accepted line was arrived at** (`record_ownership`'s source), so a surface can show a line accepted automatically apart from one a person decided. And each row carries the agent's **turn standing** (§11.6): whether its turns are reported at all, whether a turn is running and since when, and how its last turn ended — when, whether cleanly, and how many tool calls were refused for want of permission — so a surface can say *working* only while a turn runs and *stopped* when one ended with work still owed, and says neither for an agent whose turns nobody reports. Each row also says whether a running agent is **open outside Parley** (§11.7), so a surface can say that Parley cannot give it turns. Deliberately not named `agents`: §10.1 has an `agents()` an agent may call, and that one withholds the workspace. Two operations differing only in what they disclose, sharing a name across this boundary, is the mistake this section opens by warning about — so the name differs, as `force_conclude` differs from `conclude`. |
+| `registry()` | The whole registry, including the workspace directory each agent works in, and — beside the line each agent states — the line a person has accepted for it, when one has been accepted and differs. Both halves travel because "accepted but not yet read by peers" is those two differing rather than a flag anybody maintains (see `record_ownership` below): an agent's own line is refreshed from its launch environment on every attach (§12.3), so the two agree again on its next start with nothing to clear. A surface showing the line therefore has what it needs to say which is which. Each row's adapter says **whether it is the facilitator** (principle 2.11) — `parley-facilitator`, which storage ties to the reserved role in both directions, so no second field states it — and a surface shows that row as Parley rather than among agents or seats. Each row also says **how the accepted line was arrived at** (`record_ownership`'s source), so a surface can show a line accepted automatically apart from one a person decided. And each row carries the agent's **turn standing** (§11.6): whether its turns are reported at all, whether a turn is running and since when, and how its last turn ended — when, whether cleanly, and how many tool calls were refused for want of permission — so a surface can say *working* only while a turn runs and *stopped* when one ended with work still owed, and says neither for an agent whose turns nobody reports. Each row also says whether a running agent is **open outside Parley** (§11.7), so a surface can say that Parley cannot give it turns, and whether it was **left running** by a node that is gone (§11.1), so a surface does not say somebody opened it. Deliberately not named `agents`: §10.1 has an `agents()` an agent may call, and that one withholds the workspace. Two operations differing only in what they disclose, sharing a name across this boundary, is the mistake this section opens by warning about — so the name differs, as `force_conclude` differs from `conclude`. Each row also says whether a person has frozen the agent in this project and when, and whether that freeze was asked to outlast a start of the broker (§14), so a surface can say frozen and offer unfreeze; how many background tasks its node last reported (§11.6); and the repository's identifier (§4.1.1), never shown, by which a surface tells a catalogued checkout from an agent already registered under another name. |
 | `implements()` | Which protocol version this broker speaks. First, and asked before anything else: without it a client cannot tell a broker of the wrong version from one that is switched off, and those two want different words in front of a person. It also says **which build is serving** and **how the store it serves differs from the shape that build expects**, because two things the protocol number cannot say are whether the programs on a machine are from one release and whether a store made by an earlier build has what has been added since. Both may be empty, and empty means *not said* and never *fine*; a surface warns about a build whose major and minor differ from its own, and about any difference in the store's shape. |
-| `export(conversation_id)` | Emit every message in a conversation, the state of every exchange those messages belong to, its parent and children, every move in or out of it, and any settled pair split across it and another (§5.0). The one query that reads across agents, which is why it is here and not in §10.1. The states travel with the messages rather than in a second call, because a reader wants both at one instant and two calls can disagree. **For a conversation that was destroyed, it returns the record §14 left instead of nothing** — an empty answer cannot be told from a store that lost something, and that is the whole reason the record exists. **It also names the roadmap item the conversation belongs to**, by the broker's reservation and by nothing in any message (§5.7), so a surface holding only a conversation can offer its roadmap. |
-| `conversations(participant?, since?, until?, archived?, page)` | Which conversations this broker holds, most recent activity first: the identifier, the participants derived from their exchanges, how many messages each carries, when it was first and last active, whether anything in it is still open, whether it has closed, its parent (§5.0), whether it is archived, and the roadmap item it belongs to when it is a reserved item conversation (§5.7), marked as having belonged to one once the item was removed. Archived ones are omitted unless `archived` asks for them, and the count of those omitted is returned either way — an archived conversation may go on receiving messages, so a caller that could not tell it was there would be hiding traffic rather than filing it. Paged, and the broker bounds the page whatever is asked for. |
+| `export(conversation_id)` | Emit every message in a conversation, the state of every exchange those messages belong to, its parent and children, every move in or out of it, any settled pair split across it and another, and where a participant wrote elsewhere straight after this conversation (§5.0). The one query that reads across agents, which is why it is here and not in §10.1. The states travel with the messages rather than in a second call, because a reader wants both at one instant and two calls can disagree. **For a conversation that was destroyed, it returns the record §14 left instead of nothing** — an empty answer cannot be told from a store that lost something, and that is the whole reason the record exists. **It also names the roadmap item the conversation belongs to**, by the broker's reservation and by nothing in any message (§5.7), so a surface holding only a conversation can offer its roadmap. **`latest_only` asks for a summary**: the newest message each sender wrote in each exchange and the newest Result of each, with the same exchange states and nothing else, for a surface that summarises many conversations at once (the Inbox reads every active conversation on each render, and a whole export of each held the broker for every agent and sent the history of all of them). |
+| `conversations(participant?, since?, until?, archived?, page)` | Which conversations this broker holds, most recent activity first: the identifier, the participants derived from their exchanges, how many messages each carries, when it was first and last active, when an exchange in it last closed (which can be later than its last message: an exchange settled by a Request elsewhere closes with no message of its own), whether anything in it is still open, whether it has closed, its parent (§5.0), whether it is archived, and the roadmap item it belongs to when it is a reserved item conversation (§5.7), marked as having belonged to one once the item was removed. Archived ones are omitted unless `archived` asks for them, and the count of those omitted is returned either way — an archived conversation may go on receiving messages, so a caller that could not tell it was there would be hiding traffic rather than filing it. Paged, and the broker bounds the page whatever is asked for. |
 | `prune()` | Apply the retention policy immediately rather than waiting for the next retention pass, and report what it removed, what the floor kept, and the idle period and age cap it applied. |
 | `refusals()` | Report what the hard limit of rule 8.4 refused: how often, how far over, per agent and message type. Counts only; no refused text is kept. |
 | `message_lengths()` | Report how long messages have been: how many, the median, the longest and how many passed the soft limit of rule 8.4; overall, by message type, by agent, and by position in a conversation so that a drift shows. Lengths only, from a record retention does not touch. |
 | `clarifications()` | Report the clarify depth distribution of §5.2, how often a cap in force was reached, and the lowest and highest cap in force (the unbounded value while every exchange is stamped uncapped). The evidence §17 question 4 asks for. |
 | `results()` | Report what Results said (§15): item outcomes per receiver and responder, the blockers named and their kinds, which participants were relied on as sources, and how each participant's conversations ended — by consensus or by the person. Read from tables retention never touches, so it covers the whole life of the deployment. |
 | `waiting()` | Say who is waiting on whom: one edge per open exchange, naming the agent that owes the next move and the agent waiting for it. An operator operation because that is the only vantage it is visible from — inside a pair, a question nobody will answer looks exactly like one not yet answered, and telling them apart needs every open exchange at once. Derived from the open set rather than stored, so an exchange that closes is simply absent from the next read. |
+| `locate_exchange(exchange)` | Say which conversation an exchange is in now, or that the store has none by that number, so a surface can open an exchange a message names (§5.6). Read only. An operator operation because it finds any exchange by number, whoever is on it, which §10.1 withholds from a participant. |
 | `flags()` | Report the open work that needs the person (§6): Requests not collected past their uncollected threshold, exchanges whose owing participant has sent nothing past their stalled threshold, exchanges whose owing agent's last turn ended with tool calls refused for want of permission (§11.6) — at once, not after a threshold — work held by a retired agent, participants a closure poll is waiting on once nothing else is (§5.0), whose flags name a conversation and carry no exchange, and the cycles recorded at admission (§7.2). Derived when read, so work that moves is simply absent from the next read. Nothing in the protocol times out, so this is how stalled work reaches anybody. |
 | `retire(agent)` | Mark an agent `retired`, so it is no longer routed to or listed. See §14. Refused for the person seat, which is never retired (§12.3). |
 | `reinstate(agent)` | Withdraw a retirement. Registration does not, and must not, do this. |
@@ -3360,13 +3594,19 @@ other could.
 | `force_conclude(conversation, reason?)` | Close a conversation now, regardless of its participants' votes. Every exchange still open in it ends `closed`, and every participant holding one is told, with the reason when one is given. |
 | `archive(conversation)` | Put a conversation out of the way. It stops appearing in `conversations()` unless the caller asks for archived ones, and nothing else about it changes: messages are still delivered, exchanges still open and close, and no agent is told. A view decision, made durable so every operator and every client sees the same one. |
 | `unarchive(conversation)` | Reverse it. |
-| `destroy(conversation)` | Delete a conversation and every message, exchange and file belonging to it, for every participant. Destroys its peers' side too and cannot be undone. Leaves the record of §14, which holds facts and no content. Named apart from `purge`, which takes an agent: two operations on different subjects sharing one name is how the wrong one gets bound. |
-| `start(agent)` | Ask a node that can resolve this agent's name to a catalogued checkout (§12) to launch it now, rather than waiting for a question to arrive. Returns whether a node accepted the request. The agent registers itself on attaching, exactly as §12.3 permits — this operation causes a launch and never a registration. Refused for the person seat: nothing starts a person. Refused for an agent open outside Parley (§11.7): a second process in one checkout is two models editing it. |
+| `destroy(conversation)` | Delete a conversation and every message, exchange and file belonging to it, and the record of who read those exchanges (§5.8), for every participant. Destroys its peers' side too and cannot be undone. Leaves the record of §14, which holds facts and no content. Named apart from `purge`, which takes an agent: two operations on different subjects sharing one name is how the wrong one gets bound. |
+| `start(agent)` | Ask a node that can resolve this agent's name to a catalogued checkout (§12) to launch it now, rather than waiting for a question to arrive. Returns whether a node accepted the request. The agent registers itself on attaching, exactly as §12.3 permits — this operation causes a launch and never a registration. Refused for the person seat: nothing starts a person. Refused for an agent open outside Parley (§11.7): a second process in one checkout is two models editing it. Refused for a frozen agent (§14), with a sentence saying to unfreeze it first. |
+| `stop(agent)` | Ask the node that started this agent to stop it once its current turn is over (§11.1). Returns whether a node was asked: false when nothing is running under the name. It ends a process and never work: what the agent owes stays owed, and the next work for it starts it again unless it is frozen (§14): retirement gates routing, and a freeze gates starting. Refused for the person seat and the facilitator, for an agent open outside Parley (§11.7), which is not a process any node holds: an editor's session belongs to whoever opened it, and one a node that is gone left running is ended with `kill`; and for one whose machine has no node joined that can start it. |
+| `restart(agent)` | As `stop`, then started again with its launch configuration read afresh. False, and nothing started, when it is not running: that is `start`'s. Refused where `stop` is, and for a frozen agent (§14), which nothing starts again: a frozen agent whose turn has not ended is already being stopped. |
+| `freeze(agent)` | Put a person's freeze on an agent in this project (§14). Recorded first, in the agent's row (`frozen_utc`, §9), then the node that started it is asked to stop it once its turn is over, as `stop` does. Returns whether it was newly frozen and what became of its process: asked to stop, not running, open outside Parley, left running by a node that is gone (which only `kill` ends), or no node joined. An agent a node had already been asked to start is not running yet; it is stopped when it attaches. While frozen, nothing starts the agent: not new work, not `start`, not `restart`, and for a freeze kept across a start of the broker not the restart wake (§14) either. What it owes stays open, and a message for it is stored and its sender told the receiver is frozen. Takes `keep_frozen`: without it, the next start of the broker lifts the freeze (§14). Never closes, moves or answers anything. Refused for the person seat and the facilitator, and for a name nothing has registered under. It freezes the agent in this project only; a surface that serves several projects freezes it in each project that lists the same agent, because the one process serves them all (§11.6). The same agent is the same repository identifier on the same machine (§4.1.1), never the same name: each project is asked under its own name for the agent, and another repository that holds the name elsewhere is left alone. An agent registered with no identifier is matched by name, which is all there is. The person's alone: the `Agents` service carries no such operation. |
+| `unfreeze(agent)` | Clear a freeze. Returns whether there was one. The agent is then asked to start if it owes open work and the resume policy allows (§14), as after a restart, or if anything is waiting for it that it has not collected (a message, or a closure poll waiting on its vote), whatever the policy: each of those had its wake declined while the agent was frozen. One with nothing to do stays as it is until work arrives. |
+| `kill(agent)` | Ask the node on this agent's machine to end, now, the process a node that is gone left running (§11.1). Returns whether a node was asked. Only for an agent whose attachment presented a launch token no node now holds (§11.7). Refused, with a sentence, for one open in somebody's editor, which has no token, for one a node holds, which `stop` ends once its turn is over, for an adapter that did not say which process hosts it, for the person seat and the facilitator, and where its machine has no node joined. It does not wait for a turn, so what the process was part-way through is lost; what the agent owes stays owed and the next work for it starts it again unless it is frozen (§14): retirement gates routing, and a freeze gates starting. The node checks what it is told to end and ends only a running process named for an agent's own kind (`claude`), never itself and never one it hosts. |
 | `place_persons_file(conversation_id, name, bytes)` | Place a file as the person, into a conversation that exists, under §9.5's rules for a placement: renamed for its characters, refused when the name already holds other content or a file nothing placed, and already current when it is the person's own with the same content. The file is the person's. Named apart from §10.1's `file_place`, which is an agent's. |
 | `list_shared_files(conversation_id?, page)` | Every file in the location, with its conversation, size, content hash, placer and when, totals per conversation and overall, how many placements and bytes each agent has made, and how many files in the folders listed are not listed because nothing placed them, which the next sweep deletes (§9.5). Paged, and the broker bounds the page whatever is asked for. Named apart from §10.1's `file_list`, which does not report placement counts. |
 | `remove_files(files)` | Remove any files, whichever agent placed them (§9.5). A name held by several conversations must name one; names not present are reported without preventing the rest. Named apart from §10.1's `file_remove`, which removes only the caller's own. |
 | `prune_files()` | Remove every file in the location, in every conversation. Conversations, exchanges, messages and agents are untouched. Not available to agents, because it removes files other agents placed; named apart from `prune`, which applies retention to messages and never touches a file. |
-| `describe_file_location(conversation_id?, name?)` | The broker's machine name and the absolute path of the location, of a conversation's folder, or of one file. A surface on that machine opens the file or folder in place; anywhere else it says where it is and launches nothing (§13). |
+| `describe_file_location(conversation_id?, name?)` | The broker's machine name and the absolute path of the location, of a conversation's folder, or of one file. A surface on that machine opens the file or folder in place; anywhere else it opens a file as a copy read through `read_shared_file`, and says where a folder is (§13). |
+| `read_shared_file(conversation_id, name, expect_sha256?)` | One conversation's file, streamed as `file_fetch` streams it: its size, hash and placer, then its bytes, or a refusal. Records nothing: no fetch, no notice, no delivery, so viewing is not an act on the deployment. What lets a surface show an image wherever it runs (§9.5), and open a copy of a file whose location is on another machine. Named apart from §10.1's `file_fetch`, which an agent's fetch records. |
 | `list_file_problems(include_dismissed?)` | What sweeps found and could not leave as it was (§9.5): files moved to quarantine and entries it could not read, move or delete, those waiting first, with the machine and the absolute path of the quarantine directory. Each path is text nothing checked, drawn as somebody else's. |
 | `dismiss_file_problem(id)` | Dismiss a problem the person has seen, saying whether a waiting one was dismissed. Deletes nothing on disk. |
 | `roadmaps()` | The project's roadmaps: identifier, title, revision, and how many live items each has and how many have conversations. The list a person reaches roadmaps from. |
@@ -3431,11 +3671,13 @@ on its own.
 `place_persons_file` places as the person, which no agent may (an agent places as itself); `remove_files` and
 `prune_files` remove files other agents placed, which no agent may do (§9.5). `describe_file_location`
 says where a file is so a person can open it: a surface running on the broker's machine opens a file to
-read it, or a folder in the file browser, and a surface anywhere else names the machine and the path and
-launches nothing, because the file is not there to open. A file opened is read, not edited: a placed file
-is never changed (§9.5). `list_file_problems` and `dismiss_file_problem` are the person's because what
+read it, or a folder in the file browser. `read_shared_file` is the person's because an agent's fetch is
+recorded and a person viewing a file must not be: a surface anywhere else reads the file through it and opens
+a copy, which is the same file, because a placed file never changes and its hash says which bytes; an image is
+opened, in place or as a copy, only when its leading bytes are its format, and a folder is never opened anywhere but on the broker's
+machine. A file opened is read, not edited: a placed file is never changed (§9.5). `list_file_problems` and `dismiss_file_problem` are the person's because what
 something else did to the location is nobody's message, and only the person decides what becomes of a
-quarantined file. Both operator surfaces offer all seven, like every other operation in this table, and
+quarantined file. Both operator surfaces offer all eight, like every other operation in this table, and
 show how many problems are waiting wherever the person is; the command line places, lists, removes,
 prunes and opens files, and lists and dismisses problems, as well, because scripts need them.
 
@@ -3520,7 +3762,7 @@ the sender's. The bound is one wasted turn per new message, the evidence is the 
 §10.2 already keeps, and an agent that keeps leaving work untouched is flagged to the person running
 the deployment (§6) rather than retried for ever.
 
-Three things end a resident agent, and nothing else may:
+Four things end a resident agent, and nothing else may:
 
 1. **The node stops**, and tells every agent it started to quit.
 2. **The agent's own process ends**, which the node observes directly and does not fight.
@@ -3529,6 +3771,31 @@ Three things end a resident agent, and nothing else may:
    node waits until no turn is in progress, then stops the agent and starts it again with its launch
    configuration read afresh. It refreshes only an agent it started itself; an agent attached from
    somebody's editor window is never refreshed, and its line waits for its next start.
+4. **A person stops or restarts it** (§10.2 `stop`, `restart`). The node waits until no turn is in
+   progress, as for a refresh, then stops the agent (background work the agent started is not waited for and ends
+   with its process), and for a restart starts it again with its
+   launch configuration read afresh. Only an agent the node started: one open outside Parley
+   (§11.7) is held by no node, and is ended by whoever opened it, or with `kill` when a node that is gone left it running.
+   When more than one ending is asked of an agent while it waits for one turn (a stop, a restart, a refresh), the node does
+   the last one asked, except that a refresh never undoes a person's stop: the process ends either way, and the agent reads
+   its new line the next time it starts.
+
+A fifth act is a person's and is not one of these, because it ends no resident agent: **ending a process a node that is
+gone left running** (§10.2 `kill`). A process outlives the node that started it, and a node that is replaced, as an install
+does, knows none of the processes its predecessor started; the broker, which forgets every launch it was told of when it
+restarts, then saw them as open outside Parley and blamed somebody who had not opened them. An attachment that presents a
+launch token no node now holds is **left running**, and one with no token is open outside Parley, which is somebody's. A
+left process is shown as such on every surface and a person may end it: nothing holds it, so no node can wait for its
+turn, give it one, or stop it, and it is not started again while it runs. What a wake passed over while it ran, the open
+work the restart wake found (§14) and the messages sent to it, is asked for once its last session detaches, as a start, if
+the agent is still active, not frozen and still owes something; a left process finishes the turn it was on, finds its
+input ended and exits, so without this the agent would wait for the next work with what it owed left open. A `kill` clears
+that, because a kill does not start the agent. A process that read as left running only because it attached again before its
+node announced it is the node's own once announced: what was passed over is asked of it then as a turn, and a later `stop`
+forgets it with the other turns asked before it. The adapter says which process hosts it, as a
+label and never as authority; the node ends it only after checking it is a running process named for an agent's own kind,
+that it is neither the node nor one the node hosts. It does not wait, so what the process was part-way through is lost, which
+a person is told before doing it. What the agent owes stays owed, and the next work for it starts it again unless it is frozen (§14).
 
 The third is argued rather than slipped in, because the paragraph below is the reason this list is
 short. The process holds what the agent has learned. The question is asked just after the agent first
@@ -3536,6 +3803,28 @@ attaches, when it has learned almost nothing, so a restart then costs little. Le
 the line would cost the whole point of asking. So it happens once, for the first line only, and never
 mid-turn. The broker sends it only when the agent owes no open exchange. Every later change of line
 waits for a natural restart, when throwing away what the agent has learned would be the wrong trade.
+
+The fourth is the person's, and the trade is theirs to make, because they can see what the broker cannot:
+that an agent is stuck, is running a session they no longer trust, or should read a launch configuration
+they just changed. It ends a process and nothing else. What the agent owes stays owed and its
+conversations are untouched, so it is not a way to end work (§6) and is never a timeout: the broker
+never stops an agent on its own account. The node waits for the turn rather than cutting it short, and a
+turn is bounded by the node's patience, so the wait is bounded too.
+
+A stopped agent is started again by the next work for it, as any agent is, because only retirement gates
+routing (§14); a person who wants it kept stopped freezes it (§14), and one who wants it out for good
+retires it. **A turn asked of a process that ends before taking it is not lost.** A start the node is asked
+for before a stopping process has gone is made once it has gone, never given to the process that is
+ending. A turn is different: the broker asks one of an agent that is still attached, and the process may
+end before taking it, because a stop took it (this project's, or another's that the same checkout
+serves, which this broker never hears of) or because the process died. That holds whatever the turn was
+for: new work, a person's Start, or mail left uncollected when a turn ran out of time or a collection
+stopped short. So the broker notes each turn it asks, and once the agent's last session has gone it asks
+for a start if the agent still has mail it has not collected or a closure poll waiting on its vote, or
+if a person asked for the start and no turn has begun since, unless the person has retired, purged or
+frozen the agent meanwhile. A stop forgets the turns asked before it, so the only start a stop leaves
+behind is for what was asked after it: work the process had already collected does not start the agent
+again, and neither does mail that no turn was asked for after the stop.
 
 A turn that runs past the node's patience is **not** one of them. The process holds everything the
 agent has learned, and discarding that because a single turn ran long is a far worse trade than
@@ -3651,10 +3940,12 @@ answered.
 
 **A node tells the broker when each turn it gives begins and when it ends.** The end carries how long
 the turn ran, whether it finished cleanly, whether it was cut off for running too long, whether the
-process died, what it cost and how many model turns it took, and **how many tool calls were refused for
+process died, the cost the runner reported with it and how many model turns it took, and **how many tool calls were refused for
 want of permission**. A resident agent runs with nobody at the keyboard, so a call needing approval is
 refused rather than paused — and an agent whose work was stopped that way looks, from every other fact
-the broker holds, exactly like one still doing it: a Request collected and not answered.
+the broker holds, exactly like one still doing it: a Request collected and not answered. **The cost is recorded as the
+runner reports it.** Claude Code reports the running total of its session so far, not the turn's own share, so a turn's
+figure is what the process had spent by the end of that turn, and it starts again from zero with each new process.
 
 The broker records each ended turn in `invocations` (§9.2), counting itself how much the agent had
 waiting before and after — that is its inbox, which the node cannot see. A turn that has begun and not
@@ -3672,9 +3963,36 @@ process its machine's node started (§11.7), or, when it is not running at all, 
 **One opened outside Parley is unknown**: no node gives it a turn, so nothing reports one, and what the node
 last reported for that name describes a different process.
 
+**A turn's end is not the end of the agent's work.** A runner can start sub-agents or commands in the
+background and end its turn with its reply while they run; Claude Code does this by default for a sub-agent
+started headless. When one finishes, or a sub-agent hands back its report, the runner begins a turn of its own,
+with nobody's prompt, and ends it with a result marked with what began it; a node takes any such mark, not only the
+kinds it knows. A prompt that reaches the runner while it works is folded into the turn it is in, and the one result
+answers both. So a node reads its agent's output as it arrives, turn or no turn, and:
+
+- **reports how many background tasks the agent has running**, whenever that changes, held by the broker in
+  memory with the node that said it, like a running turn, and cleared when that node leaves or a new process is
+  launched under the name;
+- **reports a turn the agent begins on its own as a turn**, begun and ended like any other, so the agent reads as
+  working while it takes up what its background work found. A turn the node is asked to give meanwhile waits
+  for it, so its prompt is not written while the agent works;
+- **never takes the result of a turn the agent began on its own as the reply to one the node gave**, unless the
+  node's prompt was folded into it: a turn the runner began as a given turn's prompt reached it, which the node
+  could not yet tell from that turn's own, ends with one result that answers the given turn too. Read only inside
+  given turns, an own turn's result waited for the next one, which took it as its own reply at once: the agent read
+  as idle while it worked on the person's message, and every reply after went to the turn after its own. So a
+  result is paired with the turn waiting for it, and **one no turn waits for is discarded**, never kept for the next;
+- **does not write a prompt while a reply is still owed** to a given turn that stopped waiting for it, unless the
+  runner has ended a turn since that prompt and said nothing for the whole of a turn's time: a prompt folded into a
+  turn of its own is never answered on its own, and waiting for that reply held every later turn for good.
+
+These reach every project whose node starts the agent's checkout, because they are the process's, not one
+project's.
+
 **A list of agents says who is working.** Where turns are reported, an agent is *working* for as long as a
-turn has run, *stopped* when its last turn had a tool call refused for want of permission, and *idle* when
-attached with no turn running. Where they are not, it reads by its presence alone. A turn report does not say
+turn has run, *stopped* when its last turn had a tool call refused for want of permission, *waiting on its
+background work* when no turn runs and background tasks it started do, and *idle* when attached with no turn
+and no background work running. Where they are not, it reads by its presence alone. A turn report does not say
 which conversation the turn is for, so a list says who and for how long, and not on what.
 
 **A report is accepted only for an agent on the reporting node's machine, from a node that is joined.**
@@ -3708,8 +4026,9 @@ Every other fact the broker holds says only that the name is attached.
 **So a node names each launch.** Before it starts an agent it tells the broker the agent and a token it chose
 for this one launch, and starts the process with that token in its environment; the adapter presents the token
 when it attaches. An attachment presenting the token the broker was told of for that agent, by the node on that
-agent's machine, is **started by Parley**. The token stays good until that node starts the agent again with a new
-one, so the same process reattaching after its stream dropped is still Parley's; and since a broker holds launches
+agent's machine, is **started by Parley**. The token stays good while the node connection that told of it is joined, and until
+that node starts the agent again with a new one, so the same process reattaching after its stream dropped is still
+Parley's; once that connection has gone, the process reads as left running until a node joins and tells of it again; and since a broker holds launches
 only in memory, a node joining a broker tells it again the token of every agent of that project it is still running,
 with the repository's identity, so an agent renamed since its launch is found under its new name. A checkout enrolled in
 several projects is one process for all of them, so a node hosting several tells each that starts it of a launch
@@ -3719,7 +4038,9 @@ a name registered from another folder, as an attach from it would be refused, so
 claims another agent's name cannot leave that agent open outside Parley. A process started
 from a shell that inherited the token before the node launched the agent again passes for Parley's too; the broker
 cannot tell processes apart, only launches. Any other
-attachment — no token, one from an earlier launch, another agent's — is **open outside Parley**. A launch the
+attachment — no token, one from an earlier launch, another agent's — is **open outside Parley**, which no node can give
+a turn; one that presents a token is **left running** by a node that is gone (§11.1), which the broker can tell from one
+somebody opened because an editor presents none. The registry's `open_outside` is true for both, and `unsupervised` marks only the left-running one (§10.2). A launch the
 broker was never told of, because the report did not arrive, reads the same way; a failed report never stops the
 launch.
 
@@ -3727,9 +4048,11 @@ What follows from it:
 
 - **A wake on an agent open only outside Parley asks nobody.** The sender is told the agent is open outside
   Parley and reads the message when somebody prompts it (§5); no node is asked for a start or a turn, and the
-  wake is not marked as coming, because nothing is.
+  wake is not marked as coming, because nothing is. When every attachment is left running, the sender is told so
+  instead, and the agent is started for the message once that process has gone (§11.1): nobody has it open to prompt.
 - **`start` refuses an agent open outside Parley** (§10.2): a second process in one checkout is two models
-  editing it.
+  editing it. The refusal says which it is: an editor's session to close, or a process left by a node that is gone, to
+  end with `kill`.
 - **The registry says which** (§10.2), and a surface says it in words: open outside Parley, so Parley cannot
   give it turns.
 - **Turns are reported only for an agent started by Parley** (§11.6).
@@ -4054,8 +4377,8 @@ tool would read it as instructions, and that judgement, not the list, is what ho
 payload that does. Its content hash identifies the bytes and attests nothing about who wrote them.
 
 **Opening a file never runs one.** A person may open a placed file from an operator surface, in the
-application the operating system has registered for it (§10.2). Only `.md` and `.txt` files can be
-placed, and a surface opens nothing else, so no file another participant placed can run a program on
+application the operating system has registered for it, in place or as a copy read through the broker (§10.2). Only
+text and image files can be placed (§9.5), and a surface opens nothing else, so no file another participant placed can run a program on
 the person's machine by being opened.
 
 Additional controls, annotated with what actually holds each one — the same discipline §8 applies to
@@ -4068,12 +4391,32 @@ its rules, and for the same reason:
   the correct behaviour for a deduplicator and not a volume control.
 - **Payloads are data about work, never interpolated into a position where they read as the agent's own
   instructions.** Held: the envelope, and `json_valid` on the column.
-- **Per-sender rate limits.** *Not held by anything.* No such limit exists, here or in the reference
+- **Per-sender rate limits on messages.** *Not held by anything.* No such limit exists on sending, here or in the reference
   implementation. Listing it among the controls would make the set look closed when the one control
-  against volume is the one that is absent. See §17 question 1.
+  against volume of messages is the one that is absent. See §17 question 1. (What an agent may read of the past has a rate, below.)
 - **What crosses about a file is bounded.** Held: a name by the schema (§9.3); a list, a batch of gone
   notices, an ambiguity refusal and a removal by the broker's own ceilings, whatever a caller asks for
   (§9.5).
+- **What an agent reads of the past is framed, bounded and recorded.** Held: the history envelope names the sender from the registry,
+  carries a delimiter token chosen for that delivery and says it is a record and asks nothing; a reply is bounded as an inbox
+  collection is, a search page holds 20 matches of at most 240 characters, a search term 200, and a caller may make 30 history calls
+  and take 400,000 characters in a minute, a search being charged by the time it took, never less than 20,000, because it scans the store while it holds the
+  broker's gate and what that costs depends on what the store holds, after which a call is refused with how long to wait. A search
+  that runs longer than a second and a half is interrupted, charged for the time it took, and refused with advice to narrow it; one the
+  caller stops itself is charged the same. The rate is held for
+  the store, in memory, whichever session of whichever agent asks, so attaching again does not reset it; a restart does. It exists so the
+  tool cannot copy a store in one sitting, and it is not accounting. A snippet is the one text that reaches a model with no envelope: it is cut to 240 characters, every control, invisible or line-separating
+  character in it becomes a space, and the opening of an envelope in it is spelled so it cannot be mistaken for one. Every read is
+  counted in `history_reads` for the person (§5.8), in the same transaction as the read. This is a recorded reduction in the
+  control of principle 2.2: an agent may hold other agents' words it was never sent, and the bounds and the record are what stand
+  in for the old refusal.
+- **A payload is given one meaning.** The store reads a payload's JSON with SQLite's functions, which take the first of a member
+  name written twice, match a name as a C string, and stop reading a text at a raw NUL; the broker reads it with another parser,
+  which takes the last, keeps a NUL in a name, refuses a raw NUL, and throws on text it cannot decode. A Request, Clarify or Result
+  that writes a member name twice in one object, or holds a NUL anywhere (in a name or after the document), or a name or a value
+  that cannot be decoded (a lone surrogate, such as an emoji cut in half), is refused whole with a sentence before anything is
+  stored; so the schema's checks and the broker's roll-up cannot read two different documents (a Result answered in the one and
+  blocked in the other, or closed blocked while the Inbox, which could not read the words, showed it done).
 
 ### 13.1 Deduplication
 
@@ -4244,22 +4587,50 @@ agent and the reason — an expired credential, a command that will not run — 
 is where a person looks for why an agent could not be started; the broker is not told, and
 `agents()` does not show it. Work waiting on the agent is flagged like any other.
 
-**What a restart wakes is the person's decision, not a protocol rule.** Two restarts that are
-byte-identical to the broker carry opposite intent, and the broker cannot tell them apart:
+**A restart wakes the agents that owe work.** Two restarts that are byte-identical to the broker carry opposite
+intent: an operator killing the process to stop agents burning through a quota, and an unattended machine taking a
+forced update at the weekend. The broker cannot tell them apart and does not try. **The owner decided on 2026-11-18
+that the second reading wins**: when a machine's node first joins a broker (the first join since the broker started; one that threw, or that the node left or the broker stopped before, is asked again at the next), every active agent on that
+machine that owes an open exchange is asked to start (once each, however many exchanges it owes), subject to the
+resume gate and never for an agent open outside Parley or left running (§11.7, §11.1). The asking waits five seconds after the join, so a process that outlived
+the broker attaches again first and reads as left running rather than being started a second time beside itself; an adapter slower than that is not waited for.
+An agent passed over as left running is started once that process has gone, if it still owes the work and nobody killed it (§11.1). Work stays open under every policy; the policy decides
+only whether anybody is started to do it. The way to stop work is to close its conversation. Stopping an agent
+from a surface (§11.1) ends its process and not its work: the work stays open, and under `always` the agent is started again at
+the next restart or by the next work for it, as any agent is. Killing the broker stops nothing for long. The resume policy is `always` in the broker the
+`serve` command runs, and `never` in a broker object built without options.
 
-- An operator watching two agents burn through a quota kills the process *specifically to stop
-  them*. Waking every agent with work outstanding on restart overrides the one control they reached
-  for.
-- An unattended machine takes a forced update at the weekend. The operator expects to return to
-  work that continued, and leaving it untouched wastes the whole window.
+**A freeze keeps an agent stopped until the broker next starts, or until the person unfreezes it.** A person who is about to restart
+the machine, or log off, freezes the agents that would otherwise start at once (`freeze`, §10.2): the broker records it in the agent's
+row and honours it at the one place it asks a node to start an agent or give it a turn, so new work, a message and `start` all find
+it. A restart starts an agent again and a refresh after an accepted ownership line does too, so `restart` is refused for a frozen
+agent and a refresh waits for the unfreeze. It is the person's alone, per agent. It ends the process the way `stop` does (once the
+turn is over, never mid-turn) and closes, moves and answers nothing: the work stays open and waits. An agent that was already being
+started when it was frozen is stopped the same way when it attaches. The freeze belongs to the agent's row: a rename (§4.1.1) carries
+it to the new name, and a purge ends it with the row, so a name registered again later is not frozen. This is a recorded reduction in the rule above, decided by the owner on
+2026-11-20, narrow because it is a person's act on one agent and never a policy.
 
-Nothing in the restart itself distinguishes these, so the broker MUST NOT infer, and **a restart
-wakes nobody for work that was outstanding when the broker stopped**. That decides only whether
-agents are woken, never whether the work survives: it stays open and is flagged on the ordinary
-schedule (§6), and the person wakes agents or closes conversations. Of the two readings above, this
-is the one that cannot spend what the person reached to stop. The durable way to stop work is to
-close its conversation, and a person who killed a process to stop two agents should be pointed at
-that.
+**A start of the broker lifts it, unless the person said not to.** Every start gives the broker a number of its own (a GUID, new each
+time), and a freeze is stored with the number of the run that made it. When the broker starts and finds a freeze made under a
+different number, that is a later start of the broker (a logon, a reboot, an install, a crash): the freeze lapses, and the agent is started if it
+owes open work, as the restart wake does (above). **An unfreeze pays what the freeze put off.** A message or a closure poll that
+reached a frozen agent had its wake declined, so when the freeze ends, by `unfreeze` or by a lapse, the agent is asked to start if
+anything is waiting for it that it has not collected, whatever the resume policy; after a lapse that is at the first join of its
+machine's node, once the restart wake's five seconds have passed, so a session that outlived the broker attaches again first and
+nobody is started beside it. If a process a node that is gone left running has attached again by then, the start waits until that
+process has gone (§11.1). Until that start has been asked for, the lapse stays in the agent's row, read by
+every surface as no freeze, so a broker that starts again before the node joins, or before the left process has gone, owes the
+same start; a person's `kill` of that process settles the lapse, because a kill does not start the agent. A person who freezes the agent again meanwhile
+makes a new freeze, which the lapse's payment leaves alone. An agent unfrozen while the freeze's stop is still waiting for its turn to end
+is asked again once that process has gone, because the turn asked for at the unfreeze went to a process the stop then ended. An
+agent that has been retired is not started by a freeze ending. A freeze made with `keep_frozen` (the person's choice, "do not unfreeze on logon")
+is not lifted by a start and stays until the person unfreezes it. Unfreezing forgets the choice. A broker restart that is not a
+logon, an install or a crash, lifts a freeze the same way, because the broker cannot tell them apart and does not try; the person
+who wants a freeze to outlast it sets `keep_frozen`. Because one process serves every
+project whose repository is enrolled (§11.6), a surface freezes the agent in each project that lists it by its identifier (§4.1.1), under that project's name for it, and says which before the
+person agrees; freezing it for one project's sake stops its work for the rest. A sender whose message reaches a frozen agent is told
+it is frozen and that the work waits (`WAKE_OUTCOME_FROZEN`); nothing times out, and work waiting on a frozen agent is flagged
+to the person like any other waiting work (§6), the roster saying why: frozen.
 
 **Re-delivery is not re-sending.** Delivering outstanding work again marks the existing message
 undelivered rather than writing a new one. The log then records what was said, not how many times
@@ -4529,10 +4900,11 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
   permissions, which Parley does not change. Work reaches a repository through the agent that
   owns it (principle 2.5), which keeps every change in the hands of the agent that understands
   the code being changed.
-- **Not a shared context store.** No agent can read the log: §10.1 exposes no history or
-  search operation, so there is no shared memory to poison. A conversation groups every
+- **Not a shared context store.** An agent may read the log through `read_exchange` and `search_history`, framed as a
+  record, bounded, and shown to the person (§10.1, §13); nothing is pushed into another agent's context, and what one
+  agent wrote reaches another only as a message addressed to it or as a framed record it asked for. A conversation groups every
   exchange in one line of work so that the person running the deployment can read it whole
-  (principle 2.9); a participant sees its own exchanges and not the others'. Traffic is
+  (principle 2.9). Traffic is
   pruned once it is operationally spent (§9.4), and a person who wants to keep a conversation
   exports it to a file they own. Placed files do not change this: they are fetched onto disk
   and never into a context, and a list of them names files rather than reading them (§9.5).
@@ -4560,8 +4932,8 @@ decided is removed and its number is not reused, so the list has gaps.
    Request identical to one still open, and wake coalescing (§5.4), which bounds the *turns* a burst causes to one per
    recipient until it collects, but not the volume collected in that turn. §13.1's deduplication is no
    volume control: it stops a retried move being stored twice, keyed on the exchange's version within its
-   window, and an identical Clarify or Result sent later in the exchange is a new message. Per-sender rate limits do
-   not exist, and §13 says so.
+   window, and an identical Clarify or Result sent later in the exchange is a new message. Per-sender rate limits on
+   messages do not exist, and §13 says so.
 
    **Terseness is a security control (principle 2.2), and there is no volume control at all.**
    That is a decision rather than an oversight, recorded here so the evidence against it has
@@ -4570,7 +4942,7 @@ decided is removed and its number is not reused, so the list has gaps.
    that silently loses a request for work is worse than the flood.
 
    What would decide it is collected: inbox depth per agent, sustained (§15), and `invocations`,
-   which records every turn with its duration and cost (§11.6), so what one participant's requests
+   which records every turn with its duration and the cost the runner reported (§11.6), so what one participant's requests
    spend on another's machine has an answer in the same place as every other turn's.
 2. §6's clock does not know whether a participant is working or has gone home,
    and flags the second on the same schedule as the first. A flag waiting on an away person reads as
@@ -4776,7 +5148,7 @@ decided is removed and its number is not reused, so the list has gaps.
 
 ## 18. Protocol version
 
-The protocol version is **0.13** and the storage schema version is **6**.
+The protocol version is **0.20** and the storage schema version is **11**.
 
 The version is `major.minor` and has no patch level, because a protocol change is either visible
 across the boundary or is not a protocol change at all. **While the major is zero, the minor

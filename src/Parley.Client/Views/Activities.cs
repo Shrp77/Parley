@@ -26,6 +26,12 @@ public enum Doing
     /// (SPEC.md §11.7). It reads what is waiting when somebody prompts it there.
     /// </summary>
     Outside = 6,
+
+    /// <summary>
+    /// Its turn ended while sub-agents or commands it started in the background still run (SPEC.md §11.6). Not idle: it
+    /// begins a turn of its own when one finishes.
+    /// </summary>
+    Background = 7,
 }
 
 /// <summary>One participant's activity.</summary>
@@ -33,17 +39,28 @@ public enum Doing
 /// <param name="Since">When that began: the turn's start when working, its end when stopped; null otherwise.</param>
 /// <param name="PermissionDenials">Tool calls its last turn had refused for want of permission, when stopped.</param>
 /// <param name="WaitingOn">Who it is waiting on, when waiting.</param>
+/// <param name="BackgroundTasks">How many background tasks it has running, when waiting on its own background work.</param>
+/// <param name="Left">
+/// When <see cref="Doing.Outside"/>: a node that is gone started it, rather than somebody opening it in an editor (SPEC.md §11.1).
+/// </param>
 public sealed record Activity(
     Doing Doing,
     DateTimeOffset? Since = null,
     int PermissionDenials = 0,
-    AgentName? WaitingOn = null);
+    AgentName? WaitingOn = null,
+    int BackgroundTasks = 0,
+    bool Left = false);
 
 /// <summary>What a list of agents says about one.</summary>
 /// <param name="Words">What it is doing.</param>
 /// <param name="Rank">Where it sorts, lower first: working, then stopped, then the rest.</param>
 /// <param name="Working">Whether a turn is running for it.</param>
 public sealed record AgentNow(string Words, int Rank, bool Working = false);
+
+/// <summary>An agent with a turn running that owes an answer in this conversation.</summary>
+/// <param name="Agent">The agent.</param>
+/// <param name="Since">When the turn started.</param>
+public sealed record WorkingHere(AgentName Agent, DateTimeOffset Since);
 
 /// <summary>
 /// Derives what each participant in a conversation is doing, and how both surfaces say it.
@@ -77,11 +94,24 @@ public static class Activities
     /// <summary>The mark for an agent open outside Parley, which Parley cannot give a turn.</summary>
     public const string OutsideMark = "◇";
 
+    /// <summary>The mark for an agent whose turn ended while background work it started still runs.</summary>
+    public const string BackgroundMark = "◈";
+
+    /// <summary>What an agent waiting on its own background work is said to be doing.</summary>
+    /// <param name="tasks">How many tasks.</param>
+    /// <returns>For example <c>waiting on 2 background tasks</c>.</returns>
+    /// <remarks>One sentence in one place, so the agents list, the room and the Inbox say it the same way.</remarks>
+    public static string WaitingOnBackground(int tasks) =>
+        tasks == 1
+            ? "waiting on 1 background task"
+            : $"waiting on {tasks.ToString(CultureInfo.InvariantCulture)} background tasks";
+
     /// <summary>What the marks mean, said once beside them.</summary>
     public static IReadOnlyList<string> Legend { get; } =
     [
         $"{RunningMark} running",
         $"{WorkingMark} working on a turn",
+        $"{BackgroundMark} background work running",
         $"{StoppedMark} stopped, still owes work",
         $"{NotRunningMark} not running",
         $"{OutsideMark} open outside Parley",
@@ -122,6 +152,44 @@ public static class Activities
         return result;
     }
 
+    /// <summary>Who in this conversation owes an answer and has a turn running.</summary>
+    /// <param name="export">The conversation.</param>
+    /// <param name="waiting">The wait-for graph, deployment-wide.</param>
+    /// <param name="activity">What each participant is doing, from <see cref="Of"/>.</param>
+    /// <returns>One entry per agent, longest running first.</returns>
+    /// <remarks>
+    /// <b>A turn does not say which conversation it is for</b> (SPEC.md §11.6), so an agent owing answers in two
+    /// conversations reads as working in both. Owing one is required, so it never reads as working on a conversation it
+    /// has already answered. An agent whose turns nobody reports has no entry, because nothing is known.
+    /// </remarks>
+    public static IReadOnlyList<WorkingHere> WorkingOn(
+        ConversationExport export,
+        IReadOnlyList<WaitingEdge> waiting,
+        IReadOnlyDictionary<AgentName, Activity> activity)
+    {
+        ArgumentNullException.ThrowIfNull(export);
+        ArgumentNullException.ThrowIfNull(waiting);
+        ArgumentNullException.ThrowIfNull(activity);
+
+        var open = export.Exchanges
+            .Where(exchange => exchange.State == ExchangeState.Open)
+            .Select(exchange => exchange.ExchangeId)
+            .ToHashSet();
+
+        return
+        [
+            .. waiting
+                .Where(edge => open.Contains(edge.ExchangeId))
+                .Select(edge => edge.WaitedOn)
+                .Distinct()
+                .Select(agent => activity.TryGetValue(agent, out var doing) && doing is { Doing: Doing.Working, Since: { } since }
+                    ? new WorkingHere(agent, since)
+                    : null)
+                .OfType<WorkingHere>()
+                .OrderBy(entry => entry.Since),
+        ];
+    }
+
     /// <summary>The word after a participant's name, or nothing.</summary>
     /// <param name="activity">What it is doing.</param>
     /// <param name="now">Now, for how long.</param>
@@ -137,7 +205,9 @@ public static class Activities
             { Doing: Doing.Stopped, Since: { } since, PermissionDenials: > 0 } =>
                 $"stopped {For(since, now)} — {Refused(activity.PermissionDenials)}",
             { Doing: Doing.Stopped, Since: { } since } => "stopped " + For(since, now),
+            { Doing: Doing.Outside, Left: true } => LeftRunning,
             { Doing: Doing.Outside } => Outside,
+            { Doing: Doing.Background } => WaitingOnBackground(activity.BackgroundTasks),
             _ => string.Empty,
         };
     }
@@ -152,6 +222,7 @@ public static class Activities
         Doing.Running or Doing.Waiting => RunningMark,
         Doing.NotRunning => NotRunningMark,
         Doing.Outside => OutsideMark,
+        Doing.Background => BackgroundMark,
         _ => " ",
     };
 
@@ -217,6 +288,11 @@ public static class Activities
             return new AgentNow("retired", 3);
         }
 
+        if (agent.Unsupervised)
+        {
+            return new AgentNow("left running by a node that is gone", 2);
+        }
+
         if (agent.OpenOutside)
         {
             return new AgentNow("open outside Parley", 2);
@@ -230,6 +306,11 @@ public static class Activities
         if (turns.RunningSince is { } running)
         {
             return new AgentNow($"{WorkingMark} working {For(running, now)}", 0, Working: true);
+        }
+
+        if (turns.BackgroundTasks > 0 && agent.Presence == AgentPresence.Running)
+        {
+            return new AgentNow($"{BackgroundMark} {WaitingOnBackground(turns.BackgroundTasks)}", 0);
         }
 
         if (turns.LastEnded is { } ended && turns.LastPermissionDenials > 0)
@@ -246,12 +327,15 @@ public static class Activities
     /// <remarks>It names what follows from it, because that is what a person needs: Parley cannot hand it work.</remarks>
     public const string Outside = "open outside Parley — no turns from Parley";
 
+    /// <summary>What an agent left running by a node that is gone is said to be doing (SPEC.md §11.1).</summary>
+    public const string LeftRunning = "left running by a node that is gone — no turns from Parley";
+
     private static Activity Derive(AgentRecord agent, ConversationExport export, List<WaitingEdge> here)
     {
         // First: whatever the node last reported for this name describes a different process (SPEC.md §11.7).
         if (agent.OpenOutside)
         {
-            return new Activity(Doing.Outside);
+            return new Activity(Doing.Outside, Left: agent.Unsupervised);
         }
 
         var presence = agent.Presence == AgentPresence.Running ? Doing.Running : Doing.NotRunning;
@@ -266,6 +350,12 @@ public static class Activities
         if (turns.RunningSince is { } running)
         {
             return new Activity(Doing.Working, running);
+        }
+
+        // Its turn ended but work it started runs on, and it takes that up on its own: neither stopped nor idle.
+        if (turns.BackgroundTasks > 0 && agent.Presence == AgentPresence.Running)
+        {
+            return new Activity(Doing.Background, BackgroundTasks: turns.BackgroundTasks);
         }
 
         // Asked somebody and waiting is not stopped, whatever else it owes.

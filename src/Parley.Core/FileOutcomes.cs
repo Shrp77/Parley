@@ -84,7 +84,7 @@ public enum FileRejection
     /// <summary>The broker's disk has no room.</summary>
     NoSpace,
 
-    /// <summary>The name does not end in <c>.md</c> or <c>.txt</c>.</summary>
+    /// <summary>The name does not end in an extension that can be placed: <c>.md</c>, <c>.txt</c> or an image's.</summary>
     ExtensionNotAllowed,
 
     /// <summary>A reported fetch is not one the broker streamed to that agent with that content.</summary>
