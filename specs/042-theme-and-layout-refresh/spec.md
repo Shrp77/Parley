@@ -16,7 +16,40 @@ and some flair on the controls, keeping Material 3 as the base. Asked about the 
 Feature 035 moved the console to Material 3 (`specs/035-material-3-web-ui/`, with its page-by-page audit in `audit.md`).
 This feature keeps that base and changes how it looks and how it fits each screen. It changes nothing the console does.
 
+**Decided on 2026-11-24 (exchange #35)**, after the three directions were shown: the owner likes **B · Frost**, wants
+its colours to be the person's choice, from a set of ready-made palettes or their own base colours, all built the same
+way so contrast always holds; wants the top bar to run the full width of the page; and wants the phone layout dealt
+with **after** the theme. So the work is delivered in this order: the theme (stories 6, 3, 4 and 5), then the layout at
+every size (story 1). Story 1 keeps its P1 because it is the most broken, not because it comes first.
+
 ## User Scenarios & Testing *(mandatory)*
+
+### User Story 6 - The person chooses the colours (Priority: P2)
+
+On the Settings page the person picks a palette from a short list of ready-made ones, each a few base colours chosen to
+go together by colour theory, and sees the console change at once. Or they make their own: pick a base colour and how
+its companions are chosen (for example colours beside it on the colour wheel, or opposite it), and the console builds
+every shade it needs, for light and for dark, from those. Whatever they choose, text stays readable.
+
+**Why this priority**: the owner asked for it directly when choosing Frost. It turns one look into a family of looks
+without losing the depth and contrast the theme work builds.
+
+**Independent Test**: choose each ready-made palette and one home-made palette in light and in dark; every page keeps
+its depth and hierarchy, and every text pair passes the contrast check.
+
+**Acceptance Scenarios**:
+
+1. **Given** the Settings page, **When** the person opens the colour choice, **Then** they see the ready-made palettes
+   as swatches with their names, and Frost is the default.
+2. **Given** the person picks a palette, **When** they look at any page, **Then** it uses that palette in both light and
+   dark, and the choice is kept in their browser, as the theme and density are today.
+3. **Given** the person makes their own palette from a base colour and a harmony, **When** it is applied, **Then** every
+   colour role is built from it by the same rules as the ready-made ones, and every text pair still meets WCAG 2.2 AA.
+4. **Given** a base colour that cannot give readable text at some role (a very light yellow, say), **When** the palette
+   is built, **Then** the console adjusts that role's shade until it is readable, rather than showing text that cannot be
+   read.
+
+---
 
 ### User Story 1 - The person answers an agent from their phone (Priority: P1)
 
@@ -206,6 +239,23 @@ does not feel crowded, and the graph pinned beside a conversation leaves the con
 - **FR-016**: The person's existing choices (light, dark or the system's theme, and normal or compact density) MUST keep
   working and keep being remembered in their browser.
 
+**Palettes the person chooses**
+
+- **FR-025**: The console MUST offer a set of ready-made palettes, each defined by a few base colours chosen by a stated
+  colour-theory relation (such as analogous, complementary, split-complementary or triadic), with Frost as the default.
+- **FR-026**: The person MUST be able to make their own palette from a base colour and a harmony, and optionally their own
+  accent colours, on the Settings page.
+- **FR-027**: Every palette, ready-made or home-made, MUST be turned into the full set of colour roles for light and for
+  dark by one set of rules, and every text and outline pair it produces MUST meet WCAG 2.2 AA; where a base colour would
+  break that, the rule MUST shift the shade until it holds.
+- **FR-028**: The chosen palette MUST be remembered in the person's browser and applied before the page is first drawn,
+  as the theme is today, and a page with no script MUST still show the default palette.
+
+**The frame**
+
+- **FR-029**: The top bar (project name, version, the bell and the person's seat) MUST run the full width of the page,
+  edge to edge, rather than stopping short of the sides.
+
 **Controls and motion**
 
 - **FR-017**: Every interactive control MUST show distinct, consistent states for hover, press and keyboard focus, and
@@ -239,6 +289,8 @@ does not feel crowded, and the graph pinned beside a conversation leaves the con
 - **Screenshot round**: the same screens, with the same sample work, captured at every size class in both themes, for
   one direction or after one pass of the build.
 - **Inspiration image**: a picture the person provides, with a note on what they like about it.
+- **Palette**: a name and a few base colours with the harmony that relates them. Ready-made palettes ship with the
+  console; a home-made one lives in the person's browser. Either becomes a full set of colour roles for light and dark.
 
 ## Success Criteria *(mandatory)*
 
@@ -253,6 +305,8 @@ does not feel crowded, and the graph pinned beside a conversation leaves the con
   on any pair that does not.
 - **SC-005**: The person chooses a direction within one round of screenshots, or within two if they ask for a mix.
 - **SC-006**: Every existing test of the console's behaviour passes without being changed.
+- **SC-008**: Every ready-made palette, and home-made palettes from a sample of base colours across the colour wheel
+  (including very light and very dark ones), pass the contrast check in both themes.
 - **SC-007**: The person, shown the before and after screenshots of the busiest pages side by side, says that the after
   set has more depth, is easier to read, and is usable on their phone.
 

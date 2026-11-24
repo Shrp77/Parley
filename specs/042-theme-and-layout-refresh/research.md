@@ -113,3 +113,35 @@ interactive selectors and their minimum size.
 
 **Rationale**: 48 pixels is Material 3's minimum touch target and comfortably over WCAG 2.2's 24-pixel minimum (2.5.8).
 Small icon buttons on the conversation page are the main offenders today.
+
+## R9. Palettes the person chooses
+
+**Decision**: a palette is three base colours, primary, secondary and tertiary, with the neutrals derived from the
+primary at low chroma. Material 3 builds its whole scheme from five key colours, primary, secondary, tertiary,
+neutral and neutral-variant, and two of those are best left derived, because neutrals tinted by the primary are what
+make a scheme feel of a piece. Error stays fixed, so a failure always reads as one. A ready-made palette names its
+three colours and the harmony behind them: analogous (neighbours, ±30°), complementary (opposite, 180°),
+split-complementary (150° and 210°) or triadic (±120°). A home-made palette is a base colour and a harmony, from which
+the other two are computed, or three colours the person picks. Each base colour is turned into a tonal palette and
+each role takes Material 3's tone for it, which is what keeps contrast predictable whatever the hue. A check then
+measures every pair and moves a role's tone a step at a time until it passes.
+
+**One implementation, on the server.** The rules live in C# in Parley.Web. The console serves a palette as a
+stylesheet, `/brand/palette.css?name=frost` or `?base=…&harmony=…`, which the inline first-paint script links from the
+person's stored choice before the page draws. With no script, the default palette's stylesheet is linked. The
+contrast tests run the same code over every ready-made palette and a sweep of base colours (SC-008), so the rule the
+tests check is the rule the browser gets. Directions A, B and C's `generate.py` becomes a prototype of this rule, not a
+second implementation.
+
+**Alternatives considered**:
+- *Computing palettes in the browser*: works offline and instantly, but it would be a second implementation of the
+  rule in JavaScript, beside the C# the tests check, and the two would drift.
+- *Five free base colours*: the person can pick neutrals that fight the accents. Three, with neutrals derived, gives
+  enough freedom without that trap; a "custom neutrals" option can come later if asked for.
+- *Material's own HCT colour space*: the reference for Material 3. CIELAB lightness, as the prototype uses, follows HCT's
+  tone closely enough for contrast. HCT can replace it inside the one implementation without changing anything else.
+
+**Ready-made palettes, first cut** (each passes AA in both themes before it ships):
+Frost (blue-violet, analogous, the default), Plum dusk (plum, analogous), Warm studio (warm grey with a lime accent,
+complementary accent), Ocean (teal and coral, complementary), Forest (green, analogous with an amber accent),
+Ember (rust and slate, split-complementary).
