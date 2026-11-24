@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    parley-screens: the screenshots of the web console, taken from a broker of its own.
+
+    Not shipped and never packed. It starts a broker and the console in this one process over a
+    store in a temporary folder, plays a scenario into the broker over the wire as the agents and
+    the person would, and captures a list of shots in a browser. Both the scenario and the shot
+    list are files it reads, so a new round of screenshots is new files, not new code.
+
+    It references the broker and the console together, which nothing shipped may do. That is why
+    it lives under tools and not src: GraphTests holds the shipped projects apart, and this one
+    is the place they meet on purpose.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Parley.Screens</RootNamespace>
+    <AssemblyName>parley-screens</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Parley.Server\Parley.Server.csproj" />
+    <ProjectReference Include="..\..\src\Parley.Web\Parley.Web.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Playwright" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)..\..\src\FilePlacement.cs" Link="FilePlacement.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="rounds\**\*" CopyToOutputDirectory="Never" />
+  </ItemGroup>
+
+  <!-- Its tests load every round's files and judge them, so a round that stops reading fails the unit run. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Parley.Screens.Tests" />
+  </ItemGroup>
+
+</Project>
