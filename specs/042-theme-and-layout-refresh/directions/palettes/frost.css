@@ -1,0 +1,106 @@
+/* Palette: Frost (base hue 262, analogous). Feature 042, a preview laid over the console by
+   tools/Parley.Screens. Written by palettes.py. Every text pair passes WCAG 2.2 AA in both themes. */
+:root {
+    --md-sys-color-primary: #066496;
+    --md-sys-color-on-primary: #ffffff;
+    --md-sys-color-primary-container: #cfe5fe;
+    --md-sys-color-on-primary-container: #011d31;
+    --md-sys-color-secondary: #4e6074;
+    --md-sys-color-on-secondary: #ffffff;
+    --md-sys-color-secondary-container: #d1e4fb;
+    --md-sys-color-on-secondary-container: #081d2d;
+    --md-sys-color-tertiary: #3c6472;
+    --md-sys-color-on-tertiary: #ffffff;
+    --md-sys-color-tertiary-container: #bfe9fa;
+    --md-sys-color-on-tertiary-container: #001f28;
+    --md-sys-color-error: #b12938;
+    --md-sys-color-on-error: #ffffff;
+    --md-sys-color-error-container: #fedad8;
+    --md-sys-color-on-error-container: #400004;
+    --md-sys-color-surface: #f6faff;
+    --md-sys-color-on-surface: #181c21;
+    --md-sys-color-surface-variant: #d8e4f1;
+    --md-sys-color-on-surface-variant: #3e4853;
+    --md-sys-color-surface-dim: #d5dae1;
+    --md-sys-color-surface-bright: #f6faff;
+    --md-sys-color-surface-container-lowest: #ffffff;
+    --md-sys-color-surface-container-low: #eff4fb;
+    --md-sys-color-surface-container: #e9eef5;
+    --md-sys-color-surface-container-high: #e3e9f0;
+    --md-sys-color-surface-container-highest: #dee3ea;
+    --md-sys-color-outline: #6e7884;
+    --md-sys-color-outline-variant: #bdc8d5;
+    --md-sys-color-inverse-surface: #2c3136;
+    --md-sys-color-inverse-on-surface: #ecf1f8;
+    --md-sys-color-inverse-primary: #97cbff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --md-sys-color-primary: #97cbff;
+    --md-sys-color-on-primary: #033350;
+    --md-sys-color-primary-container: #024b72;
+    --md-sys-color-on-primary-container: #cfe5fe;
+    --md-sys-color-secondary: #b5c8df;
+    --md-sys-color-on-secondary: #1f3243;
+    --md-sys-color-secondary-container: #36485b;
+    --md-sys-color-on-secondary-container: #d1e4fb;
+    --md-sys-color-tertiary: #a4cddd;
+    --md-sys-color-on-tertiary: #053542;
+    --md-sys-color-tertiary-container: #224c5a;
+    --md-sys-color-on-tertiary-container: #bfe9fa;
+    --md-sys-color-error: #ffb3b0;
+    --md-sys-color-on-error: #670116;
+    --md-sys-color-error-container: #920123;
+    --md-sys-color-on-error-container: #fedad8;
+    --md-sys-color-surface: #0f1419;
+    --md-sys-color-on-surface: #dee3ea;
+    --md-sys-color-surface-variant: #3e4853;
+    --md-sys-color-on-surface-variant: #bdc8d5;
+    --md-sys-color-surface-dim: #0f1419;
+    --md-sys-color-surface-bright: #353a3f;
+    --md-sys-color-surface-container-lowest: #090f15;
+    --md-sys-color-surface-container-low: #181c21;
+    --md-sys-color-surface-container: #1c2025;
+    --md-sys-color-surface-container-high: #262a2f;
+    --md-sys-color-surface-container-highest: #31353a;
+    --md-sys-color-outline: #87929e;
+    --md-sys-color-outline-variant: #3e4853;
+    --md-sys-color-inverse-surface: #dee3ea;
+    --md-sys-color-inverse-on-surface: #2c3136;
+    --md-sys-color-inverse-primary: #066496;
+  }
+}
+:root[data-theme="dark"] {
+    --md-sys-color-primary: #97cbff;
+    --md-sys-color-on-primary: #033350;
+    --md-sys-color-primary-container: #024b72;
+    --md-sys-color-on-primary-container: #cfe5fe;
+    --md-sys-color-secondary: #b5c8df;
+    --md-sys-color-on-secondary: #1f3243;
+    --md-sys-color-secondary-container: #36485b;
+    --md-sys-color-on-secondary-container: #d1e4fb;
+    --md-sys-color-tertiary: #a4cddd;
+    --md-sys-color-on-tertiary: #053542;
+    --md-sys-color-tertiary-container: #224c5a;
+    --md-sys-color-on-tertiary-container: #bfe9fa;
+    --md-sys-color-error: #ffb3b0;
+    --md-sys-color-on-error: #670116;
+    --md-sys-color-error-container: #920123;
+    --md-sys-color-on-error-container: #fedad8;
+    --md-sys-color-surface: #0f1419;
+    --md-sys-color-on-surface: #dee3ea;
+    --md-sys-color-surface-variant: #3e4853;
+    --md-sys-color-on-surface-variant: #bdc8d5;
+    --md-sys-color-surface-dim: #0f1419;
+    --md-sys-color-surface-bright: #353a3f;
+    --md-sys-color-surface-container-lowest: #090f15;
+    --md-sys-color-surface-container-low: #181c21;
+    --md-sys-color-surface-container: #1c2025;
+    --md-sys-color-surface-container-high: #262a2f;
+    --md-sys-color-surface-container-highest: #31353a;
+    --md-sys-color-outline: #87929e;
+    --md-sys-color-outline-variant: #3e4853;
+    --md-sys-color-inverse-surface: #dee3ea;
+    --md-sys-color-inverse-on-surface: #2c3136;
+    --md-sys-color-inverse-primary: #066496;
+}

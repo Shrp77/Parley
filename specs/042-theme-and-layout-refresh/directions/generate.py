@@ -41,12 +41,14 @@ def lch_to_srgb(l, c, h):
 def tone(hue, chroma, t):
     """The colour of tone t on a palette, lowering chroma until it fits the gamut. Returns #rrggbb."""
     c = chroma
-    while c >= 0:
+    while True:
         rgb = lch_to_srgb(t, c, hue)
         if rgb is not None:
             return "#" + "".join(f"{round(min(1, max(0, v)) * 255):02x}" for v in rgb)
-        c -= 0.5
-    raise ValueError(f"tone {t} of hue {hue} has no colour")
+        if c == 0:
+            raise ValueError(f"tone {t} of hue {hue} has no colour")
+        # Down in half steps, ending on a grey exactly, which every tone has, whatever chroma it started from.
+        c = max(0, c - 0.5)
 
 
 def luminance(hex_colour):
