@@ -2475,6 +2475,19 @@ table.registry { display: table; width: 100%; }
 .state-legend ul { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.5rem 1.25rem; margin: 0; padding: 0; list-style: none; }
 .state-legend li { display: flex; align-items: center; gap: 0.6rem; }
 
+/* ---- The message box's handle and its recipients (feature 042) --------------------------------------------------------
+   The box shows and hides by a narrow bar centered on its top edge, as the menu folds by its handle; it takes the accent
+   while the box is hidden with a draft kept. Choosing recipients sits beside who it goes to. */
+.composer .composer-toggle { position: absolute; top: -0.5rem; left: 50%; transform: translateX(-50%); width: 3.75rem; min-height: 0; height: 0.875rem; margin: 0; padding: 0; border: 0; border-radius: var(--md-sys-shape-corner-full); background: color-mix(in srgb, var(--md-sys-color-outline) 75%, transparent); box-shadow: var(--md-sys-elevation-1); cursor: pointer; }
+.composer .composer-toggle::before { content: ""; position: absolute; inset: -1rem -0.5rem; }
+.composer .composer-toggle:hover, .composer .composer-toggle:focus-visible { background: var(--md-sys-color-on-surface-variant); }
+.composer .composer-toggle.kept { background: var(--md-sys-color-primary); }
+.composer .composer-toggle .icon { display: none; }
+.composer .composer-toggle[hidden] { display: none; }
+.choose-to { flex: none; display: inline-flex; align-items: center; gap: 0.35rem; min-height: 2.25rem; padding: 0 0.85rem; }
+.choose-to[hidden] { display: none; }
+.choose-to .icon { font-size: 1.15rem; }
+
 /* ---- Size classes (feature 042, pass 4) ------------------------------------------------------------------------------
    Material 3's window size classes: compact under 600px (a phone), medium to 839px (a tablet upright), expanded to
    1199px (a tablet on its side) and large from 1200px. The rail and the drawer above are the medium, expanded and large

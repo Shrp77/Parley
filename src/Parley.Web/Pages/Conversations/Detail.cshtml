@@ -224,6 +224,9 @@ else
     }
     <div class="composer-bar">
         <p class="composer-to" id="to-summary" aria-live="polite"></p>
+        @* Choosing who it goes to from the box itself (the person's feedback on feature 042): it opens the conversation's
+           own list of who to write to, the one the rail's command opens, so there is one list and one way to tick it. *@
+        <button type="button" class="quiet choose-to" id="choose-to" hidden><span class="icon" aria-hidden="true">group</span> Choose recipients</button>
         @* A send that went as asked needs no reading, so what became of it waits behind the icon. *@
         @if (Model.SentAsAsked)
         {
@@ -234,9 +237,12 @@ else
                 @outcomes(null)
             </details>
         }
+        @* The box's handle: a narrow bar on its top edge that shows and hides it, as the menu's handle folds the menu (the
+           person's feedback on feature 042). What it would do is its title and its name; it takes the accent while the box
+           is hidden with a draft kept. *@
         <button type="button" id="composer-toggle" class="composer-toggle quiet" aria-controls="composer" aria-expanded="true" hidden>
             <span class="icon" aria-hidden="true">expand_more</span>
-            <span id="composer-toggle-words">Hide</span>
+            <span id="composer-toggle-words" class="visually-hidden">Hide</span>
         </button>
     </div>
 
@@ -1235,6 +1241,8 @@ else
                 icon.textContent = "expand_more";
                 icon.style.transform = closed() ? "rotate(180deg)" : "";
                 words.textContent = closed() ? (kept ? "Write (draft kept)" : "Write") : "Hide";
+                toggle.title = closed() ? (kept ? "Show the message box: your draft is kept" : "Show the message box") : "Hide the message box";
+                toggle.classList.toggle("kept", closed() && kept);
             }
 
             function set(hide) {
@@ -1249,6 +1257,15 @@ else
                 } catch (e) { }
 
                 if (end) { window.scrollTo({ top: document.documentElement.scrollHeight, left: 0, behavior: "instant" }); }
+            }
+
+            // Choosing recipients from the box opens the conversation's list of who to write to, where it lives.
+            var choose = document.getElementById("choose-to");
+            var to = document.querySelector('.panel-strip [data-pop="to"]');
+
+            if (choose && to) {
+                choose.hidden = false;
+                choose.addEventListener("click", function (e) { e.stopPropagation(); to.hidden = false; to.click(); });
             }
 
             toggle.addEventListener("click", function () {
