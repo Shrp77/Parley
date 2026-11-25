@@ -1351,7 +1351,9 @@
 
                 function draw() {
                     panel.hidden = !state.open;
-                    tab.hidden = state.open && docked();
+                    // The tab stays on the panel's edge while it is open, and closes it from there (the person's feedback on
+                    // feature 042): one control opens and closes it.
+                    tab.classList.toggle("pg-tab-open", state.open);
                     tab.setAttribute("aria-expanded", state.open ? "true" : "false");
                     Array.prototype.forEach.call(opens, function (b) { b.setAttribute("aria-expanded", state.open ? "true" : "false"); });
                     panel.classList.toggle("pg-pinned", docked());
@@ -1371,7 +1373,10 @@
                     }
                 }
 
-                tab.addEventListener("click", function () { state.open = true; save(); draw(); });
+                tab.addEventListener("click", function () {
+                    if (state.open) { state.open = false; state.pinned = false; } else { state.open = true; }
+                    save(); draw();
+                });
                 // On a phone the tab gives way to Graph under the bottom bar's More, which opens the same panel.
                 var opens = document.querySelectorAll("[data-pg-open]");
                 Array.prototype.forEach.call(opens, function (b) {

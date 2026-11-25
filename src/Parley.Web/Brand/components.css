@@ -1231,10 +1231,13 @@ details.dgrid-row[open] > summary { position: sticky; top: var(--dgrid-head-h); 
 .pg-tab { position: fixed; right: 0; top: 40%; z-index: 40; writing-mode: vertical-rl; padding: 0.7rem 0.35rem; border-radius: 10px 0 0 10px; border: 1px solid var(--rule); border-right: 0; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; font-size: 0.85rem; }
 .pg-panel { position: fixed; right: 0; top: 0; bottom: 0; z-index: 41; width: min(46rem, 100vw); display: flex; flex-direction: column; background: var(--page); border-left: 1px solid var(--rule); box-shadow: var(--md-sys-elevation-3); }
 .pg-panel[hidden] { display: none; }
+/* Open, the tab rides the panel's edge, above it, and closes it. */
+.pg-tab.pg-tab-open { right: min(46rem, 100vw); z-index: 42; }
 .pg-panel.pg-pinned { box-shadow: none; }
 body.pg-docked { padding-right: min(46rem, 100vw); }
 .pg-bar { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; padding: 0.6rem 1rem; border-bottom: 1px solid var(--rule); }
 .pg-bar h2 { margin: 0; font-size: 1rem; flex: 1 1 auto; }
+.pg-bar [hidden] { display: none; }
 .pg-body { flex: 1 1 auto; overflow: auto; padding: 0.6rem 1rem 1rem; }
 .pg-panel.pg-hide-closed [data-closed] { display: none; }
 .pg-svg { max-width: 100%; height: auto; }
