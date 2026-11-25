@@ -127,12 +127,16 @@ public sealed class PaletteTests
             ScriptSource.Code(page, "localStorage.getItem(\"parley.palette\")"),
             StringComparison.Ordinal);
 
+        // Every palette is offered, and the person's own: since feature 042's phone pass, as options of one list.
+        var start = page.IndexOf("name=\"palette\"", StringComparison.Ordinal);
+        var list = page[start..page.IndexOf("</select>", start, StringComparison.Ordinal)];
+
         foreach (var ready in Palette.Ready)
         {
-            Assert.Contains($"name=\"palette\" value=\"{ready.Key}\"", page, StringComparison.Ordinal);
+            Assert.Contains($"<option value=\"{ready.Key}\"", list, StringComparison.Ordinal);
         }
 
-        Assert.Contains("name=\"palette\" value=\"custom\"", page, StringComparison.Ordinal);
+        Assert.Contains("<option value=\"custom\"", list, StringComparison.Ordinal);
     }
 
     private static List<string> Failures(Palette palette)

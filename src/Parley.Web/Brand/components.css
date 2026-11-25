@@ -1267,8 +1267,10 @@ body.embed .page { margin-left: 0; padding: 0 0.75rem 0.75rem; }
 .grid-detail .between { flex: 1 1 100%; margin: 0; font-size: 0.85rem; color: var(--ink-soft); }
 .grid-detail form { margin: 0; }
 @media (max-width: 37.49rem) {
+    /* A grid whose last column is a date gives the date a row of its own; one of short numbers keeps them in line. */
     .grid-head, .grid-row > summary { grid-template-columns: minmax(0, 1fr) 3.5rem; }
-    .grid-head :last-child, .grid .when { grid-column: 1 / -1; }
+    .grid:has(.when) .grid-head :last-child, .grid .when { grid-column: 1 / -1; }
+    .grid:not(:has(.when)) :is(.grid-head, .grid-row > summary) { grid-template-columns: minmax(0, 1fr) 3.5rem 3.5rem; }
 }
 
 /* A conversation somebody still owes an answer to. Said in words beside the tint. */
@@ -2074,6 +2076,8 @@ header .as-of { float: none; margin: 0; white-space: nowrap; }
 
 /* The colour choice on the Settings page: each palette as a strip of its main colour, its accent and its card surface. */
 .palettes { display: flex; flex-wrap: wrap; gap: 0.6rem 1.2rem; align-items: center; }
+.palette-pick { display: flex; align-items: center; gap: 0.75rem; }
+.palette-pick select { min-width: 12rem; }
 .palette-choice { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 3rem; }
 .swatch { display: inline-flex; overflow: hidden; border-radius: var(--md-sys-shape-corner-small); box-shadow: var(--md-sys-elevation-1); }
 .swatch span { width: 1.1rem; height: 1.8rem; }
@@ -2304,6 +2308,80 @@ body:has(.rail-actions .panel-strip) .panel-closed .panel-body:has(.move-bar:not
     z-index: 34;
     width: min(26rem, calc(100vw - var(--rail-drawn) - 2.5rem));
     max-height: calc(100vh - var(--frame) - 1.5rem);
+}
+
+/* ---- Commands that are a link or a single press (feature 042) -----------------------------------------------------------
+   Some of a page's commands open nothing: a link to another page, or a form that is one button. They sit with the
+   other commands and look like them. */
+.rail-form { display: contents; }
+.rail-actions .rail-link {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    min-height: 3rem;
+    margin: 0;
+    padding: 0 1rem;
+    border: 0;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: none;
+    box-shadow: none;
+    color: var(--md-sys-color-primary);
+    font: var(--md-sys-typescale-label-large);
+    text-align: start;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.rail-actions .rail-link:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); border: 0; }
+.rail-actions .rail-link .icon { font-size: 1.5rem; width: 1.5rem; height: 1.5rem; }
+.rail-actions .danger-link { color: var(--md-sys-color-error); }
+
+html[data-nav="collapsed"]:not([data-rail-open]) .rail-actions .rail-link { width: 3.5rem; min-height: 2.5rem; margin: 0.25rem auto; padding: 0; justify-content: center; }
+@media (min-width: 37.5rem) and (max-width: 74.99rem) {
+    html:not([data-rail-open]) .rail-actions .rail-link { width: 3.5rem; min-height: 2.5rem; margin: 0.25rem auto; padding: 0; justify-content: center; }
+}
+
+/* ---- Tables do not wrap (the person's feedback on feature 042) ----------------------------------------------------------
+   A heading or a short value broken over lines reads as two rows. Headings never wrap; a table too wide for its window
+   scrolls in its own box rather than squeezing its columns. */
+th { white-space: nowrap; }
+
+/* The files table: one line a file. Its name takes what width is left and ends in an ellipsis; the rest are short. */
+table.files { width: 100%; }
+table.files td { white-space: nowrap; vertical-align: middle; }
+table.files td.name { max-width: 18rem; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+table.files td.open { text-align: end; }
+.files-form { display: block; padding: 0; margin: 0 0 1rem; background: none; border: 0; box-shadow: none; overflow-x: auto; }
+.files-note { margin: 0 0 1rem; font-size: 0.85rem; color: var(--ink-faint); }
+/* Below 840px the hash gives way; it is still each name's title. */
+@media (max-width: 52.49rem) {
+    /* On a phone or a tablet held upright each file is a card: chosen, its name and Open on the first line, where and by whom under it. Its hash is
+       its title, as there is no width for it. */
+    table.files, table.files tbody { display: block; width: 100%; }
+    table.files thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    table.files tr { display: flex; flex-wrap: wrap; align-items: center; gap: 0.2rem 0.75rem; padding: 0.75rem 0.5rem; border-top: 1px solid var(--md-sys-color-outline-variant); }
+    table.files td { display: block; padding: 0; border: 0; }
+    table.files td.pick { flex: none; }
+    table.files td.name { order: 1; flex: 1 1 calc(100% - 9rem); min-width: 0; max-width: none; }
+    table.files td.open { order: 2; flex: none; }
+    table.files td.in, table.files td.size, table.files td.by, table.files td.when { order: 3; font-size: 0.8rem; color: var(--ink-soft); }
+    table.files td.in { margin-left: 2.25rem; }
+    table.files td.hash { display: none; }
+}
+.placements-fold { margin: 0 0 1rem; font-size: 0.9rem; }
+.placements-fold summary { cursor: pointer; color: var(--ink-soft); }
+
+@media (max-width: 37.49rem) {
+
+    /* Settings: each group its own card with room inside, and nothing reaching the window's edge. */
+    .settings-section fieldset { min-width: 0; margin: 0 0 0.75rem; padding: 0.75rem; }
+    .settings-section fieldset fieldset { margin: 0.5rem 0 0; }
+    .palettes { flex-direction: column; align-items: flex-start; }
+
+    /* Commands that are a link or one press, in the phone's bar. */
+    .rail-actions .rail-link { flex: none; width: auto; min-height: 2.5rem; padding: 0 1rem; background: var(--md-sys-color-surface-container-lowest); }
 }
 
 /* ---- Size classes (feature 042, pass 4) ------------------------------------------------------------------------------

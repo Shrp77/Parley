@@ -23,32 +23,29 @@
             <label><input type="radio" name="theme" value="dark" /> Dark</label>
         </fieldset>
 
-        @* The palette (feature 042): ready-made ones drawn as their own swatches, and one the person makes from a colour and
-           a harmony. Each swatch shows the palette's main colour, its accent and its card surface, computed by the same rule
-           that serves the palette. *@
+        @* The palette (feature 042): one of the ready-made ones, or one the person makes from a color and a harmony, chosen
+           from a list rather than laid out as a row of swatches that did not fit a phone (the person's feedback). The swatch
+           beside the list shows the chosen palette's main color, its accent and its card surface, computed by the same rule
+           that serves the palette; each option carries its own. *@
         <fieldset class="choice palettes">
-            <legend>Colours</legend>
-            @foreach (var palette in Parley.Web.Palettes.Palette.Ready)
-            {
-                var light = Parley.Web.Palettes.Scheme.For(palette, dark: false).Colours;
-                <label class="palette-choice">
-                    <input type="radio" name="palette" value="@palette.Key" checked="@(palette == Parley.Web.Palettes.Palette.Default)" />
-                    <span class="swatch" aria-hidden="true">
-                        <span style="background: @light["primary"]"></span><span style="background: @light["tertiary-container"]"></span><span style="background: @light["surface-container"]"></span>
-                    </span>
-                    @palette.Name
-                </label>
-            }
-            <label class="palette-choice">
-                <input type="radio" name="palette" value="custom" />
-                <span class="swatch" aria-hidden="true" id="custom-swatch"><span></span></span>
-                Your own
-            </label>
+            <legend>Colors</legend>
+            <div class="palette-pick">
+                <label for="palette-choice" class="visually-hidden">Palette</label>
+                <select id="palette-choice" name="palette">
+                    @foreach (var palette in Parley.Web.Palettes.Palette.Ready)
+                    {
+                        var light = Parley.Web.Palettes.Scheme.For(palette, dark: false).Colours;
+                        <option value="@palette.Key" selected="@(palette == Parley.Web.Palettes.Palette.Default)" data-swatch="@light["primary"] @light["tertiary-container"] @light["surface-container"]">@palette.Name</option>
+                    }
+                    <option value="custom">Your own</option>
+                </select>
+                <span class="swatch" aria-hidden="true" id="palette-swatch"><span></span><span></span><span></span></span>
+            </div>
             <div class="palette-own" id="palette-own" hidden>
-                <label>Main colour <input type="color" id="palette-colour" value="#6750a4" /></label>
+                <label>Main color <input type="color" id="palette-colour" value="#6750a4" /></label>
                 <label>Accent
                     <select id="palette-harmony">
-                        <option value="analogous">Beside it on the colour wheel (calm)</option>
+                        <option value="analogous">Beside it on the color wheel (calm)</option>
                         <option value="complementary">Opposite it (lively)</option>
                         <option value="split-complementary">Either side of opposite (balanced)</option>
                         <option value="triadic">A third of the way round (playful)</option>
@@ -186,28 +183,37 @@
             return "hue=" + made.hue + "&chroma=" + made.chroma + "&harmony=" + harmony.value;
         }
 
-        function applyPalette(choice) {
-            var q = query(choice);
+        var choice = document.getElementById("palette-choice");
+
+        // The swatch beside the list: the chosen palette's own three colors, or the person's color for their own.
+        function drawSwatch() {
+            var picked = choice.options[choice.selectedIndex];
+            var colours = picked && picked.getAttribute("data-swatch") ? picked.getAttribute("data-swatch").split(" ") : [colour.value, colour.value, colour.value];
+            Array.prototype.forEach.call(document.querySelectorAll("#palette-swatch span"), function (span, i) { span.style.background = colours[i]; });
+        }
+
+        function applyPalette(chosen) {
+            var q = query(chosen);
             link.href = "/brand/palette.css?" + q + "&v=" + encodeURIComponent(version);
-            own.hidden = choice !== "custom";
-            document.querySelector("#custom-swatch span").style.background = colour.value;
-            return write("parley.palette", choice === "frost" ? null : q);
+            own.hidden = chosen !== "custom";
+            drawSwatch();
+            return write("parley.palette", chosen === "frost" ? null : q);
         }
 
         var stored = read("parley.palette") || "";
         var named = /^name=([a-z-]+)$/.exec(stored);
         var made = /^hue=(\d+)&chroma=(\d+)&harmony=([a-z-]+)$/.exec(stored);
-        var current = named && form.querySelector("input[name=palette][value='" + named[1] + "']") ? named[1] : made ? "custom" : "frost";
+        var current = named && choice.querySelector("option[value='" + named[1] + "']") ? named[1] : made ? "custom" : "frost";
         if (made) {
             harmony.value = made[3];
             colour.value = localStorage.getItem("parley.palette.colour") || colour.value;
         }
-        form.querySelector("input[name=palette][value='" + current + "']").checked = true;
+        choice.value = current;
         own.hidden = current !== "custom";
-        document.querySelector("#custom-swatch span").style.background = colour.value;
+        drawSwatch();
 
         function saveOwn() {
-            if (!form.querySelector("input[name=palette][value=custom]").checked) { return; }
+            if (choice.value !== "custom") { return; }
             write("parley.palette.colour", colour.value);
             saved.textContent = applyPalette("custom") ? "Saved in this browser." : "Applied to this page, but this browser would not keep it.";
         }
