@@ -1218,6 +1218,42 @@ else
             });
         })();
 
+        // Choosing recipients from the box: the conversation's own list of who to write to, wherever it is drawn. Offered
+        // only while there is such a list. With the panel kept open the list is in it, so the button goes to it; closed, it
+        // opens the list as the rail's command does.
+        (function () {
+            var choose = document.getElementById("choose-to");
+            var page = document.getElementById("convo-page");
+            var body = document.getElementById("panel-body");
+
+            if (!choose || !page) { return; }
+
+            function list() { return body ? body.querySelector(".recipients") : null; }
+            function offer() { choose.hidden = !list(); }
+
+            offer();
+            if (body && window.MutationObserver) { new MutationObserver(offer).observe(body, { childList: true, subtree: true }); }
+
+            choose.addEventListener("click", function (e) {
+                var here = list();
+                var to = document.querySelector('.panel-strip [data-pop="to"]');
+
+                if (!here) { return; }
+
+                // The strip's click-outside closer would put the list away as soon as it came out.
+                e.stopPropagation();
+
+                if (!page.classList.contains("panel-closed")) {
+                    here.scrollIntoView({ block: "nearest" });
+                    var first = here.querySelector("input");
+                    if (first) { first.focus({ preventScroll: true }); }
+                    return;
+                }
+
+                if (to && !to.hidden) { to.click(); }
+            });
+        })();
+
         // Hiding the composer to read. Only its contents go, so words already typed and a reply already chosen are still
         // there when it comes back, and the button says so.
         (function () {
@@ -1257,15 +1293,6 @@ else
                 } catch (e) { }
 
                 if (end) { window.scrollTo({ top: document.documentElement.scrollHeight, left: 0, behavior: "instant" }); }
-            }
-
-            // Choosing recipients from the box opens the conversation's list of who to write to, where it lives.
-            var choose = document.getElementById("choose-to");
-            var to = document.querySelector('.panel-strip [data-pop="to"]');
-
-            if (choose && to) {
-                choose.hidden = false;
-                choose.addEventListener("click", function (e) { e.stopPropagation(); to.hidden = false; to.click(); });
             }
 
             toggle.addEventListener("click", function () {
@@ -1325,7 +1352,9 @@ else
                 } catch (e) { }
 
                 page.classList.toggle("panel-closed", closed);
-                if (!closed) { putAway(); }
+                // Either way nothing is left brought out: opened, the panel holds it; closed, a box opened before would
+                // reappear unasked.
+                putAway();
             }
 
             // The button pressed goes away with what it opened or closed, so focus moves to the one that undoes it.

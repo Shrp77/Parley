@@ -32,6 +32,15 @@ public sealed class FilterChipsTests
     }
 
     [Fact]
+    public void Taking_a_filter_off_leaves_the_page_the_filtered_list_was_on()
+    {
+        // A page token was issued for the filtered list; asked of the unfiltered one, it names a page that list never had.
+        var request = Request("/Projects/Agents", "?project=alpha&participant=billing&pageToken=abc");
+
+        Assert.Equal("/Projects/Agents?project=alpha", FilterChips.Without(request, "participant"));
+    }
+
+    [Fact]
     public void A_value_is_encoded_once()
     {
         var request = Request("/", "?q=a%26b%20c&status=up");

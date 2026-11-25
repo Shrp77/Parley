@@ -6,8 +6,9 @@ namespace Parley.Web.Pages.Shared;
 /// <remarks>
 /// Feature 042: what a list is filtered on is shown as chips, each a link to the same list without that one filter. One
 /// place builds those links, so every list keeps the rest of its address the same way: every other part of the query is
-/// kept, and the page's own reload mark is dropped, so the link reads as somebody arriving rather than as a reload. A name
-/// is matched without regard to case, as model binding reads it.
+/// kept, and the page's own reload mark is dropped, so the link reads as somebody arriving rather than as a reload. So is a
+/// page token, which was issued for the filtered list and would ask the unfiltered one for a page it never had. A name is
+/// matched without regard to case, as model binding reads it.
 /// </remarks>
 public static class FilterChips
 {
@@ -21,7 +22,8 @@ public static class FilterChips
 
         var kept = request.Query
             .Where(pair => !string.Equals(pair.Key, key, StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(pair.Key, PersonSeats.Reloaded, StringComparison.OrdinalIgnoreCase))
+                && !string.Equals(pair.Key, PersonSeats.Reloaded, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(pair.Key, "pageToken", StringComparison.OrdinalIgnoreCase))
             .SelectMany(pair => pair.Value.Select(value => new KeyValuePair<string, string?>(pair.Key, value)));
 
         return (request.PathBase + request.Path).ToString() + QueryString.Create(kept);

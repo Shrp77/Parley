@@ -22,6 +22,24 @@ public static class AgentStateMark
         return (now.Mark, words);
     }
 
+    /// <summary>Every mark the console draws, each with what it means, in the legend's order.</summary>
+    /// <remarks>Read once from the console's own legend (<see cref="Activities.Legend"/>), so a page never parses it.</remarks>
+    public static IReadOnlyList<(string Mark, string Means)> Legend { get; } =
+        [.. Activities.Legend.Select(entry => entry.Split(' ', 2)).Select(parts => (parts[0], parts[1]))];
+
+    /// <summary>Where a mark comes in the legend, so the states' sections keep one order whoever is in them.</summary>
+    /// <param name="mark">A state's mark.</param>
+    /// <returns>Its place, or after every mark the legend names.</returns>
+    public static int Order(string mark)
+    {
+        for (var i = 0; i < Legend.Count; i++)
+        {
+            if (Legend[i].Mark == mark) { return i; }
+        }
+
+        return Legend.Count;
+    }
+
     /// <summary>The CSS class that tints a mark's badge; a state that needs no attention is left plain.</summary>
     /// <param name="mark">The state's mark.</param>
     /// <returns>A class name, or an empty string for a plain badge.</returns>

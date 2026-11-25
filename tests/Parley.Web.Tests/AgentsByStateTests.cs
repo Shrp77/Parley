@@ -41,9 +41,9 @@ public sealed class AgentsByStateTests
         Assert.Contains("by=name\">A–Z</a>", page.Replace("&amp;", "&", StringComparison.Ordinal), StringComparison.Ordinal);
         Assert.Contains("What the badges mean", page, StringComparison.Ordinal);
 
-        foreach (var entry in Parley.Client.Views.Activities.Legend)
+        foreach (var (_, means) in Parley.Web.Pages.Shared.AgentStateMark.Legend)
         {
-            Assert.Contains(entry.Split(' ', 2)[1], page, StringComparison.Ordinal);
+            Assert.Contains(means, page, StringComparison.Ordinal);
         }
     }
 

@@ -65,8 +65,8 @@
         </details>
     }
 
-    // What each state's section is called: the console's legend for its mark (Activities.Legend), without the mark.
-    var named = Parley.Client.Views.Activities.Legend.ToDictionary(entry => entry.Split(' ', 2)[0], entry => entry.Split(' ', 2)[1], StringComparer.Ordinal);
+    // What each state's section is called: what the console's legend says its mark means.
+    var named = AgentStateMark.Legend.ToDictionary(entry => entry.Mark, entry => entry.Means, StringComparer.Ordinal);
 }
 @if (Model.ByName)
 {
@@ -79,11 +79,11 @@ else
 {
     @* Grouped by what each is doing, each state a section that opens, in the order the list ranks them: working first, then
        stopped, then the rest (the person's feedback on feature 042). *@
-    foreach (var group in Model.Lines.GroupBy(line => line.Best.Now.Mark, StringComparer.Ordinal).OrderBy(group => group.Min(line => line.Best.Now.Rank)))
+    foreach (var group in Model.Lines.GroupBy(line => line.Best.Now.Mark, StringComparer.Ordinal).OrderBy(group => group.Min(line => line.Best.Now.Rank)).ThenBy(group => AgentStateMark.Order(group.Key)))
     {
         var heading = named.GetValueOrDefault(group.Key, "other");
-        <details class="state-group" open data-state-group="@group.Key" role="rowgroup">
-            <summary class="state-group-head"><span class="state-mark @AgentStateMark.Tint(group.Key)" aria-hidden="true">@group.Key</span><span class="state-group-name">@(char.ToUpperInvariant(heading[0]) + heading[1..])</span><span class="count">@group.Count()</span></summary>
+        <details class="state-group" open data-state-group="@group.Key">
+            <summary class="state-group-head"><span class="state-mark @AgentStateMark.Tint(group.Key)" aria-hidden="true">@group.Key</span><span class="state-group-name">@(char.ToUpperInvariant(heading[0]) + heading[1..])</span><span class="count">@group.Count()<span class="visually-hidden"> @(group.Count() == 1 ? "agent" : "agents")</span></span></summary>
             @foreach (var line in group)
             {
                 Line(line);

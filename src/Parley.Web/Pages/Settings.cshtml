@@ -41,7 +41,7 @@
         <fieldset class="choice choice-card palettes">
             <legend>Colors</legend>
             <details class="palette-menu" id="palette-menu">
-                <summary><span class="swatch wide" aria-hidden="true" id="palette-swatch"><span></span><span></span><span></span></span><span id="palette-name">Frost</span></summary>
+                <summary><span class="swatch wide" aria-hidden="true" id="palette-swatch"><span></span><span></span><span></span></span><span class="visually-hidden">Colors: </span><span id="palette-name">Frost</span></summary>
                 <div class="palette-list">
                     @foreach (var palette in Parley.Web.Palettes.Palette.Ready)
                     {
@@ -211,6 +211,15 @@
 
         function picked() { return form.querySelector("input[name=palette]:checked"); }
 
+        // The list closes when a palette is chosen by a click, by Enter or by Space, and on Escape; never on the arrow keys,
+        // which move through it applying each palette in turn, so the person sees each before choosing. Focus goes back to
+        // its face.
+        function shut() { menu.open = false; menu.querySelector("summary").focus(); }
+        menu.addEventListener("click", function (e) { if (e.detail > 0 && e.target.closest(".palette-option")) { window.setTimeout(shut, 0); } });
+        menu.addEventListener("keydown", function (e) {
+            if (e.key === "Escape" || ((e.key === "Enter" || e.key === " ") && e.target.matches("input[name=palette]"))) { e.preventDefault(); shut(); }
+        });
+
         // What the list's closed face shows: the chosen palette's own three colors and its name, or the person's color for
         // their own. Their own's swatch in the list follows their color too.
         function drawSwatch() {
@@ -235,7 +244,7 @@
         var current = named && form.querySelector("input[name=palette][value='" + named[1] + "']") ? named[1] : made ? "custom" : "frost";
         if (made) {
             harmony.value = made[3];
-            colour.value = localStorage.getItem("parley.palette.colour") || colour.value;
+            colour.value = read("parley.palette.colour") || colour.value;
         }
         form.querySelector("input[name=palette][value='" + current + "']").checked = true;
         own.hidden = current !== "custom";
@@ -265,8 +274,6 @@
             } else if (input.name === "palette") {
                 if (input.value === "custom") { write("parley.palette.colour", colour.value); }
                 kept = applyPalette(input.value);
-                // Chosen, the list closes on its new face; their own stays open below it to be made.
-                menu.open = false;
             } else if (input.name === "density") {
                 var compact = input.value === "compact";
                 if (compact) { root.setAttribute("data-density", "compact"); } else { root.removeAttribute("data-density"); }

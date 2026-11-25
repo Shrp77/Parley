@@ -1169,7 +1169,6 @@ td code, td.path { overflow-wrap: anywhere; }
 :is(.view, .act-panel) .field input, :is(.view, .act-panel) .field select, dialog .field input { width: 100%; flex: none; }
 .view .view-filters button, .view .view-filters .button { align-self: flex-end; margin-bottom: 0.25rem; }
 .conversations { display: flex; flex-direction: column; gap: 0.75rem; }
-.new-conversation { margin: 0; }
 /* A switch, as Material 3 draws one: a 52 by 32 track, outlined while off with a small handle, filled with the primary
    colour while on with a larger handle in its "on" colour. The words beside it say what it switches. */
 .view .view-filters .toggle { display: inline-flex; align-items: center; gap: 0.75rem; align-self: flex-end; min-height: 2.5rem; padding: 0 0.25rem; color: var(--ink); font: var(--md-sys-typescale-body-medium); cursor: pointer; white-space: nowrap; }
@@ -1502,9 +1501,6 @@ mark[data-found] {
 /* Hidden to read: the bar alone stays, saying who it would go to, with the button that brings the rest back. */
 .composer-bar { display: flex; align-items: center; gap: 0.8rem; margin: 0 0 0.6rem; }
 .composer-bar .composer-to { flex: 1 1 auto; min-width: 0; margin: 0; }
-.composer-toggle { flex: none; display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.15rem 0.7rem; font-size: 0.8rem; color: var(--ink-soft); background: none; border: 1px solid var(--rule); }
-.composer-toggle[hidden] { display: none; }
-.composer-toggle .icon { font-size: 1.1rem; }
 .composer-closed { padding-block: 0.4rem; }
 .composer-closed > .composer-bar { margin: 0; }
 .composer-closed > :not(.composer-bar) { display: none; }
@@ -1915,7 +1911,6 @@ ul.sent > li { border-radius: var(--md-sys-shape-corner-small); background: var(
 .thread-focus { min-height: 0; padding: 0; border: 0; border-radius: var(--md-sys-shape-corner-extra-small); background: none; color: var(--md-sys-color-primary); font: inherit; text-decoration: underline; }
 .thread-focus:hover { background: none; text-decoration-thickness: 2px; }
 .reply-to { --md-btn-container: transparent; --md-btn-content: var(--md-sys-color-primary); --md-btn-outline: var(--md-sys-color-outline); min-height: 2rem; padding: 0 1rem; font: var(--md-sys-typescale-label-large); }
-.composer-toggle { min-height: 2rem; padding: 0 0.75rem; font: var(--md-sys-typescale-label-large); }
 .attachment-remove { --md-btn-container: var(--md-sys-color-surface-container-highest); --md-btn-content: var(--md-sys-color-on-surface); --md-btn-outline: var(--md-sys-color-outline-variant); min-height: 0; width: 1.5rem; height: 1.5rem; padding: 0; }
 .attachment-tile { border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-high); border-color: var(--md-sys-color-outline-variant); font: var(--md-sys-typescale-label-large); }
 .sent-info > summary { width: 2.5rem; height: 2.5rem; }
@@ -1954,8 +1949,6 @@ header .build { font: var(--md-sys-typescale-body-small); }
 :root[data-density="compact"] .export-list a, :root[data-density="compact"] .mention-list li { min-height: 2.5rem; }
 
 /* The Parley-wide Settings page: each choice a group of radio buttons, each one a row with its words. */
-.settings-section fieldset.choice:not(.choice-card) { border: 0; background: none; padding: 0; margin: 0 0 1rem; }
-.choice legend { font: var(--md-sys-typescale-title-small); color: var(--md-sys-color-on-surface); padding: 0; margin-bottom: 0.5rem; }
 .choice label { display: flex; align-items: center; gap: 0.75rem; min-height: 2.5rem; color: var(--md-sys-color-on-surface); font: var(--md-sys-typescale-body-large); cursor: pointer; }
 .about dt { font: var(--md-sys-typescale-title-small); color: var(--md-sys-color-on-surface); margin-top: 0.75rem; }
 .about dd { margin: 0.25rem 0 0; font: var(--md-sys-typescale-body-medium); color: var(--md-sys-color-on-surface-variant); overflow-wrap: anywhere; }
@@ -2095,8 +2088,7 @@ header .as-of { float: none; margin: 0; white-space: nowrap; }
 /* The colour choice on the Settings page: each palette as a strip of its main colour, its accent and its card surface. */
 .palettes { display: grid; gap: 0.6rem; }
 .swatch { display: inline-flex; overflow: hidden; border-radius: var(--md-sys-shape-corner-small); box-shadow: var(--md-sys-elevation-1); }
-.swatch span { width: 1.1rem; height: 1.8rem; }
-.palette-own { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 0.8rem 1.4rem; align-items: center; padding: 0.4rem 0 0.2rem; }
+.palette-own { display: flex; flex-wrap: wrap; gap: 0.8rem 1.4rem; align-items: center; margin-top: 0.75rem; padding: 0.4rem 0 0.2rem; }
 .palette-own input[type="color"] { width: 3rem; height: 2.2rem; padding: 0; border: 0; background: none; vertical-align: middle; }
 .palette-own[hidden] { display: none; }
 
@@ -2371,7 +2363,6 @@ a.in-chip:hover { border-color: var(--md-sys-color-outline); background: color-m
 
     /* Settings: each group its own card with room inside, and nothing reaching the window's edge. */
     .settings-section fieldset { min-width: 0; margin: 0 0 0.75rem; padding: 0.75rem; }
-    .settings-section fieldset fieldset { margin: 0.5rem 0 0; }
 
     /* Commands that are a link or one press, in the phone's bar. */
     .rail-actions .rail-link { flex: none; width: auto; min-height: 2.5rem; padding: 0 1rem; background: var(--md-sys-color-surface-container-lowest); }
@@ -2455,9 +2446,12 @@ table.registry { display: table; width: 100%; }
 .palette-option:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
 .palette-option:has(input:checked) { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); font-weight: 600; }
 .palette-option:has(input:focus-visible) { outline: 3px solid var(--md-sys-color-secondary); outline-offset: -3px; }
+/* In forced colors a background and a shadow are dropped, so the chosen tile and palette are outlined in the system's own. */
+@media (forced-colors: active) {
+    .choice .tile:has(input:checked), .palette-option:has(input:checked) { outline: 2px solid Highlight; outline-offset: -2px; }
+}
 .swatch.wide { flex: none; }
 .swatch.wide span { width: 2.25rem; height: 1.5rem; }
-.palette-own { margin-top: 0.75rem; }
 
 /* ---- Agents by state (feature 042) ------------------------------------------------------------------------------------
    Grouped by what each is doing, each state a section headed by its badge, its name and how many are in it; a toggle
@@ -2484,6 +2478,8 @@ table.registry { display: table; width: 100%; }
 .composer .composer-toggle::before { content: ""; position: absolute; inset: -1rem -0.5rem; }
 .composer .composer-toggle:hover, .composer .composer-toggle:focus-visible { background: var(--md-sys-color-on-surface-variant); }
 .composer .composer-toggle.kept { background: var(--md-sys-color-primary); }
+/* A draft kept is said by a dot as well as by color, so it shows to somebody who cannot tell the color apart. */
+.composer .composer-toggle.kept::after { content: ""; position: absolute; right: -0.9rem; top: 50%; width: 0.5rem; height: 0.5rem; border-radius: 50%; transform: translateY(-50%); background: var(--md-sys-color-primary); }
 .composer .composer-toggle .icon { display: none; }
 .composer .composer-toggle[hidden] { display: none; }
 .choose-to { flex: none; display: inline-flex; align-items: center; gap: 0.35rem; min-height: 2.25rem; padding: 0 0.85rem; }

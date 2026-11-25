@@ -81,7 +81,7 @@
                 </select>
             </div>
             <button type="submit">Filter</button>
-            <a class="button quiet" href="/?tab=agents@(Model.InProject is { } cleared ? "&amp;project=" + Uri.EscapeDataString(cleared.Name.Value) : "")">Clear</a>
+            <a class="button quiet" href="/?tab=agents@(Model.InProject is { } cleared ? "&amp;project=" + Uri.EscapeDataString(cleared.Name.Value) : "")@(Model.ByName ? "&amp;by=name" : "")">Clear</a>
         </form>
         </details>
         <partial name="_FilterChips" model="filters" />
@@ -130,12 +130,11 @@
         <section class="view-card state-legend" aria-labelledby="state-legend-head">
             <h2 id="state-legend-head">What the badges mean</h2>
             <ul>
-                @foreach (var entry in Parley.Client.Views.Activities.Legend)
+                @foreach (var (mark, means) in Parley.Web.Pages.Shared.AgentStateMark.Legend)
                 {
-                    var parts = entry.Split(' ', 2);
-                    <li><span class="state-mark @Parley.Web.Pages.Shared.AgentStateMark.Tint(parts[0])" aria-hidden="true">@parts[0]</span> @parts[1]</li>
+                    <li><span class="state-mark @Parley.Web.Pages.Shared.AgentStateMark.Tint(mark)" aria-hidden="true">@mark</span> @means</li>
                 }
-                <li><span class="state-mark" aria-hidden="true">❄</span> frozen by you: nothing starts it until you unfreeze it</li>
+                <li><span class="state-mark" aria-hidden="true">❄</span> @Parley.Client.Views.Standing.Frozen</li>
             </ul>
         </section>
     }

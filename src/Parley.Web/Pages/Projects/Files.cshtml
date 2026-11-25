@@ -133,6 +133,7 @@ else if (Model.Listing is { } listing)
             <div class="files-tools" id="files-tools" hidden>
                 <button type="button" class="quiet" id="files-all">Select all</button>
                 <button type="button" class="quiet" id="files-none">Select none</button>
+                <span class="count" id="files-count" role="status">None chosen</span>
             </div>
 
             <table class="files">
@@ -181,7 +182,13 @@ else if (Model.Listing is { } listing)
 
                 if (!tools || !remove || boxes.length === 0) { return; }
 
-                function sync() { remove.hidden = !boxes.some(function (box) { return box.checked; }); }
+                var count = document.getElementById("files-count");
+
+                function sync() {
+                    var n = boxes.filter(function (box) { return box.checked; }).length;
+                    remove.hidden = n === 0;
+                    count.textContent = n === 0 ? "None chosen" : n + " chosen";
+                }
                 function every(on) { boxes.forEach(function (box) { box.checked = on; }); sync(); }
 
                 tools.hidden = false;
