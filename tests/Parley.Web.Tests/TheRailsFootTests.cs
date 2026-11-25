@@ -21,7 +21,8 @@ public sealed class TheRailsFootTests
 
         var lastProjectItem = page.IndexOf("href=\"/Projects/Settings?project=alpha\"", StringComparison.Ordinal);
         var foot = page.IndexOf("<nav class=\"rail-foot\"", StringComparison.Ordinal);
-        var settings = page.IndexOf("href=\"/Settings\"", StringComparison.Ordinal);
+        // The foot's own link: a phone's More, inside the sections above the foot, offers Settings too (feature 042).
+        var settings = foot < 0 ? -1 : page.IndexOf("href=\"/Settings\"", foot, StringComparison.Ordinal);
         var toggle = page.IndexOf("id=\"rail-toggle\"", StringComparison.Ordinal);
 
         Assert.True(lastProjectItem >= 0 && foot >= 0 && settings >= 0 && toggle >= 0, "the rail's items, foot, settings or toggle were not drawn");

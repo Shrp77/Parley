@@ -201,49 +201,40 @@
         var project = ViewData["Project"] as string ?? Context.Request.Query["project"].ToString();
         var onAgentsTab = agentsView && project.Length == 0;
         var q = Uri.EscapeDataString(project);
-        var rail = new List<(string Href, string Label, string Icon, bool Current)>
+        // Each place says whether it is on a phone's bottom bar (feature 042, the UI contract's compact class) and what
+        // the bar's More calls it when it is not. The bar holds four: Projects, the agents (the project's when in one), the
+        // Inbox and the project's conversations, in the page's order, so focus and a screen reader go along the bar as it
+        // is drawn. More holds the rest and is drawn only on a phone.
+        var projectOpen = project.Length > 0;
+        var rail = new List<(string Href, string Label, string Icon, bool Current, bool Bar, string MoreLabel)>
         {
-            ("/", "Projects", "grid_view", path == "/" && !agentsView),
-            ("/?tab=agents", "All Agents", "group", onAgentsTab),
-            ("/Inbox", "Inbox", "inbox", path.StartsWith("/Inbox", StringComparison.Ordinal)),
+            ("/", "Projects", "grid_view", path == "/" && !agentsView, true, "Projects"),
+            ("/?tab=agents", "All Agents", "group", onAgentsTab, !projectOpen, "All Agents"),
+            ("/Inbox", "Inbox", "inbox", path.StartsWith("/Inbox", StringComparison.Ordinal), true, "Inbox"),
         };
         // At the foot with the toggle, in both states, so a project's own items never sit between it and the rest.
-        (string Href, string Label, string Icon, bool Current) parleySettings = ("/Settings", "Settings", "settings", path == "/Settings");
-        var inProjectRail = new List<(string Href, string Label, string Icon, bool Current)>();
+        (string Href, string Label, string Icon, bool Current, bool Bar, string MoreLabel) parleySettings =
+            ("/Settings", "Settings", "settings", path == "/Settings", false, "Console settings");
+        var inProjectRail = new List<(string Href, string Label, string Icon, bool Current, bool Bar, string MoreLabel)>();
 
-        if (project.Length > 0)
+        if (projectOpen)
         {
             inProjectRail =
             [
-                ($"/Projects/Agents?project={q}", "Conversations", "chat_bubble", path == "/Projects/Agents" || path.StartsWith("/Conversations", StringComparison.Ordinal)),
+                ($"/Projects/Agents?project={q}", "Conversations", "chat_bubble", path == "/Projects/Agents" || path.StartsWith("/Conversations", StringComparison.Ordinal), true, "Conversations"),
                 // One agent's page, its ownership and registering one are all reached from the agents list, so they light it.
-                ($"/?tab=agents&project={q}", "Agents", "group", agentsView || path is "/Projects/Agent" or "/Projects/Ownership" or "/Projects/Register" or "/Projects/Enrol"),
-                ($"/Roadmaps?project={q}", "Roadmaps", "map", path.StartsWith("/Roadmaps", StringComparison.Ordinal)),
-                ($"/Projects/Files?project={q}", "Files", "description", path is "/Projects/Files" or "/Projects/FileProblems"),
-                ($"/Projects/Health?project={q}", "Health", "monitor_heart", path == "/Projects/Health"),
-                ($"/Projects/Settings?project={q}", "Settings", "tune", path == "/Projects/Settings"),
+                ($"/?tab=agents&project={q}", "Agents", "group", agentsView || path is "/Projects/Agent" or "/Projects/Ownership" or "/Projects/Register" or "/Projects/Enrol", true, "Agents"),
+                ($"/Roadmaps?project={q}", "Roadmaps", "map", path.StartsWith("/Roadmaps", StringComparison.Ordinal), false, "Roadmaps"),
+                ($"/Projects/Files?project={q}", "Files", "description", path is "/Projects/Files" or "/Projects/FileProblems", false, "Files"),
+                ($"/Projects/Health?project={q}", "Health", "monitor_heart", path == "/Projects/Health", false, "Health"),
+                ($"/Projects/Settings?project={q}", "Settings", "tune", path == "/Projects/Settings", false, "Project settings"),
             ];
         }
 
-        // On a phone the navigation is a bar along the bottom with four places and More (feature 042, the UI contract's
-        // compact class). Which four, and in what order: Projects, the agents (the project's when in one), the Inbox, and
-        // the project's conversations. Everything else is under More, which is drawn only on a phone.
-        int BarPlace(string href) => href switch
-        {
-            "/" => 1,
-            "/Inbox" => 3,
-            "/?tab=agents" => project.Length == 0 ? 2 : 0,
-            _ when href == $"/?tab=agents&project={q}" => 2,
-            _ when href == $"/Projects/Agents?project={q}" => 4,
-            _ => 0,
-        };
         // A class, not a data attribute: Razor drops a class whose value is null, but always writes a `data-` attribute,
         // empty for null, and an empty one would still mark a link as on the bar.
-        string? BarClass(string href) => BarPlace(href) is > 0 and var place ? $"bar bar-{place.ToString(System.Globalization.CultureInfo.InvariantCulture)}" : null;
-        var more = rail.Concat(inProjectRail).Append(parleySettings).Where(item => BarPlace(item.Href) == 0)
-            .Select(item => item.Href == parleySettings.Href ? item with { Label = "Console settings" }
-                : inProjectRail.Contains(item) && item.Label == "Settings" ? item with { Label = "Project settings" } : item)
-            .ToList();
+        string? BarClass(bool bar) => bar ? "bar" : null;
+        var more = rail.Concat(inProjectRail).Append(parleySettings).Where(item => !item.Bar).ToList();
     }
     <aside class="rail" id="rail" aria-label="Navigation">
         <a class="brand" href="/">
@@ -255,7 +246,7 @@
         <nav aria-label="Sections">
             @foreach (var item in rail)
             {
-                <a href="@item.Href" title="@item.Label" aria-current="@(item.Current ? "page" : null)" class="@BarClass(item.Href)">
+                <a href="@item.Href" title="@item.Label" aria-current="@(item.Current ? "page" : null)" class="@BarClass(item.Bar)">
                     <span class="icon" aria-hidden="true">@item.Icon</span>
                     <span class="rail-label">@item.Label</span>
                     @if (item.Label == "Inbox" && waiting is { Certain: true, Waiting: > 0 })
@@ -273,14 +264,14 @@
                 <p class="rail-heading">@project</p>
                 @foreach (var item in inProjectRail)
                 {
-                    <a href="@item.Href" title="@item.Label" aria-current="@(item.Current ? "page" : null)" class="@BarClass(item.Href)">
+                    <a href="@item.Href" title="@item.Label" aria-current="@(item.Current ? "page" : null)" class="@BarClass(item.Bar)">
                         <span class="icon" aria-hidden="true">@item.Icon</span>
                         <span class="rail-label">@item.Label</span>
                     </a>
                 }
             }
-        </nav>
-        @* More, the bar's fifth place: drawn only on a phone, where the bar has room for four. It opens with no script. *@
+        @* More, the bar's fifth place: drawn only on a phone, where the bar has room for four. It opens with no script.
+           Inside the sections, so moving by landmark finds the whole bar. *@
         <details class="rail-more">
             <summary title="More" aria-current="@(more.Any(item => item.Current) ? "page" : null)">
                 @* Drawn, as the conversation's magnifier is: the console's cut-down icon font has neither of these glyphs. *@
@@ -292,18 +283,20 @@
                 {
                     <a href="@item.Href" aria-current="@(item.Current ? "page" : null)">
                         <span class="icon" aria-hidden="true">@item.Icon</span>
-                        <span>@item.Label</span>
+                        <span>@item.MoreLabel</span>
                     </a>
                 }
                 @if (!Parley.Web.ConsoleHost.Embedded(Context))
                 {
-                    <button type="button" class="quiet" data-pg-open aria-controls="pg-panel">
+                    @* Hidden until the graph's script wires it: with no script there is no graph to open. *@
+                    <button type="button" class="quiet" data-pg-open aria-controls="pg-panel" aria-expanded="false" hidden>
                         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="4" width="6" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="2"/><rect x="15" y="4" width="6" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="2"/><rect x="15" y="15" width="6" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 6.5h6M12 6.5v11h3" fill="none" stroke="currentColor" stroke-width="2"/></svg>
                         <span>Graph</span>
                     </button>
                 }
             </div>
         </details>
+        </nav>
         <nav class="rail-foot" aria-label="Console settings">
             <a href="@parleySettings.Item1" title="@parleySettings.Item2" aria-current="@(parleySettings.Item4 ? "page" : null)">
                 <span class="icon" aria-hidden="true">@parleySettings.Item3</span>
@@ -323,7 +316,9 @@
             if (!more) { return; }
 
             document.addEventListener("click", function (e) { if (more.open && !more.contains(e.target)) { more.open = false; } });
-            document.addEventListener("keydown", function (e) { if (e.key === "Escape" && more.open) { more.open = false; more.querySelector("summary").focus(); } });
+            more.addEventListener("focusout", function (e) { if (more.open && e.relatedTarget && !more.contains(e.relatedTarget)) { more.open = false; } });
+            // Escape closes the menu and only the menu: registered before the page's other Escape handlers, it stops them.
+            document.addEventListener("keydown", function (e) { if (e.key === "Escape" && more.open && !e.defaultPrevented && more.contains(document.activeElement)) { e.stopImmediatePropagation(); more.open = false; more.querySelector("summary").focus(); } });
         })();
     </script>
     <div class="page">
@@ -1204,13 +1199,21 @@
                         });
                 }
 
+                // Pinned beside the page only in a large window (1200px and up). Below it the panel lays over the page, so a pin
+                // would cover what it was pinned beside: it is not offered, Escape closes the panel, and a new page does not
+                // reopen it.
+                var wide = window.matchMedia("(min-width: 75rem)");
+                function docked() { return state.pinned && wide.matches; }
+
                 function draw() {
                     panel.hidden = !state.open;
-                    tab.hidden = state.open && state.pinned;
+                    tab.hidden = state.open && docked();
                     tab.setAttribute("aria-expanded", state.open ? "true" : "false");
-                    panel.classList.toggle("pg-pinned", state.pinned);
+                    Array.prototype.forEach.call(opens, function (b) { b.setAttribute("aria-expanded", state.open ? "true" : "false"); });
+                    panel.classList.toggle("pg-pinned", docked());
                     panel.classList.toggle("pg-hide-closed", state.hideClosed);
-                    document.body.classList.toggle("pg-docked", state.open && state.pinned);
+                    document.body.classList.toggle("pg-docked", state.open && docked());
+                    pin.hidden = !wide.matches;
                     pin.setAttribute("aria-pressed", state.pinned ? "true" : "false");
                     pin.textContent = state.pinned ? "Unpin" : "Pin";
                     hideClosed.checked = state.hideClosed;
@@ -1226,15 +1229,20 @@
 
                 tab.addEventListener("click", function () { state.open = true; save(); draw(); });
                 // On a phone the tab gives way to Graph under the bottom bar's More, which opens the same panel.
-                Array.prototype.forEach.call(document.querySelectorAll("[data-pg-open]"), function (b) {
+                var opens = document.querySelectorAll("[data-pg-open]");
+                Array.prototype.forEach.call(opens, function (b) {
+                    b.hidden = false;
                     b.addEventListener("click", function () { var menu = b.closest("details"); if (menu) { menu.open = false; } state.open = true; save(); draw(); });
                 });
                 document.getElementById("pg-close").addEventListener("click", function () { state.open = false; state.pinned = false; save(); draw(); });
                 pin.addEventListener("click", function () { state.pinned = !state.pinned; save(); draw(); });
                 hideClosed.addEventListener("change", function () { state.hideClosed = hideClosed.checked; save(); draw(); });
-                document.addEventListener("keydown", function (e) { if (e.key === "Escape" && state.open && !state.pinned) { state.open = false; save(); draw(); } });
+                document.addEventListener("keydown", function (e) { if (e.key === "Escape" && state.open && !docked()) { state.open = false; save(); draw(); } });
+
+                if (wide.addEventListener) { wide.addEventListener("change", draw); }
 
                 load();
+                if (!wide.matches) { state.open = false; }
                 draw();
             })();
         </script>

@@ -97,9 +97,9 @@ html[data-nav="collapsed"] .rail .brand { padding: 0 0 0.5rem; justify-content: 
 html[data-nav="collapsed"] .rail-heading { color: transparent; margin: 0.5rem 0.5rem 0; height: 1rem; }
 html[data-nav="collapsed"] .rail .seat-waiting { position: absolute; top: 0; right: 0.25rem; margin: 0; }
 
-/* Below 75rem the drawer is a rail whatever the toggle says, as Material 3 keeps a drawer for large windows: at a
+/* Below 1200px the drawer is a rail whatever the toggle says, as Material 3 keeps a drawer for large windows: at a
    laptop's width its 16rem is a column the page needs. The toggle goes with it. */
-@media (max-width: 75rem) {
+@media (max-width: 74.99rem) {
     :root { --rail-w: 5rem; }
     .rail-label, .rail .brand span { position: absolute; left: -100rem; }
     .rail nav a { width: 3.5rem; min-height: 2.5rem; margin: 0.25rem auto; padding: 0; justify-content: center; }
@@ -1280,7 +1280,7 @@ body.embed .page { margin-left: 0; padding: 0 0.75rem 0.75rem; }
 .grid-detail { padding: 0.2rem 1rem 0.8rem; display: flex; flex-wrap: wrap; gap: 0.6rem 1rem; align-items: center; }
 .grid-detail .between { flex: 1 1 100%; margin: 0; font-size: 0.85rem; color: var(--ink-soft); }
 .grid-detail form { margin: 0; }
-@media (max-width: 40rem) {
+@media (max-width: 37.49rem) {
     .grid-head, .grid-row > summary { grid-template-columns: minmax(0, 1fr) 3.5rem; }
     .grid-head :last-child, .grid .when { grid-column: 1 / -1; }
 }
@@ -1962,9 +1962,9 @@ header .build { font: var(--md-sys-typescale-body-small); }
    One set of breakpoints, so every column folds at the same widths.
 
    The shell takes the whole window, and so does a bubble: the conversation runs
-   from the panel to the rail, however wide the window. Below 75rem the navigation is a
+   from the panel to the rail, however wide the window. Below 1200px the navigation is a
    rail; below 60rem the three columns stop fitting and the page becomes one;
-   below 40rem it is a phone. */
+   below 600px it is a phone, and the rail is a bar along the bottom (the size classes at the end). */
 
 @media (min-width: 90rem) {
     .conversation { gap: 2rem; }
@@ -1999,14 +1999,13 @@ header .build { font: var(--md-sys-typescale-body-small); }
     table { display: block; overflow-x: auto; position: relative; }
 }
 
-@media (max-width: 40rem) {
+@media (max-width: 37.49rem) {
     body { font-size: 14px; }
 
     /* Kept as one row here. A sticky frame that stacks costs
        five rem of a phone screen on every page, and the frame is worth having only for
        as long as it costs less than what it is covering. The word "console" goes
        instead: the mark and the page say it. */
-    :root { --frame: 3.1rem; }
     header { gap: 0.6rem; padding: 0.6rem 0 0.55rem; }
     .brand span { display: none; }
 
@@ -2100,36 +2099,28 @@ header .as-of { float: none; margin: 0; white-space: nowrap; }
 /* ---- Size classes (feature 042, pass 4) ------------------------------------------------------------------------------
    Material 3's window size classes: compact under 600px (a phone), medium to 839px (a tablet upright), expanded to
    1199px (a tablet on its side) and large from 1200px. The rail and the drawer above are the medium, expanded and large
-   frame; this is what changes below them. */
+   frame; this is what changes below them. The older blocks above use the same boundaries: 37.49rem and 74.99rem. */
 
 /* More is the bottom bar's fifth place, so it is drawn only on a phone. */
 .rail-more { display: none; }
 
-/* Below large the graph panel lays over the page rather than docking beside it, so the conversation keeps its width. */
-@media (max-width: 74.99rem) {
-    body.pg-docked { padding-right: 0; }
-    .pg-panel.pg-pinned { box-shadow: var(--md-sys-elevation-3); }
-}
-
 @media (max-width: 37.49rem) {
-    :root { --bar-h: 5rem; }
+    /* The bottom bar's height, and the top bar's real height, which the sticky things below are placed against. */
+    :root { --bar-h: 5rem; --frame: 4rem; }
 
     /* Navigation is a bar along the bottom, in reach of a thumb: four places and More, each an icon in its indicator
-       above a label, as Material 3 draws a navigation bar. */
+       above a label, as Material 3 draws a navigation bar. The sections stay one landmark, laid out as the bar. */
     .rail {
         inset: auto 0 0 0;
         width: auto;
-        height: calc(var(--bar-h) + env(safe-area-inset-bottom, 0px));
-        flex-direction: row;
-        align-items: stretch;
-        gap: 0;
-        padding: 0 0.25rem env(safe-area-inset-bottom, 0px);
+        height: var(--bar-h);
+        padding: 0 0.25rem;
         overflow: visible;
         box-shadow: var(--md-sys-elevation-2);
     }
 
-    .rail .brand, .rail-heading, .rail-toggle { display: none; }
-    .rail nav { display: contents; }
+    .rail nav.rail-foot, .rail .brand, .rail-heading, .rail-toggle { display: none; }
+    .rail nav { flex: 1 1 auto; flex-direction: row; align-items: stretch; height: 100%; }
     .rail nav a:not(.bar) { display: none; }
 
     .rail nav a.bar, .rail-more > summary {
@@ -2165,15 +2156,10 @@ header .as-of { float: none; margin: 0; white-space: nowrap; }
     .rail nav a.bar:hover .icon, .rail-more > summary:hover .icon { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
     .rail nav a[aria-current] .icon, .rail-more > summary[aria-current] .icon, .rail-more[open] > summary .icon { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
 
-    .rail .rail-label, .rail .brand span { position: static; left: auto; max-width: 100%; }
+    .rail .rail-label { position: static; left: auto; max-width: 100%; }
     .rail .seat-waiting { position: absolute; top: 0.4rem; left: calc(50% + 0.4rem); right: auto; margin: 0; }
 
-    .rail .bar-1 { order: 1; }
-    .rail .bar-2 { order: 2; }
-    .rail .bar-3 { order: 3; }
-    .rail .bar-4 { order: 4; }
-
-    .rail-more { order: 5; position: relative; display: flex; flex: 1 1 0; min-width: 0; }
+    .rail-more { position: relative; display: flex; flex: 1 1 0; min-width: 0; }
     .rail-more > summary { display: flex; align-items: center; list-style: none; cursor: pointer; }
     .rail-more > summary::-webkit-details-marker { display: none; }
 
@@ -2193,6 +2179,7 @@ header .as-of { float: none; margin: 0; white-space: nowrap; }
     .rail-more-list a, .rail-more-list button {
         display: flex;
         align-items: center;
+        justify-content: flex-start;
         gap: 0.9rem;
         width: 100%;
         min-height: 3rem;
@@ -2206,44 +2193,52 @@ header .as-of { float: none; margin: 0; white-space: nowrap; }
         font: var(--md-sys-typescale-label-large);
         text-align: start;
         text-decoration: none;
-        justify-content: flex-start;
     }
 
     .rail-more-list a:hover, .rail-more-list button:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); border: 0; }
     .rail-more-list a[aria-current] { color: var(--md-sys-color-on-secondary-container); background: var(--md-sys-color-secondary-container); font-weight: 700; }
     .rail-more-list .icon { font-size: 1.5rem; width: 1.5rem; height: 1.5rem; color: var(--md-sys-color-on-surface-variant); }
+    .rail-more-list [hidden] { display: none; }
 
-    /* The page takes the whole width, and ends clear of the bar. */
-    .page { margin-left: 0; padding-bottom: calc(var(--bar-h) + 1.5rem); }
-    .page:has(.convo-page) { padding-bottom: calc(var(--bar-h) + env(safe-area-inset-bottom, 0px)); }
+    /* The page takes the whole width, and ends clear of the bar, list pages included. */
+    .page, .grid-page .page { margin-left: 0; padding-bottom: calc(var(--bar-h) + 1.5rem); }
+    .page:has(.convo-page) { padding-bottom: var(--bar-h); }
 
-    /* The top bar keeps the project's name and the person's seat. The build and the time the page was read give way. */
+    /* Keyboard focus and jumps stop short of the bar as well as the box. */
+    .page :not(.composer, .composer *) { scroll-margin-bottom: calc(var(--composer-h, 0px) + var(--bar-h) + 1rem); }
+
+    /* The top bar keeps the project's name, when the page was read, and the person's seat. The build gives way. */
     header { gap: 0.5rem; flex-wrap: nowrap; }
     header::before { display: none; }
-    header .build, header .as-of { display: none; }
+    header .build { display: none; }
+    header .as-of { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font: var(--md-sys-typescale-label-small); color: var(--ink-faint); }
     .crumb { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; overflow-wrap: normal; font: var(--md-sys-typescale-title-medium); }
-    header nav { flex: none; flex-wrap: nowrap; gap: 0.25rem; }
+    header nav { flex: none; flex-wrap: nowrap; gap: 0.5rem; }
     .seat-who { min-height: 3rem; white-space: nowrap; }
     .bell > summary { min-width: 3rem; min-height: 3rem; }
 
     /* The message box sits on the bar, not under it. */
-    .composer { bottom: calc(var(--bar-h) + env(safe-area-inset-bottom, 0px)); }
+    .composer { bottom: var(--bar-h); }
     .new-below { left: 50%; bottom: calc(var(--composer-h, 9rem) + var(--bar-h) + 1rem); }
 
     /* The graph is under More; its tab would sit over the page's text. */
     .pg-tab { display: none; }
 
-    /* A conversation's tools are a row above it, so its messages have the whole width. */
+    /* A conversation's tools are a row under its name, above it, so its messages have the whole width. The panel is
+       drawn above the message box, so what an icon brings out is not hidden under it, and it ends above the box. */
     .convo-page.panel-closed { grid-template-columns: minmax(0, 1fr); }
-    .panel-closed .panel-strip { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.25rem; padding: 0.25rem 0.5rem; }
+    .convo-panel { z-index: 3; }
+    .panel-closed .panel-strip { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.25rem 0.5rem; }
     .panel-closed .strip-name, .panel-closed .strip-note { writing-mode: horizontal-tb; }
     .panel-closed .strip-name { order: -1; flex: 1 1 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; font: var(--md-sys-typescale-title-small); padding: 0.4rem 0.5rem 0; }
     .strip-button { width: 3rem; min-width: 3rem; height: 3rem; }
     .panel-closed[data-pop] .panel-body,
-    .panel-closed .panel-body:has(.move-bar:not([hidden])) { top: calc(100% + 0.5rem); left: 0; width: 100%; }
-
-    /* The top bar's real height here, which the sticky things below are placed against. */
-    :root { --frame: 4rem; }
+    .panel-closed .panel-body:has(.move-bar:not([hidden])) {
+        top: calc(100% + 0.5rem);
+        left: 0;
+        width: 100%;
+        max-height: calc(100dvh - var(--frame) - var(--bar-h) - var(--composer-h, 4rem) - 9rem);
+    }
 }
 
 /* Compact and medium: a phone, and a tablet held upright. */
@@ -2254,15 +2249,14 @@ header .as-of { float: none; margin: 0; white-space: nowrap; }
     .view-title { flex-wrap: wrap; gap: 0.25rem 1rem; }
     .view-title .as-of { margin: 0; flex-basis: 100%; }
 
-    /* Each row of a list is a card: who or what it is on the first line, the rest of its columns after it, separated by
-       dots, so every column's information stays. The column heads go, as the cells now read in order. */
-    .dgrid { overflow: visible; }
+    /* Each row of a list is a card: who or what it is on the first line, the rest of its columns after it with room
+       between, so every column's information stays. The column heads are kept for a screen reader, out of sight. Clipped
+       rather than scrolled, so its rows keep the card's corners and an open row still sticks under the top bar. */
+    .dgrid { overflow: clip; }
     .dgrid-inner { min-width: 0; }
-    .dgrid-head { display: none; }
-    .dgrid-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.6rem; padding: 0.9rem 1rem; }
+    .dgrid-head { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+    .dgrid-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 1.1rem; padding: 0.9rem 1rem; }
     .dgrid-line > :first-child { flex: 1 1 100%; }
-    .dgrid-line > :empty { display: none; }
-    .dgrid-line > * + * + :not(:empty)::before { content: "·" / ""; margin-right: 0.6rem; color: var(--ink-faint); }
     details.dgrid-row[open] > summary { top: var(--frame); }
     .dgrid-detail { padding: 0.4rem 1rem 1rem; }
     .dgrid-detail .facts { grid-template-columns: minmax(0, 1fr); gap: 0 1rem; }
