@@ -107,7 +107,7 @@
                 .Where(pair => pair.Key != PersonSeats.Reloaded)
                 .SelectMany(pair => pair.Value.Select(value => new KeyValuePair<string, string?>(pair.Key, value)))
                 .Append(new KeyValuePair<string, string?>(PersonSeats.Reloaded, "1")));
-        @* The reload waits while a dialog or an opened "create" card is open: it would close either under whoever is typing in it. Without script
+        @* The reload waits while a dialog, a page action's panel or the filters are open: it would close any of them under whoever is typing in it. Without script
            the page reloads on the timer as before. *@
         var target = $"{Context.Request.Path}{query}";
         <noscript><meta http-equiv="refresh" content="@($"{seconds};url={target}")" /></noscript>
@@ -169,7 +169,7 @@
 
                 (function tick() {
                     setTimeout(function () {
-                        if (document.querySelector("dialog[open], details.view-create[open], details.filters-fold[open]")) { tick(); } else { keep(); location.replace(m.getAttribute("data-url")); }
+                        if (document.querySelector("dialog[open], details.rail-act[open], details.filters-fold[open]")) { tick(); } else { keep(); location.replace(m.getAttribute("data-url")); }
                     }, every);
                 })();
             })();
@@ -248,9 +248,9 @@
            phone the same buttons float above the bottom bar. Each is a <details>, so it opens with no script. *@
         @if (IsSectionDefined("Actions"))
         {
-            <div class="rail-actions">
+            <section class="rail-actions" aria-label="Page actions">
                 @await RenderSectionAsync("Actions")
-            </div>
+            </section>
         }
         <nav aria-label="Sections">
             @foreach (var item in rail)
@@ -318,11 +318,17 @@
         </button>
     </aside>
     <script>
-        // A page action's panel closes as a menu does: a tap outside it, or Escape. It opens and closes with no script.
+        // A page action's panel closes as a menu does: a tap outside it, or Escape. It opens and closes with no script. A tap
+        // outside leaves one with something typed in it open: closed, it would no longer hold off the timed reload, which
+        // would take what was typed.
         (function () {
+            function typedIn(act) {
+                return Array.prototype.some.call(act.querySelectorAll("input:not([type=hidden]), textarea"), function (box) { return box.value !== box.defaultValue; });
+            }
+
             document.addEventListener("click", function (e) {
                 Array.prototype.forEach.call(document.querySelectorAll(".rail-actions details[open]"), function (act) {
-                    if (!act.contains(e.target)) { act.open = false; }
+                    if (!act.contains(e.target) && !typedIn(act)) { act.open = false; }
                 });
             });
             document.addEventListener("keydown", function (e) {
@@ -358,7 +364,7 @@
                 @if (ViewData["Conversation"] is string { Length: > 0 } inConversation)
                 {
                     <span class="crumb-sep" aria-hidden="true">/</span>
-                    <span class="crumb-here" title="This conversation">@inConversation</span>
+                    <span class="crumb-here" title="@inConversation">@inConversation</span>
                 }
             </span>
         }

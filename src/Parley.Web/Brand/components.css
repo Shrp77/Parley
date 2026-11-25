@@ -997,8 +997,7 @@ pre {
 .strip-button { --md-btn-container: transparent; --md-btn-content: var(--md-sys-color-on-surface-variant); --md-btn-outline: var(--md-sys-color-outline); position: relative; display: inline-grid; place-items: center; width: 2.5rem; min-width: 2.5rem; height: 2.5rem; padding: 0; }
 .strip-button[hidden], .strip-note[hidden] { display: none; }
 .strip-count { position: absolute; top: -0.35rem; right: -0.35rem; min-width: 1.1rem; padding: 0 0.2rem; border-radius: 999px; font-size: 0.68rem; line-height: 1.1rem; color: var(--on-accent); background: var(--accent); }
-.strip-name, .strip-note { writing-mode: vertical-rl; white-space: nowrap; }
-.strip-name { font-weight: 600; font-size: 0.9rem; }
+.strip-note { writing-mode: vertical-rl; white-space: nowrap; }
 .strip-note { font-size: 0.72rem; color: var(--ink-faint); }
 
 /* The messages and the minimap of them. */
@@ -1123,22 +1122,10 @@ td code, td.path { overflow-wrap: anywhere; }
 .view-card { flex: none; background: var(--card); border: 1px solid var(--rule); border-radius: var(--md-sys-shape-corner-large); box-shadow: var(--md-sys-elevation-1); }
 .view-card .composer-note { margin: 0; }
 
-.view-create > summary { display: flex; align-items: center; gap: 0.7rem; padding: 0.7rem 1.1rem; font-weight: 650; cursor: pointer; list-style: none; }
-.view-create > summary::-webkit-details-marker { display: none; }
-.view-create > summary::before { content: "add"; content: "add" / ""; font-family: "Material Symbols Outlined"; display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: 1.15rem; line-height: 1; transition: transform 0.15s; }
-.view-create[open] > summary::before { content: "remove"; content: "remove" / ""; }
-.view-create form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; border: 0; background: none; box-shadow: none; padding: 0.1rem 1.1rem 1rem; margin: 0; }
-.view-create .composer-note { flex: 1 1 100%; }
-/* A 40px button beside a 48px field: centred on it, as the filter row's buttons are. */
-.view-create form > button { margin-bottom: 0.25rem; }
 
 .view-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; padding: 0.7rem 1.1rem; margin: 0; }
 /* Level with the fields and buttons beside it, not with their labels: the same height and bottom margin as a button. */
 .view-filters .tally { margin: 0 0 0.25rem auto; align-self: flex-end; display: inline-flex; align-items: center; min-height: 2.5rem; font-size: 0.85rem; color: var(--ink-faint); }
-.still-open { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; padding: 0.7rem 1.1rem; margin: 0; }
-.still-open > p { flex: 1 1 24rem; margin: 0; }
-.still-open > details { flex: 1 1 100%; order: 3; }
-.still-open > details summary { cursor: pointer; }
 .still-open-asked { padding: 0.7rem 1.1rem; max-height: 14rem; overflow: auto; }
 .still-open-asked h2 { margin: 0 0 0.4rem; font: var(--md-sys-typescale-title-small); }
 .still-open-asked table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
@@ -1164,11 +1151,11 @@ td code, td.path { overflow-wrap: anywhere; }
 .inbox-changed { margin: 0; padding: 0.5rem 1.1rem; border-radius: var(--radius); background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
 .inbox-changed[hidden] { display: none; }
 
-.view .field { display: flex; flex-direction: column; gap: 0.2rem; flex: 1 1 11rem; min-width: 0; }
-.view .field.wide { flex-grow: 3; }
+:is(.view, .act-panel) .field { display: flex; flex-direction: column; gap: 0.2rem; flex: 1 1 11rem; min-width: 0; }
+:is(.view, .act-panel) .field.wide { flex-grow: 3; }
 /* Pill-shaped here; the base rules own everything else about a field, the chevron included. */
 /* Not stretched by the column they stand in: a narrow screen's rule gives an input a flex size, which in a column is its height. */
-.view .field input, .view .field select, dialog .field input { width: 100%; flex: none; }
+:is(.view, .act-panel) .field input, :is(.view, .act-panel) .field select, dialog .field input { width: 100%; flex: none; }
 .view .view-filters button, .view .view-filters .button { align-self: flex-end; margin-bottom: 0.25rem; }
 .conversations { display: flex; flex-direction: column; gap: 0.75rem; }
 .new-conversation { margin: 0; }
@@ -1916,9 +1903,6 @@ ul.sent > li { border-radius: var(--md-sys-shape-corner-small); background: var(
 /* An extended FAB for the one floating action: primary container, the large corner, level 3. */
 .new-below { --md-btn-container: var(--md-sys-color-primary-container); --md-btn-content: var(--md-sys-color-on-primary-container); min-height: 3.5rem; padding: 0 1.25rem; border-radius: var(--md-sys-shape-corner-large); color: var(--md-sys-color-on-primary-container); background-color: var(--md-sys-color-primary-container); box-shadow: var(--md-sys-elevation-3); }
 
-/* The create card's add mark is a small FAB. */
-.view-create > summary { min-height: 3.5rem; font: var(--md-sys-typescale-title-medium); }
-.view-create > summary::before { width: 2.5rem; height: 2.5rem; border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); font-size: 1.5rem; }
 
 /* The composer is a raised surface pinned to the bottom. */
 .composer { background: var(--md-sys-color-surface-container-low); border-color: var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-large) 0 0; }
@@ -2111,9 +2095,6 @@ header > nav { margin-left: 0; }
    text. */
 header { -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blur(16px) saturate(1.2); }
 
-/* The conversation's name is in the top bar now, so the closed panel's strip no longer repeats it down its side. */
-.panel-closed .strip-name { display: none; }
-
 /* In a large window the drawer's collapse is a round button on its edge, part way down, between the menu and the page
    (the person's feedback on feature 042), rather than an item at the foot. Fixed, so it stays put as the page scrolls;
    below 1200px the rail cannot expand and the button is not drawn. */
@@ -2145,6 +2126,9 @@ header { -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blu
    with its icon, and its label while the drawer is open), the others as quieter items under it. Each opens its panel
    beside the rail, over the page, as a menu does. */
 .rail-actions { display: flex; flex-direction: column; gap: 0.25rem; margin: 0 0 0.75rem; }
+/* The rail is a stacking context, so its open panel is drawn at the rail's level: raised while one is open, so the graph's
+   tab and the edge toggle do not draw over it. */
+.rail:has(.rail-actions details[open]) { z-index: 45; }
 .rail-act > summary {
     position: relative;
     display: flex;
@@ -2160,8 +2144,6 @@ header { -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blu
     white-space: nowrap;
 }
 .rail-act > summary::-webkit-details-marker { display: none; }
-/* The icon is the summary's own; the page card's plus-and-minus marker is not drawn here. */
-.rail-actions .view-create > summary::before { content: none; display: none; }
 .rail-act > summary .icon { font-size: 1.5rem; }
 .rail-act > summary:hover, .rail-act[open] > summary { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); color: var(--md-sys-color-on-surface); }
 .rail-act-main > summary {
@@ -2191,8 +2173,8 @@ html[data-nav="collapsed"] .rail-act .rail-label { position: absolute; left: -10
     position: fixed;
     z-index: 35;
     top: calc(var(--frame) + 0.5rem);
-    left: calc(var(--rail-w) + 0.75rem);
-    width: min(34rem, calc(100vw - var(--rail-w) - 1.5rem));
+    left: calc(var(--rail-w) + 1.75rem);
+    width: min(34rem, calc(100vw - var(--rail-w) - 2.5rem));
     max-height: calc(100vh - var(--frame) - 1.5rem);
     overflow-y: auto;
     padding: 1rem 1.25rem;
@@ -2204,9 +2186,9 @@ html[data-nav="collapsed"] .rail-act .rail-label { position: absolute; left: -10
 }
 .act-panel form { display: flex; flex-wrap: wrap; gap: 0.75rem 1rem; align-items: flex-end; margin: 0; padding: 0; background: none; border: 0; box-shadow: none; }
 .act-panel form + form { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--md-sys-color-outline-variant); }
-.act-panel .field { display: flex; flex-direction: column; gap: 0.2rem; flex: 1 1 11rem; min-width: 0; }
-.act-panel .field.wide { flex-grow: 3; flex-basis: 100%; }
-.act-panel .field input, .act-panel .field select { width: 100%; flex: none; }
+.act-panel .field.wide { flex-basis: 100%; }
+/* A 40px button beside a 48px field: centred on it, as the filter row's buttons are. */
+.act-panel form > button { margin-bottom: 0.25rem; }
 .act-panel .composer-note, .act-panel form > p, .act-panel form > details { flex-basis: 100%; margin: 0; }
 
 /* Filters fold behind one button while nothing is filtered; what is filtered stays in sight as chips that take it off. */
@@ -2344,7 +2326,7 @@ html[data-nav="collapsed"] .rail-act .rail-label { position: absolute; left: -10
     .crumb-here { max-width: 100%; font: var(--md-sys-typescale-title-medium); color: var(--ink); }
     /* The seat is the person's own, the same on every page: its dot and its count are what a phone has room for. The
        name stays for a screen reader. */
-    .seat-who { font-size: 0; gap: 0.3rem; justify-content: center; min-width: 3rem; }
+    .seat-who:has(.seat-dot) { font-size: 0; gap: 0.3rem; justify-content: center; min-width: 3rem; }
     .seat-who .seat-waiting { font: var(--md-sys-typescale-label-small); }
     header nav { flex: none; flex-wrap: nowrap; gap: 0.5rem; }
     .seat-who { min-height: 3rem; white-space: nowrap; }
@@ -2355,12 +2337,13 @@ html[data-nav="collapsed"] .rail-act .rail-label { position: absolute; left: -10
     .new-below { left: 50%; bottom: calc(var(--composer-h, 9rem) + var(--bar-h) + 1rem); }
 
     /* A page's actions float above the bottom bar at the right, the main one as Material 3's floating action button,
-       and each opens its panel above them. The page ends clear of them. */
+       and each opens its panel above them, so the button that opened it is still there to close it. The page ends clear of them. */
     .rail-actions { position: fixed; right: 1rem; bottom: calc(var(--bar-h) + 1rem); z-index: 32; flex-direction: column-reverse; align-items: flex-end; gap: 0.75rem; margin: 0; }
     .rail-act > summary { width: auto; min-height: 3rem; padding: 0 1rem; background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); box-shadow: var(--md-sys-elevation-2); }
     .rail-act-main > summary { min-height: 3.5rem; padding: 0 1.25rem; background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); box-shadow: var(--md-sys-elevation-3); }
     .rail-act .rail-label { position: static; }
-    .act-panel { top: auto; left: 1rem; right: 1rem; bottom: calc(var(--bar-h) + 1rem); width: auto; max-height: calc(100dvh - var(--frame) - var(--bar-h) - 2rem); }
+    .act-panel { top: auto; left: 1rem; right: 1rem; bottom: calc(var(--bar-h) + 5.5rem); width: auto; max-height: calc(100dvh - var(--frame) - var(--bar-h) - 7rem); }
+    .rail-actions:has(> .rail-act + .rail-act) .act-panel { bottom: calc(var(--bar-h) + 9.5rem); max-height: calc(100dvh - var(--frame) - var(--bar-h) - 11rem); }
     body:has(.rail-actions) .page { padding-bottom: calc(var(--bar-h) + 10rem); }
 
     /* The graph is under More; its tab would sit over the page's text. */

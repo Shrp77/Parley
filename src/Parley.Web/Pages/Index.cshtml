@@ -12,23 +12,20 @@
     ViewData["Grid"] = true;
     ViewData["Deferred"] = true;
 
-    // What the list is filtered on, as chips that each take one filter off (the person's feedback on feature 042): the same
-    // page with every other part of its address kept.
-    string Without(string drop) =>
-        "/" + Microsoft.AspNetCore.Http.QueryString.Create(ViewContext.HttpContext.Request.Query
-            .Where(pair => pair.Key != drop && pair.Key != Parley.Web.Seating.PersonSeats.Reloaded)
-            .SelectMany(pair => pair.Value.Select(value => new KeyValuePair<string, string?>(pair.Key, value))));
-    var filters = new List<(string Says, string Off)>();
-    if (Model.Q is { Length: > 0 } searched) { filters.Add(($"Search: {searched}", Without("q"))); }
-    if (Model.Scope is { Length: > 0 } scoped) { filters.Add(($"Project: {scoped}", Without("scope"))); }
-    if (Model.State is { Length: > 0 } inState) { filters.Add(($"State: {inState}", Without("state"))); }
-    if (Model.Status is { Length: > 0 } status) { filters.Add(($"Status: {(status == "up" ? "Answering" : "Not answering")}", Without("status"))); }
+    // What the list is filtered on, as chips that each take one filter off (the person's feedback on feature 042).
+    var filters = new List<(string Says, string Key)>();
+    if (Model.Q is { Length: > 0 } searched) { filters.Add(($"Search: {searched}", "q")); }
+    if (Model.Scope is { Length: > 0 } scoped) { filters.Add(($"Project: {scoped}", "scope")); }
+    if (Model.State is { Length: > 0 } inState) { filters.Add(($"State: {inState}", "state")); }
+    if (Model.Status is { Length: > 0 } status) { filters.Add(($"Status: {(status == "up" ? "Answering" : "Not answering")}", "status")); }
 }
 
-@* The page is a data grid: a title, then Create, Filters and the grid, in that order. The first three stay where they
-   are and the grid is what scrolls, with its header row held at its top (see `.view` and `.dgrid` in the frame). The
-   Projects and Agents views are the two the side rail links to; each is a page the server renders, so they work with
-   no script and survive the page's reload. Filtering is a form that asks for the page again, for the same reason. *@
+@* The page is a data grid: a title, then the folded filters with a chip for each filter that is on, then the grid. The
+   title and filters stay where they are and the grid is what scrolls, with its header row held at its top (see `.view`
+   and `.dgrid` in the frame). Creating a project or registering an agent opens from the rail (the Actions section at
+   the end). The Projects and Agents views are the two the side rail links to; each is a page the server renders, so
+   they work with no script and survive the page's reload. Filtering is a form that asks for the page again, for the
+   same reason. *@
 
 <div class="view">
     <div class="view-title">
@@ -330,7 +327,7 @@
             @* Making a repository on this machine an agent of this project, as the terminal does it: one repository named here, or
                every repository in a folder. Both lead to a page that says what would be written and writes nothing until it is
                confirmed. *@
-            <details class="view-create rail-act rail-act-main">
+            <details class="rail-act rail-act-main">
                 <summary title="Register an agent in @here.Name.Value"><span class="icon" aria-hidden="true">add</span><span class="rail-label">Register an agent in @here.Name.Value</span></summary>
                 <div class="act-panel">
                 <form method="get" action="/Projects/Enrol">
@@ -461,9 +458,15 @@
     }
     else
     {
-        <details class="view-create rail-act rail-act-main" open="@(Model.Refused ? "open" : null)">
+        <details class="rail-act rail-act-main" open="@(Model.Refused ? "open" : null)">
             <summary title="Create a project"><span class="icon" aria-hidden="true">add</span><span class="rail-label">Create a project</span></summary>
             <div class="act-panel">
+            @* A refused create opens the panel again with what was typed, and the panel lies over the page, so why it was
+               refused is said here, where it is seen, as well as in the page. *@
+            @if (Model.Refused && Model.Outcome is { Length: > 0 } refusedBecause)
+            {
+                <p class="unreachable" aria-hidden="true">@refusedBecause</p>
+            }
             <form method="post" asp-page-handler="Create">
                 <div class="field wide">
                     <label for="new-project">Name</label>

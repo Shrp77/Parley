@@ -13,8 +13,9 @@
     var shown = everything.Where(row => Model.Keep(row.Project, row.Item)).ToList();
 }
 
-@* The page is a data grid: a title, then Create, Filters and the grid, in that order. The first three stay where they are
-   and the grid is what scrolls, with its header row held at its top. A message is one row; opening it shows the whole of it
+@* The page is a data grid: a title, then the folded filters with a chip for each filter that is on, the views, and the
+   grid. Starting a conversation and asking which questions are still open open from the rail (the Actions section at the
+   end). The title and filters stay where they are and the grid is what scrolls, with its header row held at its top. A message is one row; opening it shows the whole of it
    and the ways to answer it, and its line stays at the top of the grid while it is read, so who it is with and where are
    always in sight and a press closes it from anywhere in it. There is no column for what was said: a line of it never fit
    and told nothing the opened row does not (owner, 2026-11-13). *@
@@ -124,18 +125,9 @@
     @{
         // What is filtered, said as chips beside the Filter button, each taking its own filter off (the person's feedback on
         // feature 042). The fold is closed when nothing is filtered, and the chips are how a filter that is on stays in sight.
-        string Without(string drop)
-        {
-            var query = Microsoft.AspNetCore.Http.QueryString.Create(
-                new[] { ("view", Model.View), ("q", drop == "q" ? null : Model.Q), ("scope", drop == "scope" ? null : Model.Scope) }
-                    .Where(pair => !string.IsNullOrEmpty(pair.Item2))
-                    .Select(pair => new KeyValuePair<string, string?>(pair.Item1, pair.Item2)));
-
-            return "/Inbox" + query;
-        }
-        var filters = new List<(string Says, string Off)>();
-        if (Model.Q is { Length: > 0 } searched) { filters.Add(($"Search: {searched}", Without("q"))); }
-        if (Model.Scope is { Length: > 0 } scoped) { filters.Add(($"Project: {scoped}", Without("scope"))); }
+        var filters = new List<(string Says, string Key)>();
+        if (Model.Q is { Length: > 0 } searched) { filters.Add(($"Search: {searched}", "q")); }
+        if (Model.Scope is { Length: > 0 } scoped) { filters.Add(($"Project: {scoped}", "scope")); }
     }
     <div class="filter-bar">
     <details class="filters-fold">
@@ -390,7 +382,7 @@
 </div>
 
 @section Actions {
-    <details class="view-create rail-act rail-act-main">
+    <details class="rail-act rail-act-main">
         <summary title="Start a conversation"><span class="icon" aria-hidden="true">add</span><span class="rail-label">Start a conversation</span></summary>
         <div class="act-panel">
             @* **Starting one belongs beside the messages that come out of them.** Naming a conversation is what creates it, and

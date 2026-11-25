@@ -1,12 +1,12 @@
-@model IReadOnlyList<(string Says, string Off)>
+@model IReadOnlyList<(string Says, string Key)>
 @* What a list is filtered on, beside its folded Filter button, each chip a link to the same list without that filter (the
    person's feedback on feature 042): a filter that is on stays in sight, and is taken off in one press, with no script. *@
 @if (Model.Count > 0)
 {
     <ul class="filter-chips" aria-label="Filtered on">
-        @foreach (var (says, off) in Model)
+        @foreach (var (says, key) in Model)
         {
-            <li><a class="chip" href="@off" title="Take this filter off">@says <span class="icon" aria-hidden="true">close</span></a></li>
+            <li><a class="chip" href="@Parley.Web.Pages.Shared.FilterChips.Without(ViewContext.HttpContext.Request, key)" title="Take this filter off">@says<span class="visually-hidden">, remove this filter</span> <span class="icon" aria-hidden="true">close</span></a></li>
         }
     </ul>
 }
