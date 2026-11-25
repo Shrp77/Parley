@@ -899,6 +899,25 @@
           "pause": 300
         }
       ]
+    },
+    {
+      "file": "settings-colors-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Settings",
+      "shows": "Settings on a phone with the color list open.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "click": "#palette-menu > summary"
+        },
+        {
+          "pause": 300
+        }
+      ]
     }
   ]
 }

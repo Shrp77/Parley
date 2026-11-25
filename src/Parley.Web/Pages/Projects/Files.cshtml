@@ -128,6 +128,13 @@ else if (Model.Listing is { } listing)
             <input type="hidden" name="project" value="@Model.Project" />
             <input type="hidden" name="conversation" value="@Model.Conversation" />
 
+            @* Choosing: all or none at once, and Remove offered only once something is chosen. Drawn by the script below;
+               with no script every box and Remove are there as they always were. *@
+            <div class="files-tools" id="files-tools" hidden>
+                <button type="button" class="quiet" id="files-all">Select all</button>
+                <button type="button" class="quiet" id="files-none">Select none</button>
+            </div>
+
             <table class="files">
                 <thead>
                     <tr>
@@ -147,7 +154,8 @@ else if (Model.Listing is { } listing)
                         <tr>
                             <td class="pick"><input type="checkbox" name="selected" value="@($"{file.ConversationId}/{file.Name.Value}")" aria-label="Choose @file.Name.Value" /></td>
                             <td class="name" title="@file.Name.Value, sha256 @file.Sha256.Value">@file.Name.Value</td>
-                            <td class="in"><a href="/Projects/Files?project=@Model.Project&amp;conversation=@file.ConversationId">@file.ConversationId</a></td>
+                            @* A filter, not Open: it shows only this conversation's files, so it is drawn as a chip. *@
+                            <td class="in"><a class="in-chip" href="/Projects/Files?project=@Uri.EscapeDataString(Model.Project ?? string.Empty)&amp;conversation=@Uri.EscapeDataString(file.ConversationId)" title="Show only this conversation's files"><span class="icon" aria-hidden="true">tune</span>@file.ConversationId</a></td>
                             <td class="size">@FilesModel.Size(file.SizeBytes)</td>
                             <td class="hash" title="@file.Sha256.Value"><code>@file.Sha256.Short</code></td>
                             <td class="by">@(file.PlacedBy?.Value ?? "the person")</td>
@@ -163,8 +171,26 @@ else if (Model.Listing is { } listing)
                 </tbody>
             </table>
 
-            <button type="submit" class="danger">Remove the chosen files…</button>
+            <button type="submit" class="danger" id="files-remove">Remove the chosen files…</button>
         </form>
+        <script>
+            (function () {
+                var tools = document.getElementById("files-tools");
+                var remove = document.getElementById("files-remove");
+                var boxes = Array.prototype.slice.call(document.querySelectorAll("table.files input[name=selected]"));
+
+                if (!tools || !remove || boxes.length === 0) { return; }
+
+                function sync() { remove.hidden = !boxes.some(function (box) { return box.checked; }); }
+                function every(on) { boxes.forEach(function (box) { box.checked = on; }); sync(); }
+
+                tools.hidden = false;
+                document.getElementById("files-all").addEventListener("click", function () { every(true); });
+                document.getElementById("files-none").addEventListener("click", function () { every(false); });
+                boxes.forEach(function (box) { box.addEventListener("change", sync); });
+                sync();
+            })();
+        </script>
 
         <p class="files-note">@Parley.Client.Rendering.LocalTime.Note()</p>
 

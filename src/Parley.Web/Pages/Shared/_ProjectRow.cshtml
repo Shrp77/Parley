@@ -22,9 +22,10 @@
         <span role="cell"><a class="project-name name" href="/Projects/Agents?project=@name">@name</a></span>
         <span role="cell">
             @* Absent rather than zero when the broker did not answer: zero would read as a project somebody has emptied. *@
+            @* Each count says what it counts where the column heads are not drawn (a phone's card): "4 agents", not "4". *@
             @if (summary is { Reachable: true })
             {
-                @(summary.Agents ?? 0)
+                @(summary.Agents ?? 0)<span class="unit"> @((summary.Agents ?? 0) == 1 ? "agent" : "agents")</span>
                 @if (summary.Running > 0)
                 {
                     <span class="faint">(@summary.Running running)</span>
@@ -38,7 +39,7 @@
         <span role="cell">
             @if (summary is { Reachable: true })
             {
-                @(summary.Conversations ?? 0)
+                @(summary.Conversations ?? 0)<span class="unit"> @((summary.Conversations ?? 0) == 1 ? "conversation" : "conversations")</span>
                 @if (summary.Archived > 0)
                 {
                     <span class="faint">(@summary.Archived archived)</span>

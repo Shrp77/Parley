@@ -1952,8 +1952,7 @@ header .build { font: var(--md-sys-typescale-body-small); }
 :root[data-density="compact"] .export-list a, :root[data-density="compact"] .mention-list li { min-height: 2.5rem; }
 
 /* The Parley-wide Settings page: each choice a group of radio buttons, each one a row with its words. */
-.appearance { display: block; max-width: 40rem; }
-.settings-section fieldset.choice { border: 0; background: none; padding: 0; margin: 0 0 1rem; }
+.settings-section fieldset.choice:not(.choice-card) { border: 0; background: none; padding: 0; margin: 0 0 1rem; }
 .choice legend { font: var(--md-sys-typescale-title-small); color: var(--md-sys-color-on-surface); padding: 0; margin-bottom: 0.5rem; }
 .choice label { display: flex; align-items: center; gap: 0.75rem; min-height: 2.5rem; color: var(--md-sys-color-on-surface); font: var(--md-sys-typescale-body-large); cursor: pointer; }
 .about dt { font: var(--md-sys-typescale-title-small); color: var(--md-sys-color-on-surface); margin-top: 0.75rem; }
@@ -2093,11 +2092,8 @@ header .as-of { float: none; margin: 0; white-space: nowrap; }
 
 /* The colour choice on the Settings page: each palette as a strip of its main colour, its accent and its card surface. */
 .palettes { display: grid; gap: 0.6rem; }
-.palette-pick { display: flex; align-items: center; gap: 0.75rem; }
-.palette-pick select { min-width: 12rem; }
 .swatch { display: inline-flex; overflow: hidden; border-radius: var(--md-sys-shape-corner-small); box-shadow: var(--md-sys-elevation-1); }
 .swatch span { width: 1.1rem; height: 1.8rem; }
-#custom-swatch span { width: 3.3rem; }
 .palette-own { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 0.8rem 1.4rem; align-items: center; padding: 0.4rem 0 0.2rem; }
 .palette-own input[type="color"] { width: 3rem; height: 2.2rem; padding: 0; border: 0; background: none; vertical-align: middle; }
 .palette-own[hidden] { display: none; }
@@ -2220,7 +2216,10 @@ html[data-rail-open] { --rail-drawn: 16rem; }
     padding: 1rem 1.25rem;
     white-space: normal;
     color: var(--md-sys-color-on-surface);
-    background: var(--md-sys-color-surface-container-high);
+    /* A little of the palette's color, so a panel reads as the command that opened it (the person's feedback on feature
+       042): its primary along the top, and a tint of its container fading into the panel's surface. */
+    background: linear-gradient(180deg, color-mix(in srgb, var(--md-sys-color-primary-container) 70%, var(--md-sys-color-surface-container-high)) 0, var(--md-sys-color-surface-container-high) 6rem);
+    border-top: 4px solid var(--md-sys-color-primary);
     border-radius: var(--md-sys-shape-corner-large);
     box-shadow: var(--md-sys-elevation-3);
 }
@@ -2337,19 +2336,30 @@ table.files td.name { max-width: 18rem; overflow: hidden; text-overflow: ellipsi
 table.files td.open { text-align: end; }
 .files-form { display: block; padding: 0; margin: 0 0 1rem; background: none; border: 0; box-shadow: none; overflow-x: auto; }
 .files-note { margin: 0 0 1rem; font-size: 0.85rem; color: var(--ink-faint); }
+.files-tools { display: flex; gap: 0.5rem; margin: 0 0 0.5rem; }
+.files-tools[hidden], #files-remove[hidden] { display: none; }
+/* A file's conversation is a filter: a small chip, apart from the Open button beside it. */
+a.in-chip { display: inline-flex; align-items: center; gap: 0.25rem; max-width: 100%; padding: 0 0.5rem; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); color: var(--md-sys-color-on-surface-variant); text-decoration: none; overflow: hidden; text-overflow: ellipsis; }
+a.in-chip .icon { flex: none; font-size: 0.95rem; }
+a.in-chip:hover { border-color: var(--md-sys-color-outline); background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
 /* Below 840px the hash gives way; it is still each name's title. */
 @media (max-width: 52.49rem) {
-    /* On a phone or a tablet held upright each file is a card: chosen, its name and Open on the first line, where and by whom under it. Its hash is
-       its title, as there is no width for it. */
+    /* On a phone or a tablet held upright each file is a card on a fixed grid, so nothing in it wraps: chosen, its name
+       and Open on the first line; the conversation it is in and its size on the second; who placed it and when on the
+       third. Each sits in its own column and is cut short with an ellipsis rather than broken. Its hash is its name's
+       title. */
     table.files, table.files tbody { display: block; width: 100%; }
     table.files thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-    table.files tr { display: flex; flex-wrap: wrap; align-items: center; gap: 0.2rem 0.75rem; padding: 0.75rem 0.5rem; border-top: 1px solid var(--md-sys-color-outline-variant); }
-    table.files td { display: block; padding: 0; border: 0; }
-    table.files td.pick { flex: none; }
-    table.files td.name { order: 1; flex: 1 1 calc(100% - 9rem); min-width: 0; max-width: none; }
-    table.files td.open { order: 2; flex: none; }
-    table.files td.in, table.files td.size, table.files td.by, table.files td.when { order: 3; font-size: 0.8rem; color: var(--ink-soft); }
-    table.files td.in { margin-left: 2.25rem; }
+    table.files tr { display: grid; grid-template-columns: 2.25rem minmax(0, 1fr) auto auto; align-items: center; gap: 0.25rem 0.6rem; padding: 0.75rem 0.5rem; border-top: 1px solid var(--md-sys-color-outline-variant); }
+    table.files td { display: block; min-width: 0; padding: 0; border: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    table.files td.pick { grid-column: 1; grid-row: 1; }
+    table.files td.name { grid-column: 2 / 4; grid-row: 1; max-width: none; }
+    table.files td.open { grid-column: 4; grid-row: 1 / 3; overflow: visible; }
+    table.files td.in { grid-column: 2; grid-row: 2; }
+    table.files td.size { grid-column: 3; grid-row: 2; text-align: end; }
+    table.files td.by { grid-column: 2; grid-row: 3; }
+    table.files td.when { grid-column: 3 / 5; grid-row: 3; text-align: end; }
+    table.files :is(td.in, td.size, td.by, td.when) { font-size: 0.8rem; color: var(--ink-soft); }
     table.files td.hash { display: none; }
 }
 .placements-fold { margin: 0 0 1rem; font-size: 0.9rem; }
@@ -2360,7 +2370,6 @@ table.files td.open { text-align: end; }
     /* Settings: each group its own card with room inside, and nothing reaching the window's edge. */
     .settings-section fieldset { min-width: 0; margin: 0 0 0.75rem; padding: 0.75rem; }
     .settings-section fieldset fieldset { margin: 0.5rem 0 0; }
-    .palettes { flex-direction: column; align-items: flex-start; }
 
     /* Commands that are a link or one press, in the phone's bar. */
     .rail-actions .rail-link { flex: none; width: auto; min-height: 2.5rem; padding: 0 1rem; background: var(--md-sys-color-surface-container-lowest); }
@@ -2382,6 +2391,9 @@ a.project-chip:hover { background-image: linear-gradient(color-mix(in srgb, var(
 /* A label with a shorter word for a phone, where the long one would wrap (the Inbox's Waiting). One is drawn at a time. */
 .short-label { display: none; }
 @media (max-width: 37.49rem) { .long-label { display: none; } .short-label { display: inline; } }
+/* A count's unit, said only where the column head naming it is not drawn. */
+.unit { display: none; }
+@media (max-width: 37.49rem) { .unit { display: inline; } }
 /* An agent's registry entry: two columns of short facts that never need to scroll, so it stays a table at every width
    and fills its card, its name centered over it (the person's feedback on feature 042). */
 table.registry { display: table; width: 100%; }
@@ -2397,6 +2409,46 @@ table.registry { display: table; width: 100%; }
     .dgrid[data-load="agents"] .dgrid-line > :nth-child(3) { grid-column: 2 / 4; grid-row: 2; }
     .dgrid[data-load="agents"] .state-words { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
+
+/* ---- Appearance on the Settings page (feature 042, the person's layout sample) ------------------------------------------
+   Each choice is a card with its name centered, side by side where the window allows; theme and density are tiles with a
+   small picture of what each does, and the palette a list that opens from its current choice, each drawn as its colors. */
+/* The form is only what holds the cards: none of a form's own card look. */
+.settings-section form.appearance { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 1rem; align-items: start; max-width: 64rem; margin: 0; padding: 0; border: 0; background: none; box-shadow: none; }
+.settings-section form.appearance > .composer-note { grid-column: 1 / -1; }
+/* Hidden until script runs: the choices live in this browser's storage. */
+.settings-section form.appearance[hidden] { display: none; }
+.settings-section .choice-card { min-width: 0; margin: 0; padding: 1rem 1rem 1.25rem; border: 0; border-radius: var(--md-sys-shape-corner-large); background: var(--card); box-shadow: var(--md-sys-elevation-1); }
+.choice-card > legend { float: left; width: 100%; margin: 0 0 0.75rem; padding: 0; text-align: center; font: var(--md-sys-typescale-title-small); color: var(--md-sys-color-on-surface-variant); }
+.choice-card > legend + * { clear: both; }
+.tiles { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 0.5rem; }
+.choice .tile { position: relative; display: grid; align-items: center; min-height: 0; justify-items: center; gap: 0.35rem; padding: 0.6rem 0.4rem 0.5rem; border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container); color: var(--md-sys-color-on-surface); font: var(--md-sys-typescale-label-large); cursor: pointer; }
+.choice .tile input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.tile svg { width: 4rem; height: 2.5rem; }
+.tile:hover { background-image: linear-gradient(color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent) 0 0); }
+.tile:has(input:checked) { color: var(--md-sys-color-on-secondary-container); background: var(--md-sys-color-secondary-container); box-shadow: inset 0 0 0 2px var(--md-sys-color-primary); }
+.tile:has(input:focus-visible) { outline: 3px solid var(--md-sys-color-secondary); outline-offset: 2px; }
+.pic-light { fill: var(--md-sys-color-surface-container-lowest); stroke: var(--md-sys-color-outline-variant); }
+.pic-dark { fill: var(--md-sys-color-inverse-surface); }
+.pic-line { fill: var(--md-sys-color-outline-variant); }
+.pic-line-dark { fill: var(--md-sys-color-inverse-on-surface); opacity: 0.6; }
+.pic-accent { fill: var(--md-sys-color-primary); }
+.pic-stroke { stroke: var(--md-sys-color-primary); stroke-width: 2; stroke-linecap: round; fill: none; }
+.pic-card { fill: var(--md-sys-color-primary-container); }
+
+.palette-menu { position: relative; }
+.palette-menu > summary { display: flex; align-items: center; gap: 0.75rem; min-height: 3rem; padding: 0 2.75rem 0 0.75rem; list-style: none; cursor: pointer; border: 1px solid var(--md-sys-color-outline); border-radius: var(--md-sys-shape-corner-extra-small); background: var(--md-sys-color-surface-container-lowest); font: var(--md-sys-typescale-body-large); }
+.palette-menu > summary::-webkit-details-marker { display: none; }
+.palette-menu > summary::after { content: "expand_more"; content: "expand_more" / ""; position: absolute; right: 0.75rem; font-family: "Material Symbols Outlined"; font-size: 1.5rem; color: var(--md-sys-color-on-surface-variant); }
+.palette-list { position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 0.25rem); display: grid; padding: 0.4rem 0; background: var(--md-sys-color-surface-container); border-radius: var(--md-sys-shape-corner-small); box-shadow: var(--md-sys-elevation-2); }
+.palette-option { display: flex; align-items: center; gap: 0.75rem; min-height: 3rem; padding: 0 0.75rem; cursor: pointer; }
+.palette-option input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.palette-option:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
+.palette-option:has(input:checked) { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); font-weight: 600; }
+.palette-option:has(input:focus-visible) { outline: 3px solid var(--md-sys-color-secondary); outline-offset: -3px; }
+.swatch.wide { flex: none; }
+.swatch.wide span { width: 2.25rem; height: 1.5rem; }
+.palette-own { margin-top: 0.75rem; }
 
 /* ---- Size classes (feature 042, pass 4) ------------------------------------------------------------------------------
    Material 3's window size classes: compact under 600px (a phone), medium to 839px (a tablet upright), expanded to
