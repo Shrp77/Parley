@@ -8,13 +8,16 @@
     ViewData["Conversation"] = Model.Id;
     // The rail heads its commands with this; the conversation's name is in the top bar.
     ViewData["CommandsTitle"] = "This conversation";
+    // Framed, the page has no rail, so it draws its own commands; otherwise the rail does. The strip carries fixed ids, so
+    // it is drawn in exactly one of the two places.
+    var framed = Parley.Web.ConsoleHost.Embedded(ViewContext.HttpContext);
 }
 
 @{
     // The conversation's commands, drawn once: in the side menu, or in the page when it is framed (feature 042). Each says
     // its name beside its icon, which the side menu shows when it is unfolded.
     Func<object?, Microsoft.AspNetCore.Html.IHtmlContent> strip = @<div class="panel-strip">
-        <button type="button" id="panel-open" class="strip-button" title="Open this panel" aria-label="Open this panel"><span class="icon" aria-hidden="true">chevron_right</span><span class="rail-label" aria-hidden="true">Show the panel</span></button>
+        <button type="button" id="panel-open" class="strip-button" title="Open the panel" aria-label="Open the panel"><span class="icon" aria-hidden="true">chevron_right</span><span class="rail-label" aria-hidden="true">Open the panel</span></button>
         <button type="button" class="strip-button" data-pop="about" aria-controls="panel-body" aria-expanded="false" title="This conversation: its name, files, export, spin off and move" aria-label="This conversation"><span class="icon" aria-hidden="true">info</span><span class="rail-label" aria-hidden="true">This conversation</span></button>
         <button type="button" class="strip-button" data-pop="find" aria-controls="panel-body" aria-expanded="false" title="Find in this conversation" aria-label="Find in this conversation" hidden>@* Drawn, because the console's cut-down icon font has no magnifier. *@<svg class="strip-glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14.5 14.5 20 20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="rail-label" aria-hidden="true">Find</span></button>
         <button type="button" class="strip-button" data-pop="filter" aria-controls="panel-body" aria-expanded="false" title="Show only some of the conversation" aria-label="Show only some of the conversation" hidden><span class="icon" aria-hidden="true">tune</span><span class="rail-label" aria-hidden="true">Show only some</span></button>
@@ -54,7 +57,7 @@
        the pointer is on it (or until a click puts it away again), and the way through what is waiting. They are this page's
        commands, so they are drawn where every page's commands are, in the side menu under its navigation (feature 042),
        and in the page only when it is framed, where there is no side menu. *@
-    @if (Parley.Web.ConsoleHost.Embedded(ViewContext.HttpContext))
+    @if (framed)
     {
         @strip(null)
     }
@@ -122,7 +125,7 @@
                 @* With a script this picks entries in place. Without one, the page it leads to lists them. *@
                 <a class="file-button" id="move-start" target="_top" href="@Url.Page("/Conversations/Move", new { project = Model.Project, id = Model.Id })" title="Move entries to another conversation">Move entries</a>
                 @* Only with a script, which is what can close it and remember that. *@
-                <button type="button" id="panel-close" class="file-button" title="Close this panel" aria-label="Close this panel" hidden><span class="icon" aria-hidden="true">chevron_left</span></button>
+                <button type="button" id="panel-close" class="file-button" title="Close the panel" aria-label="Close the panel" hidden><span class="icon" aria-hidden="true">chevron_left</span></button>
             </div>
         </div>
 
@@ -1308,8 +1311,9 @@ else
                 if (!closed) { putAway(); }
             }
 
-            closer.addEventListener("click", function () { setClosed(true); });
-            opener.addEventListener("click", function () { setClosed(false); });
+            // The button pressed goes away with what it opened or closed, so focus moves to the one that undoes it.
+            closer.addEventListener("click", function () { setClosed(true); opener.focus({ preventScroll: true }); });
+            opener.addEventListener("click", function () { setClosed(false); closer.focus({ preventScroll: true }); });
             if (narrow.addEventListener) { narrow.addEventListener("change", apply); }
 
             // A closed panel's icons each bring out one part of it. The pointer on an icon brings its part out, and moving
@@ -1616,7 +1620,7 @@ else
 }
 
 @section Actions {
-    @if (!Parley.Web.ConsoleHost.Embedded(ViewContext.HttpContext))
+    @if (!framed)
     {
         @strip(null)
     }

@@ -21,8 +21,9 @@ public sealed class TheRailsFootTests
 
         var page = await client.GetStringAsync(new Uri("/?tab=agents&project=alpha", UriKind.Relative), TestContext.Current.CancellationToken);
 
-        var lastProjectItem = page.IndexOf("href=\"/Projects/Settings?project=alpha\"", StringComparison.Ordinal);
         var foot = page.IndexOf("<nav class=\"rail-foot\"", StringComparison.Ordinal);
+        // The rail's own item, the last before the foot: the folded project list draws the same link earlier (feature 042).
+        var lastProjectItem = foot < 0 ? -1 : page.LastIndexOf("href=\"/Projects/Settings?project=alpha\"", foot, StringComparison.Ordinal);
         // The foot's own link: a phone's More, inside the sections above the foot, offers Settings too (feature 042).
         var settings = foot < 0 ? -1 : page.IndexOf("href=\"/Settings\"", foot, StringComparison.Ordinal);
         var toggle = page.IndexOf("id=\"rail-toggle\"", StringComparison.Ordinal);

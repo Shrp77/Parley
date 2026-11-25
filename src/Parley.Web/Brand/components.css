@@ -56,7 +56,8 @@ html[data-nav="collapsed"] { --rail-w: 5rem; }
 .rail .brand .rail-label span { color: var(--md-sys-color-on-surface-variant); font-weight: 400; }
 
 .rail nav { display: flex; flex-direction: column; flex-wrap: nowrap; gap: 0; margin: 0; align-items: stretch; }
-.rail nav a, .rail-toggle {
+/* The rail's own items: its direct links. Lists opened from it (More, the project's places) style their own links. */
+.rail nav > a {
     position: relative;
     display: flex;
     align-items: center;
@@ -70,40 +71,37 @@ html[data-nav="collapsed"] { --rail-w: 5rem; }
     white-space: nowrap;
     text-decoration: none;
 }
-.rail nav a:hover, .rail-toggle:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); color: var(--md-sys-color-on-surface); border: 0; }
-.rail nav a:focus-visible { outline-offset: -3px; }
-.rail nav a[aria-current] { color: var(--md-sys-color-on-secondary-container); background: var(--md-sys-color-secondary-container); font-weight: 700; }
-.rail nav a[aria-current]:hover { background-image: linear-gradient(color-mix(in srgb, var(--md-sys-color-on-secondary-container) var(--md-sys-state-hover), transparent) 0 0); }
+.rail nav > a:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); color: var(--md-sys-color-on-surface); border: 0; }
+.rail nav > a:focus-visible { outline-offset: -3px; }
+.rail nav > a[aria-current] { color: var(--md-sys-color-on-secondary-container); background: var(--md-sys-color-secondary-container); font-weight: 700; }
+.rail nav > a[aria-current]:hover { background-image: linear-gradient(color-mix(in srgb, var(--md-sys-color-on-secondary-container) var(--md-sys-state-hover), transparent) 0 0); }
 .rail .icon { font-size: 1.5rem; }
 .rail a[aria-current] .icon { font-variation-settings: "FILL" 1; }
 .rail-label { overflow: hidden; text-overflow: ellipsis; }
 
-/* The foot, always at the bottom: Parley's settings, then the toggle under it, expanded or collapsed. */
+/* The foot, always at the bottom: Parley's settings. */
 .rail nav.rail-foot { margin-top: auto; padding-top: 0.5rem; border-top: 1px solid var(--md-sys-color-outline-variant); }
-.rail-toggle { width: 100%; background: none; box-shadow: none; order: 2; cursor: pointer; }
-.rail-toggle .icon { transition: transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard); }
-html[data-nav="collapsed"] .rail-toggle .icon { transform: rotate(180deg); }
 
 /* A section's name, the same height in both states so nothing below it moves when the bar collapses: collapsed, the
    name goes and a divider stays in its place. */
 .rail-heading { height: 3.5rem; line-height: 3.5rem; margin: 0.5rem 1rem 0; border-top: 1px solid var(--md-sys-color-outline-variant); font: var(--md-sys-typescale-title-small); line-height: 3.5rem; color: var(--md-sys-color-on-surface-variant); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rail .seat-waiting { margin-left: auto; }
 
-/* Collapsed: a rail. The items narrow to a 56px indicator round the icon, centred in the 80px bar. */
-html[data-nav="collapsed"]:not([data-rail-open]) .rail nav a { width: 3.5rem; min-height: 2.5rem; margin: 0.25rem auto; padding: 0; justify-content: center; }
-html[data-nav="collapsed"]:not([data-rail-open]) .rail-label,
-html[data-nav="collapsed"]:not([data-rail-open]) .rail .brand span { position: absolute; left: -100rem; }
+/* Folded: a rail. Every item (a place, a page action, a conversation's command) narrows to a 56px indicator round its
+   icon, centred in the 80px bar, and its name goes off screen, where a screen reader still finds it. A desktop is
+   folded by the person (data-nav="collapsed"); below 1200px the page keeps a rail's width whatever the toggle says, as
+   Material 3 keeps a docked drawer for large windows, and the handle unfolds the whole menu over the page instead
+   (data-rail-open, never remembered). Both stand down while it is unfolded. */
+html[data-nav="collapsed"]:not([data-rail-open]) :is(.rail nav > a, .rail-act > summary, .rail-actions .strip-button) { width: 3.5rem; min-height: 2.5rem; margin: 0.25rem auto; padding: 0; justify-content: center; }
+html[data-nav="collapsed"]:not([data-rail-open]) :is(.rail-label, .rail .brand span) { position: absolute; left: -100rem; }
 html[data-nav="collapsed"]:not([data-rail-open]) .rail .brand { padding: 0 0 0.5rem; justify-content: center; }
 html[data-nav="collapsed"]:not([data-rail-open]) .rail-heading { color: transparent; margin: 0.5rem 0.5rem 0; height: 1rem; }
 html[data-nav="collapsed"]:not([data-rail-open]) .rail .seat-waiting { position: absolute; top: 0; right: 0.25rem; margin: 0; }
 
-/* Below 1200px the page keeps a rail's width whatever the toggle says, as Material 3 keeps a docked drawer for large
-   windows: at a laptop's or a tablet's width its 16rem is a column the page needs. The handle unfolds the whole menu over
-   the page instead (data-rail-open, never remembered), and these rules stand down while it is open. */
 @media (min-width: 37.5rem) and (max-width: 74.99rem) {
     :root { --rail-w: 5rem; }
-    html:not([data-rail-open]) .rail-label, html:not([data-rail-open]) .rail .brand span { position: absolute; left: -100rem; }
-    html:not([data-rail-open]) .rail nav a { width: 3.5rem; min-height: 2.5rem; margin: 0.25rem auto; padding: 0; justify-content: center; }
+    html:not([data-rail-open]) :is(.rail nav > a, .rail-act > summary, .rail-actions .strip-button) { width: 3.5rem; min-height: 2.5rem; margin: 0.25rem auto; padding: 0; justify-content: center; }
+    html:not([data-rail-open]) :is(.rail-label, .rail .brand span) { position: absolute; left: -100rem; }
     html:not([data-rail-open]) .rail .brand { padding: 0 0 0.5rem; justify-content: center; }
     html:not([data-rail-open]) .rail-heading { color: transparent; margin: 0.5rem 0.5rem 0; height: 1rem; }
     html:not([data-rail-open]) .rail .seat-waiting { position: absolute; top: 0; right: 0.25rem; margin: 0; }
@@ -1297,7 +1295,7 @@ table th[scope="row"] {
 }
 
 /* Anchored jumps land with a little air above them rather than flush to the edge. */
-li.turn { scroll-margin-top: calc(var(--frame) + 1rem); }
+li.turn { scroll-margin-top: calc(var(--frame) + var(--cmd-h, 0px) + 1rem); }
 
 @media (prefers-reduced-motion: no-preference) {
     html { scroll-behavior: smooth; }
@@ -2117,6 +2115,7 @@ html[data-rail-open] { --rail-drawn: 16rem; }
         height: 3.75rem;
         margin: 0;
         padding: 0;
+        border: 0;
         border-radius: var(--md-sys-shape-corner-full);
         background: color-mix(in srgb, var(--md-sys-color-outline) 75%, transparent);
         box-shadow: var(--md-sys-elevation-1);
@@ -2125,21 +2124,24 @@ html[data-rail-open] { --rail-drawn: 16rem; }
         transition: left var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard), background-color var(--md-sys-motion-duration-short);
     }
 
-    html .rail > .rail-toggle::before { content: ""; position: absolute; inset: -0.5rem -1rem; }
+    /* Drawn 14px wide; touched across 48px, as Material 3 asks of a target. */
+    html .rail > .rail-toggle::before { content: ""; position: absolute; inset: -0.5rem -1.0625rem; }
     html .rail > .rail-toggle::after { content: ""; position: absolute; left: 50%; top: 50%; width: 0.25rem; height: 1rem; transform: translate(-50%, -50%); border-inline: 1px solid var(--md-sys-color-surface); }
     html .rail > .rail-toggle:hover, html .rail > .rail-toggle:focus-visible { background: var(--md-sys-color-on-surface-variant); }
     html .rail > .rail-toggle.dragging { cursor: grabbing; transition: none; }
     html .rail > .rail-toggle .icon { display: none; }
     html .rail > .rail-toggle .rail-label { position: absolute; left: -100rem; }
 }
+/* Drawn by the frame's script, which is what makes it work: with no script there is nothing to press. */
+.rail-toggle[hidden] { display: none; }
 
 /* ---- Page actions in the rail (feature 042, the person's feedback) ----------------------------------------------------
-   A page's actions sit at the top of the rail: the main one as Material 3's rail action button (a filled, rounded square
-   with its icon, and its label while the drawer is open), the others as quieter items under it. Each opens its panel
-   beside the rail, over the page, as a menu does. */
+   A page's commands come after the rail's navigation, under a heading with the page's name: the main one filled, as
+   Material 3's rail action button (a rounded square with its icon, and its label while the menu is unfolded), the others
+   as quieter items under it. Each opens its panel beside the rail, over the page, as a menu does. */
 .rail-actions { display: flex; flex-direction: column; gap: 0.25rem; margin: 0; }
 /* The rail is a stacking context, so its open panel is drawn at the rail's level: raised while one is open, so the graph's
-   tab and the edge toggle do not draw over it. */
+   tab and the menu's handle do not draw over it. */
 .rail:has(.rail-actions details[open]) { z-index: 45; }
 .rail-act > summary {
     position: relative;
@@ -2172,21 +2174,14 @@ html[data-rail-open] { --rail-drawn: 16rem; }
     box-shadow: var(--md-sys-elevation-2);
 }
 
-/* Collapsed, or below 1200px, the rail is 80px: the items narrow to their icon, as the destinations do. */
-html[data-nav="collapsed"]:not([data-rail-open]) .rail-act > summary { width: 3.5rem; margin: 0 auto; padding: 0; justify-content: center; }
-html[data-nav="collapsed"]:not([data-rail-open]) .rail-act .rail-label { position: absolute; left: -100rem; }
-@media (min-width: 37.5rem) and (max-width: 74.99rem) {
-    html:not([data-rail-open]) .rail-act > summary { width: 3.5rem; margin: 0 auto; padding: 0; justify-content: center; }
-    html:not([data-rail-open]) .rail-act .rail-label { position: absolute; left: -100rem; }
-}
 
 /* The panel: fixed beside the rail, so the rail's own scrolling does not clip it. */
 .act-panel {
     position: fixed;
     z-index: 35;
     top: calc(var(--frame) + 0.5rem);
-    left: calc(var(--rail-w) + 1.75rem);
-    width: min(34rem, calc(100vw - var(--rail-w) - 2.5rem));
+    left: calc(var(--rail-drawn) + 1.75rem);
+    width: min(34rem, calc(100vw - var(--rail-drawn) - 2.5rem));
     max-height: calc(100vh - var(--frame) - 1.5rem);
     overflow-y: auto;
     padding: 1rem 1.25rem;
@@ -2222,11 +2217,11 @@ html[data-nav="collapsed"]:not([data-rail-open]) .rail-act .rail-label { positio
 
 @media (min-width: 37.5rem) and (max-width: 74.99rem) {
     html:not([data-rail-open]) .rail-project { display: block; }
-    html:not([data-rail-open]) .rail nav a.in-project { display: none; }
+    html:not([data-rail-open]) .rail nav > a.in-project { display: none; }
 }
 @media (min-width: 75rem) {
     html[data-nav="collapsed"] .rail-project { display: block; }
-    html[data-nav="collapsed"] .rail nav a.in-project { display: none; }
+    html[data-nav="collapsed"] .rail nav > a.in-project { display: none; }
 }
 
 .rail-project > summary {
@@ -2257,10 +2252,9 @@ html[data-nav="collapsed"]:not([data-rail-open]) .rail-act .rail-label { positio
     border-radius: var(--md-sys-shape-corner-large);
     box-shadow: var(--md-sys-elevation-3);
 }
-/* Above the folded rail's own rules for its items, which centre an icon in a narrow pill. */
-html:not([data-rail-list]) .rail nav .rail-project-list a { width: auto; margin: 0; justify-content: flex-start; border-radius: 0; display: flex; align-items: center; gap: 0.9rem; min-height: 3rem; padding: 0 1.25rem; color: var(--md-sys-color-on-surface); font: var(--md-sys-typescale-label-large); text-decoration: none; border: 0; }
-html:not([data-rail-list]) .rail nav .rail-project-list a:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); border: 0; }
-html:not([data-rail-list]) .rail nav .rail-project-list a[aria-current] { color: var(--md-sys-color-on-secondary-container); background: var(--md-sys-color-secondary-container); font-weight: 700; }
+.rail-project-list a { display: flex; align-items: center; gap: 0.9rem; min-height: 3rem; padding: 0 1.25rem; color: var(--md-sys-color-on-surface); font: var(--md-sys-typescale-label-large); text-decoration: none; border: 0; }
+.rail-project-list a:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); border: 0; }
+.rail-project-list a[aria-current] { color: var(--md-sys-color-on-secondary-container); background: var(--md-sys-color-secondary-container); font-weight: 700; }
 .rail-project-list .icon { font-size: 1.5rem; color: var(--md-sys-color-on-surface-variant); }
 .rail:has(.rail-project[open]) { z-index: 45; }
 
@@ -2297,12 +2291,6 @@ html:not([data-rail-list]) .rail nav .rail-project-list a[aria-current] { color:
 .convo-page .panel-strip .rail-label { position: absolute; left: -100rem; }
 body:has(.convo-page:not(.panel-closed)) .rail-actions { display: none; }
 
-html[data-nav="collapsed"]:not([data-rail-open]) .rail-actions .strip-button { width: 3.5rem; margin: 0 auto; padding: 0; justify-content: center; }
-html[data-nav="collapsed"]:not([data-rail-open]) .rail-actions .strip-button .rail-label { position: absolute; left: -100rem; }
-@media (min-width: 37.5rem) and (max-width: 74.99rem) {
-    html:not([data-rail-open]) .rail-actions .strip-button { width: 3.5rem; margin: 0 auto; padding: 0; justify-content: center; }
-    html:not([data-rail-open]) .rail-actions .strip-button .rail-label { position: absolute; left: -100rem; }
-}
 
 /* With its commands in the rail, a closed panel leaves the conversation the whole width, and the box an item brings out
    lies beside the rail. */
@@ -2349,9 +2337,9 @@ body:has(.rail-actions .panel-strip) .panel-closed .panel-body:has(.move-bar:not
 
     .rail nav.rail-foot, .rail .brand, .rail-heading, .rail-toggle { display: none; }
     .rail nav { flex: 1 1 auto; flex-direction: row; align-items: stretch; height: 100%; }
-    .rail nav a:not(.bar) { display: none; }
+    .rail nav > a:not(.bar) { display: none; }
 
-    .rail nav a.bar, .rail-more > summary {
+    .rail nav > a.bar, .rail-more > summary {
         flex: 1 1 0;
         min-width: 0;
         width: auto;
@@ -2368,11 +2356,11 @@ body:has(.rail-actions .panel-strip) .panel-closed .panel-body:has(.move-bar:not
         color: var(--md-sys-color-on-surface-variant);
     }
 
-    .rail nav a.bar:hover, .rail-more > summary:hover { background: none; }
-    .rail nav a[aria-current], .rail nav a[aria-current]:hover { background: none; background-image: none; color: var(--md-sys-color-on-surface); }
+    .rail nav > a.bar:hover, .rail-more > summary:hover { background: none; }
+    .rail nav > a[aria-current], .rail nav > a[aria-current]:hover { background: none; background-image: none; color: var(--md-sys-color-on-surface); }
 
     /* The indicator: a pill round the icon, filled for the current place and tinted on hover. */
-    .rail nav a.bar .icon, .rail-more > summary .icon {
+    .rail nav > a.bar .icon, .rail-more > summary .icon {
         box-sizing: content-box;
         width: 1.5rem;
         height: 1.5rem;
@@ -2381,8 +2369,8 @@ body:has(.rail-actions .panel-strip) .panel-closed .panel-body:has(.move-bar:not
         transition: background-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     }
 
-    .rail nav a.bar:hover .icon, .rail-more > summary:hover .icon { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
-    .rail nav a[aria-current] .icon, .rail-more > summary[aria-current] .icon, .rail-more[open] > summary .icon { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+    .rail nav > a.bar:hover .icon, .rail-more > summary:hover .icon { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
+    .rail nav > a[aria-current] .icon, .rail-more > summary[aria-current] .icon, .rail-more[open] > summary .icon { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
 
     .rail .rail-label { position: static; left: auto; max-width: 100%; }
     .rail a.bar:has(.bar-label) .rail-label { display: none; }
@@ -2447,10 +2435,13 @@ body:has(.rail-actions .panel-strip) .panel-closed .panel-body:has(.move-bar:not
     header .where:has(.crumb-here) .crumb { font: var(--md-sys-typescale-label-medium); color: var(--ink-soft); }
     .crumb-sep { display: none; }
     .crumb-here { max-width: 100%; font: var(--md-sys-typescale-title-medium); color: var(--ink); }
-    /* The seat is the person's own, the same on every page: its dot and its count are what a phone has room for. The
-       name stays for a screen reader. */
+    /* The seat is the person's own, the same on every page: its dot is what a phone has room for. The name stays for a
+       screen reader. */
     .seat-who:has(.seat-dot) { font-size: 0; gap: 0.3rem; justify-content: center; min-width: 3rem; }
-    .seat-who .seat-waiting { font: var(--md-sys-typescale-label-small); }
+
+    /* Above the command bar, which lies just under it, so what the bell opens is drawn over the bar. */
+    header { z-index: 31; }
+    .rail:has(.rail-more[open]) { z-index: 45; }
     header nav { flex: none; flex-wrap: nowrap; gap: 0.5rem; }
     .seat-who { min-height: 3rem; white-space: nowrap; }
     .bell > summary { min-width: 3rem; min-height: 3rem; }
@@ -2462,7 +2453,12 @@ body:has(.rail-actions .panel-strip) .panel-closed .panel-body:has(.move-bar:not
     /* A page's commands are a bar pinned under the top bar, on every page that has any, swiped sideways when they do not
        fit (feature 042); each opens its panel just under the bar. What is pinned below the top bar sits below this bar too
        (--cmd-h), and the page starts under it. */
-    body:has(.rail-actions) { --cmd-h: 3.75rem; }
+    /* Only while the bar is drawn: not in a framed page, which has no rail, nor while a conversation's panel is kept open,
+       which holds the same commands. */
+    body:not(.embed):has(.rail-actions):not(:has(.convo-page:not(.panel-closed))) { --cmd-h: 3.75rem; }
+    body:has(.rail-actions) main { padding-top: var(--cmd-h, 0px); }
+    /* More commands than fit: the bar's far edge fades, so it reads as going on. */
+    .rail-actions { -webkit-mask-image: linear-gradient(to right, var(--md-sys-color-on-surface) calc(100% - 2rem), transparent); mask-image: linear-gradient(to right, var(--md-sys-color-on-surface) calc(100% - 2rem), transparent); padding-right: 2rem; }
     .rail-actions {
         position: fixed;
         top: var(--frame);
@@ -2472,7 +2468,7 @@ body:has(.rail-actions .panel-strip) .panel-closed .panel-body:has(.move-bar:not
         flex-direction: row;
         align-items: center;
         gap: 0.5rem;
-        height: var(--cmd-h);
+        height: 3.75rem;
         margin: 0;
         padding: 0 0.75rem;
         overflow-x: auto;
@@ -2481,7 +2477,6 @@ body:has(.rail-actions .panel-strip) .panel-closed .panel-body:has(.move-bar:not
         box-shadow: var(--md-sys-elevation-1);
     }
     .rail-actions::-webkit-scrollbar { display: none; }
-    body:has(.rail-actions) main { padding-top: var(--cmd-h); }
     .rail-act { flex: none; }
     .rail-act > summary { width: auto; min-height: 2.5rem; padding: 0 1rem; background: var(--md-sys-color-surface-container-lowest); color: var(--md-sys-color-primary); }
     .rail-act-main > summary { min-height: 2.5rem; border-radius: var(--md-sys-shape-corner-full); background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); box-shadow: none; }

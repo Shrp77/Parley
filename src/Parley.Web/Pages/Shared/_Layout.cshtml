@@ -201,33 +201,33 @@
         var project = ViewData["Project"] as string ?? Context.Request.Query["project"].ToString();
         var onAgentsTab = agentsView && project.Length == 0;
         var q = Uri.EscapeDataString(project);
-        // Each place says whether it is on a phone's bottom bar (feature 042, the UI contract's compact class) and what
-        // the bar's More calls it when it is not. The bar holds four: Projects, the agents (the project's when in one), the
-        // Inbox and the project's conversations, in the page's order, so focus and a screen reader go along the bar as it
-        // is drawn. More holds the rest and is drawn only on a phone.
+        // Each place says whether it is on a phone's bottom bar (feature 042, the UI contract's compact class), what the
+        // bar's More calls it when it is not, and the shorter word the bar draws where the label would not fit. The bar
+        // holds four: Projects, the agents (the project's when in one), the Inbox and the project's conversations, in the
+        // page's order, so focus and a screen reader go along the bar as it is drawn. More holds the rest and is drawn
+        // only on a phone.
         var projectOpen = project.Length > 0;
-        var rail = new List<(string Href, string Label, string Icon, bool Current, bool Bar, string MoreLabel, string? BarLabel)>
+        var rail = new List<RailItem>
         {
-            ("/", "Projects", "grid_view", path == "/" && !agentsView, true, "Projects", null),
-            ("/?tab=agents", "All Agents", "group", onAgentsTab, !projectOpen, "All Agents", null),
-            ("/Inbox", "Inbox", "inbox", path.StartsWith("/Inbox", StringComparison.Ordinal), true, "Inbox", null),
+            new("/", "Projects", "grid_view", path == "/" && !agentsView, Bar: true),
+            new("/?tab=agents", "All Agents", "group", onAgentsTab, Bar: !projectOpen),
+            new("/Inbox", "Inbox", "inbox", path.StartsWith("/Inbox", StringComparison.Ordinal), Bar: true),
         };
-        // At the foot with the toggle, in both states, so a project's own items never sit between it and the rest.
-        (string Href, string Label, string Icon, bool Current, bool Bar, string MoreLabel, string? BarLabel) parleySettings =
-            ("/Settings", "Settings", "settings", path == "/Settings", false, "Console settings", null);
-        var inProjectRail = new List<(string Href, string Label, string Icon, bool Current, bool Bar, string MoreLabel, string? BarLabel)>();
+        // In the rail's foot, so a project's own items never sit between it and the rest.
+        var parleySettings = new RailItem("/Settings", "Settings", "settings", path == "/Settings", More: "Console settings");
+        var inProjectRail = new List<RailItem>();
 
         if (projectOpen)
         {
             inProjectRail =
             [
-                ($"/Projects/Agents?project={q}", "Conversations", "chat_bubble", path == "/Projects/Agents" || path.StartsWith("/Conversations", StringComparison.Ordinal), true, "Conversations", "Chats"),
+                new($"/Projects/Agents?project={q}", "Conversations", "chat_bubble", path == "/Projects/Agents" || path.StartsWith("/Conversations", StringComparison.Ordinal), Bar: true, Short: "Chats"),
                 // One agent's page, its ownership and registering one are all reached from the agents list, so they light it.
-                ($"/?tab=agents&project={q}", "Agents", "group", agentsView || path is "/Projects/Agent" or "/Projects/Ownership" or "/Projects/Register" or "/Projects/Enrol", true, "Agents", null),
-                ($"/Roadmaps?project={q}", "Roadmaps", "map", path.StartsWith("/Roadmaps", StringComparison.Ordinal), false, "Roadmaps", null),
-                ($"/Projects/Files?project={q}", "Files", "description", path is "/Projects/Files" or "/Projects/FileProblems", false, "Files", null),
-                ($"/Projects/Health?project={q}", "Health", "monitor_heart", path == "/Projects/Health", false, "Health", null),
-                ($"/Projects/Settings?project={q}", "Settings", "tune", path == "/Projects/Settings", false, "Project settings", null),
+                new($"/?tab=agents&project={q}", "Agents", "group", agentsView || path is "/Projects/Agent" or "/Projects/Ownership" or "/Projects/Register" or "/Projects/Enrol", Bar: true),
+                new($"/Roadmaps?project={q}", "Roadmaps", "map", path.StartsWith("/Roadmaps", StringComparison.Ordinal)),
+                new($"/Projects/Files?project={q}", "Files", "description", path is "/Projects/Files" or "/Projects/FileProblems"),
+                new($"/Projects/Health?project={q}", "Health", "monitor_heart", path == "/Projects/Health"),
+                new($"/Projects/Settings?project={q}", "Settings", "tune", path == "/Projects/Settings", More: "Project settings"),
             ];
         }
 
@@ -285,7 +285,7 @@
                     <a href="@item.Href" title="@item.Label" aria-current="@(item.Current ? "page" : null)" class="@BarClass(item.Bar) in-project">
                         <span class="icon" aria-hidden="true">@item.Icon</span>
                         <span class="rail-label">@item.Label</span>
-                        @if (item.BarLabel is { } shortLabel)
+                        @if (item.Short is { } shortLabel)
                         {
                             @* A phone's bar has about 76 pixels a place: the short word is the one drawn there, and the only one. *@
                             <span class="bar-label">@shortLabel</span>
@@ -320,26 +320,34 @@
             </div>
         </details>
         </nav>
-        @* What this page offers (start a conversation, create a project, register an agent), after the navigation under a
-           separator headed with the page's name, in the same place on every page (the person's feedback on feature 042:
-           where to go first, then what to do here). On a phone the same buttons float above the bottom bar. Each is a
-           <details>, so it opens with no script. *@
-        @if (IsSectionDefined("Actions"))
+        @* What this page offers (start a conversation, create a project, register an agent, a conversation's tools), after
+           the navigation under a separator headed with the page's name, in the same place on every page (the person's
+           feedback on feature 042: where to go first, then what to do here). On a phone the same commands are a bar under
+           the top bar. Each opens with no script. A page names the heading with ViewData["CommandsTitle"] when its title
+           would not do (a conversation's, whose name is in the top bar). A framed page has no rail, so its commands, if
+           any, are drawn by the page itself. *@
+        @if (IsSectionDefined("Actions") && !embedded)
         {
             <section class="rail-actions" aria-labelledby="rail-actions-head">
                 <p class="rail-heading" id="rail-actions-head">@(ViewData["CommandsTitle"] ?? ViewData["Title"] ?? "This page")</p>
                 @await RenderSectionAsync("Actions")
             </section>
         }
+        else if (IsSectionDefined("Actions"))
+        {
+            IgnoreSection("Actions");
+        }
         <nav class="rail-foot" aria-label="Console settings">
-            <a href="@parleySettings.Item1" title="@parleySettings.Item2" aria-current="@(parleySettings.Item4 ? "page" : null)">
-                <span class="icon" aria-hidden="true">@parleySettings.Item3</span>
-                <span class="rail-label">@parleySettings.Item2</span>
+            <a href="@parleySettings.Href" title="@parleySettings.Label" aria-current="@(parleySettings.Current ? "page" : null)">
+                <span class="icon" aria-hidden="true">@parleySettings.Icon</span>
+                <span class="rail-label">@parleySettings.Label</span>
             </a>
         </nav>
-        <button type="button" class="rail-toggle" id="rail-toggle" aria-controls="rail" aria-expanded="true">
+        @* The menu's handle (feature 042, option A). Named for what it works on, the menu; whether the menu is unfolded is
+           its aria-expanded, which its script keeps true. Hidden until that script draws it: with no script it does nothing. *@
+        <button type="button" class="rail-toggle" id="rail-toggle" aria-controls="rail" hidden>
             <span class="icon" aria-hidden="true">chevron_left</span>
-            <span class="rail-label">Collapse</span>
+            <span class="rail-label">Menu</span>
         </button>
     </aside>
     <script>
@@ -633,6 +641,8 @@
 
             if (!button) { return; }
 
+            button.hidden = false;
+
             var wide = window.matchMedia('(min-width: 75rem)');
 
             try {
@@ -666,12 +676,19 @@
             // A press that moved more than a few pixels was a drag, and the click that ends it is not a press.
             var startY = 0, startTop = 0, dragged = false, down = false;
 
+            // Only the main button drags. A press the system takes away (a context menu, a gesture) ends the drag, so a
+            // later hover never moves the handle from where an old press began.
+            var end = function () { down = false; button.classList.remove('dragging'); };
+
             button.addEventListener('pointerdown', function (e) {
+                if (e.button !== 0) { return; }
                 down = true; dragged = false; startY = e.clientY; startTop = button.getBoundingClientRect().top;
                 button.setPointerCapture(e.pointerId);
             });
+            button.addEventListener('pointercancel', function () { end(); dragged = false; });
+            button.addEventListener('lostpointercapture', end);
             button.addEventListener('pointermove', function (e) {
-                if (!down) { return; }
+                if (!down || (e.pointerType === 'mouse' && !(e.buttons & 1))) { return; }
                 var dy = e.clientY - startY;
                 if (!dragged && Math.abs(dy) < 4) { return; }
                 dragged = true;
@@ -680,8 +697,7 @@
                 root.style.setProperty('--handle-top', (top / window.innerHeight * 100).toFixed(2) + '%');
             });
             button.addEventListener('pointerup', function () {
-                down = false;
-                button.classList.remove('dragging');
+                end();
                 if (dragged) {
                     try { localStorage.setItem('parley.nav.handle', parseFloat(root.style.getPropertyValue('--handle-top')).toString()); } catch (e) { }
                 }
@@ -691,11 +707,19 @@
                 press();
             });
 
+            // What a rail item brings out lies beside the rail, over the page; a click in it is not a click elsewhere.
             document.addEventListener('click', function (e) {
-                if (root.hasAttribute('data-rail-open') && !e.target.closest('.rail')) { unfold(false); }
+                if (root.hasAttribute('data-rail-open') && !e.target.closest('.rail, .panel-body')) { unfold(false); }
             });
+            // Escape folds it only when nothing nearer took the key: focus on the rail or nowhere in particular.
             document.addEventListener('keydown', function (e) {
-                if (e.key === 'Escape' && !e.defaultPrevented && root.hasAttribute('data-rail-open')) { unfold(false); button.focus(); }
+                var on = document.activeElement;
+
+                if (e.key === 'Escape' && !e.defaultPrevented && root.hasAttribute('data-rail-open') && (!on || on === document.body || on.closest('.rail'))) { unfold(false); button.focus(); }
+            });
+            // Unfolded over the page, it would cover whatever the keyboard moves to next, so leaving it folds it.
+            document.getElementById('rail').addEventListener('focusout', function (e) {
+                if (root.hasAttribute('data-rail-open') && e.relatedTarget && !e.relatedTarget.closest('.rail, .panel-body')) { unfold(false); }
             });
             if (wide.addEventListener) { wide.addEventListener('change', function () { unfold(false); }); }
 
@@ -1370,3 +1394,19 @@
     @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>
+
+@functions {
+    /// <summary>One place the rail offers.</summary>
+    /// <param name="Href">Where it goes.</param>
+    /// <param name="Label">Its name in the rail.</param>
+    /// <param name="Icon">Its glyph's name in the console's icon font.</param>
+    /// <param name="Current">Whether the page drawn is this place.</param>
+    /// <param name="Bar">Whether a phone's bottom bar holds it (feature 042); the rest are under More.</param>
+    /// <param name="More">What More and the folded project list call it, where that differs from its label.</param>
+    /// <param name="Short">The shorter word a phone's bar draws, where its label would not fit.</param>
+    private sealed record RailItem(string Href, string Label, string Icon, bool Current, bool Bar = false, string? More = null, string? Short = null)
+    {
+        /// <summary>Its name in More and in the folded project list.</summary>
+        public string MoreLabel => More ?? Label;
+    }
+}

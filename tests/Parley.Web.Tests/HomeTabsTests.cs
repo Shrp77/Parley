@@ -66,7 +66,7 @@ public sealed class HomeTabsTests
 
             Assert.True(filters > main && filters < head, $"{path}: the filters must come in the page, before the grid header");
 
-            // Feature 042: a page's create opens from the top of the rail, never as a card in the page.
+            // Feature 042: a page's create opens from the rail's page commands, never as a card in the page.
             if (creates)
             {
                 Assert.True(actions >= 0 && actions < create && create < main, $"{path}: the create panel must be in the rail's page actions");
