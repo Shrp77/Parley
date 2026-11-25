@@ -1233,6 +1233,8 @@ details.dgrid-row[open] > summary { position: sticky; top: var(--dgrid-head-h); 
 .pg-panel[hidden] { display: none; }
 /* Open, the tab rides the panel's edge, above it, and closes it. */
 .pg-tab.pg-tab-open { right: min(46rem, 100vw); z-index: 42; }
+/* Narrower than the panel, the panel fills the window and the tab would sit past its edge: its Close does it. */
+@media (max-width: 46rem) { .pg-tab.pg-tab-open { display: none; } }
 .pg-panel.pg-pinned { box-shadow: none; }
 body.pg-docked { padding-right: min(46rem, 100vw); }
 .pg-bar { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; padding: 0.6rem 1rem; border-bottom: 1px solid var(--rule); }
@@ -2090,10 +2092,9 @@ button.quiet, .button.quiet, .rail button, .rail-toggle { box-shadow: none; }
 header .as-of { float: none; margin: 0; white-space: nowrap; }
 
 /* The colour choice on the Settings page: each palette as a strip of its main colour, its accent and its card surface. */
-.palettes { display: flex; flex-wrap: wrap; gap: 0.6rem 1.2rem; align-items: center; }
+.palettes { display: grid; gap: 0.6rem; }
 .palette-pick { display: flex; align-items: center; gap: 0.75rem; }
 .palette-pick select { min-width: 12rem; }
-.palette-choice { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 3rem; }
 .swatch { display: inline-flex; overflow: hidden; border-radius: var(--md-sys-shape-corner-small); box-shadow: var(--md-sys-elevation-1); }
 .swatch span { width: 1.1rem; height: 1.8rem; }
 #custom-swatch span { width: 3.3rem; }
@@ -2162,31 +2163,44 @@ html[data-rail-open] { --rail-drawn: 16rem; }
 /* The rail is a stacking context, so its open panel is drawn at the rail's level: raised while one is open, so the graph's
    tab and the menu's handle do not draw over it. */
 .rail:has(.rail-actions details[open]) { z-index: 45; }
-.rail-act > summary {
+/* Every command in the rail is one kind of item, whatever it is made of: a panel that opens (a summary), one of a
+   conversation's tools (a button), or a link or a single press. One look, in the primary color that marks a command. */
+:is(.rail-act > summary, .rail-actions .strip-button, .rail-actions .rail-link) {
+    --md-btn-container: transparent;
     position: relative;
     display: flex;
     align-items: center;
+    justify-content: flex-start;
     gap: 0.75rem;
-    min-height: 3.5rem;
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    min-height: 3rem;
+    margin: 0;
     padding: 0 1rem;
+    border: 0;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: none;
+    box-shadow: none;
+    color: var(--md-sys-color-primary);
+    font: var(--md-sys-typescale-label-large);
+    text-align: start;
+    text-decoration: none;
+    white-space: nowrap;
     list-style: none;
     cursor: pointer;
-    border-radius: var(--md-sys-shape-corner-full);
-    color: var(--md-sys-color-on-surface-variant);
-    font: var(--md-sys-typescale-label-large);
-    white-space: nowrap;
 }
 .rail-act > summary::-webkit-details-marker { display: none; }
-.rail-act > summary .icon { font-size: 1.5rem; }
-.rail-act > summary:hover, .rail-act[open] > summary { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); color: var(--md-sys-color-on-surface); }
-.rail-act-main > summary {
+:is(.rail-act > summary, .rail-actions .strip-button, .rail-actions .rail-link) :is(.icon, .strip-glyph) { width: 1.5rem; height: 1.5rem; font-size: 1.5rem; }
+:is(.rail-act > summary:hover, .rail-act[open] > summary, .rail-actions .strip-button:hover, .rail-actions .strip-button[aria-expanded="true"], .rail-actions .rail-link:hover) { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); border: 0; }
+.rail-actions .rail-act-main > summary {
     min-height: 3.5rem;
     border-radius: var(--md-sys-shape-corner-large);
     background: var(--md-sys-color-primary-container);
     color: var(--md-sys-color-on-primary-container);
     box-shadow: var(--md-sys-elevation-1);
 }
-.rail-act-main > summary:hover, .rail-act-main[open] > summary {
+.rail-actions .rail-act-main > summary:hover, .rail-actions .rail-act-main[open] > summary {
     background: var(--md-sys-color-primary-container);
     background-image: linear-gradient(color-mix(in srgb, var(--md-sys-color-on-primary-container) var(--md-sys-state-hover), transparent) 0 0);
     color: var(--md-sys-color-on-primary-container);
@@ -2282,27 +2296,7 @@ html[data-rail-open] { --rail-drawn: 16rem; }
    kept open as a column it holds the same boxes, so the rail's items give way. The strip in a framed page, which has no
    rail, keeps its own look above. */
 .rail-actions .panel-strip { display: flex; flex-direction: column; gap: 0.25rem; }
-.rail-actions .strip-button {
-    --md-btn-container: transparent;
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 0.75rem;
-    width: 100%;
-    min-width: 0;
-    height: auto;
-    min-height: 3rem;
-    padding: 0 1rem;
-    border: 0;
-    border-radius: var(--md-sys-shape-corner-full);
-    color: var(--md-sys-color-primary);
-    font: var(--md-sys-typescale-label-large);
-    box-shadow: none;
-}
 .rail-actions .strip-button[hidden] { display: none; }
-.rail-actions .strip-button:hover, .rail-actions .strip-button[aria-expanded="true"] { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
-.rail-actions .strip-button .icon, .rail-actions .strip-glyph { width: 1.5rem; height: 1.5rem; font-size: 1.5rem; }
 .rail-actions .strip-count { top: 0.25rem; right: auto; left: 2rem; }
 .rail-actions .strip-note { writing-mode: horizontal-tb; padding: 0 1rem; font: var(--md-sys-typescale-label-small); color: var(--ink-faint); }
 .panel-strip .rail-label { white-space: nowrap; }
@@ -2328,28 +2322,6 @@ body:has(.rail-actions .panel-strip) .panel-closed .panel-body:has(.move-bar:not
    Some of a page's commands open nothing: a link to another page, or a form that is one button. They sit with the
    other commands and look like them. */
 .rail-form { display: contents; }
-.rail-actions .rail-link {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    width: 100%;
-    min-height: 3rem;
-    margin: 0;
-    padding: 0 1rem;
-    border: 0;
-    border-radius: var(--md-sys-shape-corner-full);
-    background: none;
-    box-shadow: none;
-    color: var(--md-sys-color-primary);
-    font: var(--md-sys-typescale-label-large);
-    text-align: start;
-    text-decoration: none;
-    white-space: nowrap;
-    cursor: pointer;
-}
-.rail-actions .rail-link:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); border: 0; }
-.rail-actions .rail-link .icon { font-size: 1.5rem; width: 1.5rem; height: 1.5rem; }
 .rail-actions .danger-link { color: var(--md-sys-color-error); }
 
 
@@ -2399,7 +2371,7 @@ table.files td.open { text-align: end; }
    as its tooltip where there is not. A project the agent is in is a chip: a choice, not text in a sentence. */
 .state-cell { display: inline-flex; align-items: center; gap: 0.5rem; min-width: 0; max-width: 100%; }
 .state-words { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.state-mark { display: inline-grid; place-items: center; flex: none; width: 1.75rem; height: 1.75rem; border-radius: 50%; font-size: 0.85rem; line-height: 1; color: var(--md-sys-color-on-surface-variant); background: var(--md-sys-color-surface-container-high); cursor: help; }
+.state-mark { display: inline-grid; place-items: center; flex: none; width: 1.75rem; height: 1.75rem; border-radius: 50%; font-size: 0.85rem; line-height: 1; color: var(--md-sys-color-on-surface-variant); background: var(--md-sys-color-surface-container-high); }
 .state-working { color: var(--md-sys-color-on-primary-container); background: var(--md-sys-color-primary-container); }
 .state-background { color: var(--md-sys-color-on-tertiary-container); background: var(--md-sys-color-tertiary-container); }
 .state-stopped { color: var(--md-sys-color-on-error-container); background: var(--md-sys-color-error-container); }
@@ -2410,8 +2382,8 @@ a.project-chip:hover { background-image: linear-gradient(color-mix(in srgb, var(
 /* A label with a shorter word for a phone, where the long one would wrap (the Inbox's Waiting). One is drawn at a time. */
 .short-label { display: none; }
 @media (max-width: 37.49rem) { .long-label { display: none; } .short-label { display: inline; } }
-/* An agent's registry entry: the table's name, centered over it (the person's feedback on feature 042). */
-/* Two columns of short facts: it never needs to scroll, so it stays a table at every width and fills its card. */
+/* An agent's registry entry: two columns of short facts that never need to scroll, so it stays a table at every width
+   and fills its card, its name centered over it (the person's feedback on feature 042). */
 table.registry { display: table; width: 100%; }
 .registry-caption { caption-side: top; text-align: center; padding: 0.5rem 0; font: var(--md-sys-typescale-title-small); color: var(--md-sys-color-on-surface-variant); }
 
@@ -2598,8 +2570,8 @@ table.registry { display: table; width: 100%; }
     }
     .rail-actions::-webkit-scrollbar { display: none; }
     .rail-act { flex: none; }
-    .rail-act > summary { width: auto; min-height: 2.5rem; padding: 0 1rem; background: var(--md-sys-color-surface-container-lowest); color: var(--md-sys-color-primary); }
-    .rail-act-main > summary { min-height: 2.5rem; border-radius: var(--md-sys-shape-corner-full); background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); box-shadow: none; }
+    .rail-actions .rail-act > summary { width: auto; min-height: 2.5rem; padding: 0 1rem; background: var(--md-sys-color-surface-container-lowest); color: var(--md-sys-color-primary); }
+    .rail-actions .rail-act-main > summary { min-height: 2.5rem; border-radius: var(--md-sys-shape-corner-full); background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); box-shadow: none; }
     .rail-act .rail-label { position: static; }
     .act-panel { position: fixed; top: calc(var(--frame) + var(--cmd-h) + 0.5rem); bottom: auto; left: 0.75rem; right: 0.75rem; width: auto; max-height: calc(100dvh - var(--frame) - var(--cmd-h) - var(--bar-h) - 1.5rem); }
 

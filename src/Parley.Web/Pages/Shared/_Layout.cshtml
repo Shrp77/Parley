@@ -1351,9 +1351,11 @@
 
                 function draw() {
                     panel.hidden = !state.open;
-                    // The tab stays on the panel's edge while it is open, and closes it from there (the person's feedback on
-                    // feature 042): one control opens and closes it.
+                    // The tab stays on the panel's edge while it lies over the page, and closes it from there (the person's
+                    // feedback on feature 042): one control opens and closes it. Docked beside the page it would sit over the
+                    // page's own edge, so there the panel's Close does it.
                     tab.classList.toggle("pg-tab-open", state.open);
+                    tab.hidden = state.open && docked();
                     tab.setAttribute("aria-expanded", state.open ? "true" : "false");
                     Array.prototype.forEach.call(opens, function (b) { b.setAttribute("aria-expanded", state.open ? "true" : "false"); });
                     panel.classList.toggle("pg-pinned", docked());
@@ -1373,6 +1375,7 @@
                     }
                 }
 
+                // Closing from the tab is closing, as Close is: a panel closed is no longer pinned.
                 tab.addEventListener("click", function () {
                     if (state.open) { state.open = false; state.pinned = false; } else { state.open = true; }
                     save(); draw();

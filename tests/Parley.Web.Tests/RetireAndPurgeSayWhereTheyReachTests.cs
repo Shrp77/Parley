@@ -13,7 +13,7 @@ namespace Parley.Web.Tests;
 /// decided, and it is the one implementation both surfaces show (AgentWithdrawal).
 /// </remarks>
 [Integration]
-public sealed class TheAgentPageSaysWhereWithdrawingReachesTests
+public sealed class RetireAndPurgeSayWhereTheyReachTests
 {
     private static string Agent => $"orders@{RoadmapConsole.Project}";
 

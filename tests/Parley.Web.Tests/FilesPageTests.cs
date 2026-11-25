@@ -298,6 +298,24 @@ public sealed class FilesPageTests : IDisposable
             picker.Groups["accept"].Value.Split(',', StringSplitOptions.TrimEntries).Order(StringComparer.Ordinal));
     }
 
+    [Fact]
+    public async Task A_conversation_is_typed_with_every_conversation_offered_and_its_chip_leads_back_to_every_file()
+    {
+        // Feature 042: a drop-down of every conversation grew past use, so the conversation is typed with suggestions. Narrowed
+        // to one conversation, the filter must still offer the others, and the chip that takes the filter off must lead to
+        // this project's files, whatever the address was after a form posted back.
+        _console.Broker.Conversations.Add("returns");
+        using var client = _console.CreateClient();
+
+        var page = await client.GetStringAsync(new Uri(Page + "&conversation=pricing", UriKind.Relative), Ct);
+
+        Assert.Matches("<input id=\"placeIn\" name=\"placeIn\" list=\"placeable\"", page);
+        var offered = page[page.IndexOf("<datalist id=\"conversations\">", StringComparison.Ordinal)..page.IndexOf("</datalist>", StringComparison.Ordinal)];
+        Assert.Contains("<option value=\"pricing\"", offered, StringComparison.Ordinal);
+        Assert.Contains("<option value=\"returns\"", offered, StringComparison.Ordinal);
+        Assert.Contains($"href=\"/Projects/Files?project={FilesConsole.Project}\" title=\"Take this filter off\">Conversation: pricing", page, StringComparison.Ordinal);
+    }
+
     private static Wire.SharedFileView View(string conversation, string name, long size, string hash, string placedBy) => new()
     {
         ConversationId = conversation,

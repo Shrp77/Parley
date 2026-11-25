@@ -177,8 +177,8 @@
             return { hue: hue, chroma: Math.min(120, Math.round(Math.sqrt(a * a + b * b))) };
         }
 
-        function query(choice) {
-            if (choice !== "custom") { return "name=" + choice; }
+        function query(chosen) {
+            if (chosen !== "custom") { return "name=" + chosen; }
             var made = lch(colour.value);
             return "hue=" + made.hue + "&chroma=" + made.chroma + "&harmony=" + harmony.value;
         }

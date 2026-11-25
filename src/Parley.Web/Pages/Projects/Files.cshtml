@@ -11,6 +11,14 @@
    agents start conversations of their own, and a drop-down of all of them grew past use (the person's feedback on
    feature 042). Typed, a name is still checked against the project's conversations when the form is sent. *@
 <datalist id="conversations">
+    @foreach (var id in Model.Conversations)
+    {
+        <option value="@id">@(Model.ParentOf(id) is { } parent ? Parley.Client.Rendering.ConversationWording.Listed(id, parent) : id)</option>
+    }
+</datalist>
+@* Where a file can be placed: every conversation, or only the one in view on a page narrowed to it. Its own list, so the
+   box never suggests a conversation it would refuse. *@
+<datalist id="placeable">
     @foreach (var id in Model.Placeable)
     {
         <option value="@id">@(Model.ParentOf(id) is { } parent ? Parley.Client.Rendering.ConversationWording.Listed(id, parent) : id)</option>
@@ -79,8 +87,6 @@ else if (Model.ConfirmingPrune && Model.Listing is { } pruning)
 else if (Model.Listing is { } listing)
 {
     @* Filtered to one conversation's files, said as a chip beside the folded filter, as on every list (feature 042). *@
-    var fileChips = new List<(string Says, string Key)>();
-    if (Model.Conversation is { Length: > 0 } only) { fileChips.Add(($"Conversation: {only}", "conversation")); }
     <div class="filter-bar">
         <details class="filters-fold">
             <summary class="button tonal"><span class="icon" aria-hidden="true">tune</span> Filter</summary>
@@ -93,12 +99,24 @@ else if (Model.Listing is { } listing)
                 <button type="submit">Filter</button>
             </form>
         </details>
-        <partial name="_FilterChips" model="fileChips" />
+        @if (Model.Conversation is { Length: > 0 } onlyThis)
+        {
+            @* Built from the page's own project, not from its address: after a form posts back here the address carries the
+               handler and not the project, and a link made from it would lead nowhere. *@
+            <ul class="filter-chips" aria-label="Filtered on">
+                <li><a class="chip" href="/Projects/Files?project=@Uri.EscapeDataString(Model.Project ?? string.Empty)" title="Take this filter off">Conversation: @onlyThis<span class="visually-hidden">, remove this filter</span> <span class="icon" aria-hidden="true">close</span></a></li>
+            </ul>
+        }
         @if (listing.Page.TotalFiles > 0)
         {
             <span class="tally">@listing.Page.TotalFiles file(s), @FilesModel.Size(listing.Page.TotalBytes) in all.</span>
         }
     </div>
+
+    @if (Model.Placeable.Count == 0)
+    {
+        <p class="notice">This project has no conversation to place a file in yet. A file goes in a conversation that exists.</p>
+    }
 
     @if (listing.Page.TotalFiles == 0)
     {
@@ -196,7 +214,7 @@ else if (Model.Listing is { } listing)
                         </div>
                         <div class="field wide">
                             <label for="placeIn">In conversation</label>
-                            <input id="placeIn" name="placeIn" list="conversations" required autocomplete="off" value="@(Model.Placeable.Contains(Model.Conversation ?? string.Empty, StringComparer.Ordinal) ? Model.Conversation : null)" placeholder="Type to find one" />
+                            <input id="placeIn" name="placeIn" list="placeable" required autocomplete="off" value="@(Model.Placeable.Contains(Model.Conversation ?? string.Empty, StringComparer.Ordinal) ? Model.Conversation : null)" placeholder="Type to find one" />
                         </div>
                         <div class="field wide">
                             <label for="placeAs">Under the name (empty: the file's own)</label>

@@ -78,7 +78,12 @@ else
 }
 
 @section Actions {
-    @if (Model.Problem is not { Length: > 0 } && Model.Record is { } agent && !Parley.Core.PersonSeat.Is(agent.Name))
+    @if (Model.Problem is not { Length: > 0 } && Model.Record is { } seat && Parley.Core.PersonSeat.Is(seat.Name))
+    {
+        @* The person's own seat: nothing to start, freeze or withdraw, but its conversations are still worth finding. *@
+        <a class="rail-link" href="/Projects/Agents?project=@Model.Project&amp;participant=@seat.Name.Value" title="The conversations you are party to"><span class="icon" aria-hidden="true">chat_bubble</span><span class="rail-label">Conversations</span></a>
+    }
+    else if (Model.Problem is not { Length: > 0 } && Model.Record is { } agent)
     {
         @* This agent's commands, in the rail like every page's (feature 042), each named in a word or two (the person's
            feedback: "Owns", not "What this agent is responsible for"). Each still opens a page that describes the act before

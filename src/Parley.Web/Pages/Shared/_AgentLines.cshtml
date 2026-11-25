@@ -19,7 +19,7 @@
 {
     var who = line.Name;
     var best = line.Best;
-    var (mark, words) = AgentStateMark.Split(best.Now.Words);
+    var (mark, words) = AgentStateMark.Split(best.Now);
 
     <details class="dgrid-row slot-@Palette.SlotFor(who)" role="row" data-agent="@who.Value">
     <summary class="dgrid-line">
@@ -32,7 +32,7 @@
             @foreach (var row in line.Rows)
             {
                 <a class="project-chip" href="/Projects/Agent?project=@row.Project&amp;agent=@who.Value">@row.Project@if (row.Agent.Frozen)
-                    {<span class="chip-mark" title="Frozen by you: nothing starts it" aria-label=", frozen">❄</span>}
+                    {<span class="chip-mark" title="Frozen by you: nothing starts it" aria-hidden="true">❄</span><span class="visually-hidden">, frozen</span>}
                     else if (row.Agent.Status == Parley.Core.AgentStatus.Retired)
                     {<span class="visually-hidden">, retired</span><span aria-hidden="true"> (retired)</span>}</a>
             }

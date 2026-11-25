@@ -55,7 +55,11 @@ public sealed record Activity(
 /// <param name="Words">What it is doing.</param>
 /// <param name="Rank">Where it sorts, lower first: working, then stopped, then the rest.</param>
 /// <param name="Working">Whether a turn is running for it.</param>
-public sealed record AgentNow(string Words, int Rank, bool Working = false);
+/// <param name="Mark">
+/// The mark that stands for what it is doing, whether or not <paramref name="Words"/> begins with it: the web console's
+/// agents list draws the mark alone where the words do not fit (feature 042), so a state is never told by its wording.
+/// </param>
+public sealed record AgentNow(string Words, int Rank, bool Working = false, string Mark = Activities.NotRunningMark);
 
 /// <summary>An agent with a turn running that owes an answer in this conversation.</summary>
 /// <param name="Agent">The agent.</param>
@@ -290,36 +294,37 @@ public static class Activities
 
         if (agent.Unsupervised)
         {
-            return new AgentNow("left running by a node that is gone", 2);
+            return new AgentNow("left running by a node that is gone", 2, Mark: OutsideMark);
         }
 
         if (agent.OpenOutside)
         {
-            return new AgentNow("open outside Parley", 2);
+            return new AgentNow("open outside Parley", 2, Mark: OutsideMark);
         }
 
         if (!turns.Reported)
         {
-            return new AgentNow(presence, agent.Presence == AgentPresence.Running ? 2 : 3);
+            // An older node reports no turns: running is all that is known, never stopped.
+            return agent.Presence == AgentPresence.Running ? new AgentNow(presence, 2, Mark: RunningMark) : new AgentNow(presence, 3);
         }
 
         if (turns.RunningSince is { } running)
         {
-            return new AgentNow($"{WorkingMark} working {For(running, now)}", 0, Working: true);
+            return new AgentNow($"{WorkingMark} working {For(running, now)}", 0, Working: true, Mark: WorkingMark);
         }
 
         if (turns.BackgroundTasks > 0 && agent.Presence == AgentPresence.Running)
         {
-            return new AgentNow($"{BackgroundMark} {WaitingOnBackground(turns.BackgroundTasks)}", 0);
+            return new AgentNow($"{BackgroundMark} {WaitingOnBackground(turns.BackgroundTasks)}", 0, Mark: BackgroundMark);
         }
 
         if (turns.LastEnded is { } ended && turns.LastPermissionDenials > 0)
         {
-            return new AgentNow($"{StoppedMark} stopped {For(ended, now)} — {Refused(turns.LastPermissionDenials)}", 1);
+            return new AgentNow($"{StoppedMark} stopped {For(ended, now)} — {Refused(turns.LastPermissionDenials)}", 1, Mark: StoppedMark);
         }
 
         return agent.Presence == AgentPresence.Running
-            ? new AgentNow($"{RunningMark} idle", 2)
+            ? new AgentNow($"{RunningMark} idle", 2, Mark: RunningMark)
             : new AgentNow(presence, 3);
     }
 
