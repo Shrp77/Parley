@@ -425,29 +425,20 @@
             </details>
             @if (here.Count > 0)
             {
-                @* The count goes to the inbox, where what is waiting can be collected. There is no Leave
-                   beside it: the seat is the broker's and is never given back, and closing the console is how a
-                   person stops being here. *@
+                @* The seat goes to the inbox, where what is waiting can be collected. There is no Leave beside it: the
+                   seat is the broker's and is never given back, and closing the console is how a person stops being here.
+                   How many wait is said once, on Inbox in the navigation, which is on every page (the person's choice on
+                   feature 042: one count, in one place). *@
                 <a class="seat-who" href="/Inbox" title="Your messages">
                     <span class="seat-dot" aria-hidden="true"></span>@here[0].Seat.Person
-                    @if (waiting is { Certain: true, Waiting: > 0 })
-                    {
-                        <span class="seat-waiting">@waiting.Waiting<span class="visually-hidden">
-                            messages waiting for you</span></span>
-                    }
                 </a>
             }
             else
             {
-                @* No broker answered, or none has a seat for a person. Nothing to take and nothing to type: the count,
-                   if any could be read, still says there is something to come back for. *@
+                @* No broker answered, or none has a seat for a person. Nothing to take and nothing to type: the count on
+                   Inbox, if any could be read, still says there is something to come back for. *@
                 <a class="seat-who" href="/Inbox" title="Your messages">
                     not connected
-                    @if (waiting is { Certain: true, Waiting: > 0 })
-                    {
-                        <span class="seat-waiting">@waiting.Waiting<span class="visually-hidden">
-                            messages waiting for you</span></span>
-                    }
                 </a>
             }
         </nav>
@@ -604,28 +595,81 @@
         })();
     </script>
     <script>
-        // The rail's collapse. Remembered in this browser only, and every access is guarded: storage can be absent or
-        // refuse, and the rail must still work for the life of the page.
+        // The menu's handle (feature 042, option A). Pressed in a large window, it folds the drawer to a rail and back, and
+        // that is remembered in this browser. Pressed in a narrower one, where the page keeps a rail's width, it unfolds the
+        // whole menu over the page until a tap elsewhere, Escape, or the handle again; that is never remembered. Dragged, it
+        // moves up or down and stays where it is left. Every storage access is guarded: storage can be absent or refuse.
         (function () {
             var button = document.getElementById('rail-toggle');
             var root = document.documentElement;
 
             if (!button) { return; }
 
+            var wide = window.matchMedia('(min-width: 75rem)');
+
+            try {
+                var kept = parseFloat(localStorage.getItem('parley.nav.handle'));
+                if (kept >= 0 && kept <= 100) { root.style.setProperty('--handle-top', kept + '%'); }
+            } catch (e) { }
+
+            var open = function () { return wide.matches ? root.getAttribute('data-nav') !== 'collapsed' : root.hasAttribute('data-rail-open'); };
+
             var sync = function () {
-                var collapsed = root.getAttribute('data-nav') === 'collapsed';
-                button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-                button.title = collapsed ? 'Expand the navigation' : 'Collapse the navigation';
+                button.setAttribute('aria-expanded', open() ? 'true' : 'false');
+                button.title = (open() ? 'Fold the menu' : 'Expand the menu') + '. Drag to move this handle.';
             };
 
-            button.addEventListener('click', function () {
+            var unfold = function (yes) {
+                if (yes) { root.setAttribute('data-rail-open', ''); } else { root.removeAttribute('data-rail-open'); }
+                sync();
+            };
+
+            var press = function () {
+                if (!wide.matches) { unfold(!root.hasAttribute('data-rail-open')); return; }
+
                 var collapsed = root.getAttribute('data-nav') === 'collapsed';
 
                 if (collapsed) { root.removeAttribute('data-nav'); } else { root.setAttribute('data-nav', 'collapsed'); }
 
                 try { localStorage.setItem('parley.nav', collapsed ? 'expanded' : 'collapsed'); } catch (e) { }
                 sync();
+            };
+
+            // A press that moved more than a few pixels was a drag, and the click that ends it is not a press.
+            var startY = 0, startTop = 0, dragged = false, down = false;
+
+            button.addEventListener('pointerdown', function (e) {
+                down = true; dragged = false; startY = e.clientY; startTop = button.getBoundingClientRect().top;
+                button.setPointerCapture(e.pointerId);
             });
+            button.addEventListener('pointermove', function (e) {
+                if (!down) { return; }
+                var dy = e.clientY - startY;
+                if (!dragged && Math.abs(dy) < 4) { return; }
+                dragged = true;
+                button.classList.add('dragging');
+                var top = Math.max(8, Math.min(window.innerHeight - button.offsetHeight - 8, startTop + dy));
+                root.style.setProperty('--handle-top', (top / window.innerHeight * 100).toFixed(2) + '%');
+            });
+            button.addEventListener('pointerup', function () {
+                down = false;
+                button.classList.remove('dragging');
+                if (dragged) {
+                    try { localStorage.setItem('parley.nav.handle', parseFloat(root.style.getPropertyValue('--handle-top')).toString()); } catch (e) { }
+                }
+            });
+            button.addEventListener('click', function (e) {
+                if (dragged) { e.preventDefault(); dragged = false; return; }
+                press();
+            });
+
+            document.addEventListener('click', function (e) {
+                if (root.hasAttribute('data-rail-open') && !e.target.closest('.rail')) { unfold(false); }
+            });
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && !e.defaultPrevented && root.hasAttribute('data-rail-open')) { unfold(false); button.focus(); }
+            });
+            if (wide.addEventListener) { wide.addEventListener('change', function () { unfold(false); }); }
 
             sync();
         })();

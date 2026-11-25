@@ -90,23 +90,24 @@ html[data-nav="collapsed"] .rail-toggle .icon { transform: rotate(180deg); }
 .rail .seat-waiting { margin-left: auto; }
 
 /* Collapsed: a rail. The items narrow to a 56px indicator round the icon, centred in the 80px bar. */
-html[data-nav="collapsed"] .rail nav a, html[data-nav="collapsed"] .rail-toggle { width: 3.5rem; min-height: 2.5rem; margin: 0.25rem auto; padding: 0; justify-content: center; }
-html[data-nav="collapsed"] .rail-label,
-html[data-nav="collapsed"] .rail .brand span { position: absolute; left: -100rem; }
-html[data-nav="collapsed"] .rail .brand { padding: 0 0 0.5rem; justify-content: center; }
-html[data-nav="collapsed"] .rail-heading { color: transparent; margin: 0.5rem 0.5rem 0; height: 1rem; }
-html[data-nav="collapsed"] .rail .seat-waiting { position: absolute; top: 0; right: 0.25rem; margin: 0; }
+html[data-nav="collapsed"]:not([data-rail-open]) .rail nav a { width: 3.5rem; min-height: 2.5rem; margin: 0.25rem auto; padding: 0; justify-content: center; }
+html[data-nav="collapsed"]:not([data-rail-open]) .rail-label,
+html[data-nav="collapsed"]:not([data-rail-open]) .rail .brand span { position: absolute; left: -100rem; }
+html[data-nav="collapsed"]:not([data-rail-open]) .rail .brand { padding: 0 0 0.5rem; justify-content: center; }
+html[data-nav="collapsed"]:not([data-rail-open]) .rail-heading { color: transparent; margin: 0.5rem 0.5rem 0; height: 1rem; }
+html[data-nav="collapsed"]:not([data-rail-open]) .rail .seat-waiting { position: absolute; top: 0; right: 0.25rem; margin: 0; }
 
-/* Below 1200px the drawer is a rail whatever the toggle says, as Material 3 keeps a drawer for large windows: at a
-   laptop's width its 16rem is a column the page needs. The toggle goes with it. */
+/* Below 1200px the page keeps a rail's width whatever the toggle says, as Material 3 keeps a docked drawer for large
+   windows: at a laptop's or a tablet's width its 16rem is a column the page needs. The handle unfolds the whole menu over
+   the page instead (data-rail-open, never remembered), and these rules stand down while it is open. */
 @media (max-width: 74.99rem) {
     :root { --rail-w: 5rem; }
-    .rail-label, .rail .brand span { position: absolute; left: -100rem; }
-    .rail nav a { width: 3.5rem; min-height: 2.5rem; margin: 0.25rem auto; padding: 0; justify-content: center; }
-    .rail .brand { padding: 0 0 0.5rem; justify-content: center; }
-    .rail-heading { color: transparent; margin: 0.5rem 0.5rem 0; height: 1rem; }
-    .rail-toggle { display: none; }
-    .rail .seat-waiting { position: absolute; top: 0; right: 0.25rem; margin: 0; }
+    html:not([data-rail-open]) .rail-label, html:not([data-rail-open]) .rail .brand span { position: absolute; left: -100rem; }
+    html:not([data-rail-open]) .rail nav a { width: 3.5rem; min-height: 2.5rem; margin: 0.25rem auto; padding: 0; justify-content: center; }
+    html:not([data-rail-open]) .rail .brand { padding: 0 0 0.5rem; justify-content: center; }
+    html:not([data-rail-open]) .rail-heading { color: transparent; margin: 0.5rem 0.5rem 0; height: 1rem; }
+    html:not([data-rail-open]) .rail .seat-waiting { position: absolute; top: 0; right: 0.25rem; margin: 0; }
+    html[data-rail-open] .rail { width: 16rem; box-shadow: var(--md-sys-elevation-3); }
 }
 
 /* Skipping is for somebody navigating by keyboard, so it has to become visible when it
@@ -2098,29 +2099,37 @@ header > nav { margin-left: 0; }
    text. */
 header { -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blur(16px) saturate(1.2); }
 
-/* In a large window the drawer's collapse is a round button on its edge, part way down, between the menu and the page
-   (the person's feedback on feature 042), rather than an item at the foot. Fixed, so it stays put as the page scrolls;
-   below 1200px the rail cannot expand and the button is not drawn. */
-@media (min-width: 75rem) {
+/* The menu's expand and fold is a narrow handle on the line between the menu and the page, half on each (the person's
+   choice on feature 042, option A). Pressed, it folds or unfolds the menu; dragged, it moves up or down out of the way,
+   and stays where it is left (--handle-top, kept in this browser by the frame's script). Its touch area is wider than
+   it is drawn. A phone has no side menu, so no handle. */
+:root { --rail-drawn: var(--rail-w); }
+html[data-rail-open] { --rail-drawn: 16rem; }
+
+@media (min-width: 37.5rem) {
     html .rail > .rail-toggle {
         position: fixed;
-        top: 45%;
-        left: calc(var(--rail-w) - 1.25rem);
+        top: var(--handle-top, 45%);
+        left: calc(var(--rail-drawn) - 0.4375rem);
         z-index: 31;
-        width: 2.5rem;
-        min-height: 2.5rem;
-        height: 2.5rem;
+        width: 0.875rem;
+        min-height: 3.75rem;
+        height: 3.75rem;
         margin: 0;
         padding: 0;
-        justify-content: center;
         border-radius: var(--md-sys-shape-corner-full);
-        color: var(--md-sys-color-on-surface-variant);
-        background: var(--md-sys-color-surface-container-high);
-        box-shadow: var(--md-sys-elevation-2);
-        transition: left var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+        background: color-mix(in srgb, var(--md-sys-color-outline) 75%, transparent);
+        box-shadow: var(--md-sys-elevation-1);
+        cursor: grab;
+        touch-action: none;
+        transition: left var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard), background-color var(--md-sys-motion-duration-short);
     }
 
-    html .rail > .rail-toggle:hover { color: var(--md-sys-color-on-surface); background: var(--md-sys-color-surface-container-highest); }
+    html .rail > .rail-toggle::before { content: ""; position: absolute; inset: -0.5rem -1rem; }
+    html .rail > .rail-toggle::after { content: ""; position: absolute; left: 50%; top: 50%; width: 0.25rem; height: 1rem; transform: translate(-50%, -50%); border-inline: 1px solid var(--md-sys-color-surface); }
+    html .rail > .rail-toggle:hover, html .rail > .rail-toggle:focus-visible { background: var(--md-sys-color-on-surface-variant); }
+    html .rail > .rail-toggle.dragging { cursor: grabbing; transition: none; }
+    html .rail > .rail-toggle .icon { display: none; }
     html .rail > .rail-toggle .rail-label { position: absolute; left: -100rem; }
 }
 
@@ -2164,11 +2173,11 @@ header { -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blu
 }
 
 /* Collapsed, or below 1200px, the rail is 80px: the items narrow to their icon, as the destinations do. */
-html[data-nav="collapsed"] .rail-act > summary { width: 3.5rem; margin: 0 auto; padding: 0; justify-content: center; }
-html[data-nav="collapsed"] .rail-act .rail-label { position: absolute; left: -100rem; }
+html[data-nav="collapsed"]:not([data-rail-open]) .rail-act > summary { width: 3.5rem; margin: 0 auto; padding: 0; justify-content: center; }
+html[data-nav="collapsed"]:not([data-rail-open]) .rail-act .rail-label { position: absolute; left: -100rem; }
 @media (max-width: 74.99rem) {
-    .rail-act > summary { width: 3.5rem; margin: 0 auto; padding: 0; justify-content: center; }
-    .rail-act .rail-label { position: absolute; left: -100rem; }
+    html:not([data-rail-open]) .rail-act > summary { width: 3.5rem; margin: 0 auto; padding: 0; justify-content: center; }
+    html:not([data-rail-open]) .rail-act .rail-label { position: absolute; left: -100rem; }
 }
 
 /* The panel: fixed beside the rail, so the rail's own scrolling does not clip it. */

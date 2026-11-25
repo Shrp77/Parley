@@ -830,6 +830,44 @@
           "pause": 300
         }
       ]
+    },
+    {
+      "file": "menu-open-tablet-light.png",
+      "width": 820,
+      "height": 1180,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "The menu unfolded over the page by its handle.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "click": "#rail-toggle"
+        },
+        {
+          "pause": 300
+        }
+      ]
+    },
+    {
+      "file": "menu-open-landscape-light.png",
+      "width": 1180,
+      "height": 820,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "The menu unfolded over the page by its handle.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "click": "#rail-toggle"
+        },
+        {
+          "pause": 300
+        }
+      ]
     }
   ]
 }
