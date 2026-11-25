@@ -29,11 +29,19 @@ public sealed class TheGraphPanelRefreshesInPlaceTests
     }
 
     [Fact]
-    public void A_swap_keeps_the_list_open_the_focus_on_its_link_and_the_scroll_where_it_was()
+    public void A_swap_keeps_the_sections_open_the_focus_on_its_control_the_picture_where_it_was_moved_and_the_scroll()
     {
-        Assert.Contains("var open = !!(list && list.open);", Script, StringComparison.Ordinal);
-        Assert.Contains("if (again) { again.open = true; }", Script, StringComparison.Ordinal);
-        Assert.Contains("if (links[i].getAttribute(\"href\") === href) { links[i].focus(); break; }", Script, StringComparison.Ordinal);
+        // Every folded section the person opened (the list, the filter, every project) stays open.
+        Assert.Contains("body.querySelectorAll(\"details[data-pg-keep]\")", Script, StringComparison.Ordinal);
+        Assert.Contains("if (d) { d.open = true; }", Script, StringComparison.Ordinal);
+
+        // The control they were on, found again by where it goes or what it is, keeps the focus.
+        Assert.Contains("on.getAttribute(\"href\") !== null ? \"a[href='\" + CSS.escape(on.getAttribute(\"href\")) + \"']\"", Script, StringComparison.Ordinal);
+        Assert.Contains("if (back) { back.focus({ preventScroll: true }); }", Script, StringComparison.Ordinal);
+
+        // The picture is put back where they moved it, after the swap, and the panel where it was scrolled. A drag under way
+        // ends with the canvas it belonged to.
+        Assert.Matches(@"pointers = \{\}; spread = 0;\s*body\.innerHTML = html;\s*drawn = same;[\s\S]{0,400}?place\(\);", Script);
         Assert.Contains("body.scrollTop = top;", Script, StringComparison.Ordinal);
     }
 

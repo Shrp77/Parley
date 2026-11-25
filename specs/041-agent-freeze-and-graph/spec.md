@@ -115,7 +115,8 @@ returns them.
 
 - **FR-001**: Every console page MUST offer a collapsed tab that opens the graph panel, and the person MUST be able to pin it so it
   stays open across pages. The pin and open state are kept in the browser only.
-- **FR-002**: The graph MUST show projects, agents, conversations, spin-off links to their parent, and each agent's state and
+- **FR-002**: *Replaced by feature 042 FR-030 to FR-035, at the person's request: the graph shows work under way, not projects
+  and conversations.* The graph MUST show projects, agents, conversations, spin-off links to their parent, and each agent's state and
   background-task count, drawn from what the brokers already freeze, with no new charting dependency.
 - **FR-003**: Every node MUST carry its state in text a screen reader reads, and the graph MUST have a plain list alternative
   carrying the same facts.

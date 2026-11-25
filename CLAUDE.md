@@ -43,7 +43,8 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
   it to outlast one, by the broker's next start, which lets it lapse and clears it once the start it owes has been asked. It took
   migration 011.
 - Feature 042, the web console's theme and layout refresh (a look the person picks from 2–3 directions shown as screenshots,
-  and a layout for phone, tablet and desktop, on the Material 3 base, with no behaviour change), is in planning:
+  and a layout for phone, tablet and desktop, on the Material 3 base, with no behaviour change except the graph panel, which now
+  shows work under way with a filter by project and agent), is being built:
   `specs/042-theme-and-layout-refresh/`. The person's inspiration images are in the git-ignored `artifacts/inspiration/`.
 Current plan: `specs/042-theme-and-layout-refresh/plan.md`
 <!-- SPECKIT END -->

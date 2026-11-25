@@ -1269,12 +1269,11 @@
     @if (!Parley.Web.ConsoleHost.Embedded(Context))
     {
         @* The graph panel (spec 041). Collapsed to a tab, it reads nothing: the script below fetches the fragment only while the
-           panel is open. Whether it is open and pinned, and whether closed conversations are hidden, are kept in this browser only. *@
+           panel is open. Whether it is open and pinned, and what its filter has chosen, are kept in this browser only. *@
         <button type="button" class="pg-tab" id="pg-tab" aria-controls="pg-panel" aria-expanded="false">Graph</button>
-        <aside class="pg-panel" id="pg-panel" aria-label="Graph of projects, agents and conversations" hidden>
+        <aside class="pg-panel" id="pg-panel" aria-label="Graph of what is being worked on now" hidden>
             <div class="pg-bar">
                 <h2>What is being worked on</h2>
-                <label class="toggle"><input type="checkbox" id="pg-hide-closed" /> <span>Hide closed</span></label>
                 <button type="button" id="pg-pin" class="tonal" aria-pressed="false">Pin</button>
                 <button type="button" id="pg-close" class="quiet">Close</button>
             </div>
@@ -1287,25 +1286,132 @@
                 var panel = document.getElementById("pg-panel");
                 var body = document.getElementById("pg-body");
                 var pin = document.getElementById("pg-pin");
-                var hideClosed = document.getElementById("pg-hide-closed");
                 var key = "parley.graph";
                 var timer = null;
-                var state = { open: false, pinned: false, hideClosed: false };
+                var state = { open: false, pinned: false, projects: [], agents: [] };
 
-                function load() { try { var s = JSON.parse(localStorage.getItem(key) || "{}"); if (s && s.pinned) { state.pinned = true; state.open = !!s.open; } if (s && s.hideClosed) { state.hideClosed = true; } } catch (e) { } }
+                function names(v) { return Array.isArray(v) ? v.filter(function (n) { return typeof n === "string"; }).slice(0, 200) : []; }
+                function load() { try { var s = JSON.parse(localStorage.getItem(key) || "{}"); if (s && s.pinned) { state.pinned = true; state.open = !!s.open; } if (s) { state.projects = names(s.projects); state.agents = names(s.agents); } } catch (e) { } }
                 function save() { try { localStorage.setItem(key, JSON.stringify(state)); } catch (e) { } }
 
                 var drawn = null;
                 var asked = 0;
+                // Where the picture is moved to and how far it is zoomed; null until the person moves it, so it fits until then.
+                var view = null;
+                var tall = 0;
+
+                // A panel as narrow as a phone is drawn in one column: two, fitted to its width, would be too small to read.
+                function narrow() { return body.clientWidth > 0 && body.clientWidth < 560; }
+                var drawnNarrow = null;
+
+                function address() {
+                    var q = new URLSearchParams();
+                    state.projects.forEach(function (n) { q.append("project", n); });
+                    state.agents.forEach(function (n) { q.append("agent", n); });
+                    drawnNarrow = narrow();
+                    if (drawnNarrow) { q.append("narrow", "true"); }
+                    var s = q.toString();
+                    return s ? "/Graph?" + s : "/Graph";
+                }
+
+                // The picture is moved by dragging and zoomed by the wheel, a pinch, the buttons or plus and minus; it fits the
+                // panel's width until the person moves it, and keeps where they put it across refreshes. Fitted, the canvas is
+                // no taller than the picture.
+                function canvas() { return body.querySelector(".pg-canvas"); }
+                function fit(c) { var w = +c.getAttribute("data-w") || 640; return { x: 0, y: 0, s: Math.min(1.25, Math.max(0.2, c.clientWidth / w)) }; }
+                function place() {
+                    var c = canvas(); if (!c) { return; }
+                    // A canvas a refresh put in is given the height the last one had, so moving the picture never makes it jump.
+                    if (!view) { var f = fit(c); tall = Math.round(Math.min(window.innerHeight * 0.7, (+c.getAttribute("data-h") || 400) * f.s + 2)); }
+                    if (tall) { c.style.height = tall + "px"; }
+                    var svg = c.querySelector("svg"); var v = view || fit(c);
+                    var w = c.clientWidth / v.s, h = c.clientHeight / v.s;
+                    svg.setAttribute("viewBox", v.x + " " + v.y + " " + w + " " + h);
+                }
+                function zoom(by, cx, cy) {
+                    var c = canvas(); if (!c) { return; }
+                    var v = view || fit(c);
+                    var s = Math.min(4, Math.max(0.2, v.s * by));
+                    if (cx === undefined) { cx = c.clientWidth / 2; cy = c.clientHeight / 2; }
+                    view = { x: v.x + (cx / v.s) - (cx / s), y: v.y + (cy / v.s) - (cy / s), s: s };
+                    place();
+                }
+                function whole() {
+                    var c = canvas(); if (!c) { return; }
+                    var w = +c.getAttribute("data-w") || 640, h = +c.getAttribute("data-h") || 400;
+                    var s = Math.min(1.25, Math.max(0.2, Math.min(c.clientWidth / w, c.clientHeight / h)));
+                    view = { x: -((c.clientWidth / s) - w) / 2, y: 0, s: s };
+                    place();
+                }
+                function pan(dx, dy) { var c = canvas(); if (!c) { return; } var v = view || fit(c); view = { x: v.x - (dx / v.s), y: v.y - (dy / v.s), s: v.s }; place(); }
+
+                var pointers = {};
+                var spread = 0;
+                body.addEventListener("pointerdown", function (e) {
+                    var c = canvas(); if (!c || !c.contains(e.target) || e.target.closest("a") || (e.pointerType === "mouse" && e.button !== 0)) { return; }
+                    pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+                    try { c.setPointerCapture(e.pointerId); } catch (x) { }
+                });
+                body.addEventListener("pointermove", function (e) {
+                    var p = pointers[e.pointerId]; if (!p) { return; }
+                    var ids = Object.keys(pointers);
+                    if (ids.length === 2) {
+                        var o = pointers[ids[0] == e.pointerId ? ids[1] : ids[0]];
+                        var d = Math.hypot(e.clientX - o.x, e.clientY - o.y);
+                        if (spread > 0) { var r = canvas().getBoundingClientRect(); zoom(d / spread, (e.clientX + o.x) / 2 - r.left, (e.clientY + o.y) / 2 - r.top); }
+                        spread = d;
+                    } else { pan(e.clientX - p.x, e.clientY - p.y); }
+                    p.x = e.clientX; p.y = e.clientY;
+                });
+                function lift(e) { delete pointers[e.pointerId]; spread = 0; }
+                // On the document, not the panel: a refresh that replaces the canvas mid-drag sends the release elsewhere.
+                document.addEventListener("pointerup", lift);
+                document.addEventListener("pointercancel", lift);
+                document.addEventListener("lostpointercapture", lift, true);
+                body.addEventListener("wheel", function (e) {
+                    var c = canvas(); if (!c || !c.contains(e.target)) { return; }
+                    e.preventDefault();
+                    var r = c.getBoundingClientRect();
+                    zoom(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top);
+                }, { passive: false });
+                body.addEventListener("keydown", function (e) {
+                    var c = canvas(); if (!c || e.target !== c) { return; }
+                    var step = 40, done = true;
+                    if (e.key === "ArrowLeft") { pan(step, 0); } else if (e.key === "ArrowRight") { pan(-step, 0); }
+                    else if (e.key === "ArrowUp") { pan(0, step); } else if (e.key === "ArrowDown") { pan(0, -step); }
+                    else if (e.key === "+" || e.key === "=") { zoom(1.2); } else if (e.key === "-") { zoom(1 / 1.2); }
+                    else if (e.key === "0") { view = null; place(); } else { done = false; }
+                    if (done) { e.preventDefault(); }
+                });
+                body.addEventListener("click", function (e) {
+                    var z = e.target.closest("[data-pg-zoom]");
+                    // Fit shows the whole picture, centred; until the person moves it, the picture fits the panel's width.
+                    if (z) { var how = z.getAttribute("data-pg-zoom"); if (how === "fit") { whole(); } else { zoom(how === "in" ? 1.2 : 1 / 1.2); } return; }
+                    var drop = e.target.closest("[data-pg-drop]");
+                    if (drop) {
+                        var kind = drop.getAttribute("data-pg-drop") === "agent" ? "agents" : "projects";
+                        state[kind] = state[kind].filter(function (n) { return n !== drop.value; });
+                        save(); read();
+                    }
+                });
+                // The filter's boxes are read whole on each change, so what is ticked is what is asked for.
+                body.addEventListener("change", function (e) {
+                    var box = e.target; if (!box.matches || !box.matches(".pg-filter input[type=checkbox]")) { return; }
+                    var ticked = function (n) { return Array.prototype.map.call(body.querySelectorAll(".pg-filter input[name=" + n + "]:checked"), function (i) { return i.value; }); };
+                    state.projects = ticked("project"); state.agents = ticked("agent");
+                    save(); read();
+                });
+                // A panel that crosses the narrow width is read again in the other layout, fitted afresh.
+                if (window.ResizeObserver) { new ResizeObserver(function () { if (drawnNarrow !== null && state.open && narrow() !== drawnNarrow) { view = null; read(); } else { place(); } }).observe(body); }
 
                 // Refreshed in place. The answer is swapped in only when it differs from what is drawn (its stamp aside), and what
-                // the person had done to the panel is put back: the list they opened stays open, the link they were on keeps the
-                // focus, and the panel stays where it was scrolled. The list is the picture's equal, so it must be readable for
-                // longer than one refresh.
+                // the person had done to the panel is put back: the sections they opened stay open, the control they were on
+                // keeps the focus, the picture stays where they moved it and the panel where it was scrolled. The list is the
+                // picture's equal, so it must be readable for longer than one refresh.
                 function read() {
                     var mine = ++asked;
 
-                    fetch("/Graph", { credentials: "same-origin", cache: "no-store", headers: { "Accept": "text/html" } })
+                    fetch(address(), { credentials: "same-origin", cache: "no-store", headers: { "Accept": "text/html" } })
                         .then(function (r) { if (!r.ok) { throw new Error(String(r.status)); } return r.text(); })
                         .then(function (html) {
                             // An older answer that lands after a newer one is dropped.
@@ -1315,23 +1421,31 @@
 
                             if (same === drawn) { return; }
 
-                            var list = body.querySelector(".pg-list");
-                            var open = !!(list && list.open);
+                            var open = Array.prototype.filter.call(body.querySelectorAll("details[data-pg-keep]"), function (d) { return d.open; })
+                                .map(function (d) { return d.getAttribute("data-pg-keep"); });
                             var on = document.activeElement;
-                            var href = on && body.contains(on) ? on.getAttribute("href") : null;
+                            var mark = null;
+                            if (on && body.contains(on)) {
+                                // The same control after the swap: a link by where it goes, a box by its name and value, anything
+                                // else by what kind of control it is.
+                                mark = on.getAttribute("href") !== null ? "a[href='" + CSS.escape(on.getAttribute("href")) + "']"
+                                    : on.name ? "input[name='" + CSS.escape(on.name) + "'][value='" + CSS.escape(on.value) + "']"
+                                    : on.getAttribute("data-pg-zoom") ? "[data-pg-zoom='" + on.getAttribute("data-pg-zoom") + "']"
+                                    : on.classList.contains("pg-canvas") ? ".pg-canvas"
+                                    : on.tagName === "SUMMARY" && on.parentElement.getAttribute("data-pg-keep") ? "details[data-pg-keep='" + on.parentElement.getAttribute("data-pg-keep") + "'] > summary"
+                                    : null;
+                            }
                             var top = body.scrollTop;
 
+                            // A drag under way belonged to the canvas being replaced, so it ends here.
+                            pointers = {}; spread = 0;
                             body.innerHTML = html;
                             drawn = same;
 
-                            if (open) { var again = body.querySelector(".pg-list"); if (again) { again.open = true; } }
+                            open.forEach(function (k) { var d = body.querySelector("details[data-pg-keep='" + k + "']"); if (d) { d.open = true; } });
+                            place();
 
-                            if (href) {
-                                var links = body.querySelectorAll("a[href]");
-                                for (var i = 0; i < links.length; i++) {
-                                    if (links[i].getAttribute("href") === href) { links[i].focus(); break; }
-                                }
-                            }
+                            if (mark) { var back = body.querySelector(mark); if (back) { back.focus({ preventScroll: true }); } }
 
                             body.scrollTop = top;
                         })
@@ -1359,12 +1473,10 @@
                     tab.setAttribute("aria-expanded", state.open ? "true" : "false");
                     Array.prototype.forEach.call(opens, function (b) { b.setAttribute("aria-expanded", state.open ? "true" : "false"); });
                     panel.classList.toggle("pg-pinned", docked());
-                    panel.classList.toggle("pg-hide-closed", state.hideClosed);
                     document.body.classList.toggle("pg-docked", state.open && docked());
                     pin.hidden = !wide.matches;
                     pin.setAttribute("aria-pressed", state.pinned ? "true" : "false");
                     pin.textContent = state.pinned ? "Unpin" : "Pin";
-                    hideClosed.checked = state.hideClosed;
 
                     if (timer) { clearInterval(timer); timer = null; }
 
@@ -1388,7 +1500,6 @@
                 });
                 document.getElementById("pg-close").addEventListener("click", function () { state.open = false; state.pinned = false; save(); draw(); });
                 pin.addEventListener("click", function () { state.pinned = !state.pinned; save(); draw(); });
-                hideClosed.addEventListener("change", function () { state.hideClosed = hideClosed.checked; save(); draw(); });
                 document.addEventListener("keydown", function (e) { if (e.key === "Escape" && state.open && !docked()) { state.open = false; save(); draw(); } });
 
                 if (wide.addEventListener) { wide.addEventListener("change", draw); }

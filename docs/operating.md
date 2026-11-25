@@ -107,20 +107,29 @@ or the system's) and density, kept in this browser only. It also holds how many 
 
 ### The graph
 
-A tab at the right edge of every page opens a picture of what is being worked on.
+A tab at the right edge of every page opens a picture of what is being worked on right now. On a
+phone it is under *More*.
 
-- Each project is a band. Its agents are on the left and its conversations on the right.
-- A line joins an agent to each conversation it is in. A dashed line joins a spin-off to the
-  conversation it came from.
-- A dot beside an agent stands for each background task its node says it has running, up to five; past that the dots end in a count.
-- Each agent says in words whether it is working, idle, waiting on background work, or frozen.
-  A frozen agent also has a dashed outline.
-- *Freeze* and *Unfreeze* are on each agent. *Freeze all* and *Unfreeze all* are on each project.
-- The same facts follow the picture as a list.
+- Only agents with work under way are drawn: one with a turn running, or one waiting on its own
+  background work. The others are counted as hidden.
+- Under each agent, **NOW** is work it has collected and not yet answered. A turn does not say
+  which conversation it is for, so this is the closest true reading.
+- **QUEUED** is work sent to it that it has not collected yet, in the order it arrived, with the
+  first line of what was asked. **REPLY WAITS** is work it took earlier where a reply to it, such
+  as an answer to its own question, waits to be collected.
+- Beside it are its background tasks. A node reports how many there are, not what each one is,
+  so they are numbered.
+- An agent whose repository serves several projects is one agent, with its work from each.
+- Drag to move the picture, scroll or pinch to zoom, or use the minus, *Fit* and plus buttons.
+  *Fit* shows the whole picture. On a phone it is drawn in one column so the text stays readable.
+- *Filter* narrows it to the projects and agents you tick. Each choice shows as a chip; press a
+  chip to take it off. The choice is kept in this browser.
+- The same facts follow the picture as a list, with *Freeze* or *Unfreeze* for each working agent
+  in each project it serves. *Every project* below it has *Freeze all* and *Unfreeze all*. An
+  agent that is not working is frozen from its own page.
 
-*Pin* keeps the graph open as you move between pages. *Hide closed* thins out finished
-conversations. Nothing is read until you open the graph. While it is open, it refreshes every
-fifteen seconds.
+*Pin* keeps the graph open as you move between pages. Nothing is read until you open the graph.
+While it is open, it refreshes every fifteen seconds.
 
 ### The Inbox
 

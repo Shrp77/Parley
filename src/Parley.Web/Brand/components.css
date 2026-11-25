@@ -1235,21 +1235,42 @@ body.pg-docked { padding-right: min(46rem, 100vw); }
 .pg-bar h2 { margin: 0; font-size: 1rem; flex: 1 1 auto; }
 .pg-bar [hidden] { display: none; }
 .pg-body { flex: 1 1 auto; overflow: auto; padding: 0.6rem 1rem 1rem; }
-.pg-panel.pg-hide-closed [data-closed] { display: none; }
-.pg-svg { max-width: 100%; height: auto; }
-.pg-band { fill: var(--quiet-wash); opacity: 0.45; }
-.pg-node rect { fill: var(--card); stroke: var(--rule); stroke-width: 1.2; }
-.pg-project rect { fill: var(--md-sys-color-secondary-container); }
-.pg-agent.pg-frozen rect { stroke: var(--alarm); stroke-width: 2; stroke-dasharray: 5 3; }
-.pg-muted rect { opacity: 0.55; }
-.pg-muted text { opacity: 0.75; }
-.pg-label { font-size: 12px; font-weight: 650; fill: var(--ink); }
-.pg-state { font-size: 10px; fill: var(--ink-faint); }
-.pg-link { font-size: 10px; fill: var(--accent); text-decoration: underline; cursor: pointer; }
-.pg-task { fill: var(--accent); }
-.pg-edge { fill: none; stroke: var(--rule); stroke-width: 1.3; }
-.pg-spinoff { stroke-dasharray: 4 3; stroke: var(--accent); }
+/* The picture of what is being worked on now (feature 042): a canvas the person moves and zooms, filled top to bottom. */
+.pg-filters { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 0.6rem; }
+.pg-filters .filter-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.pg-filters button.chip { cursor: pointer; }
+.pg-filter > summary { list-style: none; display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer; }
+.pg-filter > summary::-webkit-details-marker { display: none; }
+.pg-filter-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.6rem 1rem; margin-top: 0.5rem; padding: 0.6rem 0.8rem; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container-low); }
+.pg-filter-body fieldset { margin: 0; padding: 0; border: 0; display: grid; gap: 0.25rem; max-height: 14rem; overflow: auto; }
+.pg-filter-body legend { font: var(--md-sys-typescale-title-small); margin-bottom: 0.3rem; }
+.pg-canvas { height: min(70vh, 40rem); overflow: hidden; touch-action: none; cursor: grab; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container-lowest); }
+.pg-canvas:active { cursor: grabbing; }
+.pg-canvas:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
+.pg-canvas .pg-svg { display: block; width: 100%; height: 100%; }
+.pg-zoom { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; margin: 0.4rem 0 0.6rem; }
+.pg-zoom .pg-sub { margin-left: auto; font-size: 0.85rem; color: var(--md-sys-color-on-surface-variant); }
+.pg-node rect { fill: var(--md-sys-color-surface); stroke: var(--md-sys-color-outline-variant); stroke-width: 1.2; }
+.pg-root rect { fill: var(--md-sys-color-secondary-container); stroke: none; }
+.pg-agent rect { fill: var(--md-sys-color-primary-container); stroke: none; }
+.pg-agent.pg-frozen rect { stroke: var(--md-sys-color-error); stroke-width: 2; stroke-dasharray: 5 3; }
+.pg-now rect { stroke: var(--md-sys-color-primary); stroke-width: 1.6; }
+.pg-queued rect { fill: var(--md-sys-color-surface-container); stroke-dasharray: 5 4; }
+.pg-task rect { fill: var(--md-sys-color-tertiary-container); stroke: none; }
+.pg-more rect { fill: none; stroke-dasharray: 3 3; }
+.pg-title { font-size: 13px; font-weight: 650; fill: var(--md-sys-color-on-surface); }
+.pg-agent .pg-title, .pg-agent .pg-sub { fill: var(--md-sys-color-on-primary-container); }
+.pg-task .pg-title, .pg-task .pg-tag { fill: var(--md-sys-color-on-tertiary-container); }
+.pg-sub { font-size: 11px; font-weight: 400; fill: var(--md-sys-color-on-surface-variant); }
+.pg-tag { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; fill: var(--md-sys-color-primary); }
+.pg-queued .pg-tag { fill: var(--md-sys-color-on-surface-variant); }
+.pg-node a text { text-decoration: underline; cursor: pointer; }
+.pg-edge { fill: none; stroke: var(--md-sys-color-outline); stroke-width: 1.5; }
+.pg-edge-now { stroke: var(--md-sys-color-primary); stroke-width: 2.2; }
+.pg-edge-task { stroke: var(--md-sys-color-tertiary); }
+.pg-empty { margin: 1rem 0; color: var(--md-sys-color-on-surface-variant); }
 .pg-note { font-size: 0.85rem; }
+.pg-acts { display: flex; flex-wrap: wrap; gap: 0.8rem; font-size: 0.9rem; }
 .pg-list h3 { font-size: 0.95rem; margin: 0.8rem 0 0.2rem; }
 .select-grid .row-act, .dgrid-line .row-act { margin: 0; padding: 0; border: 0; background: none; box-shadow: none; }
 .select-grid input[type=checkbox] { margin: 0; align-self: center; }

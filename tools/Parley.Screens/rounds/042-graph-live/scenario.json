@@ -1,0 +1,94 @@
+// The sample deployment for feature 042's comparison rounds, the same as round 0.64.48's.
+// Every name and fact here is invented. Steps run in order; a request's "expect" is the exchange
+// number a shot or the site names (#8 and #12), and the run stops if the broker numbers it otherwise.
+{
+  "project": "shop",
+  "machine": "devbox",
+  "description": "The online shop: checkout, billing, stock and the storefront.",
+  "agents": [
+    { "role": "orders", "owns": "Order flow and pricing rules for checkout.", "started": "node", "model": "claude-opus-5-5" },
+    { "role": "billing", "owns": "Invoices, tax, refunds and the payment provider integration.", "started": "node", "model": "claude-opus-5-5" },
+    { "role": "inventory", "owns": "Stock levels and the supplier price feed.", "started": "gone", "model": "claude-opus-5-5" },
+    { "role": "website", "owns": "The storefront pages.", "started": "outside", "model": "claude-opus-5-5" }
+  ],
+  "steps": [
+    // tax-inclusive-pricing
+    { "do": "request", "from": "orders", "to": "billing", "conversation": "tax-inclusive-pricing", "label": "vat",
+      "text": "Which VAT rate and rounding should checkout use for UK orders, so totals match your invoices?" },
+    { "do": "clarify", "from": "billing", "exchange": "vat",
+      "text": "Before I answer: do you round each line, or only the order total?" },
+    { "do": "clarify", "from": "orders", "exchange": "vat",
+      "text": "Per line. Each line shows its own tax-inclusive price, and the total is the sum of the lines." },
+    { "do": "place", "by": "billing", "conversation": "tax-inclusive-pricing", "name": "vat-rules.md", "file": "assets/vat-rules.md" },
+    { "do": "result", "from": "billing", "exchange": "vat", "outcome": "answered",
+      "text": "Standard rate, 20%, except books and children's clothing, which are zero-rated. Round each line half up to the penny, then add the lines. Worked examples are in **vat-rules.md**." },
+    { "do": "request", "from": "orders", "to": "inventory", "conversation": "tax-inclusive-pricing", "label": "net-or-gross",
+      "text": "Is the supplier price feed net or gross of VAT? I add VAT per line from now on, so I must not add it twice." },
+    { "do": "result", "from": "inventory", "exchange": "net-or-gross", "outcome": "answered",
+      "text": "Net. Every price in the feed excludes VAT, and the feed says so in its header row." },
+    { "do": "request", "from": "person", "to": "inventory", "conversation": "tax-inclusive-pricing", "label": "follow-up",
+      "text": "Does the feed also carry the zero-rated flag for books, or does orders have to work that out from the category?" },
+    { "do": "result", "from": "inventory", "exchange": "follow-up", "outcome": "answered",
+      "text": "It carries it: a `vat_class` column, `standard` or `zero`. orders can read it directly." },
+
+    // gift-cards
+    { "do": "request", "from": "website", "to": "billing", "conversation": "gift-cards", "label": "gift",
+      "text": "Please add gift cards: £10, £25 and £50, paid at checkout and redeemable against any order. The page I have in mind is in **gift-card-page.png**." },
+    { "do": "place", "by": "website", "conversation": "gift-cards", "name": "gift-card-page.png", "render": "assets/gift-card-page.html", "width": 960, "height": 640 },
+    { "do": "result", "from": "billing", "exchange": "gift", "outcome": "blocked", "blocker": "missing_information",
+      "text": "I can't start this yet. Issuing gift cards depends on the payment provider's terms, and I can't see whether our account allows them. I've asked the person." },
+    { "do": "request", "from": "billing", "to": "person", "conversation": "gift-cards", "label": "provider",
+      "text": "Does our payment provider account have gift cards enabled? website wants gift cards at checkout, and I can't build it until I know the account allows them." },
+    { "do": "request", "from": "website", "to": "inventory", "conversation": "gift-cards", "label": "card-stock",
+      "text": "Do we stock printed gift cards, or are they email only?" },
+    { "do": "result", "from": "inventory", "exchange": "card-stock", "outcome": "answered",
+      "text": "Email only. There is no printed stock." },
+    { "do": "request", "from": "billing", "to": "orders", "conversation": "gift-cards", "label": "codes",
+      "text": "Which order field should hold a redeemed gift card's code?" },
+    { "do": "result", "from": "orders", "exchange": "codes", "outcome": "answered",
+      "text": "`payment.reference`, the same field a card payment uses." },
+
+    // refund-destination
+    { "do": "request", "from": "billing", "to": "person", "conversation": "refund-destination", "label": "refunds", "expect": 8,
+      "text": "Where should refunds go when the original card has expired: a new card, store credit, or a bank transfer?" },
+    { "do": "result", "from": "person", "exchange": "refunds", "outcome": "answered",
+      "text": "Store credit by default, and a bank transfer if the customer asks for one." },
+    { "do": "request", "from": "website", "to": "orders", "conversation": "gift-cards", "label": "partial",
+      "text": "Can a gift card pay part of an order, with a card paying the rest?" },
+    { "do": "result", "from": "orders", "exchange": "partial", "outcome": "answered",
+      "text": "Yes. Checkout already splits a payment across two methods." },
+    { "do": "request", "from": "billing", "to": "orders", "conversation": "refund-destination", "label": "states",
+      "text": "Which order states can still be refunded?" },
+    { "do": "result", "from": "orders", "exchange": "states", "outcome": "answered",
+      "text": "Paid, packed and delivered. A cancelled order is refunded automatically." },
+    { "do": "request", "from": "website", "to": "billing", "conversation": "gift-cards", "label": "card-vat",
+      "text": "Does the gift card page need to show VAT on the card's price?" },
+    { "do": "result", "from": "billing", "exchange": "card-vat", "outcome": "answered",
+      "text": "No. VAT is charged when a card is spent, not when it is bought." },
+
+    // price-feed: in flight to an agent nothing can start
+    { "do": "request", "from": "person", "to": "inventory", "conversation": "price-feed", "label": "feed", "expect": 12,
+      "text": "The supplier price feed was a day late twice this week. Can you find out why, and whether we can be told when it is late?" },
+
+    // roadmaps
+    { "do": "propose", "by": "orders", "conversation": "tax-inclusive-pricing", "label": "net-pricing", "title": "Move to net pricing",
+      "items": [ "Read the vat_class column from the price feed", "Store net prices for every product", "Add VAT per line at checkout, rounding half up", "Show VAT included beside the basket total" ] },
+    { "do": "propose", "by": "billing", "conversation": "gift-cards", "label": "gift-cards", "title": "Launch gift cards",
+      "items": [ "Confirm the payment provider allows gift cards", "Issue gift card codes at checkout", "Redeem gift cards against an order" ] },
+    { "do": "confirm", "proposal": "gift-cards" },
+
+    // what each agent is doing when the shots are taken
+    // Open work for the live graph: sent and not collected, so each is queued.
+    { "do": "request", "from": "person", "to": "billing", "conversation": "returns",
+      "text": "Refund order 1042 to store credit, as the person decided for expired cards." },
+    { "do": "request", "from": "person", "to": "billing", "conversation": "basket-tax",
+      "text": "Should the basket page show the tax on its own line, or only inside each price?" },
+    { "do": "request", "from": "person", "to": "orders", "conversation": "price-feed",
+      "text": "Can checkout re-price a basket when the supplier feed changes mid-session?" },
+    { "do": "turn", "agent": "billing", "phase": "working" },
+    { "do": "turn", "agent": "orders", "phase": "working" },
+    { "do": "turn", "agent": "orders", "phase": "ended" },
+    { "do": "turn", "agent": "orders", "phase": "background", "tasks": 2 },
+    { "do": "freeze", "agent": "inventory" }
+  ]
+}

@@ -268,12 +268,27 @@ does not feel crowded, and the graph pinned beside a conversation leaves the con
 
 **What must not change**
 
-- **FR-020**: Nothing the console does MUST change: every page, action, form, link and keyboard key works exactly as
-  before, and the existing tests of the console's behaviour MUST pass unchanged.
+- **FR-020**: Nothing the console does MUST change, except the graph (FR-030 to FR-035): every page, action, form, link
+  and keyboard key works exactly as before, and the existing tests of the console's behaviour MUST pass unchanged.
 - **FR-021**: Every message MUST still be drawn by the one message view, and every box a person types in by the one
   message box, as today.
 - **FR-022**: The terminal (`parley-terminal`) MUST NOT change.
 - **FR-023**: The console MUST keep working with no script, as each page does today, and inside the roadmap page's frame.
+
+**The graph** (the person's feedback on the graph, exchanges #52 and #54, conversation UI-refresh-and-fixes)
+
+- **FR-030**: The graph panel MUST show what is being worked on now, not which agents are in which project: only agents
+  with a turn running or background work running, each other agent counted as hidden.
+- **FR-031**: Under each working agent it MUST show the work it holds (collected and not answered), the work queued for it
+  (sent and not collected, in the order it arrived, with what was asked), and its background tasks. A turn does not name
+  its conversation (SPEC.md §11.6), so what it holds is a reading of delivery, and the panel MUST say so.
+- **FR-032**: One agent across projects MUST be one repository on one machine (SPEC.md §4.1.1), as a freeze finds it.
+- **FR-033**: The person MUST be able to narrow the graph to chosen projects and agents, each choice shown as a chip that
+  takes it off, the choice kept in the browser only.
+- **FR-034**: The picture MUST be a vertical tree the person can move and zoom by pointer, touch, wheel, buttons and keys,
+  drawn in one column where the panel is as narrow as a phone; every fact in it MUST also be in a list beside it.
+- **FR-035**: Reading the graph MUST change nothing (no delivery taken), and what one refresh reads MUST be bounded, with
+  what was left out said.
 
 **How the work is shown**
 
