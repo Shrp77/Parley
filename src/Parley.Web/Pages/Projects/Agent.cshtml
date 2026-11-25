@@ -37,29 +37,31 @@ else
         }
     </p>
 
+    @* Each fact names itself, and an (i) beside it says what it means and what else it could be (the person's feedback on
+       feature 042). A fold-out, so it opens with no script. *@
     <table class="registry">
         <caption class="registry-caption">Registry entry</caption>
         <tbody>
             <tr>
-                <th scope="row">State</th>
+                <th scope="row">State <details class="info-tip"><summary aria-label="What State means" title="What State means"><span class="icon" aria-hidden="true">info</span></summary><div class="info-text">What it is doing now. <b>Working</b>: a turn is running. <b>Waiting on background tasks</b>: its turn ended while work it started still runs. <b>Stopped</b>: its last turn ended with work still owed. <b>Running</b> or <b>idle</b>: attached, with no turn running. <b>Startable</b>: nobody has it open, and its machine can start it. <b>Stranded</b>: its machine cannot be reached, so nothing can start it. <b>Open outside Parley</b>: somebody opened it themselves, so Parley cannot give it turns.</div></details></th>
                 <td>@Parley.Client.Views.Activities.Now(agent, DateTimeOffset.UtcNow).Words</td>
             </tr>
             <tr>
-                <th scope="row">Tier</th>
+                <th scope="row">Tier <details class="info-tip"><summary aria-label="What Tier means" title="What Tier means"><span class="icon" aria-hidden="true">info</span></summary><div class="info-text">How messages reach it. <b>Full</b>: a message can reach it in the middle of a turn. <b>Pull</b>: it sees messages only when it next collects them, so it is never interrupted. <b>Headless</b>: no session of its own; Parley asks it one question at a time and takes its reply.</div></details></th>
                 <td>@agent.Tier</td>
             </tr>
             <tr>
-                <th scope="row">Adapter</th>
+                <th scope="row">Adapter <details class="info-tip"><summary aria-label="What Adapter means" title="What Adapter means"><span class="icon" aria-hidden="true">info</span></summary><div class="info-text">The program that connects it to Parley. <b>mcp</b> is parley-mcp, run by an AI coding tool such as Claude Code. The console that seats you is <b>parley-console</b>, and Parley's own facilitator is <b>parley-facilitator</b>.</div></details></th>
                 <td>@agent.Adapter</td>
             </tr>
             <tr>
-                <th scope="row">Workspace</th>
+                <th scope="row">Workspace <details class="info-tip"><summary aria-label="What Workspace means" title="What Workspace means"><span class="icon" aria-hidden="true">info</span></summary><div class="info-text">The repository folder it works in, on its machine. Only you see this; other agents are never told it.</div></details></th>
                 @* The operator's view, and only the operator's: §10.1's agents() withholds this
                    from a peer on purpose. *@
                 <td>@(agent.Workspace is { Length: > 0 } where ? where : "not recorded")</td>
             </tr>
             <tr>
-                <th scope="row">Connected</th>
+                <th scope="row">Connected <details class="info-tip"><summary aria-label="What Connected means" title="What Connected means"><span class="icon" aria-hidden="true">info</span></summary><div class="info-text">Whether its program is attached to Parley right now. <b>no</b> is the usual state of an agent nobody has open: messages for it wait until it next connects.</div></details></th>
                 <td>@(agent.Connected ? "yes" : "no")</td>
             </tr>
         </tbody>

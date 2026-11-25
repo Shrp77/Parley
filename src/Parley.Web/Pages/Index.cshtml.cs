@@ -71,7 +71,8 @@ public sealed record UnreadProject(string Project, string? Problem);
 /// <summary>The agents grid: a line for each agent, and the projects that could not be read.</summary>
 /// <param name="Lines">The agents the filters leave in.</param>
 /// <param name="Unread">The projects whose registry could not be read, so their agents are not known.</param>
-public sealed record AgentTable(IReadOnlyList<AgentLine> Lines, IReadOnlyList<UnreadProject> Unread);
+/// <param name="ByName">Whether to list them A to Z rather than grouped by what they are doing.</param>
+public sealed record AgentTable(IReadOnlyList<AgentLine> Lines, IReadOnlyList<UnreadProject> Unread, bool ByName = false);
 
 /// <summary>
 /// The projects this machine is configured for.
@@ -124,6 +125,18 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
     /// <summary>Agents: the one state to show, or empty for all.</summary>
     [BindProperty(SupportsGet = true)]
     public string? State { get; set; }
+
+    /// <summary>Agents: <c>name</c> to list them A to Z; anything else groups them by what they are doing.</summary>
+    /// <remarks>
+    /// Feature 042, the person's feedback: grouped by state, each state a section that opens, is how somebody sees at a
+    /// glance what is working and what is stopped; A to Z is how they find one. In the address, so it works with no script
+    /// and the page's own refresh keeps it.
+    /// </remarks>
+    [BindProperty(SupportsGet = true)]
+    public string? By { get; set; }
+
+    /// <summary>Whether the agents are listed A to Z rather than grouped by state.</summary>
+    public bool ByName => string.Equals(By, "name", StringComparison.Ordinal);
 
     /// <summary>The project the agents view is inside, when it is: the one named by <c>project</c>, as every project page names it.</summary>
     /// <remarks>
@@ -452,7 +465,8 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
 
         return Partial("_AgentLines", new AgentTable(
             lines,
-            [.. reads.Where(read => read.Read.Value is null).Select(read => new UnreadProject(read.Project, read.Read.Problem))]));
+            [.. reads.Where(read => read.Read.Value is null).Select(read => new UnreadProject(read.Project, read.Read.Problem))],
+            ByName));
     }
 
     /// <summary>Names a new project on this machine.</summary>

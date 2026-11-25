@@ -918,6 +918,41 @@
           "pause": 300
         }
       ]
+    },
+    {
+      "file": "agent-info-landscape-light.png",
+      "width": 1180,
+      "height": 820,
+      "theme": "light",
+      "path": "/Projects/Agent?project={project}&agent={agent:inventory}",
+      "shows": "An agent's registry entry with the (i) beside Tier open.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "click": "summary[aria-label='What Tier means']"
+        },
+        {
+          "pause": 300
+        }
+      ]
+    },
+    {
+      "file": "agents-byname-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/?tab=agents&project={project}&by=name",
+      "shows": "The agents listed A to Z on a phone.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
     }
   ]
 }

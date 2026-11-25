@@ -2397,6 +2397,13 @@ a.project-chip:hover { background-image: linear-gradient(color-mix(in srgb, var(
 /* An agent's registry entry: two columns of short facts that never need to scroll, so it stays a table at every width
    and fills its card, its name centered over it (the person's feedback on feature 042). */
 table.registry { display: table; width: 100%; }
+/* What a fact means, opened from the (i) beside its name. */
+.info-tip { display: inline-block; position: relative; vertical-align: middle; }
+.info-tip > summary { display: inline-grid; place-items: center; width: 1.75rem; height: 1.75rem; list-style: none; cursor: pointer; border-radius: 50%; color: var(--md-sys-color-primary); }
+.info-tip > summary::-webkit-details-marker { display: none; }
+.info-tip > summary:hover, .info-tip[open] > summary { background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent); }
+.info-tip > summary .icon { font-size: 1.15rem; }
+.info-text { position: absolute; z-index: 6; left: 0; top: calc(100% + 0.25rem); width: min(22rem, 80vw); padding: 0.75rem 1rem; border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container-high); box-shadow: var(--md-sys-elevation-2); color: var(--md-sys-color-on-surface); font: var(--md-sys-typescale-body-medium); white-space: normal; text-transform: none; letter-spacing: 0; text-align: start; }
 .registry-caption { caption-side: top; text-align: center; padding: 0.5rem 0; font: var(--md-sys-typescale-title-small); color: var(--md-sys-color-on-surface-variant); }
 
 @media (max-width: 37.49rem) {
@@ -2449,6 +2456,24 @@ table.registry { display: table; width: 100%; }
 .swatch.wide { flex: none; }
 .swatch.wide span { width: 2.25rem; height: 1.5rem; }
 .palette-own { margin-top: 0.75rem; }
+
+/* ---- Agents by state (feature 042) ------------------------------------------------------------------------------------
+   Grouped by what each is doing, each state a section headed by its badge, its name and how many are in it; a toggle
+   beside the filter lists them A to Z instead; and a legend under the list says what every badge means. */
+.state-group { display: block; }
+.state-group + .state-group { border-top: 1px solid var(--md-sys-color-outline-variant); }
+.state-group-head { display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1rem; list-style: none; cursor: pointer; background: var(--md-sys-color-surface-container-low); font: var(--md-sys-typescale-title-small); }
+.state-group-head::-webkit-details-marker { display: none; }
+.state-group-head::after { content: "expand_more"; content: "expand_more" / ""; margin-left: auto; font-family: "Material Symbols Outlined"; font-size: 1.4rem; color: var(--md-sys-color-on-surface-variant); transition: transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard); }
+.state-group[open] > .state-group-head::after { transform: rotate(180deg); }
+.state-group-head .count { min-width: 1.5rem; padding: 0 0.45rem; border-radius: var(--md-sys-shape-corner-full); background: var(--md-sys-color-surface-container-highest); color: var(--md-sys-color-on-surface-variant); font: var(--md-sys-typescale-label-medium); text-align: center; }
+.view-toggle { display: inline-flex; padding: 0.2rem; gap: 0.2rem; border-radius: var(--md-sys-shape-corner-full); background: var(--md-sys-color-surface-container); }
+.view-toggle a { display: inline-flex; align-items: center; min-height: 2.25rem; padding: 0 1rem; border-radius: var(--md-sys-shape-corner-full); color: var(--md-sys-color-on-surface-variant); font: var(--md-sys-typescale-label-large); text-decoration: none; }
+.view-toggle a[aria-current] { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+.state-legend { padding: 0.9rem 1.2rem; }
+.state-legend h2 { margin: 0 0 0.5rem; font: var(--md-sys-typescale-title-small); }
+.state-legend ul { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.5rem 1.25rem; margin: 0; padding: 0; list-style: none; }
+.state-legend li { display: flex; align-items: center; gap: 0.6rem; }
 
 /* ---- Size classes (feature 042, pass 4) ------------------------------------------------------------------------------
    Material 3's window size classes: compact under 600px (a phone), medium to 839px (a tablet upright), expanded to

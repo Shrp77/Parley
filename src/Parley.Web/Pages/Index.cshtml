@@ -45,6 +45,10 @@
             <summary class="button tonal"><span class="icon" aria-hidden="true">tune</span> Filter</summary>
         <form method="get" class="view-card view-filters" aria-label="Filter the agents">
             <input type="hidden" name="tab" value="agents" />
+            @if (Model.ByName)
+            {
+                <input type="hidden" name="by" value="name" />
+            }
             @if (Model.InProject is { } inside)
             {
                 <input type="hidden" name="project" value="@inside.Name.Value" />
@@ -81,6 +85,16 @@
         </form>
         </details>
         <partial name="_FilterChips" model="filters" />
+        @* By state or A to Z (the person's feedback on feature 042), as links, so it works with no script and the page's
+           refresh keeps it. *@
+        @{
+            var byState = Parley.Web.Pages.Shared.FilterChips.Without(ViewContext.HttpContext.Request, "by");
+            var byName = byState + (byState.Contains('?', StringComparison.Ordinal) ? "&" : "?") + "by=name";
+        }
+        <nav class="view-toggle" aria-label="List the agents">
+            <a href="@byState" aria-current="@(Model.ByName ? null : "page")">By state</a>
+            <a href="@byName" aria-current="@(Model.ByName ? "page" : null)">A–Z</a>
+        </nav>
         <span class="tally" id="tally" role="status"></span>
         </div>
 
@@ -109,6 +123,20 @@
                     <p class="dgrid-empty" id="none-shown" hidden>@(string.IsNullOrWhiteSpace(Model.Q) && string.IsNullOrEmpty(Model.State) && string.IsNullOrEmpty(Model.Scope) ? "No agents are registered yet." : "No agent matches these filters.")</p>
                 }
             </div>
+        </section>
+
+        @* What each badge means, said once beside the list (the person's feedback on feature 042): the console's own legend,
+           so it cannot fall out of step with the marks the list draws. *@
+        <section class="view-card state-legend" aria-labelledby="state-legend-head">
+            <h2 id="state-legend-head">What the badges mean</h2>
+            <ul>
+                @foreach (var entry in Parley.Client.Views.Activities.Legend)
+                {
+                    var parts = entry.Split(' ', 2);
+                    <li><span class="state-mark @Parley.Web.Pages.Shared.AgentStateMark.Tint(parts[0])" aria-hidden="true">@parts[0]</span> @parts[1]</li>
+                }
+                <li><span class="state-mark" aria-hidden="true">❄</span> frozen by you: nothing starts it until you unfreeze it</li>
+            </ul>
         </section>
     }
     else
@@ -289,11 +317,17 @@
 
                         var opened = Array.prototype.map.call(holder.querySelectorAll('details[open][data-agent]'),
                             function (d) { return d.getAttribute('data-agent'); });
+                        // A state's section the person folded stays folded.
+                        var folded = Array.prototype.map.call(holder.querySelectorAll('details[data-state-group]:not([open])'),
+                            function (d) { return d.getAttribute('data-state-group'); });
                         var top = grid.scrollTop;
                         var fresh = parse(text);
 
                         fresh.querySelectorAll('details[data-agent]').forEach(function (d) {
                             if (opened.indexOf(d.getAttribute('data-agent')) >= 0) { d.open = true; }
+                        });
+                        fresh.querySelectorAll('details[data-state-group]').forEach(function (d) {
+                            if (folded.indexOf(d.getAttribute('data-state-group')) >= 0) { d.open = false; }
                         });
 
                         holder.replaceChildren(fresh);
