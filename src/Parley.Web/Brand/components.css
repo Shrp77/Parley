@@ -2096,6 +2096,50 @@ header .as-of { float: none; margin: 0; white-space: nowrap; }
 .palette-own input[type="color"] { width: 3rem; height: 2.2rem; padding: 0; border: 0; background: none; vertical-align: middle; }
 .palette-own[hidden] { display: none; }
 
+/* ---- The frame, round 2 (feature 042, the person's feedback) ----------------------------------------------------------
+   The top bar says where the page is (the project, and on a conversation's page the conversation) at its left, and which
+   build is running and when the page was read stacked at its right, beside the bell and the seat. */
+header .where { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; }
+.crumb-sep { flex: none; font: var(--md-sys-typescale-title-large); font-weight: 300; color: var(--ink-faint); }
+.crumb-here { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: var(--md-sys-typescale-title-large); color: var(--ink-soft); }
+header .stamps { flex: none; display: flex; flex-direction: column; align-items: flex-end; margin-left: auto; line-height: 1.25; }
+header .stamps .build { margin-left: 0; }
+header .stamps .as-of { font: var(--md-sys-typescale-body-small); color: var(--ink-faint); }
+header > nav { margin-left: 0; }
+
+/* The top bar's tint lets what scrolls beneath it through; blurred, it reads as frosted glass rather than as text under
+   text. */
+header { -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blur(16px) saturate(1.2); }
+
+/* The conversation's name is in the top bar now, so the closed panel's strip no longer repeats it down its side. */
+.panel-closed .strip-name { display: none; }
+
+/* In a large window the drawer's collapse is a round button on its edge, part way down, between the menu and the page
+   (the person's feedback on feature 042), rather than an item at the foot. Fixed, so it stays put as the page scrolls;
+   below 1200px the rail cannot expand and the button is not drawn. */
+@media (min-width: 75rem) {
+    html .rail > .rail-toggle {
+        position: fixed;
+        top: 45%;
+        left: calc(var(--rail-w) - 1.25rem);
+        z-index: 31;
+        width: 2.5rem;
+        min-height: 2.5rem;
+        height: 2.5rem;
+        margin: 0;
+        padding: 0;
+        justify-content: center;
+        border-radius: var(--md-sys-shape-corner-full);
+        color: var(--md-sys-color-on-surface-variant);
+        background: var(--md-sys-color-surface-container-high);
+        box-shadow: var(--md-sys-elevation-2);
+        transition: left var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    }
+
+    html .rail > .rail-toggle:hover { color: var(--md-sys-color-on-surface); background: var(--md-sys-color-surface-container-highest); }
+    html .rail > .rail-toggle .rail-label { position: absolute; left: -100rem; }
+}
+
 /* ---- Size classes (feature 042, pass 4) ------------------------------------------------------------------------------
    Material 3's window size classes: compact under 600px (a phone), medium to 839px (a tablet upright), expanded to
    1199px (a tablet on its side) and large from 1200px. The rail and the drawer above are the medium, expanded and large
@@ -2211,8 +2255,16 @@ header .as-of { float: none; margin: 0; white-space: nowrap; }
     header { gap: 0.5rem; flex-wrap: nowrap; }
     header::before { display: none; }
     header .build { display: none; }
-    header .as-of { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font: var(--md-sys-typescale-label-small); color: var(--ink-faint); }
-    .crumb { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; overflow-wrap: normal; font: var(--md-sys-typescale-title-medium); }
+    header .stamps .as-of { font: var(--md-sys-typescale-label-small); }
+    header .where { flex: 0 1 auto; flex-direction: column; align-items: flex-start; gap: 0; }
+    .crumb { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; overflow-wrap: normal; font: var(--md-sys-typescale-title-medium); }
+    header .where:has(.crumb-here) .crumb { font: var(--md-sys-typescale-label-medium); color: var(--ink-soft); }
+    .crumb-sep { display: none; }
+    .crumb-here { max-width: 100%; font: var(--md-sys-typescale-title-medium); color: var(--ink); }
+    /* The seat is the person's own, the same on every page: its dot and its count are what a phone has room for. The
+       name stays for a screen reader. */
+    .seat-who { font-size: 0; gap: 0.3rem; justify-content: center; min-width: 3rem; }
+    .seat-who .seat-waiting { font: var(--md-sys-typescale-label-small); }
     header nav { flex: none; flex-wrap: nowrap; gap: 0.5rem; }
     .seat-who { min-height: 3rem; white-space: nowrap; }
     .bell > summary { min-width: 3rem; min-height: 3rem; }
@@ -2228,9 +2280,10 @@ header .as-of { float: none; margin: 0; white-space: nowrap; }
        drawn above the message box, so what an icon brings out is not hidden under it, and it ends above the box. */
     .convo-page.panel-closed { grid-template-columns: minmax(0, 1fr); }
     .convo-panel { z-index: 3; }
-    .panel-closed .panel-strip { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.25rem 0.5rem; }
-    .panel-closed .strip-name, .panel-closed .strip-note { writing-mode: horizontal-tb; }
-    .panel-closed .strip-name { order: -1; flex: 1 1 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; font: var(--md-sys-typescale-title-small); padding: 0.4rem 0.5rem 0; }
+    /* Solid, and close under the top bar, so the messages scrolling beneath it do not show through or past it. */
+    .convo-panel { top: var(--frame); }
+    .panel-closed .panel-strip { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.25rem; background: var(--md-sys-color-surface-container); box-shadow: var(--md-sys-elevation-2); }
+    .panel-closed .strip-note { writing-mode: horizontal-tb; }
     .strip-button { width: 3rem; min-width: 3rem; height: 3rem; }
     .panel-closed[data-pop] .panel-body,
     .panel-closed .panel-body:has(.move-bar:not([hidden])) {

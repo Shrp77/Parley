@@ -7,6 +7,8 @@ namespace Parley.Web.Tests;
 /// <b>The owner, 2026-11-13:</b> collapsed, the expand button sat just under the last item instead of at the bottom where
 /// the collapse button is when expanded, and Parley's Settings sat between the console's items and a project's, which
 /// looked wrong inside a project. Put the button at the bottom always, with Settings just above it.
+/// <b>The owner, 2026-11-25 (feature 042):</b> in a large window the button is drawn on the drawer's edge instead, part way
+/// down. It stays last in the rail's markup, after the foot, so it is still the last thing a keyboard reaches in the rail.
 /// </remarks>
 [Integration]
 public sealed class TheRailsFootTests

@@ -5,6 +5,7 @@
     ViewData["Title"] = $"Conversation {Model.Id}";
     ViewData["AsOf"] = Model.AsOf.ToString("HH:mm:ss");
     ViewData["Project"] = Model.Project;
+    ViewData["Conversation"] = Model.Id;
 }
 
 @* The page is two columns: a panel that stays on screen, and the conversation. The panel holds what a reader reaches for

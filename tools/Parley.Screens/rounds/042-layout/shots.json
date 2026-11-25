@@ -647,6 +647,113 @@
           "scroll": "top"
         }
       ]
+    },
+    {
+      "file": "strip-about-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "On a phone, the conversation tool: This conversation: name, files, export, spin off and move.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        },
+        {
+          "click": ".strip-button[data-pop=\"about\"]"
+        },
+        {
+          "pause": 300
+        }
+      ]
+    },
+    {
+      "file": "strip-find-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "On a phone, the conversation tool: Find in this conversation.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        },
+        {
+          "click": ".strip-button[data-pop=\"find\"]"
+        },
+        {
+          "pause": 300
+        }
+      ]
+    },
+    {
+      "file": "strip-filter-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "On a phone, the conversation tool: Show only some of the conversation.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        },
+        {
+          "click": ".strip-button[data-pop=\"filter\"]"
+        },
+        {
+          "pause": 300
+        }
+      ]
+    },
+    {
+      "file": "strip-to-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "On a phone, the conversation tool: Who to write to.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        },
+        {
+          "click": ".strip-button[data-pop=\"to\"]"
+        },
+        {
+          "pause": 300
+        }
+      ]
+    },
+    {
+      "file": "scrolled-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "A conversation on a phone, scrolled part way down.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "li.turn:nth-of-type(6)"
+        },
+        {
+          "pause": 400
+        }
+      ]
     }
   ]
 }

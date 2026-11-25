@@ -325,18 +325,28 @@
     <header>
         @if ((ViewData["Project"] as string ?? Context.Request.Query["project"].ToString()) is { Length: > 0 } inProject)
         {
-            @* Where in the deployment the page is, on every page, so a conversation is never without its project. *@
-            <a class="crumb" href="/Projects/Agents?project=@Uri.EscapeDataString(inProject)" title="This project">@inProject</a>
+            @* Where in the deployment the page is, on every page, so a conversation is never without its project, and on a
+               conversation's page the conversation beside it (the person's feedback on feature 042), so its name is in sight
+               however far the transcript is scrolled. *@
+            <span class="where">
+                <a class="crumb" href="/Projects/Agents?project=@Uri.EscapeDataString(inProject)" title="This project">@inProject</a>
+                @if (ViewData["Conversation"] is string { Length: > 0 } inConversation)
+                {
+                    <span class="crumb-sep" aria-hidden="true">/</span>
+                    <span class="crumb-here" title="This conversation">@inConversation</span>
+                }
+            </span>
         }
-        @* Which build is running, small and out of the way: it is how a person tells an install has taken. *@
-        <span class="build" title="The web console build">parley-web-ui @Parley.Web.WebBuild.Version</span>
-        @* When the page's facts were read, beside the build in the top bar rather than in a line of its own above the page,
-           where it took width from the transcript (the person's feedback on feature 042). A page whose title row says it,
-           or whose grid does, draws it there instead. *@
-        @if (ViewData["AsOf"] is string asOf && ViewData["Grid"] is not true && ViewData["AsOfInTitle"] is not true)
-        {
-            <span class="as-of" role="status">As of @asOf.</span>
-        }
+        @* Which build is running and when the page's facts were read, stacked at the right of the top bar, small and out of
+           the way (the person's feedback on feature 042). The build is how a person tells an install has taken. A page whose
+           title row says when it was read, or whose grid does, draws that there instead. *@
+        <span class="stamps">
+            <span class="build" title="The web console build">parley-web-ui @Parley.Web.WebBuild.Version</span>
+            @if (ViewData["AsOf"] is string asOf && ViewData["Grid"] is not true && ViewData["AsOfInTitle"] is not true)
+            {
+                <span class="as-of" role="status">As of @asOf.</span>
+            }
+        </span>
         <nav aria-label="Console">
             @{
                 var unread = Notices.Unread();
