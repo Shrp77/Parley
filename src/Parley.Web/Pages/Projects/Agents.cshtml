@@ -8,6 +8,8 @@
     ViewData["AsOf"] = Model.AsOf.ToString("HH:mm:ss");
     // Stamped in the title row below, as the data-grid views stamp theirs, rather than above the title by the frame.
     ViewData["AsOfInTitle"] = true;
+    // The rail heads its commands with this; the page's title is the project's name.
+    ViewData["CommandsTitle"] = "Conversations";
 }
 
 <div class="view" style="height:auto;min-height:0;">
@@ -17,38 +19,18 @@
     </div>
 
     <section aria-label="Conversations in this project" class="conversations">
-        @* Starting one belongs beside the list of them. Naming a conversation is what creates it, so a
-           project with none needs a way in from here. *@
-        <p class="new-conversation"><button type="button" id="new-conversation-open" class="new-button">New conversation</button></p>
-
-        <dialog id="new-conversation-dialog" class="default-dialog" aria-labelledby="new-conversation-title">
-            <form method="get" action="/Conversations/Detail">
-                <h3 id="new-conversation-title">New conversation</h3>
-                <input type="hidden" name="project" value="@Model.Project" />
-                <div class="field">
-                    <input id="new-conversation" name="id" aria-label="Name of the conversation" placeholder="what-it-is-about" required
-                           maxlength="@ConversationName.Longest" pattern="@ConversationName.Pattern"
-                           data-correct="@ConversationName.Allowed"
-                           autocomplete="off" spellcheck="false"
-                           aria-describedby="new-conversation-rule" />
-                </div>
-
-                @* The rule is applied as it is typed rather than reported afterwards. *@
-                <p id="new-conversation-rule" class="composer-note">
-                    @ConversationName.Rule
-                    <span id="new-conversation-corrected" role="status" hidden>
-                        @ConversationName.WasCorrected.
-                    </span>
-                </p>
-                <p class="dialog-actions">
-                    <button type="submit" class="new-button">Start</button>
-                    <button type="button" id="new-conversation-cancel" class="quiet">Cancel</button>
-                </p>
-            </form>
-        </dialog>
 
         @* Filtered by who is party to them. The agents come from the roster; a name that is not on it (an agent since
            retired, or one typed into a link) stays in the list so that the filter says what it is applying. *@
+        @{
+            // What is filtered, as chips beside the folded filter, as on every list (feature 042).
+            var filters = new List<(string Says, string Key)>();
+            if (Model.Participant is { Length: > 0 } with) { filters.Add(($"Agent: {with}", "participant")); }
+            if (Model.ShowArchived) { filters.Add(("Archived included", "showArchived")); }
+        }
+        <div class="filter-bar">
+        <details class="filters-fold">
+            <summary class="button tonal"><span class="icon" aria-hidden="true">tune</span> Filter</summary>
         <form method="get" class="view-card view-filters" aria-label="Filter the conversations">
             <input type="hidden" name="project" value="@Model.Project" />
             <input type="hidden" name="sort" value="@Model.Sort" />
@@ -66,6 +48,9 @@
             <button type="submit">Filter</button>
             <a class="button quiet" href="/Projects/Agents?project=@Model.Project">Clear</a>
         </form>
+        </details>
+        <partial name="_FilterChips" model="filters" />
+        </div>
 
         @if (Model.Problem is { Length: > 0 } rosterProblem && Model.ConversationProblem is not { Length: > 0 })
         {
@@ -189,7 +174,8 @@
             function update() {
                 var n = ticks.filter(function (t) { return t.checked; }).length;
                 count.textContent = n === 0 ? "None ticked" : n + " ticked";
-                Array.prototype.forEach.call(needs, function (b) { b.disabled = n === 0; });
+                // Offered once something is ticked (the person's feedback on feature 042), rather than drawn greyed out.
+                Array.prototype.forEach.call(needs, function (b) { b.disabled = n === 0; b.hidden = n === 0; });
                 if (all) { all.checked = n > 0 && n === ticks.length; }
             }
 
@@ -198,20 +184,34 @@
             update();
         })();
     </script>
-    <script>
-        // A name is asked for in a dialog rather than in the page, so that the list keeps its place.
-        (function () {
-            var dialog = document.getElementById("new-conversation-dialog");
-            var open = document.getElementById("new-conversation-open");
-            var cancel = document.getElementById("new-conversation-cancel");
+}
 
-            if (!dialog || !open) { return; }
-
-            open.addEventListener("click", function () {
-                dialog.showModal();
-                document.getElementById("new-conversation").focus();
-            });
-            cancel.addEventListener("click", function () { dialog.close(); });
-        })();
-    </script>
+@section Actions {
+    @* Starting one belongs beside the list of them: naming a conversation is what creates it, so a project with none needs
+       a way in from here. The page's command, in the rail like every page's (feature 042); its panel opens beside the rail,
+       so the list keeps its place. *@
+    <details class="rail-act rail-act-main">
+        <summary title="New conversation"><span class="icon" aria-hidden="true">add</span><span class="rail-label">New conversation</span></summary>
+        <div class="act-panel">
+            <form method="get" action="/Conversations/Detail">
+                <input type="hidden" name="project" value="@Model.Project" />
+                <div class="field wide">
+                    <label for="new-conversation">Called</label>
+                    <input id="new-conversation" name="id" placeholder="what-it-is-about" required
+                           maxlength="@ConversationName.Longest" pattern="@ConversationName.Pattern"
+                           data-correct="@ConversationName.Allowed"
+                           autocomplete="off" spellcheck="false"
+                           aria-describedby="new-conversation-rule" />
+                </div>
+                <button type="submit">Start</button>
+                @* The rule is applied as it is typed rather than reported afterwards. *@
+                <p id="new-conversation-rule" class="composer-note">
+                    @ConversationName.Rule
+                    <span id="new-conversation-corrected" role="status" hidden>
+                        @ConversationName.WasCorrected.
+                    </span>
+                </p>
+            </form>
+        </div>
+    </details>
 }

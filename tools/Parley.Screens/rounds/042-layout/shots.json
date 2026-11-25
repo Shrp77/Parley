@@ -953,6 +953,70 @@
           "scroll": "top"
         }
       ]
+    },
+    {
+      "file": "convlist-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Projects/Agents?project={project}",
+      "shows": "The project's conversations.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "health-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Projects/Health?project={project}",
+      "shows": "The project's health.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "convlist-desktop-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Projects/Agents?project={project}",
+      "shows": "The project's conversations.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "health-desktop-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Projects/Health?project={project}",
+      "shows": "The project's health.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
     }
   ]
 }

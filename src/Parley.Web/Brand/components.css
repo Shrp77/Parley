@@ -1170,11 +1170,6 @@ td code, td.path { overflow-wrap: anywhere; }
 .view .view-filters button, .view .view-filters .button { align-self: flex-end; margin-bottom: 0.25rem; }
 .conversations { display: flex; flex-direction: column; gap: 0.75rem; }
 .new-conversation { margin: 0; }
-#new-conversation-dialog form { display: block; border: 0; background: none; box-shadow: none; padding: 0; margin: 0; }
-.new-conversation-dialog .field, #new-conversation-dialog .field { display: flex; flex-direction: column; gap: 0.25rem; }
-#new-conversation-dialog input { width: 100%; }
-#new-conversation-dialog .composer-note { margin: 1rem 0 0; }
-#new-conversation-dialog .dialog-actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin: 1.5rem 0 0; }
 /* A switch, as Material 3 draws one: a 52 by 32 track, outlined while off with a small handle, filled with the primary
    colour while on with a larger handle in its "on" colour. The words beside it say what it switches. */
 .view .view-filters .toggle { display: inline-flex; align-items: center; gap: 0.75rem; align-self: flex-end; min-height: 2.5rem; padding: 0 0.25rem; color: var(--ink); font: var(--md-sys-typescale-body-medium); cursor: pointer; white-space: nowrap; }
@@ -1257,7 +1252,7 @@ body.pg-docked { padding-right: min(46rem, 100vw); }
 .pg-spinoff { stroke-dasharray: 4 3; stroke: var(--accent); }
 .pg-note { font-size: 0.85rem; }
 .pg-list h3 { font-size: 0.95rem; margin: 0.8rem 0 0.2rem; }
-.select-grid .row-act, .dgrid-line .row-act { margin: 0; }
+.select-grid .row-act, .dgrid-line .row-act { margin: 0; padding: 0; border: 0; background: none; box-shadow: none; }
 .select-grid input[type=checkbox] { margin: 0; align-self: center; }
 .bulk-bar { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin: 0.5rem 0; }
 .bulk-bar .count { color: var(--ink-faint); font-size: 0.85rem; }
@@ -1288,7 +1283,14 @@ body.embed .page { margin-left: 0; padding: 0 0.75rem 0.75rem; }
     .grid-head, .grid-row > summary { grid-template-columns: minmax(0, 1fr) 3.5rem; }
     .grid:has(.when) .grid-head :last-child, .grid .when { grid-column: 1 / -1; }
     .grid:not(:has(.when)) :is(.grid-head, .grid-row > summary) { grid-template-columns: minmax(0, 1fr) 3.5rem 3.5rem; }
+    /* The conversations list: its tick, name, count and Archive on one line, when it was last active under the name. */
+    .select-grid .grid-head, .select-grid .grid-row > summary { grid-template-columns: 1.6rem minmax(0, 1fr) auto auto; }
+    .select-grid .grid-head :last-child { grid-column: 4; }
+    .select-grid .when { grid-column: 2 / -1; grid-row: 2; }
+    .select-grid .grid-row > summary .row-act { grid-column: 4; grid-row: 1; }
+    .select-grid .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
+[data-needs-ticks][hidden] { display: none; }
 
 /* A conversation somebody still owes an answer to. Said in words beside the tint. */
 .tag.open {
@@ -1891,7 +1893,7 @@ ol.points .label { font: var(--md-sys-typescale-label-medium); }
 .pick[open] summary { border-color: var(--md-sys-color-primary); box-shadow: inset 0 0 0 1px var(--md-sys-color-primary); }
 
 /* Dialogs: surface-container-high at the extra-large corner, 24px in, a headline, actions to the right. */
-.default-dialog, #new-conversation-dialog, dialog {
+.default-dialog, dialog {
     border: 0;
     border-radius: var(--md-sys-shape-corner-extra-large);
     background: var(--md-sys-color-surface-container-high);
