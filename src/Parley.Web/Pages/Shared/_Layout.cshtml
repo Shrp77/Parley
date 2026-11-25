@@ -206,28 +206,28 @@
         // Inbox and the project's conversations, in the page's order, so focus and a screen reader go along the bar as it
         // is drawn. More holds the rest and is drawn only on a phone.
         var projectOpen = project.Length > 0;
-        var rail = new List<(string Href, string Label, string Icon, bool Current, bool Bar, string MoreLabel)>
+        var rail = new List<(string Href, string Label, string Icon, bool Current, bool Bar, string MoreLabel, string? BarLabel)>
         {
-            ("/", "Projects", "grid_view", path == "/" && !agentsView, true, "Projects"),
-            ("/?tab=agents", "All Agents", "group", onAgentsTab, !projectOpen, "All Agents"),
-            ("/Inbox", "Inbox", "inbox", path.StartsWith("/Inbox", StringComparison.Ordinal), true, "Inbox"),
+            ("/", "Projects", "grid_view", path == "/" && !agentsView, true, "Projects", null),
+            ("/?tab=agents", "All Agents", "group", onAgentsTab, !projectOpen, "All Agents", null),
+            ("/Inbox", "Inbox", "inbox", path.StartsWith("/Inbox", StringComparison.Ordinal), true, "Inbox", null),
         };
         // At the foot with the toggle, in both states, so a project's own items never sit between it and the rest.
-        (string Href, string Label, string Icon, bool Current, bool Bar, string MoreLabel) parleySettings =
-            ("/Settings", "Settings", "settings", path == "/Settings", false, "Console settings");
-        var inProjectRail = new List<(string Href, string Label, string Icon, bool Current, bool Bar, string MoreLabel)>();
+        (string Href, string Label, string Icon, bool Current, bool Bar, string MoreLabel, string? BarLabel) parleySettings =
+            ("/Settings", "Settings", "settings", path == "/Settings", false, "Console settings", null);
+        var inProjectRail = new List<(string Href, string Label, string Icon, bool Current, bool Bar, string MoreLabel, string? BarLabel)>();
 
         if (projectOpen)
         {
             inProjectRail =
             [
-                ($"/Projects/Agents?project={q}", "Conversations", "chat_bubble", path == "/Projects/Agents" || path.StartsWith("/Conversations", StringComparison.Ordinal), true, "Conversations"),
+                ($"/Projects/Agents?project={q}", "Conversations", "chat_bubble", path == "/Projects/Agents" || path.StartsWith("/Conversations", StringComparison.Ordinal), true, "Conversations", "Chats"),
                 // One agent's page, its ownership and registering one are all reached from the agents list, so they light it.
-                ($"/?tab=agents&project={q}", "Agents", "group", agentsView || path is "/Projects/Agent" or "/Projects/Ownership" or "/Projects/Register" or "/Projects/Enrol", true, "Agents"),
-                ($"/Roadmaps?project={q}", "Roadmaps", "map", path.StartsWith("/Roadmaps", StringComparison.Ordinal), false, "Roadmaps"),
-                ($"/Projects/Files?project={q}", "Files", "description", path is "/Projects/Files" or "/Projects/FileProblems", false, "Files"),
-                ($"/Projects/Health?project={q}", "Health", "monitor_heart", path == "/Projects/Health", false, "Health"),
-                ($"/Projects/Settings?project={q}", "Settings", "tune", path == "/Projects/Settings", false, "Project settings"),
+                ($"/?tab=agents&project={q}", "Agents", "group", agentsView || path is "/Projects/Agent" or "/Projects/Ownership" or "/Projects/Register" or "/Projects/Enrol", true, "Agents", null),
+                ($"/Roadmaps?project={q}", "Roadmaps", "map", path.StartsWith("/Roadmaps", StringComparison.Ordinal), false, "Roadmaps", null),
+                ($"/Projects/Files?project={q}", "Files", "description", path is "/Projects/Files" or "/Projects/FileProblems", false, "Files", null),
+                ($"/Projects/Health?project={q}", "Health", "monitor_heart", path == "/Projects/Health", false, "Health", null),
+                ($"/Projects/Settings?project={q}", "Settings", "tune", path == "/Projects/Settings", false, "Project settings", null),
             ];
         }
 
@@ -243,15 +243,6 @@
             <img src="/brand/icon.png" alt="" width="128" height="125" />
             <span class="rail-label">Parley <span>console</span></span>
         </a>
-        @* What a page offers to start (a conversation, a project, an agent), at the top of the rail where Material 3 keeps a
-           rail's action button, rather than as cards across the top of the page (the person's feedback on feature 042). On a
-           phone the same buttons float above the bottom bar. Each is a <details>, so it opens with no script. *@
-        @if (IsSectionDefined("Actions"))
-        {
-            <section class="rail-actions" aria-label="Page actions">
-                @await RenderSectionAsync("Actions")
-            </section>
-        }
         <nav aria-label="Sections">
             @foreach (var item in rail)
             {
@@ -276,6 +267,11 @@
                     <a href="@item.Href" title="@item.Label" aria-current="@(item.Current ? "page" : null)" class="@BarClass(item.Bar)">
                         <span class="icon" aria-hidden="true">@item.Icon</span>
                         <span class="rail-label">@item.Label</span>
+                        @if (item.BarLabel is { } shortLabel)
+                        {
+                            @* A phone's bar has about 76 pixels a place: the short word is the one drawn there, and the only one. *@
+                            <span class="bar-label">@shortLabel</span>
+                        }
                     </a>
                 }
             }
@@ -306,6 +302,17 @@
             </div>
         </details>
         </nav>
+        @* What this page offers (start a conversation, create a project, register an agent), after the navigation under a
+           separator headed with the page's name, in the same place on every page (the person's feedback on feature 042:
+           where to go first, then what to do here). On a phone the same buttons float above the bottom bar. Each is a
+           <details>, so it opens with no script. *@
+        @if (IsSectionDefined("Actions"))
+        {
+            <section class="rail-actions" aria-labelledby="rail-actions-head">
+                <p class="rail-heading" id="rail-actions-head">@(ViewData["Title"] ?? "This page")</p>
+                @await RenderSectionAsync("Actions")
+            </section>
+        }
         <nav class="rail-foot" aria-label="Console settings">
             <a href="@parleySettings.Item1" title="@parleySettings.Item2" aria-current="@(parleySettings.Item4 ? "page" : null)">
                 <span class="icon" aria-hidden="true">@parleySettings.Item3</span>

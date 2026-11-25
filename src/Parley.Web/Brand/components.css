@@ -1964,7 +1964,10 @@ header .build { font: var(--md-sys-typescale-body-small); }
 
     /* Horizontal above the conversation, where a vertical rail beside it
        would have nowhere to be. */
-    .minimap { position: static; order: -1; }
+    /* Pinned under the top bar while the transcript scrolls, so where the reader is in the conversation stays in sight
+       (the person's feedback on feature 042). Solid, as it lies over the messages. */
+    .minimap { top: calc(var(--frame) + 0.5rem); z-index: 2; order: -1; }
+    .minimap .timeline { background: var(--md-sys-color-surface-container-low); box-shadow: var(--md-sys-elevation-1); }
 
     .timeline {
         flex-direction: row;
@@ -2125,7 +2128,7 @@ header { -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blu
    A page's actions sit at the top of the rail: the main one as Material 3's rail action button (a filled, rounded square
    with its icon, and its label while the drawer is open), the others as quieter items under it. Each opens its panel
    beside the rail, over the page, as a menu does. */
-.rail-actions { display: flex; flex-direction: column; gap: 0.25rem; margin: 0 0 0.75rem; }
+.rail-actions { display: flex; flex-direction: column; gap: 0.25rem; margin: 0; }
 /* The rail is a stacking context, so its open panel is drawn at the rail's level: raised while one is open, so the graph's
    tab and the edge toggle do not draw over it. */
 .rail:has(.rail-actions details[open]) { z-index: 45; }
@@ -2209,11 +2212,17 @@ html[data-nav="collapsed"] .rail-act .rail-label { position: absolute; left: -10
    frame; this is what changes below them. The older blocks above use the same boundaries: 37.49rem and 74.99rem. */
 
 /* More is the bottom bar's fifth place, so it is drawn only on a phone. */
-.rail-more { display: none; }
+.rail-more, .bar-label { display: none; }
 
 @media (max-width: 37.49rem) {
     /* The bottom bar's height, and the top bar's real height, which the sticky things below are placed against. */
     :root { --bar-h: 5rem; --frame: 4rem; }
+
+    /* A phone draws its scrollbar over the page, so the room kept for one is only a margin down the right. */
+    html { scrollbar-gutter: auto; }
+
+    /* Under the conversation's row of tools, which is pinned under the top bar. */
+    .minimap { top: calc(var(--frame) + 3.75rem); }
 
     /* Navigation is a bar along the bottom, in reach of a thumb: four places and More, each an icon in its indicator
        above a label, as Material 3 draws a navigation bar. The sections stay one landmark, laid out as the bar. */
@@ -2264,6 +2273,8 @@ html[data-nav="collapsed"] .rail-act .rail-label { position: absolute; left: -10
     .rail nav a[aria-current] .icon, .rail-more > summary[aria-current] .icon, .rail-more[open] > summary .icon { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
 
     .rail .rail-label { position: static; left: auto; max-width: 100%; }
+    .rail a.bar:has(.bar-label) .rail-label { display: none; }
+    .rail .bar-label { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
     .rail .seat-waiting { position: absolute; top: 0.4rem; left: calc(50% + 0.4rem); right: auto; margin: 0; }
 
     .rail-more { position: relative; display: flex; flex: 1 1 0; min-width: 0; }
@@ -2367,10 +2378,10 @@ html[data-nav="collapsed"] .rail-act .rail-label { position: absolute; left: -10
     }
 }
 
-/* Compact and medium: a phone, and a tablet held upright. */
-@media (max-width: 52.49rem) {
-    /* A list page scrolls as a page: no fixed-height view with a grid scrolling inside it, which on a phone or a tablet
-       held upright is a scroller inside a scroller. A page's title and its gloss stack. */
+/* Lists on a phone. A tablet keeps the tables (the person's feedback on feature 042). */
+@media (max-width: 37.49rem) {
+    /* A list page scrolls as a page: no fixed-height view with a grid scrolling inside it, which on a phone is a
+       scroller inside a scroller. A page's title and its gloss stack. */
     .view, .grid-page .view { height: auto; min-height: 0; }
     .view-title { flex-wrap: wrap; gap: 0.25rem 1rem; }
     .view-title .as-of { margin: 0; flex-basis: 100%; }
