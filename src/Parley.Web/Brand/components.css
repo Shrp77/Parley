@@ -2140,6 +2140,87 @@ header { -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blu
     html .rail > .rail-toggle .rail-label { position: absolute; left: -100rem; }
 }
 
+/* ---- Page actions in the rail (feature 042, the person's feedback) ----------------------------------------------------
+   A page's actions sit at the top of the rail: the main one as Material 3's rail action button (a filled, rounded square
+   with its icon, and its label while the drawer is open), the others as quieter items under it. Each opens its panel
+   beside the rail, over the page, as a menu does. */
+.rail-actions { display: flex; flex-direction: column; gap: 0.25rem; margin: 0 0 0.75rem; }
+.rail-act > summary {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 3.5rem;
+    padding: 0 1rem;
+    list-style: none;
+    cursor: pointer;
+    border-radius: var(--md-sys-shape-corner-full);
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-large);
+    white-space: nowrap;
+}
+.rail-act > summary::-webkit-details-marker { display: none; }
+/* The icon is the summary's own; the page card's plus-and-minus marker is not drawn here. */
+.rail-actions .view-create > summary::before { content: none; display: none; }
+.rail-act > summary .icon { font-size: 1.5rem; }
+.rail-act > summary:hover, .rail-act[open] > summary { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); color: var(--md-sys-color-on-surface); }
+.rail-act-main > summary {
+    min-height: 3.5rem;
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+    box-shadow: var(--md-sys-elevation-1);
+}
+.rail-act-main > summary:hover, .rail-act-main[open] > summary {
+    background: var(--md-sys-color-primary-container);
+    background-image: linear-gradient(color-mix(in srgb, var(--md-sys-color-on-primary-container) var(--md-sys-state-hover), transparent) 0 0);
+    color: var(--md-sys-color-on-primary-container);
+    box-shadow: var(--md-sys-elevation-2);
+}
+
+/* Collapsed, or below 1200px, the rail is 80px: the items narrow to their icon, as the destinations do. */
+html[data-nav="collapsed"] .rail-act > summary { width: 3.5rem; margin: 0 auto; padding: 0; justify-content: center; }
+html[data-nav="collapsed"] .rail-act .rail-label { position: absolute; left: -100rem; }
+@media (max-width: 74.99rem) {
+    .rail-act > summary { width: 3.5rem; margin: 0 auto; padding: 0; justify-content: center; }
+    .rail-act .rail-label { position: absolute; left: -100rem; }
+}
+
+/* The panel: fixed beside the rail, so the rail's own scrolling does not clip it. */
+.act-panel {
+    position: fixed;
+    z-index: 35;
+    top: calc(var(--frame) + 0.5rem);
+    left: calc(var(--rail-w) + 0.75rem);
+    width: min(34rem, calc(100vw - var(--rail-w) - 1.5rem));
+    max-height: calc(100vh - var(--frame) - 1.5rem);
+    overflow-y: auto;
+    padding: 1rem 1.25rem;
+    white-space: normal;
+    color: var(--md-sys-color-on-surface);
+    background: var(--md-sys-color-surface-container-high);
+    border-radius: var(--md-sys-shape-corner-large);
+    box-shadow: var(--md-sys-elevation-3);
+}
+.act-panel form { display: flex; flex-wrap: wrap; gap: 0.75rem 1rem; align-items: flex-end; margin: 0; padding: 0; background: none; border: 0; box-shadow: none; }
+.act-panel form + form { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--md-sys-color-outline-variant); }
+.act-panel .field { display: flex; flex-direction: column; gap: 0.2rem; flex: 1 1 11rem; min-width: 0; }
+.act-panel .field.wide { flex-grow: 3; flex-basis: 100%; }
+.act-panel .field input, .act-panel .field select { width: 100%; flex: none; }
+.act-panel .composer-note, .act-panel form > p, .act-panel form > details { flex-basis: 100%; margin: 0; }
+
+/* Filters fold behind one button while nothing is filtered; what is filtered stays in sight as chips that take it off. */
+.filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
+.filters-fold { flex: none; }
+.filters-fold > summary { display: inline-flex; align-items: center; gap: 0.4rem; list-style: none; cursor: pointer; }
+.filters-fold > summary::-webkit-details-marker { display: none; }
+.filters-fold[open] { flex: 1 1 100%; }
+.filters-fold[open] > summary { margin-bottom: 0.5rem; }
+.filter-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+.filter-chips .chip { display: inline-flex; align-items: center; gap: 0.3rem; min-height: 2rem; padding: 0 0.5rem 0 0.75rem; text-decoration: none; }
+.filter-chips .chip .icon { font-size: 1.1rem; }
+.filter-bar .tally { margin-left: auto; }
+
 /* ---- Size classes (feature 042, pass 4) ------------------------------------------------------------------------------
    Material 3's window size classes: compact under 600px (a phone), medium to 839px (a tablet upright), expanded to
    1199px (a tablet on its side) and large from 1200px. The rail and the drawer above are the medium, expanded and large
@@ -2272,6 +2353,15 @@ header { -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blu
     /* The message box sits on the bar, not under it. */
     .composer { bottom: var(--bar-h); }
     .new-below { left: 50%; bottom: calc(var(--composer-h, 9rem) + var(--bar-h) + 1rem); }
+
+    /* A page's actions float above the bottom bar at the right, the main one as Material 3's floating action button,
+       and each opens its panel above them. The page ends clear of them. */
+    .rail-actions { position: fixed; right: 1rem; bottom: calc(var(--bar-h) + 1rem); z-index: 32; flex-direction: column-reverse; align-items: flex-end; gap: 0.75rem; margin: 0; }
+    .rail-act > summary { width: auto; min-height: 3rem; padding: 0 1rem; background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); box-shadow: var(--md-sys-elevation-2); }
+    .rail-act-main > summary { min-height: 3.5rem; padding: 0 1.25rem; background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); box-shadow: var(--md-sys-elevation-3); }
+    .rail-act .rail-label { position: static; }
+    .act-panel { top: auto; left: 1rem; right: 1rem; bottom: calc(var(--bar-h) + 1rem); width: auto; max-height: calc(100dvh - var(--frame) - var(--bar-h) - 2rem); }
+    body:has(.rail-actions) .page { padding-bottom: calc(var(--bar-h) + 10rem); }
 
     /* The graph is under More; its tab would sit over the page's text. */
     .pg-tab { display: none; }

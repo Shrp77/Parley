@@ -169,7 +169,7 @@
 
                 (function tick() {
                     setTimeout(function () {
-                        if (document.querySelector("dialog[open], details.view-create[open]")) { tick(); } else { keep(); location.replace(m.getAttribute("data-url")); }
+                        if (document.querySelector("dialog[open], details.view-create[open], details.filters-fold[open]")) { tick(); } else { keep(); location.replace(m.getAttribute("data-url")); }
                     }, every);
                 })();
             })();
@@ -243,6 +243,15 @@
             <img src="/brand/icon.png" alt="" width="128" height="125" />
             <span class="rail-label">Parley <span>console</span></span>
         </a>
+        @* What a page offers to start (a conversation, a project, an agent), at the top of the rail where Material 3 keeps a
+           rail's action button, rather than as cards across the top of the page (the person's feedback on feature 042). On a
+           phone the same buttons float above the bottom bar. Each is a <details>, so it opens with no script. *@
+        @if (IsSectionDefined("Actions"))
+        {
+            <div class="rail-actions">
+                @await RenderSectionAsync("Actions")
+            </div>
+        }
         <nav aria-label="Sections">
             @foreach (var item in rail)
             {
@@ -309,6 +318,22 @@
         </button>
     </aside>
     <script>
+        // A page action's panel closes as a menu does: a tap outside it, or Escape. It opens and closes with no script.
+        (function () {
+            document.addEventListener("click", function (e) {
+                Array.prototype.forEach.call(document.querySelectorAll(".rail-actions details[open]"), function (act) {
+                    if (!act.contains(e.target)) { act.open = false; }
+                });
+            });
+            document.addEventListener("keydown", function (e) {
+                if (e.key !== "Escape" || e.defaultPrevented) { return; }
+
+                var act = document.activeElement && document.activeElement.closest ? document.activeElement.closest(".rail-actions details[open]") : null;
+
+                if (act) { e.stopImmediatePropagation(); act.open = false; act.querySelector("summary").focus(); }
+            });
+        })();
+
         // More closes as a menu does: a tap outside it, or Escape. It opens and closes with no script.
         (function () {
             var more = document.querySelector(".rail-more");

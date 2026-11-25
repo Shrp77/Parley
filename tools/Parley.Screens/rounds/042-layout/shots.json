@@ -754,6 +754,82 @@
           "pause": 400
         }
       ]
+    },
+    {
+      "file": "inbox-start-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Inbox?scope={project}",
+      "shows": "The Inbox with Start a conversation open.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "click": ".rail-act-main > summary"
+        },
+        {
+          "pause": 300
+        }
+      ]
+    },
+    {
+      "file": "inbox-filters-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Inbox?scope={project}",
+      "shows": "The Inbox with its filters open.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "click": ".filters-fold > summary"
+        },
+        {
+          "pause": 300
+        }
+      ]
+    },
+    {
+      "file": "inbox-start-desktop-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Inbox?scope={project}",
+      "shows": "The Inbox with Start a conversation open.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "click": ".rail-act-main > summary"
+        },
+        {
+          "pause": 300
+        }
+      ]
+    },
+    {
+      "file": "inbox-filters-desktop-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Inbox?scope={project}",
+      "shows": "The Inbox with its filters open.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "click": ".filters-fold > summary"
+        },
+        {
+          "pause": 300
+        }
+      ]
     }
   ]
 }

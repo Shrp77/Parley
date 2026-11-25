@@ -80,26 +80,6 @@
         })();
     </script>
 
-    @if (everything.Count > 0)
-    {
-        @* **Asking, never closing** (SPEC.md §5.6). The words go out under the person's name, so they are shown before the
-           press. Each agent closes the questions already answered when it replies; this page closes nothing. *@
-        <form method="post" asp-page-handler="StillOpen" class="view-card still-open" aria-label="Ask which are still open">
-            <p>
-                Some of these may have been answered somewhere else. Ask each agent which of its questions are still open:
-                each one gets a request from you in every conversation it has questions in, and closes the ones already
-                answered when it replies.
-            </p>
-            <details>
-                <summary>What each agent is sent</summary>
-                <blockquote>@Parley.Client.Seating.StillOpen.Opening</blockquote>
-                <p class="composer-note">Then each of its questions in that conversation, by exchange number, with the first
-                    @Parley.Client.Seating.StillOpen.Quoted characters of what it asked.</p>
-            </details>
-            <button type="submit">Ask which are still open</button>
-        </form>
-    }
-
     @if (Model.Asked.Count > 0)
     {
         @* **Where each answer stands, read again on every load** (SPEC.md §5.6): the Request's exchange says whether the agent
@@ -141,38 +121,25 @@
         </section>
     }
 
-    <details class="view-card view-create">
-        <summary>Start a conversation</summary>
-        @* **Starting one belongs beside the messages that come out of them.** Naming a conversation is what creates it, and
-           the composer opens on the name. *@
-        <form method="get" action="/Conversations/Detail">
-            <div class="field">
-                <label for="new-conversation-project">Project</label>
-                <select id="new-conversation-project" name="project" required>
-                    @foreach (var project in Model.Projects)
-                    {
-                        <option value="@project.Project">@project.Project</option>
-                    }
-                </select>
-            </div>
-            <div class="field wide">
-                <label for="new-conversation">Called</label>
-                <input id="new-conversation" name="id" placeholder="what-it-is-about" required
-                       maxlength="@ConversationName.Longest" pattern="@ConversationName.Pattern"
-                       data-correct="@ConversationName.Allowed"
-                       autocomplete="off" spellcheck="false"
-                       aria-describedby="new-conversation-rule" />
-            </div>
-            <button type="submit">Start</button>
-            <p id="new-conversation-rule" class="composer-note">
-                @ConversationName.Rule
-                <span id="new-conversation-corrected" role="status" hidden>
-                    @ConversationName.WasCorrected.
-                </span>
-            </p>
-        </form>
-    </details>
+    @{
+        // What is filtered, said as chips beside the Filter button, each taking its own filter off (the person's feedback on
+        // feature 042). The fold is closed when nothing is filtered, and the chips are how a filter that is on stays in sight.
+        string Without(string drop)
+        {
+            var query = Microsoft.AspNetCore.Http.QueryString.Create(
+                new[] { ("view", Model.View), ("q", drop == "q" ? null : Model.Q), ("scope", drop == "scope" ? null : Model.Scope) }
+                    .Where(pair => !string.IsNullOrEmpty(pair.Item2))
+                    .Select(pair => new KeyValuePair<string, string?>(pair.Item1, pair.Item2)));
 
+            return "/Inbox" + query;
+        }
+        var filters = new List<(string Says, string Off)>();
+        if (Model.Q is { Length: > 0 } searched) { filters.Add(($"Search: {searched}", Without("q"))); }
+        if (Model.Scope is { Length: > 0 } scoped) { filters.Add(($"Project: {scoped}", Without("scope"))); }
+    }
+    <div class="filter-bar">
+    <details class="filters-fold">
+        <summary class="button tonal"><span class="icon" aria-hidden="true">tune</span> Filter</summary>
     <form method="get" class="view-card view-filters" aria-label="Filter what is waiting on you">
         <div class="field wide">
             <label for="f-q">Search</label>
@@ -194,11 +161,14 @@
         }
         <button type="submit">Filter</button>
         <a class="button quiet" href="/Inbox@(Model.View is { Length: > 0 } v ? $"?view={v}" : string.Empty)">Clear</a>
-        @if (Model.Showing == Parley.Client.Seating.InboxView.WaitingOnYou)
-        {
-            <span class="tally">@shown.Count of @everything.Count</span>
-        }
     </form>
+    </details>
+    <partial name="_FilterChips" model="filters" />
+    @if (Model.Showing == Parley.Client.Seating.InboxView.WaitingOnYou)
+    {
+        <span class="tally">@shown.Count of @everything.Count</span>
+    }
+    </div>
 
     @{
         // The three views (spec 036), each a page of its own so it works with no script; the filters go with them.
@@ -418,3 +388,63 @@
     </section>
     }
 </div>
+
+@section Actions {
+    <details class="view-create rail-act rail-act-main">
+        <summary title="Start a conversation"><span class="icon" aria-hidden="true">add</span><span class="rail-label">Start a conversation</span></summary>
+        <div class="act-panel">
+            @* **Starting one belongs beside the messages that come out of them.** Naming a conversation is what creates it, and
+               the composer opens on the name. *@
+            <form method="get" action="/Conversations/Detail">
+                <div class="field">
+                    <label for="new-conversation-project">Project</label>
+                    <select id="new-conversation-project" name="project" required>
+                        @foreach (var project in Model.Projects)
+                        {
+                            <option value="@project.Project">@project.Project</option>
+                        }
+                    </select>
+                </div>
+                <div class="field wide">
+                    <label for="new-conversation">Called</label>
+                    <input id="new-conversation" name="id" placeholder="what-it-is-about" required
+                           maxlength="@ConversationName.Longest" pattern="@ConversationName.Pattern"
+                           data-correct="@ConversationName.Allowed"
+                           autocomplete="off" spellcheck="false"
+                           aria-describedby="new-conversation-rule" />
+                </div>
+                <button type="submit">Start</button>
+                <p id="new-conversation-rule" class="composer-note">
+                    @ConversationName.Rule
+                    <span id="new-conversation-corrected" role="status" hidden>
+                        @ConversationName.WasCorrected.
+                    </span>
+                </p>
+            </form>
+        </div>
+    </details>
+    @if (everything.Count > 0)
+    {
+        <details class="rail-act">
+            <summary title="Ask which are still open"><span class="icon" aria-hidden="true">check</span><span class="rail-label">Ask which are still open</span></summary>
+            <div class="act-panel">
+                @* **Asking, never closing** (SPEC.md §5.6). The words go out under the person's name, so they are shown before the
+                   press. Each agent closes the questions already answered when it replies; this page closes nothing. *@
+                <form method="post" asp-page-handler="StillOpen" class="still-open" aria-label="Ask which are still open">
+                    <p>
+                        Some of these may have been answered somewhere else. Ask each agent which of its questions are still open:
+                        each one gets a request from you in every conversation it has questions in, and closes the ones already
+                        answered when it replies.
+                    </p>
+                    <details>
+                        <summary>What each agent is sent</summary>
+                        <blockquote>@Parley.Client.Seating.StillOpen.Opening</blockquote>
+                        <p class="composer-note">Then each of its questions in that conversation, by exchange number, with the first
+                            @Parley.Client.Seating.StillOpen.Quoted characters of what it asked.</p>
+                    </details>
+                    <button type="submit">Ask which are still open</button>
+                </form>
+            </div>
+        </details>
+    }
+}
