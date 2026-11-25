@@ -262,9 +262,27 @@
             @if (inProjectRail.Count > 0)
             {
                 <p class="rail-heading">@project</p>
+                @* A folded menu on a tablet or a folded desktop has no height for the project's six places and a page's
+                   commands as well, so the places fold into one item, the project, which opens them as a list (feature 042).
+                   Drawn only then; the unfolded menu and a phone's bar list the places themselves. *@
+                <details class="rail-project">
+                    <summary title="@project: its places" aria-current="@(inProjectRail.Any(item => item.Current) ? "page" : null)">
+                        <span class="project-mark" aria-hidden="true">@project[..1].ToUpperInvariant()</span>
+                        <span class="rail-label">@project</span>
+                    </summary>
+                    <div class="rail-project-list">
+                        @foreach (var item in inProjectRail)
+                        {
+                            <a href="@item.Href" aria-current="@(item.Current ? "page" : null)">
+                                <span class="icon" aria-hidden="true">@item.Icon</span>
+                                <span>@item.MoreLabel</span>
+                            </a>
+                        }
+                    </div>
+                </details>
                 @foreach (var item in inProjectRail)
                 {
-                    <a href="@item.Href" title="@item.Label" aria-current="@(item.Current ? "page" : null)" class="@BarClass(item.Bar)">
+                    <a href="@item.Href" title="@item.Label" aria-current="@(item.Current ? "page" : null)" class="@BarClass(item.Bar) in-project">
                         <span class="icon" aria-hidden="true">@item.Icon</span>
                         <span class="rail-label">@item.Label</span>
                         @if (item.BarLabel is { } shortLabel)
@@ -345,6 +363,16 @@
 
                 if (act) { e.stopImmediatePropagation(); act.open = false; act.querySelector("summary").focus(); }
             });
+        })();
+
+        // The folded menu's project list closes as a menu does: a tap outside it, or Escape.
+        (function () {
+            var list = document.querySelector(".rail-project");
+
+            if (!list) { return; }
+
+            document.addEventListener("click", function (e) { if (list.open && !list.contains(e.target)) { list.open = false; } });
+            document.addEventListener("keydown", function (e) { if (e.key === "Escape" && list.open && !e.defaultPrevented && list.contains(document.activeElement)) { e.stopImmediatePropagation(); list.open = false; list.querySelector("summary").focus(); } });
         })();
 
         // More closes as a menu does: a tap outside it, or Escape. It opens and closes with no script.

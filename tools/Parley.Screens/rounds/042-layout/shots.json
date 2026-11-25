@@ -868,6 +868,25 @@
           "pause": 300
         }
       ]
+    },
+    {
+      "file": "project-places-landscape-light.png",
+      "width": 1180,
+      "height": 820,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "On a tablet, the project's places opened from its folded item.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "click": ".rail-project > summary"
+        },
+        {
+          "pause": 300
+        }
+      ]
     }
   ]
 }

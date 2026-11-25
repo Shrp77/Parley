@@ -2215,6 +2215,55 @@ html[data-nav="collapsed"]:not([data-rail-open]) .rail-act .rail-label { positio
 .filter-chips .chip .icon { font-size: 1.1rem; }
 .filter-bar .tally { margin-left: auto; }
 
+/* ---- The project's places, folded (feature 042) ------------------------------------------------------------------------
+   A folded menu (a tablet's, or a desktop's the person folded) has no height for the project's six places and a page's
+   commands too, so the places fold into one item, the project's initial, which opens them as a list beside the rail. */
+.rail-project { display: none; }
+
+@media (min-width: 37.5rem) and (max-width: 74.99rem) {
+    html:not([data-rail-open]) .rail-project { display: block; }
+    html:not([data-rail-open]) .rail nav a.in-project { display: none; }
+}
+@media (min-width: 75rem) {
+    html[data-nav="collapsed"] .rail-project { display: block; }
+    html[data-nav="collapsed"] .rail nav a.in-project { display: none; }
+}
+
+.rail-project > summary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 3.5rem;
+    min-height: 3rem;
+    margin: 0.25rem auto;
+    list-style: none;
+    cursor: pointer;
+    border-radius: var(--md-sys-shape-corner-full);
+}
+.rail-project > summary::-webkit-details-marker { display: none; }
+.rail-project > summary .rail-label { position: absolute; left: -100rem; }
+.rail-project > summary:hover, .rail-project[open] > summary { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
+.project-mark { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: var(--md-sys-shape-corner-small); font: var(--md-sys-typescale-title-small); color: var(--md-sys-color-on-surface-variant); background: var(--md-sys-color-surface-container-high); }
+.rail-project > summary[aria-current] .project-mark { color: var(--md-sys-color-on-secondary-container); background: var(--md-sys-color-secondary-container); }
+.rail-project-list {
+    position: fixed;
+    z-index: 35;
+    top: calc(var(--frame) + 0.5rem);
+    left: calc(var(--rail-w) + 0.75rem);
+    display: grid;
+    min-width: 15rem;
+    padding: 0.5rem 0;
+    background: var(--md-sys-color-surface-container);
+    border-radius: var(--md-sys-shape-corner-large);
+    box-shadow: var(--md-sys-elevation-3);
+}
+/* Above the folded rail's own rules for its items, which centre an icon in a narrow pill. */
+html:not([data-rail-list]) .rail nav .rail-project-list a { width: auto; margin: 0; justify-content: flex-start; border-radius: 0; display: flex; align-items: center; gap: 0.9rem; min-height: 3rem; padding: 0 1.25rem; color: var(--md-sys-color-on-surface); font: var(--md-sys-typescale-label-large); text-decoration: none; border: 0; }
+html:not([data-rail-list]) .rail nav .rail-project-list a:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); border: 0; }
+html:not([data-rail-list]) .rail nav .rail-project-list a[aria-current] { color: var(--md-sys-color-on-secondary-container); background: var(--md-sys-color-secondary-container); font-weight: 700; }
+.rail-project-list .icon { font-size: 1.5rem; color: var(--md-sys-color-on-surface-variant); }
+.rail:has(.rail-project[open]) { z-index: 45; }
+
 /* ---- A conversation's commands in the rail (feature 042) --------------------------------------------------------------
    The closed panel's strip is drawn in the rail's page commands, like every page's commands: an item per box, its icon
    and, in the unfolded menu, its name. What an item brings out lies beside the rail, over the page. While the panel is

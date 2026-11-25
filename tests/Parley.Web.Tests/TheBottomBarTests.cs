@@ -70,7 +70,7 @@ public sealed class TheBottomBarTests
     }
 
     private static string[] OnTheBar(string page) =>
-        [.. Regex.Matches(Sections(page), "<a href=\"([^\"]+)\"[^>]*\\bclass=\"bar\"").Select(m => Decoded(m.Groups[1].Value))];
+        [.. Regex.Matches(Sections(page), "<a href=\"([^\"]+)\"[^>]*\\bclass=\"bar(?: [^\"]*)?\"").Select(m => Decoded(m.Groups[1].Value))];
 
     private static string[] UnderMore(string page) =>
         [.. Regex.Matches(MoreBlock(page), "<a href=\"([^\"]+)\"").Select(m => Decoded(m.Groups[1].Value))];
