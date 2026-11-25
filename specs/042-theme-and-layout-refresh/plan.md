@@ -122,7 +122,7 @@ Each pass ends with a screenshot round (FR-024) shown to the person beside the p
 | 2. Colour and surfaces (done) | Frost's surfaces, shadows and spacing land in `tokens.css` and the components; borders give way to surface levels; colour reserved for meaning; the top bar runs edge to edge. | ContrastTests; MaterialTokensTests. |
 | 2b. Palettes (done) | The palette rule in C# (R9), `/brand/palette.css`, the ready-made palettes, and the colour choice on the Settings page. | ContrastTests over every palette and a sweep of base colours. |
 | 3. Type | Type scale and roles; message measure; metadata quieter; dark-mode grade. | ContrastTests; type-scale test. |
-| 4. Layout (after the theme, per the owner) | Size classes; navigation bar, rail and drawer; lists to cards; full-width conversation; graph panel placement; touch targets. | SizeClassesTests; TouchTargetsTests; the 320 and 390 rounds. |
+| 4. Layout (after the theme, per the owner; first round built) | Size classes; navigation bar, rail and drawer; lists to cards; full-width conversation; graph panel placement; touch targets. First round: the bottom bar with More on compact, the slim top bar, the conversation's tools as a row above it, `.dgrid` lists as cards on compact and medium, the graph laid over the page below large. Still to come: tables (Files, Health) as cards, dialogs full-screen on compact, the touch-target and size-class tests, a composer shaped for a phone. Round `042-layout`. | SizeClassesTests; TouchTargetsTests; the 320 and 390 rounds. |
 | 5. Controls and motion | State layers, focus rings, motion tokens, badges with character; reduce motion. | Existing focus and motion tests, widened. |
 
 ## Complexity Tracking

@@ -1,0 +1,652 @@
+// Feature 042, pass 4: the busiest pages at phone, tablet portrait, tablet landscape and desktop sizes.
+{
+  "theme": "light",
+  "scale": 1,
+  "maximumBytes": 0,
+  "shots": [
+    {
+      "file": "inbox-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Inbox?scope={project}",
+      "shows": "The Inbox: what waits on the person.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "inbox-tablet-light.png",
+      "width": 820,
+      "height": 1180,
+      "theme": "light",
+      "path": "/Inbox?scope={project}",
+      "shows": "The Inbox: what waits on the person.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "inbox-landscape-light.png",
+      "width": 1180,
+      "height": 820,
+      "theme": "light",
+      "path": "/Inbox?scope={project}",
+      "shows": "The Inbox: what waits on the person.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "inbox-desktop-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Inbox?scope={project}",
+      "shows": "The Inbox: what waits on the person.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "conversation-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "A conversation: messages, a placed file, the person's follow-up.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "conversation-tablet-light.png",
+      "width": 820,
+      "height": 1180,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "A conversation: messages, a placed file, the person's follow-up.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "conversation-landscape-light.png",
+      "width": 1180,
+      "height": 820,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "A conversation: messages, a placed file, the person's follow-up.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "conversation-desktop-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "A conversation: messages, a placed file, the person's follow-up.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "conversations-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/?project={project}",
+      "shows": "The project's conversations.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "conversations-tablet-light.png",
+      "width": 820,
+      "height": 1180,
+      "theme": "light",
+      "path": "/?project={project}",
+      "shows": "The project's conversations.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "conversations-landscape-light.png",
+      "width": 1180,
+      "height": 820,
+      "theme": "light",
+      "path": "/?project={project}",
+      "shows": "The project's conversations.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "conversations-desktop-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/?project={project}",
+      "shows": "The project's conversations.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "agents-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/?tab=agents&project={project}",
+      "shows": "The project's agents.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "agents-tablet-light.png",
+      "width": 820,
+      "height": 1180,
+      "theme": "light",
+      "path": "/?tab=agents&project={project}",
+      "shows": "The project's agents.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "agents-landscape-light.png",
+      "width": 1180,
+      "height": 820,
+      "theme": "light",
+      "path": "/?tab=agents&project={project}",
+      "shows": "The project's agents.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "agents-desktop-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/?tab=agents&project={project}",
+      "shows": "The project's agents.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "agent-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Projects/Agent?project={project}&agent={agent:inventory}",
+      "shows": "One agent's page.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "agent-tablet-light.png",
+      "width": 820,
+      "height": 1180,
+      "theme": "light",
+      "path": "/Projects/Agent?project={project}&agent={agent:inventory}",
+      "shows": "One agent's page.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "agent-landscape-light.png",
+      "width": 1180,
+      "height": 820,
+      "theme": "light",
+      "path": "/Projects/Agent?project={project}&agent={agent:inventory}",
+      "shows": "One agent's page.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "agent-desktop-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Projects/Agent?project={project}&agent={agent:inventory}",
+      "shows": "One agent's page.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "files-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Projects/Files?project={project}",
+      "shows": "Shared files.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "files-tablet-light.png",
+      "width": 820,
+      "height": 1180,
+      "theme": "light",
+      "path": "/Projects/Files?project={project}",
+      "shows": "Shared files.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "files-landscape-light.png",
+      "width": 1180,
+      "height": 820,
+      "theme": "light",
+      "path": "/Projects/Files?project={project}",
+      "shows": "Shared files.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "files-desktop-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Projects/Files?project={project}",
+      "shows": "Shared files.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "roadmaps-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Roadmaps?project={project}",
+      "shows": "Roadmaps.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "roadmaps-tablet-light.png",
+      "width": 820,
+      "height": 1180,
+      "theme": "light",
+      "path": "/Roadmaps?project={project}",
+      "shows": "Roadmaps.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "roadmaps-landscape-light.png",
+      "width": 1180,
+      "height": 820,
+      "theme": "light",
+      "path": "/Roadmaps?project={project}",
+      "shows": "Roadmaps.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "roadmaps-desktop-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Roadmaps?project={project}",
+      "shows": "Roadmaps.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "settings-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Settings",
+      "shows": "Settings.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "settings-tablet-light.png",
+      "width": 820,
+      "height": 1180,
+      "theme": "light",
+      "path": "/Settings",
+      "shows": "Settings.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "settings-landscape-light.png",
+      "width": 1180,
+      "height": 820,
+      "theme": "light",
+      "path": "/Settings",
+      "shows": "Settings.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "settings-desktop-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Settings",
+      "shows": "Settings.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "inbox-phone-dark.png",
+      "width": 390,
+      "height": 844,
+      "theme": "dark",
+      "path": "/Inbox?scope={project}",
+      "shows": "The Inbox: what waits on the person.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "conversation-phone-dark.png",
+      "width": 390,
+      "height": 844,
+      "theme": "dark",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "A conversation: messages, a placed file, the person's follow-up.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "conversation-phone-composer-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "A conversation on a phone with the message box open.",
+      "storage": {
+        "parley-convo-composer": "open"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "more-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Roadmaps?project={project}",
+      "shows": "The bottom bar's More menu open on a phone.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "click": ".rail-more > summary"
+        }
+      ]
+    },
+    {
+      "file": "graph-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "The graph panel opened.",
+      "graph": true,
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "graph-tablet-light.png",
+      "width": 820,
+      "height": 1180,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "The graph panel opened.",
+      "graph": true,
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "graph-landscape-light.png",
+      "width": 1180,
+      "height": 820,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "The graph panel opened.",
+      "graph": true,
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    },
+    {
+      "file": "graph-desktop-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "The graph panel opened.",
+      "graph": true,
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "top"
+        }
+      ]
+    }
+  ]
+}

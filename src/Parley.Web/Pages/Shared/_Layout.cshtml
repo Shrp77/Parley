@@ -208,7 +208,7 @@
             ("/Inbox", "Inbox", "inbox", path.StartsWith("/Inbox", StringComparison.Ordinal)),
         };
         // At the foot with the toggle, in both states, so a project's own items never sit between it and the rest.
-        var parleySettings = ("/Settings", "Settings", "settings", path == "/Settings");
+        (string Href, string Label, string Icon, bool Current) parleySettings = ("/Settings", "Settings", "settings", path == "/Settings");
         var inProjectRail = new List<(string Href, string Label, string Icon, bool Current)>();
 
         if (project.Length > 0)
@@ -224,6 +224,26 @@
                 ($"/Projects/Settings?project={q}", "Settings", "tune", path == "/Projects/Settings"),
             ];
         }
+
+        // On a phone the navigation is a bar along the bottom with four places and More (feature 042, the UI contract's
+        // compact class). Which four, and in what order: Projects, the agents (the project's when in one), the Inbox, and
+        // the project's conversations. Everything else is under More, which is drawn only on a phone.
+        int BarPlace(string href) => href switch
+        {
+            "/" => 1,
+            "/Inbox" => 3,
+            "/?tab=agents" => project.Length == 0 ? 2 : 0,
+            _ when href == $"/?tab=agents&project={q}" => 2,
+            _ when href == $"/Projects/Agents?project={q}" => 4,
+            _ => 0,
+        };
+        // A class, not a data attribute: Razor drops a class whose value is null, but always writes a `data-` attribute,
+        // empty for null, and an empty one would still mark a link as on the bar.
+        string? BarClass(string href) => BarPlace(href) is > 0 and var place ? $"bar bar-{place.ToString(System.Globalization.CultureInfo.InvariantCulture)}" : null;
+        var more = rail.Concat(inProjectRail).Append(parleySettings).Where(item => BarPlace(item.Href) == 0)
+            .Select(item => item.Href == parleySettings.Href ? item with { Label = "Console settings" }
+                : inProjectRail.Contains(item) && item.Label == "Settings" ? item with { Label = "Project settings" } : item)
+            .ToList();
     }
     <aside class="rail" id="rail" aria-label="Navigation">
         <a class="brand" href="/">
@@ -235,7 +255,7 @@
         <nav aria-label="Sections">
             @foreach (var item in rail)
             {
-                <a href="@item.Href" title="@item.Label" aria-current="@(item.Current ? "page" : null)">
+                <a href="@item.Href" title="@item.Label" aria-current="@(item.Current ? "page" : null)" class="@BarClass(item.Href)">
                     <span class="icon" aria-hidden="true">@item.Icon</span>
                     <span class="rail-label">@item.Label</span>
                     @if (item.Label == "Inbox" && waiting is { Certain: true, Waiting: > 0 })
@@ -253,13 +273,37 @@
                 <p class="rail-heading">@project</p>
                 @foreach (var item in inProjectRail)
                 {
-                    <a href="@item.Href" title="@item.Label" aria-current="@(item.Current ? "page" : null)">
+                    <a href="@item.Href" title="@item.Label" aria-current="@(item.Current ? "page" : null)" class="@BarClass(item.Href)">
                         <span class="icon" aria-hidden="true">@item.Icon</span>
                         <span class="rail-label">@item.Label</span>
                     </a>
                 }
             }
         </nav>
+        @* More, the bar's fifth place: drawn only on a phone, where the bar has room for four. It opens with no script. *@
+        <details class="rail-more">
+            <summary title="More" aria-current="@(more.Any(item => item.Current) ? "page" : null)">
+                @* Drawn, as the conversation's magnifier is: the console's cut-down icon font has neither of these glyphs. *@
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="5" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="19" cy="12" r="2" fill="currentColor"/></svg>
+                <span class="rail-label">More</span>
+            </summary>
+            <div class="rail-more-list">
+                @foreach (var item in more)
+                {
+                    <a href="@item.Href" aria-current="@(item.Current ? "page" : null)">
+                        <span class="icon" aria-hidden="true">@item.Icon</span>
+                        <span>@item.Label</span>
+                    </a>
+                }
+                @if (!Parley.Web.ConsoleHost.Embedded(Context))
+                {
+                    <button type="button" class="quiet" data-pg-open aria-controls="pg-panel">
+                        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="4" width="6" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="2"/><rect x="15" y="4" width="6" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="2"/><rect x="15" y="15" width="6" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 6.5h6M12 6.5v11h3" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+                        <span>Graph</span>
+                    </button>
+                }
+            </div>
+        </details>
         <nav class="rail-foot" aria-label="Console settings">
             <a href="@parleySettings.Item1" title="@parleySettings.Item2" aria-current="@(parleySettings.Item4 ? "page" : null)">
                 <span class="icon" aria-hidden="true">@parleySettings.Item3</span>
@@ -271,6 +315,17 @@
             <span class="rail-label">Collapse</span>
         </button>
     </aside>
+    <script>
+        // More closes as a menu does: a tap outside it, or Escape. It opens and closes with no script.
+        (function () {
+            var more = document.querySelector(".rail-more");
+
+            if (!more) { return; }
+
+            document.addEventListener("click", function (e) { if (more.open && !more.contains(e.target)) { more.open = false; } });
+            document.addEventListener("keydown", function (e) { if (e.key === "Escape" && more.open) { more.open = false; more.querySelector("summary").focus(); } });
+        })();
+    </script>
     <div class="page">
     <header>
         @if ((ViewData["Project"] as string ?? Context.Request.Query["project"].ToString()) is { Length: > 0 } inProject)
@@ -1170,6 +1225,10 @@
                 }
 
                 tab.addEventListener("click", function () { state.open = true; save(); draw(); });
+                // On a phone the tab gives way to Graph under the bottom bar's More, which opens the same panel.
+                Array.prototype.forEach.call(document.querySelectorAll("[data-pg-open]"), function (b) {
+                    b.addEventListener("click", function () { var menu = b.closest("details"); if (menu) { menu.open = false; } state.open = true; save(); draw(); });
+                });
                 document.getElementById("pg-close").addEventListener("click", function () { state.open = false; state.pinned = false; save(); draw(); });
                 pin.addEventListener("click", function () { state.pinned = !state.pinned; save(); draw(); });
                 hideClosed.addEventListener("change", function () { state.hideClosed = hideClosed.checked; save(); draw(); });
