@@ -309,7 +309,7 @@
         @if (IsSectionDefined("Actions"))
         {
             <section class="rail-actions" aria-labelledby="rail-actions-head">
-                <p class="rail-heading" id="rail-actions-head">@(ViewData["Title"] ?? "This page")</p>
+                <p class="rail-heading" id="rail-actions-head">@(ViewData["CommandsTitle"] ?? ViewData["Title"] ?? "This page")</p>
                 @await RenderSectionAsync("Actions")
             </section>
         }

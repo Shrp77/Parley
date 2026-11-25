@@ -6,6 +6,26 @@
     ViewData["AsOf"] = Model.AsOf.ToString("HH:mm:ss");
     ViewData["Project"] = Model.Project;
     ViewData["Conversation"] = Model.Id;
+    // The rail heads its commands with this; the conversation's name is in the top bar.
+    ViewData["CommandsTitle"] = "This conversation";
+}
+
+@{
+    // The conversation's commands, drawn once: in the side menu, or in the page when it is framed (feature 042). Each says
+    // its name beside its icon, which the side menu shows when it is unfolded.
+    Func<object?, Microsoft.AspNetCore.Html.IHtmlContent> strip = @<div class="panel-strip">
+        <button type="button" id="panel-open" class="strip-button" title="Open this panel" aria-label="Open this panel"><span class="icon" aria-hidden="true">chevron_right</span><span class="rail-label" aria-hidden="true">Show the panel</span></button>
+        <button type="button" class="strip-button" data-pop="about" aria-controls="panel-body" aria-expanded="false" title="This conversation: its name, files, export, spin off and move" aria-label="This conversation"><span class="icon" aria-hidden="true">info</span><span class="rail-label" aria-hidden="true">This conversation</span></button>
+        <button type="button" class="strip-button" data-pop="find" aria-controls="panel-body" aria-expanded="false" title="Find in this conversation" aria-label="Find in this conversation" hidden>@* Drawn, because the console's cut-down icon font has no magnifier. *@<svg class="strip-glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14.5 14.5 20 20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="rail-label" aria-hidden="true">Find</span></button>
+        <button type="button" class="strip-button" data-pop="filter" aria-controls="panel-body" aria-expanded="false" title="Show only some of the conversation" aria-label="Show only some of the conversation" hidden><span class="icon" aria-hidden="true">tune</span><span class="rail-label" aria-hidden="true">Show only some</span></button>
+        <button type="button" class="strip-button" id="strip-waiting" data-pop="waiting" data-waiting-step="1" aria-controls="panel-body" aria-expanded="false" title="Go to the next message waiting on you" aria-label="Go to the next message waiting on you" hidden>
+            <span class="icon" aria-hidden="true">inbox</span>
+            <span class="strip-count" id="strip-count"></span>
+            <span class="rail-label" aria-hidden="true">Waiting on you</span>
+        </button>
+        <button type="button" class="strip-button" data-pop="to" aria-controls="panel-body" aria-expanded="false" title="Who to write to" aria-label="Who to write to" hidden><span class="icon" aria-hidden="true">group</span><span class="rail-label" aria-hidden="true">Who to write to</span></button>
+        <span class="strip-note" id="strip-filtered" hidden>Filtered</span>
+    </div>;
 }
 
 @* The page is two columns: a panel that stays on screen, and the conversation. The panel holds what a reader reaches for
@@ -14,15 +34,16 @@
 <div class="convo-page" id="convo-page">
 <aside class="convo-panel" id="convo-panel" aria-label="This conversation">
     @* Closed or open is remembered in this browser, once for a wide window and once for a narrow one, and set before the
-       panel is drawn so a closed panel does not flash open. A narrow window starts with it closed, because there the
-       panel's boxes take the room the conversation needs. The width is the page script's `narrow` too. *@
+       panel is drawn so a closed panel does not flash open. Every window starts with it closed: its boxes are this page's
+       commands, reached from the side menu like every page's (feature 042), and the panel is a column a person chooses to
+       keep open. The width is the page script's `narrow` too. *@
     <script>
         try {
             (function () {
                 var narrow = window.matchMedia("(max-width: 90rem)").matches;
                 var chosen = window.localStorage.getItem(narrow ? "parley-convo-panel-narrow" : "parley-convo-panel");
 
-                if (narrow ? chosen !== "open" : chosen === "closed") {
+                if (chosen !== "open") {
                     document.getElementById("convo-page").classList.add("panel-closed");
                 }
             })();
@@ -30,19 +51,13 @@
     </script>
 
     @* What a closed panel leaves: the way to open it, an icon for each of its boxes, which brings out just that box while
-       the pointer is on it (or until a click puts it away again), the way through what is waiting, and the name. *@
-    <div class="panel-strip">
-        <button type="button" id="panel-open" class="strip-button" title="Open this panel" aria-label="Open this panel"><span class="icon" aria-hidden="true">chevron_right</span></button>
-        <button type="button" class="strip-button" data-pop="about" aria-controls="panel-body" aria-expanded="false" title="This conversation: its name, files, export, spin off and move" aria-label="This conversation"><span class="icon" aria-hidden="true">info</span></button>
-        <button type="button" class="strip-button" data-pop="find" aria-controls="panel-body" aria-expanded="false" title="Find in this conversation" aria-label="Find in this conversation" hidden>@* Drawn, because the console's cut-down icon font has no magnifier. *@<svg class="strip-glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14.5 14.5 20 20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
-        <button type="button" class="strip-button" data-pop="filter" aria-controls="panel-body" aria-expanded="false" title="Show only some of the conversation" aria-label="Show only some of the conversation" hidden><span class="icon" aria-hidden="true">tune</span></button>
-        <button type="button" class="strip-button" id="strip-waiting" data-pop="waiting" data-waiting-step="1" aria-controls="panel-body" aria-expanded="false" title="Go to the next message waiting on you" aria-label="Go to the next message waiting on you" hidden>
-            <span class="icon" aria-hidden="true">inbox</span>
-            <span class="strip-count" id="strip-count"></span>
-        </button>
-        <button type="button" class="strip-button" data-pop="to" aria-controls="panel-body" aria-expanded="false" title="Who to write to" aria-label="Who to write to" hidden><span class="icon" aria-hidden="true">group</span></button>
-        <span class="strip-note" id="strip-filtered" hidden>Filtered</span>
-    </div>
+       the pointer is on it (or until a click puts it away again), and the way through what is waiting. They are this page's
+       commands, so they are drawn where every page's commands are, in the side menu under its navigation (feature 042),
+       and in the page only when it is framed, where there is no side menu. *@
+    @if (Parley.Web.ConsoleHost.Embedded(ViewContext.HttpContext))
+    {
+        @strip(null)
+    }
 
     @* Laid out as if it were not there while the panel is open. With the panel closed it is the box an icon brings out,
        holding only that icon's part of the panel. *@
@@ -1267,8 +1282,8 @@ else
 
             closer.hidden = false;
 
-            // A wide window and a narrow one each remember their own choice: a person who closes the panel on a small
-            // window has not asked for it closed on a large one. Narrow starts closed. The width is the inline script's.
+            // A wide window and a narrow one each remember their own choice: a person who opens the panel on a small
+            // window has not asked for it open on a large one. Both start closed. The width is the inline script's.
             var narrow = window.matchMedia("(max-width: 90rem)");
 
             function remembered() { return narrow.matches ? "parley-convo-panel-narrow" : "parley-convo-panel"; }
@@ -1278,7 +1293,7 @@ else
 
                 try { chosen = window.localStorage.getItem(remembered()); } catch (e) { }
 
-                var closed = narrow.matches ? chosen !== "open" : chosen === "closed";
+                var closed = chosen !== "open";
 
                 page.classList.toggle("panel-closed", closed);
                 if (!closed) { putAway(); }
@@ -1364,7 +1379,7 @@ else
             });
 
             document.addEventListener("click", function (e) {
-                if (popped() && !e.target.closest(".convo-panel")) { putAway(); }
+                if (popped() && !e.target.closest(".convo-panel, .panel-strip")) { putAway(); }
             });
 
             // An icon is offered only for a part the panel has now. Find and the tree come with the page, the filter once
@@ -1598,4 +1613,11 @@ else
             read();
         })();
     </script>
+}
+
+@section Actions {
+    @if (!Parley.Web.ConsoleHost.Embedded(ViewContext.HttpContext))
+    {
+        @strip(null)
+    }
 }

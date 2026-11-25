@@ -100,7 +100,7 @@ html[data-nav="collapsed"]:not([data-rail-open]) .rail .seat-waiting { position:
 /* Below 1200px the page keeps a rail's width whatever the toggle says, as Material 3 keeps a docked drawer for large
    windows: at a laptop's or a tablet's width its 16rem is a column the page needs. The handle unfolds the whole menu over
    the page instead (data-rail-open, never remembered), and these rules stand down while it is open. */
-@media (max-width: 74.99rem) {
+@media (min-width: 37.5rem) and (max-width: 74.99rem) {
     :root { --rail-w: 5rem; }
     html:not([data-rail-open]) .rail-label, html:not([data-rail-open]) .rail .brand span { position: absolute; left: -100rem; }
     html:not([data-rail-open]) .rail nav a { width: 3.5rem; min-height: 2.5rem; margin: 0.25rem auto; padding: 0; justify-content: center; }
@@ -2175,7 +2175,7 @@ html[data-rail-open] { --rail-drawn: 16rem; }
 /* Collapsed, or below 1200px, the rail is 80px: the items narrow to their icon, as the destinations do. */
 html[data-nav="collapsed"]:not([data-rail-open]) .rail-act > summary { width: 3.5rem; margin: 0 auto; padding: 0; justify-content: center; }
 html[data-nav="collapsed"]:not([data-rail-open]) .rail-act .rail-label { position: absolute; left: -100rem; }
-@media (max-width: 74.99rem) {
+@media (min-width: 37.5rem) and (max-width: 74.99rem) {
     html:not([data-rail-open]) .rail-act > summary { width: 3.5rem; margin: 0 auto; padding: 0; justify-content: center; }
     html:not([data-rail-open]) .rail-act .rail-label { position: absolute; left: -100rem; }
 }
@@ -2215,6 +2215,60 @@ html[data-nav="collapsed"]:not([data-rail-open]) .rail-act .rail-label { positio
 .filter-chips .chip .icon { font-size: 1.1rem; }
 .filter-bar .tally { margin-left: auto; }
 
+/* ---- A conversation's commands in the rail (feature 042) --------------------------------------------------------------
+   The closed panel's strip is drawn in the rail's page commands, like every page's commands: an item per box, its icon
+   and, in the unfolded menu, its name. What an item brings out lies beside the rail, over the page. While the panel is
+   kept open as a column it holds the same boxes, so the rail's items give way. The strip in a framed page, which has no
+   rail, keeps its own look above. */
+.rail-actions .panel-strip { display: flex; flex-direction: column; gap: 0.25rem; }
+.rail-actions .strip-button {
+    --md-btn-container: transparent;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.75rem;
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    min-height: 3rem;
+    padding: 0 1rem;
+    border: 0;
+    border-radius: var(--md-sys-shape-corner-full);
+    color: var(--md-sys-color-primary);
+    font: var(--md-sys-typescale-label-large);
+    box-shadow: none;
+}
+.rail-actions .strip-button[hidden] { display: none; }
+.rail-actions .strip-button:hover, .rail-actions .strip-button[aria-expanded="true"] { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
+.rail-actions .strip-button .icon, .rail-actions .strip-glyph { width: 1.5rem; height: 1.5rem; font-size: 1.5rem; }
+.rail-actions .strip-count { top: 0.25rem; right: auto; left: 2rem; }
+.rail-actions .strip-note { writing-mode: horizontal-tb; padding: 0 1rem; font: var(--md-sys-typescale-label-small); color: var(--ink-faint); }
+.panel-strip .rail-label { white-space: nowrap; }
+.convo-page .panel-strip .rail-label { position: absolute; left: -100rem; }
+body:has(.convo-page:not(.panel-closed)) .rail-actions { display: none; }
+
+html[data-nav="collapsed"]:not([data-rail-open]) .rail-actions .strip-button { width: 3.5rem; margin: 0 auto; padding: 0; justify-content: center; }
+html[data-nav="collapsed"]:not([data-rail-open]) .rail-actions .strip-button .rail-label { position: absolute; left: -100rem; }
+@media (min-width: 37.5rem) and (max-width: 74.99rem) {
+    html:not([data-rail-open]) .rail-actions .strip-button { width: 3.5rem; margin: 0 auto; padding: 0; justify-content: center; }
+    html:not([data-rail-open]) .rail-actions .strip-button .rail-label { position: absolute; left: -100rem; }
+}
+
+/* With its commands in the rail, a closed panel leaves the conversation the whole width, and the box an item brings out
+   lies beside the rail. */
+body:has(.rail-actions .panel-strip) .convo-page.panel-closed { grid-template-columns: minmax(0, 1fr); }
+body:has(.rail-actions .panel-strip) .panel-closed .convo-panel { display: contents; }
+body:has(.rail-actions .panel-strip) .panel-closed[data-pop] .panel-body,
+body:has(.rail-actions .panel-strip) .panel-closed .panel-body:has(.move-bar:not([hidden])) {
+    position: fixed;
+    top: calc(var(--frame) + 0.5rem);
+    left: calc(var(--rail-drawn) + 1.75rem);
+    z-index: 34;
+    width: min(26rem, calc(100vw - var(--rail-drawn) - 2.5rem));
+    max-height: calc(100vh - var(--frame) - 1.5rem);
+}
+
 /* ---- Size classes (feature 042, pass 4) ------------------------------------------------------------------------------
    Material 3's window size classes: compact under 600px (a phone), medium to 839px (a tablet upright), expanded to
    1199px (a tablet on its side) and large from 1200px. The rail and the drawer above are the medium, expanded and large
@@ -2231,7 +2285,7 @@ html[data-nav="collapsed"]:not([data-rail-open]) .rail-act .rail-label { positio
     html { scrollbar-gutter: auto; }
 
     /* Under the conversation's row of tools, which is pinned under the top bar. */
-    .minimap { top: calc(var(--frame) + 3.75rem); }
+    .minimap { top: calc(var(--frame) + var(--cmd-h, 0px) + 0.5rem); }
 
     /* Navigation is a bar along the bottom, in reach of a thumb: four places and More, each an icon in its indicator
        above a label, as Material 3 draws a navigation bar. The sections stay one landmark, laid out as the bar. */
@@ -2356,15 +2410,34 @@ html[data-nav="collapsed"]:not([data-rail-open]) .rail-act .rail-label { positio
     .composer { bottom: var(--bar-h); }
     .new-below { left: 50%; bottom: calc(var(--composer-h, 9rem) + var(--bar-h) + 1rem); }
 
-    /* A page's actions float above the bottom bar at the right, the main one as Material 3's floating action button,
-       and each opens its panel above them, so the button that opened it is still there to close it. The page ends clear of them. */
-    .rail-actions { position: fixed; right: 1rem; bottom: calc(var(--bar-h) + 1rem); z-index: 32; flex-direction: column-reverse; align-items: flex-end; gap: 0.75rem; margin: 0; }
-    .rail-act > summary { width: auto; min-height: 3rem; padding: 0 1rem; background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); box-shadow: var(--md-sys-elevation-2); }
-    .rail-act-main > summary { min-height: 3.5rem; padding: 0 1.25rem; background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); box-shadow: var(--md-sys-elevation-3); }
+    /* A page's commands are a bar pinned under the top bar, on every page that has any, swiped sideways when they do not
+       fit (feature 042); each opens its panel just under the bar. What is pinned below the top bar sits below this bar too
+       (--cmd-h), and the page starts under it. */
+    body:has(.rail-actions) { --cmd-h: 3.75rem; }
+    .rail-actions {
+        position: fixed;
+        top: var(--frame);
+        left: 0;
+        right: 0;
+        z-index: 19;
+        flex-direction: row;
+        align-items: center;
+        gap: 0.5rem;
+        height: var(--cmd-h);
+        margin: 0;
+        padding: 0 0.75rem;
+        overflow-x: auto;
+        scrollbar-width: none;
+        background: var(--md-sys-color-surface-container);
+        box-shadow: var(--md-sys-elevation-1);
+    }
+    .rail-actions::-webkit-scrollbar { display: none; }
+    body:has(.rail-actions) main { padding-top: var(--cmd-h); }
+    .rail-act { flex: none; }
+    .rail-act > summary { width: auto; min-height: 2.5rem; padding: 0 1rem; background: var(--md-sys-color-surface-container-lowest); color: var(--md-sys-color-primary); }
+    .rail-act-main > summary { min-height: 2.5rem; border-radius: var(--md-sys-shape-corner-full); background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); box-shadow: none; }
     .rail-act .rail-label { position: static; }
-    .act-panel { top: auto; left: 1rem; right: 1rem; bottom: calc(var(--bar-h) + 5.5rem); width: auto; max-height: calc(100dvh - var(--frame) - var(--bar-h) - 7rem); }
-    .rail-actions:has(> .rail-act + .rail-act) .act-panel { bottom: calc(var(--bar-h) + 9.5rem); max-height: calc(100dvh - var(--frame) - var(--bar-h) - 11rem); }
-    body:has(.rail-actions) .page { padding-bottom: calc(var(--bar-h) + 10rem); }
+    .act-panel { position: fixed; top: calc(var(--frame) + var(--cmd-h) + 0.5rem); bottom: auto; left: 0.75rem; right: 0.75rem; width: auto; max-height: calc(100dvh - var(--frame) - var(--cmd-h) - var(--bar-h) - 1.5rem); }
 
     /* The graph is under More; its tab would sit over the page's text. */
     .pg-tab { display: none; }
@@ -2378,6 +2451,15 @@ html[data-nav="collapsed"]:not([data-rail-open]) .rail-act .rail-label { positio
     .panel-closed .panel-strip { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.25rem; background: var(--md-sys-color-surface-container); box-shadow: var(--md-sys-elevation-2); }
     .panel-closed .strip-note { writing-mode: horizontal-tb; }
     .strip-button { width: 3rem; min-width: 3rem; height: 3rem; }
+    .rail-actions .panel-strip { flex-direction: row; align-items: center; gap: 0.5rem; }
+    .rail-actions .strip-button { width: 2.75rem; min-width: 2.75rem; min-height: 2.75rem; padding: 0; justify-content: center; }
+    .rail-actions .strip-button .rail-label { position: absolute; left: -100rem; }
+    .rail-actions .strip-count { left: auto; right: -0.25rem; top: -0.25rem; }
+    body:has(.rail-actions .panel-strip) .panel-closed[data-pop] .panel-body,
+    body:has(.rail-actions .panel-strip) .panel-closed .panel-body:has(.move-bar:not([hidden])) {
+        top: calc(var(--frame) + var(--cmd-h) + 0.5rem); left: 0.75rem; width: auto; right: 0.75rem;
+        max-height: calc(100dvh - var(--frame) - var(--cmd-h) - var(--bar-h) - var(--composer-h, 4rem) - 1.5rem);
+    }
     .panel-closed[data-pop] .panel-body,
     .panel-closed .panel-body:has(.move-bar:not([hidden])) {
         top: calc(100% + 0.5rem);
@@ -2403,7 +2485,7 @@ html[data-nav="collapsed"]:not([data-rail-open]) .rail-act .rail-label { positio
     .dgrid-head { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
     .dgrid-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 1.1rem; padding: 0.9rem 1rem; }
     .dgrid-line > :first-child { flex: 1 1 100%; }
-    details.dgrid-row[open] > summary { top: var(--frame); }
+    details.dgrid-row[open] > summary { top: calc(var(--frame) + var(--cmd-h, 0px)); }
     .dgrid-detail { padding: 0.4rem 1rem 1rem; }
     .dgrid-detail .facts { grid-template-columns: minmax(0, 1fr); gap: 0 1rem; }
     .dgrid-detail .facts dd + dt { margin-top: 0.5rem; }
