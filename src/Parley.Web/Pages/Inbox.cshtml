@@ -176,7 +176,7 @@
     }
     <nav aria-label="Inbox views">
         <ul class="inbox-views">
-            <li><a href="@ViewUrl(null)" aria-current="@(Model.Showing == Parley.Client.Seating.InboxView.WaitingOnYou ? "page" : null)">Waiting on you <span class="count">@Model.CountOf(Parley.Client.Seating.InboxView.WaitingOnYou)</span></a></li>
+            <li><a href="@ViewUrl(null)" aria-current="@(Model.Showing == Parley.Client.Seating.InboxView.WaitingOnYou ? "page" : null)"><span class="long-label">Waiting on you</span><span class="short-label">Waiting</span> <span class="count">@Model.CountOf(Parley.Client.Seating.InboxView.WaitingOnYou)</span></a></li>
             <li><a href="@ViewUrl("flight")" aria-current="@(Model.Showing == Parley.Client.Seating.InboxView.InFlight ? "page" : null)">In flight <span class="count">@Model.CountOf(Parley.Client.Seating.InboxView.InFlight)</span></a></li>
             <li><a href="@ViewUrl("closed")" aria-current="@(Model.Showing == Parley.Client.Seating.InboxView.Closed ? "page" : null)">Closed <span class="count">@(Model.Older == 0 ? Model.CountOf(Parley.Client.Seating.InboxView.Closed).ToString(System.Globalization.CultureInfo.InvariantCulture) : "")</span></a></li>
         </ul>

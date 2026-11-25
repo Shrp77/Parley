@@ -87,21 +87,32 @@ html[data-nav="collapsed"] { --rail-w: 5rem; }
 .rail-heading { height: 3.5rem; line-height: 3.5rem; margin: 0.5rem 1rem 0; border-top: 1px solid var(--md-sys-color-outline-variant); font: var(--md-sys-typescale-title-small); line-height: 3.5rem; color: var(--md-sys-color-on-surface-variant); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rail .seat-waiting { margin-left: auto; }
 
-/* Folded: a rail. Every item (a place, a page action, a conversation's command) narrows to a 56px indicator round its
-   icon, centred in the 80px bar, and its name goes off screen, where a screen reader still finds it. A desktop is
+/* Folded: a rail. Every item (a place, a page action, a conversation's command) is its icon in an indicator with its
+   name in small type under it, as Material 3 draws a rail (the person's feedback on feature 042: an icon alone, such as
+   the folded project's initial, did not say what it was). A desktop is
    folded by the person (data-nav="collapsed"); below 1200px the page keeps a rail's width whatever the toggle says, as
    Material 3 keeps a docked drawer for large windows, and the handle unfolds the whole menu over the page instead
    (data-rail-open, never remembered). Both stand down while it is unfolded. */
-html[data-nav="collapsed"]:not([data-rail-open]) :is(.rail nav > a, .rail-act > summary, .rail-actions .strip-button) { width: 3.5rem; min-height: 2.5rem; margin: 0.25rem auto; padding: 0; justify-content: center; }
-html[data-nav="collapsed"]:not([data-rail-open]) :is(.rail-label, .rail .brand span) { position: absolute; left: -100rem; }
+html[data-nav="collapsed"]:not([data-rail-open]) :is(.rail nav > a, .rail-act > summary, .rail-actions .strip-button, .rail-actions .rail-link, .rail-project > summary) { flex-direction: column; justify-content: center; gap: 0.25rem; width: 100%; min-height: 3.5rem; margin: 0.125rem 0; padding: 0.25rem 0; background: none; box-shadow: none; }
+html[data-nav="collapsed"]:not([data-rail-open]) .rail .brand span { position: absolute; left: -100rem; }
+html[data-nav="collapsed"]:not([data-rail-open]) :is(.rail nav > a, .rail-act > summary, .rail-actions .strip-button, .rail-actions .rail-link, .rail-project > summary) .rail-label { position: static; max-width: 100%; font: var(--md-sys-typescale-label-small); letter-spacing: 0; white-space: nowrap; }
+html[data-nav="collapsed"]:not([data-rail-open]) :is(.rail nav > a, .rail-act > summary, .rail-actions .strip-button, .rail-actions .rail-link, .rail-project > summary) :is(.icon, .strip-glyph, .project-mark) { box-sizing: content-box; padding: 0.25rem 1rem; border-radius: var(--md-sys-shape-corner-full); }
+html[data-nav="collapsed"]:not([data-rail-open]) .rail nav > a[aria-current] { background: none; }
+html[data-nav="collapsed"]:not([data-rail-open]) .rail nav > a[aria-current] .icon { background: var(--md-sys-color-secondary-container); }
+html[data-nav="collapsed"]:not([data-rail-open]) .rail-act-main > summary .icon { color: var(--md-sys-color-on-primary-container); background: var(--md-sys-color-primary-container); }
 html[data-nav="collapsed"]:not([data-rail-open]) .rail .brand { padding: 0 0 0.5rem; justify-content: center; }
 html[data-nav="collapsed"]:not([data-rail-open]) .rail-heading { color: transparent; margin: 0.5rem 0.5rem 0; height: 1rem; }
 html[data-nav="collapsed"]:not([data-rail-open]) .rail .seat-waiting { position: absolute; top: 0; right: 0.25rem; margin: 0; }
 
 @media (min-width: 37.5rem) and (max-width: 74.99rem) {
     :root { --rail-w: 5rem; }
-    html:not([data-rail-open]) :is(.rail nav > a, .rail-act > summary, .rail-actions .strip-button) { width: 3.5rem; min-height: 2.5rem; margin: 0.25rem auto; padding: 0; justify-content: center; }
-    html:not([data-rail-open]) :is(.rail-label, .rail .brand span) { position: absolute; left: -100rem; }
+    html:not([data-rail-open]) :is(.rail nav > a, .rail-act > summary, .rail-actions .strip-button, .rail-actions .rail-link, .rail-project > summary) { flex-direction: column; justify-content: center; gap: 0.25rem; width: 100%; min-height: 3.5rem; margin: 0.125rem 0; padding: 0.25rem 0; background: none; box-shadow: none; }
+    html:not([data-rail-open]) .rail .brand span { position: absolute; left: -100rem; }
+    html:not([data-rail-open]) :is(.rail nav > a, .rail-act > summary, .rail-actions .strip-button, .rail-actions .rail-link, .rail-project > summary) .rail-label { position: static; max-width: 100%; font: var(--md-sys-typescale-label-small); letter-spacing: 0; white-space: nowrap; }
+    html:not([data-rail-open]) :is(.rail nav > a, .rail-act > summary, .rail-actions .strip-button, .rail-actions .rail-link, .rail-project > summary) :is(.icon, .strip-glyph, .project-mark) { box-sizing: content-box; padding: 0.25rem 1rem; border-radius: var(--md-sys-shape-corner-full); }
+    html:not([data-rail-open]) .rail nav > a[aria-current] { background: none; }
+    html:not([data-rail-open]) .rail nav > a[aria-current] .icon { background: var(--md-sys-color-secondary-container); }
+    html:not([data-rail-open]) .rail-act-main > summary .icon { color: var(--md-sys-color-on-primary-container); background: var(--md-sys-color-primary-container); }
     html:not([data-rail-open]) .rail .brand { padding: 0 0 0.5rem; justify-content: center; }
     html:not([data-rail-open]) .rail-heading { color: transparent; margin: 0.5rem 0.5rem 0; height: 1rem; }
     html:not([data-rail-open]) .rail .seat-waiting { position: absolute; top: 0; right: 0.25rem; margin: 0; }
@@ -161,6 +172,7 @@ header {
 
 .crumb {
     font: var(--md-sys-typescale-title-large);
+    font-weight: 700;
     color: var(--ink);
     text-decoration: none;
     overflow-wrap: anywhere;
@@ -2240,7 +2252,6 @@ html[data-rail-open] { --rail-drawn: 16rem; }
     border-radius: var(--md-sys-shape-corner-full);
 }
 .rail-project > summary::-webkit-details-marker { display: none; }
-.rail-project > summary .rail-label { position: absolute; left: -100rem; }
 .rail-project > summary:hover, .rail-project[open] > summary { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
 .project-mark { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: var(--md-sys-shape-corner-small); font: var(--md-sys-typescale-title-small); color: var(--md-sys-color-on-surface-variant); background: var(--md-sys-color-surface-container-high); }
 .rail-project > summary[aria-current] .project-mark { color: var(--md-sys-color-on-secondary-container); background: var(--md-sys-color-secondary-container); }
@@ -2338,10 +2349,6 @@ body:has(.rail-actions .panel-strip) .panel-closed .panel-body:has(.move-bar:not
 .rail-actions .rail-link .icon { font-size: 1.5rem; width: 1.5rem; height: 1.5rem; }
 .rail-actions .danger-link { color: var(--md-sys-color-error); }
 
-html[data-nav="collapsed"]:not([data-rail-open]) .rail-actions .rail-link { width: 3.5rem; min-height: 2.5rem; margin: 0.25rem auto; padding: 0; justify-content: center; }
-@media (min-width: 37.5rem) and (max-width: 74.99rem) {
-    html:not([data-rail-open]) .rail-actions .rail-link { width: 3.5rem; min-height: 2.5rem; margin: 0.25rem auto; padding: 0; justify-content: center; }
-}
 
 /* ---- Tables do not wrap (the person's feedback on feature 042) ----------------------------------------------------------
    A heading or a short value broken over lines reads as two rows. Headings never wrap; a table too wide for its window
@@ -2382,6 +2389,38 @@ table.files td.open { text-align: end; }
 
     /* Commands that are a link or one press, in the phone's bar. */
     .rail-actions .rail-link { flex: none; width: auto; min-height: 2.5rem; padding: 0 1rem; background: var(--md-sys-color-surface-container-lowest); }
+}
+
+/* ---- An agent's state, and its projects as chips (feature 042) ----------------------------------------------------------
+   A state is a mark in a round badge, tinted for what needs attention, with its words beside it where there is room and
+   as its tooltip where there is not. A project the agent is in is a chip: a choice, not text in a sentence. */
+.state-cell { display: inline-flex; align-items: center; gap: 0.5rem; min-width: 0; max-width: 100%; }
+.state-words { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.state-mark { display: inline-grid; place-items: center; flex: none; width: 1.75rem; height: 1.75rem; border-radius: 50%; font-size: 0.85rem; line-height: 1; color: var(--md-sys-color-on-surface-variant); background: var(--md-sys-color-surface-container-high); cursor: help; }
+.state-working { color: var(--md-sys-color-on-primary-container); background: var(--md-sys-color-primary-container); }
+.state-background { color: var(--md-sys-color-on-tertiary-container); background: var(--md-sys-color-tertiary-container); }
+.state-stopped { color: var(--md-sys-color-on-error-container); background: var(--md-sys-color-error-container); }
+.state-outside { color: var(--md-sys-color-on-secondary-container); background: var(--md-sys-color-secondary-container); }
+.dgrid a.project-chip, a.project-chip { display: inline-flex; align-items: center; gap: 0.3rem; min-height: 2rem; margin: 0.1rem 0.25rem 0.1rem 0; padding: 0 0.75rem; border-radius: var(--md-sys-shape-corner-small); color: var(--md-sys-color-on-secondary-container); background: var(--md-sys-color-secondary-container); font: var(--md-sys-typescale-label-large); text-decoration: none; }
+a.project-chip:hover { background-image: linear-gradient(color-mix(in srgb, var(--md-sys-color-on-secondary-container) var(--md-sys-state-hover), transparent) 0 0); }
+.chip-mark { font-size: 0.9rem; }
+/* A label with a shorter word for a phone, where the long one would wrap (the Inbox's Waiting). One is drawn at a time. */
+.short-label { display: none; }
+@media (max-width: 37.49rem) { .long-label { display: none; } .short-label { display: inline; } }
+/* An agent's registry entry: the table's name, centered over it (the person's feedback on feature 042). */
+/* Two columns of short facts: it never needs to scroll, so it stays a table at every width and fills its card. */
+table.registry { display: table; width: 100%; }
+.registry-caption { caption-side: top; text-align: center; padding: 0.5rem 0; font: var(--md-sys-typescale-title-small); color: var(--md-sys-color-on-surface-variant); }
+
+@media (max-width: 37.49rem) {
+    /* An agent's card: its name with its state's badge at the right on the first line, its machine and projects under it,
+       each in the same place on every card. The state's words are the badge's tooltip and stay for a screen reader. */
+    .dgrid[data-load="agents"] .dgrid-line { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0.35rem 0.75rem; }
+    .dgrid[data-load="agents"] .dgrid-line > :nth-child(1) { grid-column: 1 / 3; grid-row: 1; }
+    .dgrid[data-load="agents"] .dgrid-line > :nth-child(4) { grid-column: 3; grid-row: 1; justify-self: end; }
+    .dgrid[data-load="agents"] .dgrid-line > :nth-child(2) { grid-column: 1; grid-row: 2; padding-left: 2.1rem; font-size: 0.85rem; color: var(--ink-soft); }
+    .dgrid[data-load="agents"] .dgrid-line > :nth-child(3) { grid-column: 2 / 4; grid-row: 2; }
+    .dgrid[data-load="agents"] .state-words { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
 
 /* ---- Size classes (feature 042, pass 4) ------------------------------------------------------------------------------

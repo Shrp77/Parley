@@ -7,11 +7,6 @@
     ViewData["AsOf"] = Model.AsOf.ToString("HH:mm:ss");
 }
 
-<nav class="page-links" aria-label="This project">
-    <a href="/?tab=agents&amp;project=@Model.Project">Agents in @Model.Project</a>
-    <a href="/Projects/Agents?project=@Model.Project">Conversations</a>
-</nav>
-
 @if (Model.Problem is { Length: > 0 } problem)
 {
     <p class="unreachable" role="alert">@problem</p>
@@ -42,8 +37,8 @@ else
         }
     </p>
 
-    <table>
-        <caption>What the registry holds</caption>
+    <table class="registry">
+        <caption class="registry-caption">Registry entry</caption>
         <tbody>
             <tr>
                 <th scope="row">State</th>
@@ -70,84 +65,74 @@ else
         </tbody>
     </table>
 
-    <h2>Do something</h2>
-
-    @* Responsibility sits first because it costs nothing and is what somebody is most often here for.
-       It is one statement per agent: the agent proposes it and the person may override it, and both
-       the asking and the writing are on the ownership page. *@
     @if (Parley.Core.PersonSeat.Is(agent.Name))
     {
-        @* The person's seat: a person is asked, never started, retired or purged, and owns no
-           repository — so every action below would only be refused. Said once instead. *@
+        @* The person's seat: a person is asked, never started, retired or purged, and owns no repository, so the rail offers
+           no command for it. Said once instead. *@
         <p>This is you.</p>
     }
-    else
-    {
-    @* Buttons, not words: the safe ones tonal, the two that take the agent away outlined in the error colour. Each still
-       opens a page that describes the act before anything happens. *@
-    @if (agent.Presence == AgentPresence.Running && agent.Unsupervised)
+    else if (agent.Presence == AgentPresence.Running && agent.Unsupervised)
     {
         <p role="status"><strong>Left running.</strong> @Parley.Client.Rendering.StoppingWords.LeftRunning</p>
     }
-    <div class="actions" role="group" aria-label="Actions">
-        <a class="button tonal" href="/Projects/Ownership?project=@Model.Project#agent-@agent.Name.Value">What this agent is responsible for</a>
+}
+
+@section Actions {
+    @if (Model.Problem is not { Length: > 0 } && Model.Record is { } agent && !Parley.Core.PersonSeat.Is(agent.Name))
+    {
+        @* This agent's commands, in the rail like every page's (feature 042), each named in a word or two (the person's
+           feedback: "Owns", not "What this agent is responsible for"). Each still opens a page that describes the act before
+           anything happens; Retire and Purge say there that they reach this project only. Owns sits first because it costs
+           nothing and is what somebody is most often here for: one statement per agent, which the agent proposes and the
+           person may override, both on the ownership page. *@
+        <a class="rail-link" href="/Projects/Ownership?project=@Model.Project#agent-@agent.Name.Value" title="What this agent is responsible for"><span class="icon" aria-hidden="true">description</span><span class="rail-label">Owns</span></a>
         @if (agent.Presence == AgentPresence.Running && agent.Unsupervised)
         {
             @* A node that is gone started it, so nothing holds it: it cannot be stopped at the end of its turn, and it is
                not somebody's editor, so ending it is not taking their session. Starting another would put two models in one
                checkout, which is why Start is not offered. *@
-            <a class="button tonal" href="/Projects/Act?project=@Model.Project&amp;action=kill&amp;subject=@agent.Name.Value"
-               title="End its process now. What it is part-way through is lost. Unless it is frozen, the next work for it starts it again.">Kill process</a>
+            <a class="rail-link" href="/Projects/Act?project=@Model.Project&amp;action=kill&amp;subject=@agent.Name.Value"
+               title="End its process now. What it is part-way through is lost. Unless it is frozen, the next work for it starts it again."><span class="icon" aria-hidden="true">close</span><span class="rail-label">Kill process</span></a>
         }
         else if (agent.Presence == AgentPresence.Running && !agent.OpenOutside && agent.Frozen)
         {
-            @* Frozen, so its node already stops it once its turn ends, and the broker refuses a restart: neither is offered, as in
-               the terminal. Unfreeze is below. *@
+            @* Frozen, so its node already stops it once its turn ends, and the broker refuses a restart: neither is offered, as
+               in the terminal. Unfreeze is below. *@
         }
         else if (agent.Presence == AgentPresence.Running && !agent.OpenOutside)
         {
             @* Only a process Parley started: one open outside Parley belongs to whoever opened it, and no node holds it. *@
-            <a class="button tonal" href="/Projects/Act?project=@Model.Project&amp;action=restart&amp;subject=@agent.Name.Value"
-               title="Stop it once its current turn is over and start it again.">Restart</a>
-            <a class="button tonal" href="/Projects/Act?project=@Model.Project&amp;action=stop&amp;subject=@agent.Name.Value"
-               title="Stop it once its current turn is over. The next work for it starts it again.">Stop</a>
+            <a class="rail-link" href="/Projects/Act?project=@Model.Project&amp;action=restart&amp;subject=@agent.Name.Value"
+               title="Stop it once its current turn is over and start it again."><span class="icon" aria-hidden="true">chevron_right</span><span class="rail-label">Restart</span></a>
+            <a class="rail-link" href="/Projects/Act?project=@Model.Project&amp;action=stop&amp;subject=@agent.Name.Value"
+               title="Stop it once its current turn is over. The next work for it starts it again."><span class="icon" aria-hidden="true">remove</span><span class="rail-label">Stop</span></a>
         }
         else
         {
-            <a class="button tonal" href="/Projects/Act?project=@Model.Project&amp;action=start&amp;subject=@agent.Name.Value">Start</a>
+            <a class="rail-link" href="/Projects/Act?project=@Model.Project&amp;action=start&amp;subject=@agent.Name.Value" title="Start it now."><span class="icon" aria-hidden="true">chevron_right</span><span class="rail-label">Start</span></a>
         }
         @if (agent.Status != AgentStatus.Retired && agent.Frozen)
         {
-            <a class="button tonal" href="/Projects/Act?project=@Model.Project&amp;action=unfreeze&amp;subject=@agent.Name.Value"
-               title="Let it be started again, by work waiting for it or by you.">Unfreeze</a>
+            <a class="rail-link" href="/Projects/Act?project=@Model.Project&amp;action=unfreeze&amp;subject=@agent.Name.Value"
+               title="Let it be started again, by work waiting for it or by you."><span class="icon" aria-hidden="true">check</span><span class="rail-label">Unfreeze</span></a>
         }
         else if (agent.Status != AgentStatus.Retired)
         {
-            <a class="button tonal" href="/Projects/Act?project=@Model.Project&amp;action=freeze&amp;subject=@agent.Name.Value"
-               title="Stop it once its turn ends and keep anything from starting it until you unfreeze it, or until the broker next starts (a logon, a reboot, installing a new build, or a crash) unless you ask it to stay frozen through one. What it owes stays open.">Freeze</a>
+            <a class="rail-link" href="/Projects/Act?project=@Model.Project&amp;action=freeze&amp;subject=@agent.Name.Value"
+               title="Stop it once its turn ends and keep anything from starting it until you unfreeze it, or until the broker next starts (a logon, a reboot, installing a new build, or a crash) unless you ask it to stay frozen through one. What it owes stays open."><span class="icon" aria-hidden="true">warning</span><span class="rail-label">Freeze</span></a>
         }
+        <a class="rail-link" href="/Projects/Agents?project=@Model.Project&amp;participant=@agent.Name.Value" title="The conversations this agent is party to"><span class="icon" aria-hidden="true">chat_bubble</span><span class="rail-label">Conversations</span></a>
         @if (agent.Status == AgentStatus.Retired)
         {
-            <a class="button tonal" href="/Projects/Act?project=@Model.Project&amp;action=reinstate&amp;subject=@agent.Name.Value"
-               title="Route to it again in @Model.Project.">Reinstate</a>
+            <a class="rail-link" href="/Projects/Act?project=@Model.Project&amp;action=reinstate&amp;subject=@agent.Name.Value"
+               title="Route to it again in @Model.Project."><span class="icon" aria-hidden="true">add</span><span class="rail-label">Reinstate</span></a>
         }
         else
         {
-            <a class="button danger" href="/Projects/Act?project=@Model.Project&amp;action=retire&amp;subject=@agent.Name.Value"
-               title="Take it off @Model.Project's roster. Its history stays and Reinstate brings it back; for an agent on this machine its launch entry is removed and is not written again. Other projects are not touched.">Retire</a>
+            <a class="rail-link danger-link" href="/Projects/Act?project=@Model.Project&amp;action=retire&amp;subject=@agent.Name.Value"
+               title="Take it off @Model.Project's roster. Its history stays and Reinstate brings it back. Other projects are not touched."><span class="icon" aria-hidden="true">remove</span><span class="rail-label">Retire</span></a>
         }
-        <a class="button danger" href="/Projects/Act?project=@Model.Project&amp;action=purge&amp;subject=@agent.Name.Value"
-           title="Delete it from @Model.Project with every conversation it was in. Cannot be undone. Other projects are not touched.">Purge</a>
-    </div>
-    @* Said on the page as well as on hover: a title is never shown on a touch screen or to the keyboard, and "remove"
-       reads as "remove from Parley". Each project is its own store (SPEC.md §4.1), so neither act reaches another one. *@
-    <p class="composer-note scope-note">
-        Retire and Purge act in @Model.Project only. If this repository is also an agent in other projects, it stays there.
-        Retire can be undone; Purge deletes its conversations here and cannot.
-    </p>
+        <a class="rail-link danger-link" href="/Projects/Act?project=@Model.Project&amp;action=purge&amp;subject=@agent.Name.Value"
+           title="Delete it from @Model.Project with every conversation it was in. Cannot be undone. Other projects are not touched."><span class="icon" aria-hidden="true">close</span><span class="rail-label">Purge</span></a>
     }
-
-    <p class="actions">
-        <a class="button quiet" href="/Projects/Agents?project=@Model.Project&amp;participant=@agent.Name.Value">Conversations this agent is party to</a>
-    </p>
 }

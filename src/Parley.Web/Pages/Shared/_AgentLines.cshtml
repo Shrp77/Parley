@@ -19,6 +19,7 @@
 {
     var who = line.Name;
     var best = line.Best;
+    var (mark, words) = AgentStateMark.Split(best.Now.Words);
 
     <details class="dgrid-row slot-@Palette.SlotFor(who)" role="row" data-agent="@who.Value">
     <summary class="dgrid-line">
@@ -30,13 +31,20 @@
         <span role="cell">
             @foreach (var row in line.Rows)
             {
-                <a class="project-chip" href="/Projects/Agent?project=@row.Project&amp;agent=@who.Value">@row.Project</a>@(row.Agent.Frozen ? " (frozen)" : row.Agent.Status == Parley.Core.AgentStatus.Retired ? " (retired)" : "")@(row == line.Rows[^1] ? "" : ", ")
+                <a class="project-chip" href="/Projects/Agent?project=@row.Project&amp;agent=@who.Value">@row.Project@if (row.Agent.Frozen)
+                    {<span class="chip-mark" title="Frozen by you: nothing starts it" aria-label=", frozen">❄</span>}
+                    else if (row.Agent.Status == Parley.Core.AgentStatus.Retired)
+                    {<span class="visually-hidden">, retired</span><span aria-hidden="true"> (retired)</span>}</a>
             }
         </span>
-        <span role="cell">@best.Now.Words</span>
+        @* The state as a mark in a badge, its words the tooltip and what a screen reader says. Tapped on a touch screen, the
+           row opens, and its detail says the state in words. *@
+        <span role="cell" class="state-cell"><span class="state-mark @AgentStateMark.Tint(mark)" title="@words" aria-hidden="true">@mark</span><span class="state-words">@words</span></span>
     </summary>
     <div class="dgrid-detail">
         <dl class="facts">
+            <dt>State</dt>
+            <dd>@words@(line.Rows.Any(r => r.Agent.Frozen) ? ", frozen by you" : "")</dd>
             <dt>Owns</dt>
             <dd>@(line.Owns is { Length: > 0 } owns ? owns : "None stated.")</dd>
             @if (line.Rows.Count > 1)
