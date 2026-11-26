@@ -2439,6 +2439,18 @@ table.registry { display: table; width: 100%; }
 .info-tip > summary .icon { font-size: 1.15rem; }
 .info-text { position: absolute; z-index: 6; left: 0; top: calc(100% + 0.25rem); width: min(22rem, 80vw); padding: 0.75rem 1rem; border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container-high); box-shadow: var(--md-sys-elevation-2); color: var(--md-sys-color-on-surface); font: var(--md-sys-typescale-body-medium); white-space: normal; text-transform: none; letter-spacing: 0; text-align: start; }
 .registry-caption { caption-side: top; text-align: center; padding: 0.5rem 0; font: var(--md-sys-typescale-title-small); color: var(--md-sys-color-on-surface-variant); }
+/* An agent's background work on its page (SPEC.md 11.6): five tasks show before the list scrolls, twenty to a page. Every
+   word is the agent's or the runner's, drawn as plain text; a long one wraps rather than widening the page. */
+.bg-work { margin: 1.25rem 0; }
+.bg-work h2 { font: var(--md-sys-typescale-title-medium); margin: 0 0 0.4rem; }
+.bg-count { margin: 0 0 0.5rem; color: var(--md-sys-color-on-surface-variant); }
+.bg-tasks { margin: 0; padding: 0.25rem 0.5rem 0.25rem 2.25rem; max-height: calc(5 * 4.25rem); overflow-y: auto; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container-lowest); }
+.bg-tasks li { padding: 0.5rem 0; min-height: 3.25rem; border-bottom: 1px solid var(--md-sys-color-outline-variant); overflow-wrap: anywhere; overflow: hidden; }
+.bg-tasks li:last-child { border-bottom: 0; }
+.bg-name { font-weight: 600; }
+.bg-kind { margin-left: 0.5rem; font-size: 0.8rem; color: var(--md-sys-color-on-surface-variant); }
+.bg-description { margin: 0.2rem 0 0.2rem; }
+.bg-pages { display: flex; gap: 1rem; margin-top: 0.5rem; }
 
 @media (max-width: 37.49rem) {
     /* An agent's card: its name with its state's badge at the right on the first line, its machine and projects under it,

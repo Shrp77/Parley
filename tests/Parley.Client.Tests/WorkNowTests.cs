@@ -58,6 +58,44 @@ public sealed class WorkNowTests
     }
 
     [Fact]
+    public void Each_background_task_carries_its_name_and_five_are_drawn_before_the_rest_are_counted()
+    {
+        var named = Enumerable.Range(1, 7)
+            .Select(i => new BackgroundTask($"t{i}", TaskKind.Agent, $"Task {i}", i == 1 ? "Reads the VAT rules." : ""))
+            .ToList();
+        var picture = WorkNow.Build(
+            [new WorkInput("shop", [Agent("orders@pc", Idle with { BackgroundTasks = 8, Tasks = named })], [], null)],
+            Now);
+
+        var agent = Assert.Single(picture.Working);
+
+        Assert.Equal(8, agent.Background);
+        Assert.Equal("shop", agent.TasksProject);
+        Assert.Equal("Task 1", agent.Task(0)!.Name);
+        Assert.Null(agent.Task(7));
+        Assert.Equal(WorkNow.MostTasks, picture.Boxes.Count(b => b.Kind == WorkBoxKind.Task));
+        Assert.Equal(8 - WorkNow.MostTasks, Assert.Single(picture.Boxes, b => b.Kind == WorkBoxKind.MoreTasks).Index);
+    }
+
+    [Fact]
+    public void Across_projects_the_one_that_says_most_about_the_tasks_names_them()
+    {
+        var bare = new[] { new BackgroundTask("t1", TaskKind.Agent, "Count to three") };
+        var said = new[] { new BackgroundTask("t1", TaskKind.Agent, "Checking VAT", "Reads the rules.") };
+        var picture = WorkNow.Build(
+            [
+                new WorkInput("shop", [Agent("orders@pc", Idle with { BackgroundTasks = 1, Tasks = bare })], [], null),
+                new WorkInput("store", [Agent("orders@pc", Idle with { BackgroundTasks = 1, Tasks = said })], [], null),
+            ],
+            Now);
+
+        var agent = Assert.Single(picture.Working);
+
+        Assert.Equal("store", agent.TasksProject);
+        Assert.Equal("Checking VAT", agent.Task(0)!.Name);
+    }
+
+    [Fact]
     public void What_it_collected_is_what_it_holds_and_what_it_has_not_is_queued_oldest_first()
     {
         var picture = WorkNow.Build(

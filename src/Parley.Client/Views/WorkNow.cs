@@ -42,10 +42,13 @@ public sealed record AgentPost(string Project, string Name, bool Frozen);
 /// <param name="Now">Its standing, the busiest across the projects it serves.</param>
 /// <param name="Current">Work it has collected and not yet answered.</param>
 /// <param name="Queued">Work sent to it that it has not collected, oldest first.</param>
-/// <param name="Background">How many background tasks its node last said it has running; a node reports a count, not what
-/// each task is (SPEC.md §11.6).</param>
+/// <param name="Background">How many background tasks its node last said it has running (SPEC.md §11.6).</param>
 /// <param name="Posts">The projects it serves.</param>
 /// <param name="Folded">Whether the person folded it, so nothing under it is drawn; the list still holds it all.</param>
+/// <param name="Tasks">Each background task by name, as far as its node named them: the agent's words where it gave
+/// them, else the runner's. Fewer than <paramref name="Background"/> when the node named fewer.</param>
+/// <param name="TasksProject">The project whose broker named them, so a task's link to a conversation or a file is
+/// opened there; a conversation's name is unique only within its project.</param>
 public sealed record WorkingAgent(
     string Name,
     AgentNow Now,
@@ -53,7 +56,16 @@ public sealed record WorkingAgent(
     IReadOnlyList<WorkItem> Queued,
     int Background,
     IReadOnlyList<AgentPost> Posts,
-    bool Folded = false);
+    bool Folded = false,
+    IReadOnlyList<BackgroundTask>? Tasks = null,
+    string TasksProject = "")
+{
+    /// <summary>The task drawn as the background box at <paramref name="index"/>, or null when the node did not name one
+    /// there and a surface draws a plain stand-in.</summary>
+    /// <param name="index">Which box, from zero.</param>
+    /// <returns>The task, or null.</returns>
+    public BackgroundTask? Task(int index) => Tasks is { } tasks && index < tasks.Count ? tasks[index] : null;
+}
 
 /// <summary>What a box in the picture stands for.</summary>
 public enum WorkBoxKind
@@ -159,8 +171,11 @@ public static class WorkNow
     /// <summary>The most queued items drawn under one agent; the rest are counted.</summary>
     public const int MostQueued = 5;
 
-    /// <summary>The most background tasks drawn under one agent; the rest are counted.</summary>
-    public const int MostTasks = 8;
+    /// <summary>The most background tasks drawn under one agent; the rest are counted in a box that opens the agent's page,
+    /// where they are listed in full.</summary>
+    /// <remarks>Five, as the person asked (exchange #58): a picture the person drags cannot scroll a list inside a box, so
+    /// the long list belongs on the page.</remarks>
+    public const int MostTasks = 5;
 
     /// <summary>The most characters of an ask drawn on a box.</summary>
     public const int AskShown = 46;
@@ -231,6 +246,14 @@ public static class WorkNow
                 .SelectMany(s => s.Input.Owed.Where(o => o.Owner == s.Agent.Name).Select(o => (s.Input.Project, Owed: o)))
                 .ToList();
 
+            // One process, so the same tasks in every project that serves it; the agent's own words are in whichever
+            // project it said them through, so the project naming the most, and saying most about them, is drawn.
+            var named = standings
+                .OrderByDescending(s => s.Agent.Turns?.Named.Count ?? 0)
+                .ThenByDescending(s => s.Agent.Turns?.Named.Count(t => t.Description.Length > 0 || t.Link is not null) ?? 0)
+                .ThenBy(s => s.Input.Project, StringComparer.Ordinal)
+                .First();
+
             working.Add(new WorkingAgent(
                 best.Agent.Name.Value,
                 best.Now,
@@ -241,7 +264,9 @@ public static class WorkNow
                     .Select(s => new AgentPost(s.Input.Project, s.Agent.Name.Value, s.Agent.Frozen))
                     .OrderBy(p => string.Equals(p.Project, best.Input.Project, StringComparison.Ordinal) ? 0 : 1)
                     .ThenBy(p => p.Project, StringComparer.Ordinal)],
-                folded is { Count: > 0 } && folded.Contains(best.Agent.Name.Value)));
+                folded is { Count: > 0 } && folded.Contains(best.Agent.Name.Value),
+                named.Agent.Turns?.Named ?? [],
+                named.Input.Project));
         }
 
         working.Sort((a, b) =>
