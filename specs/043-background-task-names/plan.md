@@ -38,7 +38,7 @@ bind; nothing persisted.
 
 | Principle or boundary | How this feature stands |
 |---|---|
-| I. The specification is the product | SPEC.md §10.1 (new agent operation), §10.2 (registry row) and §11.6 (the node's report, the broker's holding) change in the same change (FR-009). |
+| I. The specification is the product | SPEC.md §10.1 (`describe_background`), §10.2 (registry row) and §11.6 (the node's report, the broker's holding) change in the same change (FR-009). |
 | II. No agent has authority over another | Held. An agent describes only its own tasks, to the person. It reads no other agent's. |
 | III. Identity is fixed by the launch | Held. The broker keys descriptions by the attached caller's name, never by a name in the request. |
 | IV. Terseness is a security control | Held. Name 64, description 300, link 500, at most 200 per agent, neutralised in one place (`BackgroundTaskText`). |

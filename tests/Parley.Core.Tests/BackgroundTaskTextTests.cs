@@ -171,6 +171,9 @@ public sealed class BackgroundTaskTextTests
     [InlineData("https://[::1]/")]
     [InlineData("https://intranet/")]
     [InlineData("https://2130706433/")]
+    [InlineData("https://foo.localhost/x")]
+    [InlineData("https://localhost./x")]
+    [InlineData("https://localhost.localdomain/")]
     public void A_link_to_an_address_in_numbers_this_machine_or_a_single_word_host_is_dropped(string given)
     {
         Assert.Null(BackgroundTaskText.Link(given));

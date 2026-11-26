@@ -17,7 +17,7 @@ A report lists at most 200 tasks with their ids and labels; the count still says
 
 ## TaskDescription (agent to broker)
 
-What an agent says about one of its own tasks (`describe_background_task`).
+What an agent says about one of its own tasks (`describe_background`).
 
 | Field | Type | Rule |
 |---|---|---|
@@ -56,7 +56,7 @@ Ordered as the runner listed them. `TurnStanding.BackgroundTasks` stays the coun
 | Event | Running list | Descriptions |
 |---|---|---|
 | Node reports a new list | Replaced. | Kept. Only those whose id is listed are shown. |
-| Node reports no tasks | Cleared. | Cleared. |
+| Node reports no tasks | Cleared. | The words for the tasks it ended go; words for a task begun since stay. |
 | Node leaves | Cleared. | Kept: a node that comes back reports the same process's tasks, and the agent will not describe them again. Shown only when listed. |
 | A new process is launched under the name | Cleared. | Cleared. |
 | Broker restarts | Gone. | Gone. |

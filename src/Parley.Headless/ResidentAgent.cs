@@ -68,7 +68,7 @@ public sealed class ResidentAgent : IAsyncDisposable
     private readonly Task _noticePump;
     private readonly Lock _ownLock = new();
     // The count and the list together, replaced whole, so a reader never sees one without the other.
-    private volatile BackgroundWork _background = BackgroundWork.None;
+    private volatile BackgroundSnapshot _background = BackgroundSnapshot.None;
     private volatile bool _answeredOnce;
     private volatile OwnWork? _watch;
     private TaskCompletionSource<RunnerEvent?>? _ownTurn;
@@ -119,11 +119,9 @@ public sealed class ResidentAgent : IAsyncDisposable
     public int BackgroundTasks => _background.Count;
 
     /// <summary>What the agent last said it has running in the background: the count, and each task it could name.</summary>
-    public BackgroundWork Background => _background;
+    public BackgroundSnapshot Background => _background;
 
-    /// <summary>The most tasks one report names; the count still says how many there are (feature 043).</summary>
-    /// <remarks>Far past what a session runs at once; what it bounds is one line of output making a report of any size.</remarks>
-    public const int MostListedTasks = 200;
+
 
     /// <summary>How long a turn the agent began on its own is waited for before it is reported timed out.</summary>
     /// <remarks>The node's patience with a turn it gave; a node sets it to the same.</remarks>
@@ -771,10 +769,10 @@ public sealed class ResidentAgent : IAsyncDisposable
 
         if (evt is { Type: "system", Subtype: "background_tasks_changed", Tasks: { } tasks })
         {
-            var now = new BackgroundWork(tasks, evt.Listed ?? []);
+            var now = new BackgroundSnapshot(tasks, evt.Listed ?? []);
 
             // Told when the count or what names the tasks changes, and not when the runner says the same again.
-            if (!now.Same(_background))
+            if (now != _background)
             {
                 _background = now;
                 Notify(w => w.BackgroundChanged(now));
@@ -1176,7 +1174,7 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// </param>
     /// <param name="Listed">
     /// Each task that list names, by the runner's id, kind and label (feature 043), at most
-    /// <see cref="MostListedTasks"/>; null when the line has no list.
+    /// <see cref="BackgroundTaskText.MostTasks"/>; null when the line has no list.
     /// </param>
     internal sealed record RunnerEvent(
         string? Type, string? Subtype, string? SessionId, bool IsError, string? StopReason, double CostUsd,
@@ -1356,7 +1354,7 @@ public sealed class ResidentAgent : IAsyncDisposable
                     reader.Skip();
                 }
 
-                if (listed.Count < MostListedTasks && BackgroundTaskText.IsTaskId(id))
+                if (listed.Count < BackgroundTaskText.MostTasks && BackgroundTaskText.IsTaskId(id))
                 {
                     var kind = type switch
                     {

@@ -38,10 +38,18 @@ public static class BackgroundTaskText
     /// <summary>The most characters in a task's id.</summary>
     public const int LongestId = 64;
 
+    /// <summary>The most tasks named for one agent, and the most an agent's own words are kept for; the count beside them
+    /// still says how many are running.</summary>
+    /// <remarks>Far past what a session runs at once. What it bounds is one line of a runner's output, or one agent
+    /// describing ids without end, holding any amount: the node, the broker and the description store all stop here.</remarks>
+    public const int MostTasks = 200;
+
     /// <summary>How many UTF-16 units a bounded text may spend, on average, on each character it is allowed.</summary>
     /// <remarks>
     /// <para>
-    /// Plain text in any script spends one or two. What it stops is one character built of thousands of marks, and words
+    /// Most text spends one or two; a script whose characters are built of several marks (Devanagari, Thai) spends more,
+    /// and is cut sooner than its count of characters alone would cut it. What it stops is one character built of thousands
+    /// of marks, and words
     /// that, a few hundred tasks over, would make the registry a person reads too large to send: every agent's row is in
     /// one reply. A text past it is cut, with its ellipsis, where the units run out.
     /// </para>
@@ -127,6 +135,7 @@ public static class BackgroundTaskText
             || address.HostNameType != UriHostNameType.Dns
             || !address.IdnHost.Contains('.', StringComparison.Ordinal)
             || address.IsLoopback
+            || LocalName(address.IdnHost)
             || address.UserInfo.Length > 0
             || !link.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
@@ -141,6 +150,16 @@ public static class BackgroundTaskText
         return kept.Length > LongestLink || !kept.All(char.IsAscii) || HistoryText.Unprintable(kept)
             ? null
             : new TaskLink(TaskLinkKind.Web, kept, address.IdnHost);
+    }
+
+    // Names that reach this machine whatever is written before them (RFC 6761): localhost and everything under it.
+    private static bool LocalName(string host)
+    {
+        var name = host.TrimEnd('.');
+
+        return name.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith(".localdomain", StringComparison.OrdinalIgnoreCase);
     }
 
     private static long? Exchange(string link)

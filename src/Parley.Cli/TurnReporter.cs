@@ -140,7 +140,7 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
     /// <param name="work">What it has running.</param>
     /// <param name="stillTrue">Whether this is still the one to say, asked before a retry; null to always retry.</param>
     /// <returns>A task that completes when it has been reported, or could not be.</returns>
-    internal Task BackgroundAsync(Parley.Core.AgentName agent, Parley.Headless.BackgroundWork work, Func<bool>? stillTrue = null)
+    internal Task BackgroundAsync(Parley.Core.AgentName agent, Parley.Headless.BackgroundSnapshot work, Func<bool>? stillTrue = null)
     {
         ArgumentNullException.ThrowIfNull(work);
 

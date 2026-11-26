@@ -89,7 +89,7 @@ public sealed class RunnerBackgroundTasksTests
             $$"""{"type":"system","subtype":"background_tasks_changed","tasks":[{{entries}}]}""")!;
 
         Assert.Equal(250, read.Tasks);
-        Assert.Equal(ResidentAgent.MostListedTasks, read.Listed!.Count);
+        Assert.Equal(BackgroundTaskText.MostTasks, read.Listed!.Count);
         Assert.Equal("t0", read.Listed[0].Id);
     }
 

@@ -30,7 +30,8 @@ needed, because the description is already on the task.
 
 ## R2. Where a description and a link come from
 
-**Decision**: from the agent, by a new agent operation, `describe_background_task(task_id, name, description, link)`.
+**Decision**: from the agent, by a new agent operation, `describe_background(task_id, name, description, link)` (the adapter's
+`parley_describe_background`, the wire's `DescribeBackgroundTask`).
 The person chose this (exchange #58).
 
 **Rationale**: the runner's description is a short label (the Agent tool asks for 3 to 5 words). It carries no longer
@@ -54,8 +55,10 @@ description and no link. Only the agent knows what the work is for, and which ex
 ## R3. Holding descriptions until the task shows, and when they go
 
 **Decision**: the broker holds each agent's descriptions in memory keyed by task id, at most 200 per agent, the oldest
-dropped first. A description is shown only while the node's latest report lists its id. Everything goes when the count
-clears: the node leaves, a new process is launched under the name, the broker restarts, or the node reports no tasks.
+dropped first. A description is shown only while the node's latest report lists its id. The words for the tasks a report of
+none ends go with it; all of them go when a new process is launched under the name (the launch token differs) or the
+broker restarts. A node that leaves takes its list and leaves the words: when it comes back with the same process, its
+next report names the same tasks and the words show again, since the agent will not describe them a second time.
 
 **Rationale**: the agent's call and the node's report race, and either can land first. Holding the description until
 the count clears covers both orders with no timer (nothing times out). The 200 bound stops an agent describing ids

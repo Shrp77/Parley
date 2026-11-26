@@ -20,28 +20,43 @@ namespace Parley.Headless;
 public sealed record OwnWork(
     Func<DateTimeOffset, Task> TurnBegan,
     Func<DateTimeOffset, TurnOutcome, Task> TurnEnded,
-    Func<BackgroundWork, Task> BackgroundChanged);
+    Func<BackgroundSnapshot, Task> BackgroundChanged);
 
-/// <summary>What an agent has running in the background, as its runner last listed it (feature 043).</summary>
+/// <summary>What an agent has running in the background, as its runner last listed it.</summary>
 /// <param name="Count">How many tasks the runner listed.</param>
-/// <param name="Listed">Each it could name, in the runner's order, at most <see cref="ResidentAgent.MostListedTasks"/>,
+/// <param name="Listed">Each it could name, in the runner's order, at most <see cref="BackgroundTaskText.MostTasks"/>,
 /// each held to <see cref="BackgroundTaskText"/>'s bounds. Fewer than <paramref name="Count"/> when a task had no id the
 /// node would hold, or the list was longer than the bound.</param>
-/// <remarks>The count and the list are one fact, read and replaced together: a report of one without the other would say
-/// something the runner never did.</remarks>
-public sealed record BackgroundWork(int Count, IReadOnlyList<BackgroundTask> Listed)
+/// <remarks>
+/// <para>
+/// The count and the list are one fact, read and replaced together: a report of one without the other would say
+/// something the runner never did.
+/// </para>
+/// <para>
+/// <b>Equal by what it says</b>: the same count and the same tasks in the same order, so two readings of one line are
+/// equal although each holds its own list. A record compares a list by reference, which is why equality is written here.
+/// </para>
+/// </remarks>
+public sealed record BackgroundSnapshot(int Count, IReadOnlyList<BackgroundTask> Listed)
 {
     /// <summary>Nothing running.</summary>
-    public static BackgroundWork None { get; } = new(0, []);
+    public static BackgroundSnapshot None { get; } = new(0, []);
 
-    /// <summary>Whether two say the same: the same count and the same tasks, in the same order.</summary>
-    /// <param name="other">The other.</param>
-    /// <returns>True when nothing a person would see differs.</returns>
-    /// <remarks>A record compares a list by reference, which two readings of the same line never share.</remarks>
-    public bool Same(BackgroundWork other)
+    /// <inheritdoc/>
+    public bool Equals(BackgroundSnapshot? other) =>
+        other is not null && Count == other.Count && Listed.SequenceEqual(other.Listed);
+
+    /// <inheritdoc/>
+    public override int GetHashCode()
     {
-        ArgumentNullException.ThrowIfNull(other);
+        var hash = new HashCode();
+        hash.Add(Count);
 
-        return Count == other.Count && Listed.SequenceEqual(other.Listed);
+        foreach (var task in Listed)
+        {
+            hash.Add(task);
+        }
+
+        return hash.ToHashCode();
     }
 }

@@ -49,7 +49,15 @@ message DescribeBackgroundTaskReply {
 }
 ```
 
-The caller is the attached agent, as with every `Agents` call. An agent can describe only its own tasks.
+The caller is the attached agent, as with every `Agents` call. An agent can describe only its own tasks. The broker
+refuses the person seat, Parley and a caller that is not attached, and every refusal is about what was sent, never
+whether the task runs.
+
+## The registry reply's budget
+
+Every agent's row travels in one `RegistryReply`, so the broker spends at most 1 MiB on tasks across it (ids and
+framing first, then words), in the order the rows go. A task whose words do not fit travels by id and kind with empty
+words, and a surface draws a plain stand-in; later tasks whose words fit keep theirs (`TaskWordBudget`).
 
 ## Operators: the registry row
 

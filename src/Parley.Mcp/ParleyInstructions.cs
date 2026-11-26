@@ -69,6 +69,8 @@ public static class ParleyInstructions
           with parley_propose_roadmap so it is not lost in the conversation: a short title, and one line
           per item, verb first, with who it is for and what it needs only where you know. No background
           or reasons. It only proposes; the person decides, and work still reaches you as a request.
+        - When you start a background sub-agent or command, say what it is doing with
+          parley_describe_background, in a few plain words, so the person can see it.
         - Every message is answered. Sending never blocks — carry on with what does not depend on it.
         - Call parley_inbox when you start work, and whenever you are told work is waiting. What you owe
           comes first. A <channel> event from this server is that telling: it carries only counts, never
