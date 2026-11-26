@@ -39,6 +39,29 @@ dotnet run --project tools/Parley.Screens -- hold tools/Parley.Screens/rounds/0.
 
 It prints the console's address and every shot's page, then waits for Enter.
 
+## Checking a phone layout
+
+```
+dotnet run --project tools/Parley.Screens -- audit tools/Parley.Screens/rounds/phone-audit
+```
+
+`audit` opens each shot's page and writes no PNG. A shot narrower or shorter than 600 pixels opens as a phone's browser
+opens it, with touch, honouring the viewport tag. The audit lists:
+
+- anything wider than the window, and anything a box cuts off at its side;
+- every box that scrolls sideways (a code block or a wide table is meant to; a page's column is not);
+- every control that, scrolled to the middle of the window, is out of reach, cut off, or covered by something that
+  stays put, such as a bar or a pinned strip. When a fixed sheet drawn at the window's centre fills four fifths of
+  the window or more, only the sheet's own controls are checked.
+
+A screenshot does not show these faults: a desktop browser clips what a page hides sideways, while a phone's browser
+may let the person scroll to it. `--stylesheet` works here too. A file holding `html { font-size: 130% !important; }`
+stands in for a phone set to larger text, which is where most of these faults show. The exit code is 1 when any shot
+has a problem. Read each line yourself: a menu that is open on purpose covers what is under it.
+
+The `phone-audit` round holds what a real conversation holds: long unbroken words, inline code, a hash, links, a code
+block, a table, tall and wide images, long names and a busy graph, at 360 and 412 wide and in landscape.
+
 The exit code says how it ended: 0 done, 1 a shot failed, 64 the command line was wrong, 65 a round file is
 wrong, 69 the browser could not be used, 70 the broker refused a step, 130 stopped with Ctrl+C. A second
 Ctrl+C ends a run that is stuck.

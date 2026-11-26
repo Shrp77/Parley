@@ -1,0 +1,522 @@
+// Every page at two phone widths, for parley-screens audit.
+{
+  "theme": "light",
+  "scale": 1,
+  "maximumBytes": 0,
+  "shots": [
+    {
+      "file": "inbox-360.png",
+      "width": 360,
+      "height": 740,
+      "path": "/Inbox?scope={project}",
+      "shows": "inbox at 360 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "conversation-360.png",
+      "width": 360,
+      "height": 740,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "conversation at 360 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "conversation-end-360.png",
+      "width": 360,
+      "height": 740,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "conversation-end at 360 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "li.turn:last-of-type"
+        },
+        {
+          "pause": 400
+        }
+      ]
+    },
+    {
+      "file": "conversation-more-360.png",
+      "width": 360,
+      "height": 740,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "conversation-more at 360 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "click": ".rail-more > summary"
+        },
+        {
+          "pause": 300
+        }
+      ]
+    },
+    {
+      "file": "conversation-graph-360.png",
+      "width": 360,
+      "height": 740,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "conversation-graph at 360 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "click": ".rail-more > summary"
+        },
+        {
+          "click": "[data-pg-open]"
+        },
+        {
+          "pause": 800
+        }
+      ]
+    },
+    {
+      "file": "conversations-360.png",
+      "width": 360,
+      "height": 740,
+      "path": "/?project={project}",
+      "shows": "conversations at 360 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "agents-360.png",
+      "width": 360,
+      "height": 740,
+      "path": "/?tab=agents&project={project}",
+      "shows": "agents at 360 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "agent-360.png",
+      "width": 360,
+      "height": 740,
+      "path": "/Projects/Agent?project={project}&agent={agent:orders}",
+      "shows": "agent at 360 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "agent-list-360.png",
+      "width": 360,
+      "height": 740,
+      "path": "/Projects/Agents?project={project}",
+      "shows": "agent-list at 360 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "files-360.png",
+      "width": 360,
+      "height": 740,
+      "path": "/Projects/Files?project={project}",
+      "shows": "files at 360 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "media-360.png",
+      "width": 360,
+      "height": 740,
+      "path": "/Conversations/Media?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "media at 360 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "roadmaps-360.png",
+      "width": 360,
+      "height": 740,
+      "path": "/Roadmaps?project={project}",
+      "shows": "roadmaps at 360 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "health-360.png",
+      "width": 360,
+      "height": 740,
+      "path": "/Projects/Health?project={project}",
+      "shows": "health at 360 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "settings-360.png",
+      "width": 360,
+      "height": 740,
+      "path": "/Settings",
+      "shows": "settings at 360 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "project-settings-360.png",
+      "width": 360,
+      "height": 740,
+      "path": "/Projects/Settings?project={project}",
+      "shows": "project-settings at 360 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "projects-360.png",
+      "width": 360,
+      "height": 740,
+      "path": "/",
+      "shows": "projects at 360 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "notifications-360.png",
+      "width": 360,
+      "height": 740,
+      "path": "/Notifications",
+      "shows": "notifications at 360 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "conversation-composer-360.png",
+      "width": 360,
+      "height": 740,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "composer open"
+    },
+    {
+      "file": "conversation-pinned-graph-360.png",
+      "width": 360,
+      "height": 740,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "graph pinned",
+      "graph": true,
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "inbox-412.png",
+      "width": 412,
+      "height": 915,
+      "path": "/Inbox?scope={project}",
+      "shows": "inbox at 412 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "conversation-412.png",
+      "width": 412,
+      "height": 915,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "conversation at 412 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "conversation-end-412.png",
+      "width": 412,
+      "height": 915,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "conversation-end at 412 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "li.turn:last-of-type"
+        },
+        {
+          "pause": 400
+        }
+      ]
+    },
+    {
+      "file": "conversation-more-412.png",
+      "width": 412,
+      "height": 915,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "conversation-more at 412 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "click": ".rail-more > summary"
+        },
+        {
+          "pause": 300
+        }
+      ]
+    },
+    {
+      "file": "conversation-graph-412.png",
+      "width": 412,
+      "height": 915,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "conversation-graph at 412 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "click": ".rail-more > summary"
+        },
+        {
+          "click": "[data-pg-open]"
+        },
+        {
+          "pause": 800
+        }
+      ]
+    },
+    {
+      "file": "conversations-412.png",
+      "width": 412,
+      "height": 915,
+      "path": "/?project={project}",
+      "shows": "conversations at 412 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "agents-412.png",
+      "width": 412,
+      "height": 915,
+      "path": "/?tab=agents&project={project}",
+      "shows": "agents at 412 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "agent-412.png",
+      "width": 412,
+      "height": 915,
+      "path": "/Projects/Agent?project={project}&agent={agent:orders}",
+      "shows": "agent at 412 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "agent-list-412.png",
+      "width": 412,
+      "height": 915,
+      "path": "/Projects/Agents?project={project}",
+      "shows": "agent-list at 412 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "files-412.png",
+      "width": 412,
+      "height": 915,
+      "path": "/Projects/Files?project={project}",
+      "shows": "files at 412 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "media-412.png",
+      "width": 412,
+      "height": 915,
+      "path": "/Conversations/Media?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "media at 412 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "roadmaps-412.png",
+      "width": 412,
+      "height": 915,
+      "path": "/Roadmaps?project={project}",
+      "shows": "roadmaps at 412 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "health-412.png",
+      "width": 412,
+      "height": 915,
+      "path": "/Projects/Health?project={project}",
+      "shows": "health at 412 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "settings-412.png",
+      "width": 412,
+      "height": 915,
+      "path": "/Settings",
+      "shows": "settings at 412 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "project-settings-412.png",
+      "width": 412,
+      "height": 915,
+      "path": "/Projects/Settings?project={project}",
+      "shows": "project-settings at 412 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "projects-412.png",
+      "width": 412,
+      "height": 915,
+      "path": "/",
+      "shows": "projects at 412 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "notifications-412.png",
+      "width": 412,
+      "height": 915,
+      "path": "/Notifications",
+      "shows": "notifications at 412 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "conversation-composer-412.png",
+      "width": 412,
+      "height": 915,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "composer open"
+    },
+    {
+      "file": "conversation-pinned-graph-412.png",
+      "width": 412,
+      "height": 915,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "graph pinned",
+      "graph": true,
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "conversation-landscape-844.png",
+      "width": 844,
+      "height": 390,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "landscape",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "conversation-graph-landscape-844.png",
+      "width": 844,
+      "height": 390,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "landscape graph",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "click": ".rail-more > summary"
+        },
+        {
+          "click": "[data-pg-open]"
+        },
+        {
+          "pause": 800
+        }
+      ]
+    },
+    {
+      "file": "conversation-pinned-graph-landscape-844.png",
+      "width": 844,
+      "height": 390,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "landscape pinned graph",
+      "graph": true,
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "conversation-landscape-915.png",
+      "width": 915,
+      "height": 412,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "landscape",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "conversation-graph-landscape-915.png",
+      "width": 915,
+      "height": 412,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "landscape graph",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "click": ".rail-more > summary"
+        },
+        {
+          "click": "[data-pg-open]"
+        },
+        {
+          "pause": 800
+        }
+      ]
+    },
+    {
+      "file": "conversation-pinned-graph-landscape-915.png",
+      "width": 915,
+      "height": 412,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "landscape pinned graph",
+      "graph": true,
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    }
+  ]
+}

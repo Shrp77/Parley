@@ -9,18 +9,20 @@ const string Usage = """
       parley-screens capture <round> [--out <dir>] [--only <file,...>] [--browser msedge|chrome|chromium]
                                      [--stylesheet <file.css>]
       parley-screens hold <round> [--browser ...]
+      parley-screens audit <round> [--only <file,...>] [--browser ...] [--stylesheet <file.css>]
 
     <round> is a folder holding scenario.json (the sample data, played into the broker) and shots.json
     (what to capture). check reads both and says what is wrong, starting nothing. capture writes each PNG
     and sha256.txt to --out, by default artifacts/screens/<round's folder name> in this repository. hold
-    plays the scenario, prints the console's address and waits for Enter.
+    plays the scenario, prints the console's address and waits for Enter. audit opens each shot's page and
+    lists what is wider than the window and every control that cannot be reached, writing no PNG.
 
     Exit codes: 0 done; 1 a shot failed; 64 usage; 65 a round file is wrong; 69 no browser;
     70 the broker refused a step or a deployment could not start; 130 stopped.
     Nothing here reads or changes the machine's own deployment. See tools/Parley.Screens/README.md.
     """;
 
-if (args.Length < 2 || args[0] is not ("check" or "capture" or "hold"))
+if (args.Length < 2 || args[0] is not ("check" or "capture" or "hold" or "audit"))
 {
     Console.Error.WriteLine(Usage);
     return 64;
@@ -30,7 +32,8 @@ var command = args[0];
 var round = Path.GetFullPath(args[1]);
 var options = Options(args.Skip(2).ToArray());
 
-if (options is null)
+// audit writes nothing, so a folder to write to is a mistake rather than something to ignore.
+if (options is null || (string.Equals(command, "audit", StringComparison.Ordinal) && options.ContainsKey("out")))
 {
     Console.Error.WriteLine(Usage);
     return 64;
@@ -128,6 +131,35 @@ try
         _ = await Task.WhenAny(enter, Task.Delay(Timeout.Infinite, stop.Token).ContinueWith(_ => { }, TaskScheduler.Default)).ConfigureAwait(false);
 
         return stop.IsCancellationRequested ? 130 : 0;
+    }
+
+    if (string.Equals(command, "audit", StringComparison.Ordinal))
+    {
+        var faults = 0;
+
+        foreach (var shot in shots.Shots.Where(s => only is null || only.Contains(s.File)))
+        {
+            stop.Token.ThrowIfCancellationRequested();
+
+            try
+            {
+                var problems = await camera.AuditAsync(shots, shot, new Uri(deployment.ConsoleAddress + placeholders.Expand(shot.Path)), overlay).ConfigureAwait(false);
+                faults += problems.Count == 0 ? 0 : 1;
+                Console.WriteLine($"  {shot.File,-40} {(problems.Count == 0 ? "fits" : problems.Count.ToString(CultureInfo.InvariantCulture) + " problem(s)")}");
+
+                foreach (var problem in problems)
+                {
+                    Console.WriteLine("      " + problem);
+                }
+            }
+            catch (Exception problem) when (problem is InvalidDataException or Microsoft.Playwright.PlaywrightException or TimeoutException)
+            {
+                faults++;
+                Console.Error.WriteLine($"  {shot.File,-40} FAILED: {problem.Message.Split('\n')[0]}");
+            }
+        }
+
+        return faults == 0 ? 0 : 1;
     }
 
     Directory.CreateDirectory(output);

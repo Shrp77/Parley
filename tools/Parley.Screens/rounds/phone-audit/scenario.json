@@ -1,0 +1,43 @@
+// Real-world shapes a phone must cope with: long unbroken words, inline code, a hash, links, a code block, a table,
+// placed images tall and wide, long names, and a busy graph. Every name and fact here is invented.
+{
+  "project": "storefront-and-tools",
+  "machine": "workstation-upstairs",
+  "description": "The storefront, its checkout, and the tools around it.",
+  "agents": [
+    { "role": "storefront-website", "owns": "The storefront pages and their build.", "started": "node", "model": "claude-opus-5-5" },
+    { "role": "orders", "owns": "Order flow and pricing rules for checkout.", "started": "node", "model": "claude-opus-5-5" },
+    { "role": "billing-and-invoicing", "owns": "Invoices, tax, refunds and the payment provider integration.", "started": "node", "model": "claude-opus-5-5" },
+    { "role": "inventory", "owns": "Stock levels and the supplier price feed.", "started": "gone", "model": "claude-opus-5-5" }
+  ],
+  "steps": [
+    { "do": "request", "from": "person", "to": "orders", "conversation": "UI-refresh-and-fixes-for-small-screens", "label": "first",
+      "text": "Please read the spec in **checkout-background-task-names-spec-version-2.md** and tell me whether it is right." },
+    { "do": "place", "by": "orders", "conversation": "UI-refresh-and-fixes-for-small-screens", "name": "checkout-background-task-names-spec-version-2.md", "file": "assets/vat-rules.md" },
+    { "do": "clarify", "from": "orders", "exchange": "first",
+      "text": "It's in Parley now: checkout-background-task-names-spec-version-2.md (sha256 0c42435a9e1b7c3d5f60718293a4b5c6d7e8f9012345678901234567890f073e9). On disk it is specs/043-background-task-names/spec.md on the branch 043-background-task-names-and-descriptions.\n\nRun `install.ps1 -Force -Hidden` from this checkout, or `dotnet run --project tools/Parley.Screens -- capture tools/Parley.Screens/rounds/phone-audit`.\n\nThe ticket is https://tickets.example.com/browse/SHOP-142/comments/very-long-path-segment-that-does-not-break-anywhere?focusedCommentId=1234567890&page=com.example.plugin:comment-tabpanel" },
+    { "do": "clarify", "from": "person", "exchange": "first",
+      "text": "Story 2: the wording must be concise.\r\nEdge cases: more tasks than the surface has room for.\r\nSupercalifragilisticexpialidocious_and_a_very_long_identifier_with_no_spaces_at_all_ThatGoesOnAndOnAndOn" },
+    { "do": "clarify", "from": "orders", "exchange": "first",
+      "text": "What changed:\n\n- **New Story 2:** each task has a short name (up to 64 characters).\n- Many tasks: the list scrolls after 5.\n\n```\nPS C:/work/storefront> dotnet test tests/Storefront.Checkout.Tests/Storefront.Checkout.Tests.csproj --filter FullyQualifiedName~TaxInclusivePricing\n```\n\n| Build | Runs | Failed | Note |\n|---|---|---|---|\n| before-the-change-0.64.13 | 4 | 2 | the-same-timing-test-every-time |\n| after-the-change-0.65.0 | 4 | 4 | ResidentAgentTests.LongTurnIsReportedWhileItRuns |\n\n1. Yes: build that tool.\n2. No: show only the runner's own label." },
+    { "do": "place", "by": "orders", "conversation": "UI-refresh-and-fixes-for-small-screens", "name": "timeline-one-line-phone-with-a-long-file-name.png", "render": "assets/tall-phone.html", "width": 390, "height": 844 },
+    { "do": "place", "by": "orders", "conversation": "UI-refresh-and-fixes-for-small-screens", "name": "gift-card-page-wide.png", "render": "assets/gift-card-page.html", "width": 1440, "height": 900 },
+    { "do": "clarify", "from": "person", "exchange": "first",
+      "text": "Here it is on a phone: **timeline-one-line-phone-with-a-long-file-name.png** and the wide one **gift-card-page-wide.png** (sha256 8fbe908c00112233445566778899aabbccddeeff00112233445566778899cb1271)." },
+    { "do": "request", "from": "orders", "to": "billing-and-invoicing", "conversation": "UI-refresh-and-fixes-for-small-screens", "label": "second",
+      "text": "Does `CheckoutTotals.RoundHalfUpToThePennyPerLineThenSumTheLines(IReadOnlyList<BasketLine>)` match the invoices?" },
+    { "do": "result", "from": "billing-and-invoicing", "exchange": "second", "outcome": "answered",
+      "text": "Yes. See exchange #1 and conversation:UI-refresh-and-fixes-for-small-screens." },
+    { "do": "turn", "agent": "billing-and-invoicing", "phase": "working" },
+    { "do": "turn", "agent": "storefront-website", "phase": "working" },
+    { "do": "turn", "agent": "orders", "phase": "working" },
+    { "do": "turn", "agent": "orders", "phase": "ended" },
+    { "do": "turn", "agent": "orders", "phase": "background", "tasks": 7,
+      "labels": ["Check feed VAT", "Run tax tests", "Draft reply", "Price check", "Compare totals", "Read invoices"] },
+    { "do": "describe", "agent": "orders", "task": "t1", "name": "Checking VAT on the supplier feed for every zero-rated category",
+      "text": "Reads the vat_class column for books and food, so checkout knows which items are zero-rated.", "link": "exchange #1" },
+    { "do": "describe", "agent": "orders", "task": "t2", "name": "Running_the_checkout_tax_suite_against_the_new_rounding_rule_now",
+      "text": "The checkout tax suite, against the new rounding rule.", "link": "https://tickets.example.com/browse/SHOP-142/comments/very-long-path-segment-that-does-not-break" },
+    { "do": "describe", "agent": "orders", "task": "t3", "name": "Drafting the reply to billing", "link": "conversation:UI-refresh-and-fixes-for-small-screens" }
+  ]
+}

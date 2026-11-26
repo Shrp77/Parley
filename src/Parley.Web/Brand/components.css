@@ -1074,7 +1074,7 @@ li.turn.ghosted .bubble {
 /* The form only holds the pieces; the expander is the box. */
 form.default-agent { display: block; background: none; border: 0; padding: 0; margin: 0; box-shadow: none; }
 .default-expander { border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); padding: 0.6rem 1rem; }
-.default-expander > summary { display: flex; align-items: center; gap: 0.6rem; cursor: pointer; }
+.default-expander > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; cursor: pointer; }
 .default-title { font-weight: 650; }
 .default-expander .count { font-size: 0.75rem; color: var(--ink-faint); }
 .select-agents { margin-left: auto; }
@@ -1088,7 +1088,7 @@ form.default-agent { display: block; background: none; border: 0; padding: 0; ma
 .default-dialog::backdrop { background: var(--md-ext-scrim); }
 .default-dialog h3 { margin: 0 0 0.6rem; }
 .dialog-actions { text-align: right; margin: 0.8rem 0 0; }
-.act-cards { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; gap: 0.7rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+.act-cards { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; gap: 0.7rem; grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr)); }
 .act-cards li { background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); padding: 0.8rem 1rem; }
 .act-cards li.costly { background: var(--alarm-wash); }
 .act-cards .act-title { font-weight: 650; }
@@ -1243,7 +1243,7 @@ body.pg-docked { padding-right: min(46rem, 100vw); }
 .pg-filters button.chip { cursor: pointer; }
 .pg-filter > summary { list-style: none; display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer; }
 .pg-filter > summary::-webkit-details-marker { display: none; }
-.pg-filter-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.6rem 1rem; margin-top: 0.5rem; padding: 0.6rem 0.8rem; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container-low); }
+.pg-filter-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); gap: 0.6rem 1rem; margin-top: 0.5rem; padding: 0.6rem 0.8rem; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container-low); }
 .pg-filter-body fieldset { margin: 0; padding: 0; border: 0; display: grid; gap: 0.25rem; max-height: 14rem; overflow: auto; }
 .pg-filter-body legend { font: var(--md-sys-typescale-title-small); margin-bottom: 0.3rem; }
 .pg-canvas { height: min(70vh, 40rem); overflow: hidden; touch-action: none; cursor: grab; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container-lowest); }
@@ -1881,7 +1881,7 @@ details.dgrid-row[open] > summary, details.dgrid-row[open] > summary:hover {
 .placed-card figcaption { font: var(--md-sys-typescale-body-small); color: var(--md-sys-color-on-surface-variant); overflow-wrap: anywhere; }
 .thumb-tile, .file-tile { display: inline-flex; align-items: center; gap: 0.5rem; margin: 0; padding: 0.6rem 0.8rem; border-radius: var(--md-sys-shape-corner-medium); border: 1px solid var(--md-sys-color-outline-variant); background: var(--md-sys-color-surface-container-low); color: var(--md-sys-color-on-surface); font: var(--md-sys-typescale-body-medium); overflow-wrap: anywhere; }
 .file-tile { text-decoration: none; }
-.media-grid { list-style: none; margin: 0 0 1.5rem; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: 1rem; }
+.media-grid { list-style: none; margin: 0 0 1.5rem; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(11rem, 100%), 1fr)); gap: 1rem; }
 .media-grid .placed-card { max-width: 100%; }
 .media-grid .thumb img { width: 100%; height: 10rem; object-fit: cover; }
 .media-list { list-style: none; margin: 0 0 1.5rem; padding: 0; display: grid; gap: 0.75rem; }
@@ -2474,17 +2474,18 @@ table.registry { display: table; width: 100%; }
    Each choice is a card with its name centered, side by side where the window allows; theme and density are tiles with a
    small picture of what each does, and the palette a list that opens from its current choice, each drawn as its colors. */
 /* The form is only what holds the cards: none of a form's own card look. */
-.settings-section form.appearance { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 1rem; align-items: start; max-width: 64rem; margin: 0; padding: 0; border: 0; background: none; box-shadow: none; }
+.settings-section form.appearance { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(17rem, 100%), 1fr)); gap: 1rem; align-items: start; max-width: 64rem; margin: 0; padding: 0; border: 0; background: none; box-shadow: none; }
 .settings-section form.appearance > .composer-note { grid-column: 1 / -1; }
 /* Hidden until script runs: the choices live in this browser's storage. */
 .settings-section form.appearance[hidden] { display: none; }
 .settings-section .choice-card { min-width: 0; margin: 0; padding: 1rem 1rem 1.25rem; border: 0; border-radius: var(--md-sys-shape-corner-large); background: var(--card); box-shadow: var(--md-sys-elevation-1); }
 .choice-card > legend { float: left; width: 100%; margin: 0 0 0.75rem; padding: 0; text-align: center; font: var(--md-sys-typescale-title-small); color: var(--md-sys-color-on-surface-variant); }
 .choice-card > legend + * { clear: both; }
-.tiles { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 0.5rem; }
-.choice .tile { position: relative; display: grid; align-items: center; min-height: 0; justify-items: center; gap: 0.35rem; padding: 0.6rem 0.4rem 0.5rem; border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container); color: var(--md-sys-color-on-surface); font: var(--md-sys-typescale-label-large); cursor: pointer; }
+/* minmax(0, 1fr), not 1fr: a column of 1fr is never narrower than its tile, so larger text pushed the row past a phone's edge. */
+.tiles { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 0.5rem; }
+.choice .tile { position: relative; display: grid; align-items: center; min-height: 0; overflow-wrap: anywhere; justify-items: center; gap: 0.35rem; padding: 0.6rem 0.4rem 0.5rem; border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container); color: var(--md-sys-color-on-surface); font: var(--md-sys-typescale-label-large); cursor: pointer; }
 .choice .tile input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
-.tile svg { width: 4rem; height: 2.5rem; }
+.tile svg { width: 4rem; max-width: 100%; height: 2.5rem; }
 .tile:hover { background-image: linear-gradient(color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent) 0 0); }
 .tile:has(input:checked) { color: var(--md-sys-color-on-secondary-container); background: var(--md-sys-color-secondary-container); box-shadow: inset 0 0 0 2px var(--md-sys-color-primary); }
 .tile:has(input:focus-visible) { outline: 3px solid var(--md-sys-color-secondary); outline-offset: 2px; }
@@ -2528,7 +2529,7 @@ table.registry { display: table; width: 100%; }
 .view-toggle a[aria-current] { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
 .state-legend { padding: 0.9rem 1.2rem; }
 .state-legend h2 { margin: 0 0 0.5rem; font: var(--md-sys-typescale-title-small); }
-.state-legend ul { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.5rem 1.25rem; margin: 0; padding: 0; list-style: none; }
+.state-legend ul { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(15rem, 100%), 1fr)); gap: 0.5rem 1.25rem; margin: 0; padding: 0; list-style: none; }
 .state-legend li { display: flex; align-items: center; gap: 0.6rem; }
 
 /* ---- The message box's handle and its recipients (feature 042) --------------------------------------------------------
