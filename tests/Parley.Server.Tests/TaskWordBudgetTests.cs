@@ -40,13 +40,27 @@ public sealed class TaskWordBudgetTests
     [Fact]
     public void The_budget_is_shared_across_every_row_it_is_spent_on()
     {
-        var budget = new TaskWordBudget((2 * (1 + TaskWordBudget.Framing)) + 15);
+        // Eight rows' worth of shares, each row taking its whole share: the ninth finds nothing left.
+        var share = 100;
+        var budget = new TaskWordBudget((share * TaskWordBudget.Shares) + (9 * (1 + TaskWordBudget.Framing)));
 
-        var first = budget.Spend([Task("a", 10)]);
-        var second = budget.Spend([Task("b", 10)]);
+        var rows = Enumerable.Range(0, 9).Select(i => budget.Spend([Task(i.ToString(System.Globalization.CultureInfo.InvariantCulture), share)])).ToList();
 
-        Assert.Equal(10, Assert.Single(first).Name.Length);
-        Assert.Equal(string.Empty, Assert.Single(second).Name);
+        Assert.All(rows.Take(8), row => Assert.Equal(share, Assert.Single(row).Name.Length));
+        Assert.Equal(string.Empty, Assert.Single(rows[8]).Name);
+    }
+
+    [Fact]
+    public void No_row_takes_more_than_its_share_however_much_is_left()
+    {
+        var budget = new TaskWordBudget(8000);
+
+        var greedy = budget.Spend([.. Enumerable.Range(0, 20).Select(i => Task($"g{i}", 100))]);
+        var modest = budget.Spend([Task("m", 100)]);
+
+        // A share is a thousand bytes: ten of the greedy row's tasks fit in it, and the next row keeps its words.
+        Assert.Equal(10, greedy.Count(t => t.Name.Length > 0));
+        Assert.Equal(100, Assert.Single(modest).Name.Length);
     }
 
     [Fact]

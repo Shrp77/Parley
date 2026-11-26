@@ -43,7 +43,7 @@ bind; nothing persisted.
 | III. Identity is fixed by the launch | Held. The broker keys descriptions by the attached caller's name, never by a name in the request. |
 | IV. Terseness is a security control | Held. Name 64, description 300, link 500, at most 200 per agent, neutralised in one place (`BackgroundTaskText`). |
 | V. Invariants live in storage | Not applicable: nothing is stored, as the count today. Recorded as in-memory by design, like running turns. |
-| Agent and operator surfaces apart | New operation on `Agents`; its reply carries no turn fact. Task names reach only `Operators` rows. `AgentsCannotSeeTurnsTests` and `SurfaceBoundaryTests` are extended. |
+| Agent and operator surfaces apart | New operation on `Agents`; its reply carries no turn fact. Task names reach only `Operators` rows. `AgentsCannotSeeTurnsTests` and `AgentsRepliesCarryNoTurnTypeTests` are extended; `SurfaceBoundaryTests` holds unchanged. |
 | Message payloads are inert | Names, descriptions and links are never parsed for meaning. A link is matched against four fixed shapes and otherwise dropped. |
 | Anything drawing somebody else's text neutralises it | The broker neutralises; every surface encodes on output, one line, as today. |
 | Every operator operation on both surfaces | No new operator operation. Both surfaces show the new row fields (FR-007). |

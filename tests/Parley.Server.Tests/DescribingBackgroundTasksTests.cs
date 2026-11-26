@@ -156,6 +156,50 @@ public sealed class DescribingBackgroundTasksTests
     }
 
     [Fact]
+    public async Task A_task_that_leaves_the_list_takes_its_words_while_other_work_runs_on()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinAsync(broker);
+        await LaunchAsync(node, "t-1");
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct, launchToken: "t-1");
+
+        await ReportAsync(node, Billing, 2, ("a1", "Count to three"), ("b2", "Serve the site"));
+        _ = await DescribeAsync(billing, "a1", "Checking VAT");
+        _ = await DescribeAsync(billing, "b2", "Serving the site for review");
+
+        // a1 ends while b2 runs on: its words go with it, though the count never reaches none.
+        await ReportAsync(node, Billing, 1, ("b2", "Serve the site"));
+        await ReportAsync(node, Billing, 2, ("a1", "Count to three"), ("b2", "Serve the site"));
+
+        Assert.Equal(["Count to three", "Serving the site for review"], (await RowAsync(broker)).RunningTasks.Select(t => t.Name));
+    }
+
+    [Fact]
+    public async Task While_the_node_is_away_nothing_is_shown()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        var node = await JoinAsync(broker);
+        await LaunchAsync(node, "t-1");
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct, launchToken: "t-1");
+
+        await ReportAsync(node, Billing, 1, ("a1", "Count to three"));
+        _ = await DescribeAsync(billing, "a1", "Checking VAT");
+        await node.DisposeAsync();
+
+        // The node's leaving is handled as its stream ends, which the broker hears a moment later.
+        var row = await RowAsync(broker);
+
+        for (var tries = 0; tries < 50 && (row.BackgroundTasks > 0 || row.RunningTasks.Count > 0); tries++)
+        {
+            await Task.Delay(100, Ct);
+            row = await RowAsync(broker);
+        }
+
+        Assert.Equal(0, row.BackgroundTasks);
+        Assert.Empty(row.RunningTasks);
+    }
+
+    [Fact]
     public async Task The_oldest_words_go_past_the_bound()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);

@@ -55,7 +55,7 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
                 Read(row.LastTurnEndedUtc),
                 row.LastTurnClean,
                 row.LastTurnPermissionDenials,
-                Math.Max(0, row.BackgroundTasks),
+                Math.Clamp(row.BackgroundTasks, 0, MostBackgroundTasks),
                 [.. row.RunningTasks.Select(Task)]),
             row.OpenOutside,
             AgentIdentity.TryRead(row.Identity, out var identity) ? identity : default,
@@ -870,6 +870,9 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
         _ => throw new InvalidOperationException(
             $"The broker refused a file operation for a reason this build does not know ({rejection}). It speaks a different protocol.")
     };
+
+    // The broker's own bound on a count; held here too, so a broker that is not this one cannot make a surface list any number.
+    private const int MostBackgroundTasks = 10_000;
 
     private static string? Blank(string? value) => string.IsNullOrEmpty(value) ? null : value;
 

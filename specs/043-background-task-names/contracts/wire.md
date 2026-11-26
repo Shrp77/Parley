@@ -56,7 +56,7 @@ whether the task runs.
 ## The registry reply's budget
 
 Every agent's row travels in one `RegistryReply`, so the broker spends at most 1 MiB on tasks across it (ids and
-framing first, then words), in the order the rows go. A task whose words do not fit travels by id and kind with empty
+framing first, then words), in the order the rows go, no row's words taking more than an eighth of it. A task whose words do not fit travels by id and kind with empty
 words, and a surface draws a plain stand-in; later tasks whose words fit keep theirs (`TaskWordBudget`).
 
 ## Operators: the registry row
@@ -74,6 +74,7 @@ message BackgroundTaskRow {
   string name = 3;            // the agent's name, else the runner's label, else empty
   string description = 4;     // the agent's, or empty
   string link = 5;            // the agent's, in the canonical forms above, or empty
+  bool said = 6;              // the agent named it itself, not only its runner
 }
 ```
 

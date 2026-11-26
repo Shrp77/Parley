@@ -32,7 +32,8 @@ page list each running task by its name, and the list follows as tasks start and
 2. **Given** an agent with three named background tasks running, **When** one finishes, **Then** the surfaces list the
    other two, by their names, and the count says two.
 3. **Given** an agent whose runner gives a background task no description, **When** it starts, **Then** the surfaces list
-   it with a plain stand-in ("Background task") rather than leaving it out, so the count and the list always agree.
+   it with a plain stand-in ("Background sub-agent", "Background command", or "Background task" for another kind)
+   rather than leaving it out, so the count and the list always agree.
 
 ---
 

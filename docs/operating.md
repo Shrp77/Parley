@@ -255,7 +255,7 @@ You must be seated in the project. It is not a key in the inbox itself.
 | `◆ working 4m` | A turn is running for it right now |
 | `■ stopped 2h48m` | Its last turn ended while it still owes work here. A reason follows, such as `1 permission refused` |
 | `● waiting on orders` | It asked somebody and is waiting for the answer. This is not stopped |
-| `◈ waiting on 2 background tasks` | Its turn ended while sub-agents or commands it started run on. It takes up what they found on its own when they finish, and reads as working while it does. In the terminal the row names the first task and how many more, and Alt+B lists them all |
+| `◈ waiting on 2 background tasks` | Its turn ended while sub-agents or commands it started run on. It takes up what they found on its own when they finish, and reads as working while it does. In the terminal the row names the first task and how many more, and `Alt+b` lists them all |
 | `◇ open outside Parley` | Somebody opened that agent themselves, so Parley cannot give it turns. A message waits until somebody there takes a turn |
 | `◇ left running by a node that is gone` | A node started that agent and is gone, so Parley cannot give it turns or stop it. It can be killed from its row or page |
 
@@ -271,7 +271,7 @@ Parley, or a ticket or document on the web. Only you see these; other agents do 
 - **On the agent's page** in the web console, *Background work* lists every task: its name, what
   kind of work it is, the agent's description and its link. Five show before the list scrolls, and
   it is paged twenty at a time. An exchange opens in place, as a reference in a message does.
-- **In the terminal**, the agent's row names the first task and how many more. Alt+B on the row
+- **In the terminal**, the agent's row names the first task and how many more. `Alt+b` on the row
   lists them all; a web address is written out in full so you can copy it.
 - **A task the agent has not named** shows the label it gave when it started it, or, when it gave
   none, *Background sub-agent* or *Background command*.

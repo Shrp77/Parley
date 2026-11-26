@@ -16,12 +16,20 @@ namespace Parley.Server;
 /// fields around them. A task whose words do not fit still travels, by id and kind, so the count and the list still agree,
 /// and a surface draws it as a plain stand-in; later tasks whose words fit keep theirs. Not thread-safe: one per reply.
 /// </para>
+/// <para>
+/// <b>No row takes more than an eighth</b> of it, so agents that start the most work and say the most about it cannot leave
+/// every other agent's tasks drawn as stand-ins. An eighth is still hundreds of described tasks.
+/// </para>
 /// </remarks>
 internal sealed class TaskWordBudget(int most)
 {
     /// <summary>What a task costs on the wire besides its id and words: its kind and the fields' tags and lengths.</summary>
     internal const int Framing = 16;
 
+    /// <summary>How many shares the budget is in; one row's words take at most one.</summary>
+    internal const int Shares = 8;
+
+    private readonly int _share = most / Shares;
     private int _left = most;
 
     /// <summary>Takes what fits.</summary>
@@ -32,6 +40,7 @@ internal sealed class TaskWordBudget(int most)
         ArgumentNullException.ThrowIfNull(tasks);
 
         var kept = new List<BackgroundTask>(tasks.Count);
+        var row = _share;
 
         foreach (var task in tasks)
         {
@@ -42,9 +51,10 @@ internal sealed class TaskWordBudget(int most)
                 + Encoding.UTF8.GetByteCount(task.Description)
                 + (task.Link is { } link ? Encoding.UTF8.GetByteCount(link.Written) : 0);
 
-            if (words <= _left)
+            if (words <= _left && words <= row)
             {
                 _left -= words;
+                row -= words;
                 kept.Add(task);
             }
             else

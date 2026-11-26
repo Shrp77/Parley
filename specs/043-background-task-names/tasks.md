@@ -68,15 +68,15 @@ their findings fixed before the next stage begins.
 - [x] T030 [P] [US1] Write drawn-screen tests in tests/Parley.Terminal.Tests/BackgroundWorkTests.cs
 - [x] T031 [US1] Append the first task's name and how many more to the row in src/Parley.Terminal/AgentsRegion.cs, neutralised with `Safe.Text`
 - [x] T032 [US2] Add `BackgroundWorkView` (a `TableDialog<T>`, its key table listed in `CommandTables`, a `ListView` made with `HotKeySpecifier = Plain.NoHotKey`) as BackgroundWorkView in src/Parley.Terminal/BackgroundWorkView.cs, and its entry (Alt+B) in the agent's row commands
-- [ ] T033 **Gate 5**: build, Terminal unit tests (including `CommandTableTests`, `KeysTakenBeforeTheTableTests`, `DriftTests`), three-lens review, fix findings
+- [x] T033 **Gate 5**: build, Terminal unit tests (including `CommandTableTests`, `KeysTakenBeforeTheTableTests`, `DriftTests`), three-lens review, fix findings
 
 ## Phase 7: User Story 3 and 4 hold across the stack; spec and docs (stage 6)
 
-- [ ] T034 [US3] Confirm by test that no agent operation's reply or roster row carries a task name, count or description (extend the boundary scans if a field could slip through) in tests/Parley.Server.Tests
-- [ ] T035 [US4] Confirm by test that names leave with the count on node leaving, relaunch and broker restart (covered by T011 and T017; add any missing case)
-- [x] T036 Update SPEC.md §10.1 (`describe_background_task`), §10.2 (`registry()` carries running tasks) and §11.6 (the node's list, the broker's holding and clearing, bounds, link shapes), and any Spec.Tests that pin them
-- [ ] T037 [P] Update docs/operating.md (what the person sees), docs/concepts.md (the tool list) and plugins/parley README (what an agent is told)
-- [ ] T038 Take a screenshot round `043-background-tasks` with named tasks in tools/Parley.Screens/rounds/043-background-tasks/ and a review page
+- [x] T034 [US3] Confirm by test that no agent operation's reply or roster row carries a task name, count or description (extend the boundary scans if a field could slip through) in tests/Parley.Server.Tests
+- [x] T035 [US4] Confirm by test that names leave with the count on node leaving, relaunch and broker restart (covered by T011 and T017; add any missing case)
+- [x] T036 Update SPEC.md §10.1 (`describe_background`), §10.2 (`registry()` carries running tasks) and §11.6 (the node's list, the broker's holding and clearing, bounds, link shapes), and any Spec.Tests that pin them
+- [x] T037 [P] Update docs/operating.md (what the person sees), docs/concepts.md (the tool list) and README.md; the plugin's README lists no tools, and every agent is told by the server's instructions
+- [x] T038 Take a screenshot round `043-background-tasks` with named tasks in tools/Parley.Screens/rounds/043-background-tasks/ and a review page in the git-ignored artifacts/screens/
 - [ ] T039 **Gate 6**: full build, `pwsh scripts/test.ps1 -Category Smoke`, hygiene grep, three-lens review of the whole feature, fix findings
 
 ## Dependencies

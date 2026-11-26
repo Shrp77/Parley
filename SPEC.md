@@ -3982,8 +3982,10 @@ answers both. So a node reads its agent's output as it arrives, turn or no turn,
   count. An agent may say more about a task of its own (`describe_background`, §10.1): its words take the label's
   place in what the person is shown, and are kept until the report that ends their task or a new process is
   launched, so a node that leaves and comes back with the same process reports the same tasks with them still there. Every agent's row travels in one
-  registry reply, so the broker spends at most a mebibyte on tasks across it, ids first, and a task whose words do not
-  fit travels by id and kind only, drawn as a plain stand-in;
+  registry reply, so the broker spends at most a mebibyte on tasks across it, ids first and no row more than an eighth,
+  and a task whose words do not fit travels by id and kind only, drawn as a plain stand-in. An agent that serves
+  several projects says its words through one project's adapter, so only that project's broker holds them: the graph
+  draws the project where it said most, and the other projects' pages show the runner's labels;
 - **reports a turn the agent begins on its own as a turn**, begun and ended like any other, so the agent reads as
   working while it takes up what its background work found. A turn the node is asked to give meanwhile waits
   for it, so its prompt is not written while the agent works;

@@ -80,7 +80,8 @@ on output as they do for any text. Core already holds the name grammar; this has
 - `exchange #N`, an exchange of the same project;
 - `conversation:<id>`, a conversation of the same project, held to the conversation-name grammar;
 - `file:<name>`, a file placed in Parley, held to the placed-name grammar;
-- an absolute `https` address with a host, no user info, at most 500 characters.
+- an absolute `https` address of a named host with a dot in it (no address in numbers, no `localhost`), no user info,
+  at most 500 characters as given and as followed, kept with its host in punycode.
 
 Anything else is dropped and the reply says so. Surfaces draw an https link with its host beside it, open it in a new
 tab with `rel="noopener noreferrer"`, and draw the others as console links.

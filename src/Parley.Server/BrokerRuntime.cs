@@ -1801,7 +1801,16 @@ public sealed class BrokerRuntime : IAsyncDisposable
             }
 
             written = new BackgroundWork(tasks, machine, named);
+            var before = _background.TryGetValue(agent, out var was) ? was : null;
             _background[agent] = written;
+
+            // A task the last report listed and this one does not has ended: its words go now, so words for work that is
+            // over never push out words for work still running when the oldest are dropped past the bound.
+            if (before is not null)
+            {
+                var listed = named.Select(task => task.Id).ToHashSet(StringComparer.Ordinal);
+                ForgetWords(agent, before.Named.Select(task => task.Id).Where(id => !listed.Contains(id)));
+            }
         }
 
         // The node may have left while the agent was looked up, and its release swept the table before this landed. Only
@@ -1908,7 +1917,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
             ? "Only exchange #N, conversation:<id>, file:<name> for a file placed in Parley, or an https address of a named host (not an address in numbers, not localhost) of at most 500 characters is kept."
             : string.Empty;
 
-        var words = new TaskWords(taskId!, named.Text, told.Text, linked);
+        var words = new SaidWords(taskId!, named.Text, told.Text, linked);
         var launch = _launches.TryGetValue(agent, out var launched) ? launched.Token : null;
 
         _ = _described.AddOrUpdate(
@@ -1993,19 +2002,21 @@ public sealed class BrokerRuntime : IAsyncDisposable
     private sealed record BackgroundWork(int Tasks, string Machine, IReadOnlyList<BackgroundTask> Named);
 
     /// <summary>An agent's own words for one task.</summary>
-    private sealed record TaskWords(string Id, string Name, string Description, TaskLink? Link);
+    private sealed record SaidWords(string Id, string Name, string Description, TaskLink? Link);
 
     /// <summary>The words an agent has said about its tasks, oldest first, replaced whole on each change.</summary>
     /// <param name="Token">The launch they were said under, or null when none was known.</param>
     /// <param name="Words">The words, at most <see cref="BackgroundTaskText.MostTasks"/>.</param>
-    private sealed record DescribedTasks(string? Token, System.Collections.Immutable.ImmutableList<TaskWords> Words)
+    private sealed record DescribedTasks(string? Token, System.Collections.Immutable.ImmutableList<SaidWords> Words)
     {
-        public static DescribedTasks None { get; } = new(null, System.Collections.Immutable.ImmutableList<TaskWords>.Empty);
+        public static DescribedTasks None { get; } = new(null, System.Collections.Immutable.ImmutableList<SaidWords>.Empty);
 
-        public TaskWords? Find(string id) => Words.FirstOrDefault(w => string.Equals(w.Id, id, StringComparison.Ordinal));
+        /// <summary>The words said for a task, or null.</summary>
+        public SaidWords? Find(string id) => Words.FirstOrDefault(w => string.Equals(w.Id, id, StringComparison.Ordinal));
 
-        // Words said under another launch are of a process that has gone, and go with it.
-        public DescribedTasks With(TaskWords words, string? token)
+        /// <summary>These words with one task's replaced or added, the oldest dropped past the bound.</summary>
+        /// <remarks>Words said under another launch are of a process that has gone, and go with it.</remarks>
+        public DescribedTasks With(SaidWords words, string? token)
         {
             var start = Token is { } was && token is { } now && !string.Equals(was, now, StringComparison.Ordinal)
                 ? None.Words
@@ -2016,6 +2027,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return new(token ?? Token, kept.Count > most ? kept.RemoveRange(0, kept.Count - most) : kept);
         }
 
+        /// <summary>These words without those for some tasks.</summary>
         public DescribedTasks Without(HashSet<string> ids) => this with { Words = Words.RemoveAll(w => ids.Contains(w.Id)) };
     }
 

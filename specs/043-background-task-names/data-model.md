@@ -45,7 +45,8 @@ What a registry row carries for each running task: the node's report and the age
 |---|---|
 | `Id` | The node. |
 | `Kind` | The node. |
-| `Name` | The agent's name for it, else the runner's label, else absent (surfaces draw "Background task"). |
+| `Name` | The agent's name for it, else the runner's label, else empty (surfaces draw *Background sub-agent*, *Background command* or *Background task* by kind). |
+| `Said` | Whether the agent named it itself; the graph draws the project where the agent said most. |
 | `Description` | The agent's, or absent. |
 | `Link` | The agent's, or absent. |
 
@@ -58,6 +59,7 @@ Ordered as the runner listed them. `TurnStanding.BackgroundTasks` stays the coun
 | Node reports a new list | Replaced. | Kept. Only those whose id is listed are shown. |
 | Node reports no tasks | Cleared. | The words for the tasks it ended go; words for a task begun since stay. |
 | Node leaves | Cleared. | Kept: a node that comes back reports the same process's tasks, and the agent will not describe them again. Shown only when listed. |
-| A new process is launched under the name | Cleared. | Cleared. |
+| A task leaves the node's list (it ended) | Replaced. | Its words go. |
+| A new process is launched under the name | Cleared. | Cleared; words said while no launch was known take this launch. |
 | Broker restarts | Gone. | Gone. |
 | An agent describes a 201st id | Unchanged. | The oldest description goes. |
