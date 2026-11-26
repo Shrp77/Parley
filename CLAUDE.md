@@ -46,7 +46,10 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
   and a layout for phone, tablet and desktop, on the Material 3 base, with no behaviour change except the graph panel, which now
   shows work under way with a filter by project and agent), is being built:
   `specs/042-theme-and-layout-refresh/`. The person's inspiration images are in the git-ignored `artifacts/inspiration/`.
-Current plan: `specs/042-theme-and-layout-refresh/plan.md`
+- Feature 043, named background tasks (each task an agent runs in the background shown to the person by name, with a
+  description and a link the agent gives through `parley_describe_background`), is being built on top of the 042 branch:
+  `specs/043-background-task-names/`. Nothing is stored: the broker holds names in memory beside the count (SPEC.md §11.6).
+Current plan: `specs/043-background-task-names/plan.md`
 <!-- SPECKIT END -->
 - A person speaks to an agent only with a Request. An agent's row menu in the terminal has one
   ownership entry, *What this agent is responsible for* (`Alt+n`).
