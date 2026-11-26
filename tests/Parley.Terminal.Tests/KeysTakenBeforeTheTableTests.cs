@@ -259,6 +259,7 @@ public sealed class KeysTakenBeforeTheTableTests
             Dialog<StillOpenView>(KeyContext.StillOpenDialog),
             Dialog<InboxWindow>(KeyContext.InboxDialog),
             Dialog<ExchangeView>(KeyContext.ExchangeDialog),
+            Dialog<BackgroundWorkView>(KeyContext.BackgroundWorkDialog),
         ];
     }
 
@@ -356,6 +357,9 @@ public sealed class KeysTakenBeforeTheTableTests
             [
                 new(1, "room", [new Message(1, 1, MessageType.Request, Orders, AgentName.Create("billing@alpha"), "test", "{\"ask\":\"x\"}", "room", at, null)], new ExchangeSnapshot(1, ExchangeState.Open, at, null), null),
             ],
+
+            (_, var t) when t == typeof(TurnStanding) => new TurnStanding(
+                true, null, at, true, 0, 2, [new BackgroundTask("a1", TaskKind.Agent, "Checking VAT", "Reads the rules.")]),
 
             // A correction and a check on what is typed are the same type once compiled, so they are told apart by name.
             ("correct", var t) when t == typeof(Func<string, string>) => (Func<string, string>)(text => text),

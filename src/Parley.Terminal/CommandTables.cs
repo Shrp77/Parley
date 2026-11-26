@@ -36,6 +36,7 @@ internal static class CommandTables
         Listed<StillOpenView>(),
         Listed<InboxWindow>(),
         Listed<ExchangeView>(),
+        Listed<BackgroundWorkView>(),
     ];
 
     /// <summary>Every type with a table, in the order they are built.</summary>

@@ -102,6 +102,9 @@ internal enum KeyContext
 
     /// <summary>A dialog: the exchanges a message names, read-only.</summary>
     ExchangeDialog,
+
+    /// <summary>A dialog: every background task an agent has running, by name, read-only.</summary>
+    BackgroundWorkDialog,
 }
 
 /// <summary>A place on the surface, and the layers that are live in it as well.</summary>

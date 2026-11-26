@@ -63,11 +63,11 @@ their findings fixed before the next stage begins.
 ## Phase 6: User Story 1 and 2 in the terminal (stage 5)
 
 **Goal**: the terminal's agent row names the first task, and a read-only list shows them all.
-**Independent test**: on the drawn screen, the row reads "waiting on 3 background tasks — Checking VAT…, +2"; *Background work* opens a list of all three, scrolling, with Page Up and Page Down.
+**Independent test**: on the drawn screen, the row reads "billing@test  — Checking VAT on gift cards, +2 more"; Alt+B (*Background work*) opens a list of all three, scrolling.
 
-- [ ] T030 [P] [US1] Write drawn-screen tests in tests/Parley.Terminal.Tests/BackgroundWorkTests.cs
-- [ ] T031 [US1] Append the first task's name and how many more to the row in src/Parley.Terminal/AgentsRegion.cs, neutralised with `Safe.Text`
-- [ ] T032 [US2] Add `BackgroundWorkDialog` (a `TableDialog<T>`, its key table listed in `CommandTables`, a `ListView` made with `HotKeySpecifier = Plain.NoHotKey`) in src/Parley.Terminal/BackgroundWorkDialog.cs, and its entry in the agent's row menu
+- [x] T030 [P] [US1] Write drawn-screen tests in tests/Parley.Terminal.Tests/BackgroundWorkTests.cs
+- [x] T031 [US1] Append the first task's name and how many more to the row in src/Parley.Terminal/AgentsRegion.cs, neutralised with `Safe.Text`
+- [x] T032 [US2] Add `BackgroundWorkView` (a `TableDialog<T>`, its key table listed in `CommandTables`, a `ListView` made with `HotKeySpecifier = Plain.NoHotKey`) as BackgroundWorkView in src/Parley.Terminal/BackgroundWorkView.cs, and its entry (Alt+B) in the agent's row commands
 - [ ] T033 **Gate 5**: build, Terminal unit tests (including `CommandTableTests`, `KeysTakenBeforeTheTableTests`, `DriftTests`), three-lens review, fix findings
 
 ## Phase 7: User Story 3 and 4 hold across the stack; spec and docs (stage 6)

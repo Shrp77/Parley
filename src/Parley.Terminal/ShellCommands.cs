@@ -228,6 +228,15 @@ internal sealed partial class Shell : IKeyTable<Shell>
             s => s.Agents.Selected is { Seat: false },
             Owing.Requesting),
 
+        // **Every background task the agent has running, by name**: what the row can only begin to say. Read from the
+        // registry already read, so it asks the broker nothing, and offered only while there is work to read.
+        new(
+            KeyContext.Agents,
+            'b',
+            BackgroundWorkView.Heading,
+            s => s.BackgroundWorkOfSelected(),
+            s => s.SelectedTurns is { BackgroundTasks: > 0 }),
+
         // **Offered while there is anybody to ask, and named with the count**, because it launches one exchange per
         // agent and a person deciding is deciding about that number. Offered without a seat for the reason the single
         // ask is: an action nobody can find is indistinguishable from one that does not exist.

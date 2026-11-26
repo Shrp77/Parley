@@ -152,9 +152,10 @@ something false about what is being worked on.
   in the person's terms, saying what is being done rather than how; the description plain and brief; a link where one
   says more. Parley bounds what is said (FR-005) but cannot judge its wording; the person reads it.
 - **FR-014**: Where a surface lists an agent's background tasks, the list MUST scroll once it holds more than five and be
-  paged twenty to a page, saying which page of how many and the total: the agent's page in the web console, and the
-  terminal's list of them (Page Up and Page Down move twenty). The graph, a picture the person drags, draws five under
-  an agent and a box saying how many more, which opens the agent's page (research R6).
+  paged twenty to a page, saying which page of how many and the total, on the agent's page in the web console. The
+  terminal's list of them (Alt+B on the agent's row) scrolls, Page Up and Page Down moving a screen at a time, with the
+  total in its title, and the row names the first task and how many more. The graph, a picture the person drags, draws
+  five under an agent and a box saying how many more, which opens the agent's page (research R6).
 
 ### Key Entities
 

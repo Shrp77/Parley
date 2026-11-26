@@ -4757,6 +4757,24 @@ internal sealed partial class Shell : Window
         });
     }
 
+    /// <summary>What the node last said about the turns and background work of the agent under the cursor, or null.</summary>
+    internal TurnStanding? SelectedTurns =>
+        Agents.Selected is { Seat: false } row && AgentName.TryCreate(row.Name, out var agent)
+            ? Agents.Registry.FirstOrDefault(record => record.Name == agent)?.Turns
+            : null;
+
+    /// <summary>Opens every background task of the agent under the cursor, by name (SPEC.md §11.6).</summary>
+    /// <returns>Done: the list is read from the registry already held, so nothing is queued.</returns>
+    private Task BackgroundWorkOfSelected()
+    {
+        if (App is { } app && Agents.Selected is { Seat: false } row && SelectedTurns is { BackgroundTasks: > 0 } turns)
+        {
+            _ = BackgroundWorkView.Open(app, row.Name, turns);
+        }
+
+        return Task.CompletedTask;
+    }
+
     /// <summary>Opens the page for what the agent under the cursor is responsible for.</summary>
     /// <returns>When the page has been queued.</returns>
     /// <remarks>
