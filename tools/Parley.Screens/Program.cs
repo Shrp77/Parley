@@ -10,6 +10,7 @@ const string Usage = """
                                      [--stylesheet <file.css>]
       parley-screens hold <round> [--browser ...]
       parley-screens audit <round> [--only <file,...>] [--browser ...] [--stylesheet <file.css>]
+                                   [--device http://127.0.0.1:9222]
 
     <round> is a folder holding scenario.json (the sample data, played into the broker) and shots.json
     (what to capture). check reads both and says what is wrong, starting nothing. capture writes each PNG
@@ -33,7 +34,8 @@ var round = Path.GetFullPath(args[1]);
 var options = Options(args.Skip(2).ToArray());
 
 // audit writes nothing, so a folder to write to is a mistake rather than something to ignore.
-if (options is null || (string.Equals(command, "audit", StringComparison.Ordinal) && options.ContainsKey("out")))
+if (options is null || (string.Equals(command, "audit", StringComparison.Ordinal) && options.ContainsKey("out"))
+    || (!string.Equals(command, "audit", StringComparison.Ordinal) && options.ContainsKey("device")))
 {
     Console.Error.WriteLine(Usage);
     return 64;
@@ -107,7 +109,9 @@ Console.CancelKeyPress += (_, e) =>
 
 try
 {
-    var camera = await Camera.StartAsync(browser).ConfigureAwait(false);
+    var camera = options.TryGetValue("device", out var device)
+        ? await Camera.ConnectAsync(browser, new Uri(device)).ConfigureAwait(false)
+        : await Camera.StartAsync(browser).ConfigureAwait(false);
     await using var cameraLifetime = camera.ConfigureAwait(false);
     var deployment = await Deployment.StartAsync(root, scenario.Project, scenario.Description, stop.Token).ConfigureAwait(false);
     await using var deploymentLifetime = deployment.ConfigureAwait(false);
@@ -115,6 +119,11 @@ try
     await using var seederLifetime = seeder.ConfigureAwait(false);
 
     var placeholders = await seeder.PlayAsync(camera.RenderAsync, stop.Token).ConfigureAwait(false);
+
+    // The device reaches the console at the same address it has here, through its USB link (adb reverse), so a page's
+    // own links and the console's host check work unchanged. Only this port is passed back, and only for this run.
+    var reversed = await Reverse.StartAsync(device is null ? 0 : new Uri(deployment.ConsoleAddress).Port).ConfigureAwait(false);
+    await using var reversedLifetime = reversed.ConfigureAwait(false);
 
     Console.WriteLine($"Played {scenario.Steps.Count} steps into a broker at {deployment.BrokerAddress}.");
 
@@ -232,7 +241,7 @@ static Dictionary<string, string>? Options(string[] rest)
 
     for (var i = 0; i < rest.Length; i += 2)
     {
-        if (i + 1 >= rest.Length || rest[i] is not ("--out" or "--only" or "--browser" or "--stylesheet"))
+        if (i + 1 >= rest.Length || rest[i] is not ("--out" or "--only" or "--browser" or "--stylesheet" or "--device"))
         {
             return null;
         }

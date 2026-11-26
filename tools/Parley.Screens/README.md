@@ -59,6 +59,20 @@ may let the person scroll to it. `--stylesheet` works here too. A file holding `
 stands in for a phone set to larger text, which is where most of these faults show. The exit code is 1 when any shot
 has a problem. Read each line yourself: a menu that is open on purpose covers what is under it.
 
+An emulator lays a page out as the desktop engine does, and a real phone's browser does not always agree. To audit
+in a device's own Chrome, plug it in by USB with USB debugging on, open Chrome on it, and then run:
+
+```
+adb forward tcp:9222 localabstract:chrome_devtools_remote
+dotnet run --project tools/Parley.Screens -- audit tools/Parley.Screens/rounds/phone-audit --device http://127.0.0.1:9222
+adb forward --remove tcp:9222
+```
+
+Each page opens in a new tab of the device's Chrome, at the device's own size, so a shot's width and height are not
+used. The tool passes the console's port back to the device for the run (`adb reverse`) and removes it at the end.
+With more than one device plugged in, `ANDROID_SERIAL` names the one to use. The tabs share Chrome's profile, so the
+tool clears the console's storage on the device before each page.
+
 The `phone-audit` round holds what a real conversation holds: long unbroken words, inline code, a hash, links, a code
 block, a table, tall and wide images, long names and a busy graph, at 360 and 412 wide and in landscape.
 

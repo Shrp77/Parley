@@ -26,10 +26,61 @@ internal sealed class Camera : IAsyncDisposable
     private readonly IPlaywright _playwright;
     private readonly IBrowser _browser;
 
-    private Camera(IPlaywright playwright, IBrowser browser)
+    // A real device's own browser, reached over its debugging socket: its window is the device's, and each page opens
+    // in the browser's own profile, so nothing about the window is set here.
+    private readonly bool _device;
+
+    // Where a scenario's images are drawn: this machine's own browser, so each comes out at its exact size whatever
+    // browser the pages are opened in.
+    private readonly IBrowser _renderer;
+
+    private Camera(IPlaywright playwright, IBrowser browser, IBrowser? renderer = null)
     {
         _playwright = playwright;
         _browser = browser;
+        _device = renderer is not null;
+        _renderer = renderer ?? browser;
+    }
+
+    private static Task<IBrowser> LaunchAsync(IPlaywright playwright, string channel) =>
+        playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+        {
+            Headless = true,
+            Channel = string.Equals(channel, "chromium", StringComparison.Ordinal) ? null : channel,
+        });
+
+    /// <summary>Connects to a browser already running on a device, such as Chrome on a phone plugged in by USB.</summary>
+    /// <param name="channel">This machine's browser, for drawing a scenario's images.</param>
+    /// <param name="endpoint">
+    /// Its debugging address on this machine, as <c>adb forward tcp:9222 localabstract:chrome_devtools_remote</c> makes
+    /// it: <c>http://127.0.0.1:9222</c>.
+    /// </param>
+    /// <returns>The camera.</returns>
+    /// <remarks>
+    /// Only for <c>audit</c>: an emulator lays a page out as the desktop engine does, and a phone's own browser does not
+    /// always agree with it. The device must reach the console too, which <c>adb reverse</c> gives it.
+    /// </remarks>
+    public static async Task<Camera> ConnectAsync(string channel, Uri endpoint)
+    {
+        var playwright = await Playwright.CreateAsync().ConfigureAwait(false);
+        IBrowser? renderer = null;
+
+        try
+        {
+            renderer = await LaunchAsync(playwright, channel).ConfigureAwait(false);
+
+            return new Camera(playwright, await playwright.Chromium.ConnectOverCDPAsync(endpoint.AbsoluteUri).ConfigureAwait(false), renderer);
+        }
+        catch
+        {
+            if (renderer is not null)
+            {
+                await renderer.DisposeAsync().ConfigureAwait(false);
+            }
+
+            playwright.Dispose();
+            throw;
+        }
     }
 
     /// <summary>Starts a browser.</summary>
@@ -41,13 +92,7 @@ internal sealed class Camera : IAsyncDisposable
 
         try
         {
-            var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
-            {
-                Headless = true,
-                Channel = string.Equals(channel, "chromium", StringComparison.Ordinal) ? null : channel,
-            }).ConfigureAwait(false);
-
-            return new Camera(playwright, browser);
+            return new Camera(playwright, await LaunchAsync(playwright, channel).ConfigureAwait(false));
         }
         catch
         {
@@ -63,7 +108,7 @@ internal sealed class Camera : IAsyncDisposable
     /// <returns>The PNG, stripped.</returns>
     public async Task<byte[]> RenderAsync(string html, int width, int height)
     {
-        var context = await _browser.NewContextAsync(new BrowserNewContextOptions
+        var context = await _renderer.NewContextAsync(new BrowserNewContextOptions
         {
             ViewportSize = new ViewportSize { Width = width, Height = height },
             DeviceScaleFactor = 1,
@@ -281,6 +326,24 @@ internal sealed class Camera : IAsyncDisposable
     private async Task<(IPage Page, IAsyncDisposable Lifetime)> OpenAsync(ShotList list, Shot shot, Uri url, string? overlay, bool phone)
     {
         var wanted = shot.ThemeIn(list);
+
+        if (_device)
+        {
+            var own = _browser.Contexts.Count > 0 ? _browser.Contexts[0] : throw new InvalidDataException("the device's browser has no window open");
+            var page = await own.NewPageAsync().ConfigureAwait(false);
+            var closer = new PageCloser(page);
+
+            try
+            {
+                return (await PrepareAsync(own, page, shot, wanted, url, overlay).ConfigureAwait(false), closer);
+            }
+            catch
+            {
+                await closer.DisposeAsync().ConfigureAwait(false);
+                throw;
+            }
+        }
+
         var context = await _browser.NewContextAsync(new BrowserNewContextOptions
         {
             ViewportSize = new ViewportSize { Width = shot.Width, Height = shot.Height },
@@ -300,7 +363,7 @@ internal sealed class Camera : IAsyncDisposable
 
         try
         {
-            return (await PrepareAsync(context, shot, wanted, url, overlay).ConfigureAwait(false), context);
+            return (await PrepareAsync(context, page: null, shot, wanted, url, overlay).ConfigureAwait(false), context);
         }
         catch
         {
@@ -309,7 +372,7 @@ internal sealed class Camera : IAsyncDisposable
         }
     }
 
-    private static async Task<IPage> PrepareAsync(IBrowserContext context, Shot shot, string wanted, Uri url, string? overlay)
+    private static async Task<IPage> PrepareAsync(IBrowserContext context, IPage? page, Shot shot, string wanted, Uri url, string? overlay)
     {
         context.SetDefaultTimeout(ActionTimeout);
 
@@ -326,11 +389,21 @@ internal sealed class Camera : IAsyncDisposable
 
         var storage = JsonSerializer.Serialize(entries);
 
-        await context.AddInitScriptAsync(
-            $"(() => {{ const s = {storage}; for (const k in s) {{ try {{ localStorage.setItem(k, s[k]); }} catch (e) {{ }} }} }})();")
-            .ConfigureAwait(false);
+        var setting = $"(() => {{ const s = {storage}; for (const k in s) {{ try {{ localStorage.setItem(k, s[k]); }} catch (e) {{ }} }} }})();";
 
-        var page = await context.NewPageAsync().ConfigureAwait(false);
+        if (page is null)
+        {
+            await context.AddInitScriptAsync(setting).ConfigureAwait(false);
+            page = await context.NewPageAsync().ConfigureAwait(false);
+        }
+        else
+        {
+            // A device's profile outlives the shot, so a script added to it would run on every later page. Its storage is
+            // cleared and set on the console's own origin instead, before the page the shot names is opened.
+            _ = await page.GotoAsync(new Uri(url, "/Settings").AbsoluteUri).ConfigureAwait(false);
+            _ = await page.EvaluateAsync("() => { try { localStorage.clear(); } catch (e) { } }").ConfigureAwait(false);
+            _ = await page.EvaluateAsync(setting).ConfigureAwait(false);
+        }
 
         // A page renamed in the console answers 404 with a page of its own, which would otherwise be captured at the
         // right size and pass every other check.
@@ -375,7 +448,14 @@ internal sealed class Camera : IAsyncDisposable
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
+        // Disposing a browser reached over its debugging socket disconnects from it; the device's browser keeps running.
         await _browser.DisposeAsync().ConfigureAwait(false);
+
+        if (_device)
+        {
+            await _renderer.DisposeAsync().ConfigureAwait(false);
+        }
+
         _playwright.Dispose();
     }
 
@@ -405,6 +485,14 @@ internal sealed class Camera : IAsyncDisposable
         {
             await page.WaitForTimeoutAsync(action.Pause).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>Closes a page opened in a device's own browser, which is not this tool's to close.</summary>
+    /// <param name="page">The page.</param>
+    private sealed class PageCloser(IPage page) : IAsyncDisposable
+    {
+        /// <inheritdoc/>
+        public async ValueTask DisposeAsync() => await page.CloseAsync().ConfigureAwait(false);
     }
 
     /// <summary>Formats a byte count for the run's report.</summary>
