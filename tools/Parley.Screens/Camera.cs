@@ -173,7 +173,10 @@ internal sealed class Camera : IAsyncDisposable
           // A person can scroll a box that scrolls; what a box clips is gone.
           const clips = p => { const o = getComputedStyle(p).overflowX; return o === 'hidden' || o === 'clip' || (o === 'visible' && getComputedStyle(p).contain.includes('paint')); };
           // Every box around a control that cuts off what it holds, on either axis.
-          const hides = p => ['overflowX', 'overflowY'].some(a => ['hidden', 'clip'].includes(getComputedStyle(p)[a]));
+          // Each axis on its own: a strip that scrolls sideways and hides only its height is scrolled sideways by a person.
+          const hidesX = p => ['hidden', 'clip'].includes(getComputedStyle(p).overflowX);
+          const hidesY = p => ['hidden', 'clip'].includes(getComputedStyle(p).overflowY);
+          const hides = p => hidesX(p) || hidesY(p);
           const clippers = e => { const all = []; for (let p = e.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) if (hides(p)) all.push(p); return all; };
           // Parked off the page until focused, as a skip link is: not part of the layout.
           const parked = e => e.closest('.visually-hidden, .skip');
@@ -244,7 +247,11 @@ internal sealed class Camera : IAsyncDisposable
             e.scrollIntoView({ block: 'center', inline: 'center' });
             // A script may scroll a box that clips, but a person cannot: put each one back before measuring.
             const held = clippers(e);
-            for (const p of held) { const [left, top] = settled.get(p) || [0, 0]; p.scrollLeft = left; p.scrollTop = top; }
+            for (const p of held) {
+              const [left, top] = settled.get(p) || [0, 0];
+              if (hidesX(p)) p.scrollLeft = left;
+              if (hidesY(p)) p.scrollTop = top;
+            }
             const r = e.getBoundingClientRect();
             if (r.width < 1 || r.height < 1) continue;
             const x = r.left + r.width / 2, y = r.top + r.height / 2;
@@ -252,7 +259,7 @@ internal sealed class Camera : IAsyncDisposable
               out.push(`out of reach (${Math.round(x)},${Math.round(y)} in ${vw}x${vh}): ${name(e)}`);
               continue;
             }
-            const clippedBy = held.find(p => { const c = p.getBoundingClientRect(); return x < c.left || x > c.right || y < c.top || y > c.bottom; });
+            const clippedBy = held.find(p => { const c = p.getBoundingClientRect(); return (hidesX(p) && (x < c.left || x > c.right)) || (hidesY(p) && (y < c.top || y > c.bottom)); });
             if (clippedBy) {
               out.push(`cut off by ${name(clippedBy)}: ${name(e)}`);
               continue;

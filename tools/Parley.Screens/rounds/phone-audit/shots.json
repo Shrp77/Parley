@@ -1,4 +1,4 @@
-// Every page at two phone widths, for parley-screens audit.
+// Every page at three phone widths (448 is a Pixel 8 Pro), and landscape, for parley-screens audit.
 {
   "theme": "light",
   "scale": 1,
@@ -513,6 +513,221 @@
       "height": 412,
       "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
       "shows": "landscape pinned graph",
+      "graph": true,
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "inbox-448.png",
+      "width": 448,
+      "height": 997,
+      "path": "/Inbox?scope={project}",
+      "shows": "inbox at 448 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "conversation-448.png",
+      "width": 448,
+      "height": 997,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "conversation at 448 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "conversation-end-448.png",
+      "width": 448,
+      "height": 997,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "conversation-end at 448 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "li.turn:last-of-type"
+        },
+        {
+          "pause": 400
+        }
+      ]
+    },
+    {
+      "file": "conversation-more-448.png",
+      "width": 448,
+      "height": 997,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "conversation-more at 448 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "click": ".rail-more > summary"
+        },
+        {
+          "pause": 300
+        }
+      ]
+    },
+    {
+      "file": "conversation-graph-448.png",
+      "width": 448,
+      "height": 997,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "conversation-graph at 448 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "click": ".rail-more > summary"
+        },
+        {
+          "click": "[data-pg-open]"
+        },
+        {
+          "pause": 800
+        }
+      ]
+    },
+    {
+      "file": "conversations-448.png",
+      "width": 448,
+      "height": 997,
+      "path": "/?project={project}",
+      "shows": "conversations at 448 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "agents-448.png",
+      "width": 448,
+      "height": 997,
+      "path": "/?tab=agents&project={project}",
+      "shows": "agents at 448 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "agent-448.png",
+      "width": 448,
+      "height": 997,
+      "path": "/Projects/Agent?project={project}&agent={agent:orders}",
+      "shows": "agent at 448 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "agent-list-448.png",
+      "width": 448,
+      "height": 997,
+      "path": "/Projects/Agents?project={project}",
+      "shows": "agent-list at 448 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "files-448.png",
+      "width": 448,
+      "height": 997,
+      "path": "/Projects/Files?project={project}",
+      "shows": "files at 448 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "media-448.png",
+      "width": 448,
+      "height": 997,
+      "path": "/Conversations/Media?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "media at 448 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "roadmaps-448.png",
+      "width": 448,
+      "height": 997,
+      "path": "/Roadmaps?project={project}",
+      "shows": "roadmaps at 448 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "health-448.png",
+      "width": 448,
+      "height": 997,
+      "path": "/Projects/Health?project={project}",
+      "shows": "health at 448 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "settings-448.png",
+      "width": 448,
+      "height": 997,
+      "path": "/Settings",
+      "shows": "settings at 448 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "project-settings-448.png",
+      "width": 448,
+      "height": 997,
+      "path": "/Projects/Settings?project={project}",
+      "shows": "project-settings at 448 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "projects-448.png",
+      "width": 448,
+      "height": 997,
+      "path": "/",
+      "shows": "projects at 448 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "notifications-448.png",
+      "width": 448,
+      "height": 997,
+      "path": "/Notifications",
+      "shows": "notifications at 448 wide",
+      "storage": {
+        "parley-convo-composer": "closed"
+      }
+    },
+    {
+      "file": "conversation-composer-448.png",
+      "width": 448,
+      "height": 997,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "composer open"
+    },
+    {
+      "file": "conversation-pinned-graph-448.png",
+      "width": 448,
+      "height": 997,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "graph pinned",
       "graph": true,
       "storage": {
         "parley-convo-composer": "closed"
