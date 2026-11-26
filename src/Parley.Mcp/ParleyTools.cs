@@ -825,6 +825,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 document.
 
         Only the person sees what you write here; no other agent does. It is kept until your background work ends.
+        It is a label, not a message: nobody answers it, and it holds no secrets, credentials or other agents' words.
         """)]
     public async Task<JsonNode> DescribeBackgroundAsync(
         [Description("The task's id, as the tool that started it reported it.")] string task_id,
@@ -851,7 +852,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 return new JsonObject
                 {
                     ["ok"] = false,
-                    ["refused"] = "description",
+                    ["refused"] = "notkept",
                     ["why"] = $"Nothing was kept. {reply.Refused}"
                 };
             }

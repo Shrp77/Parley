@@ -68,15 +68,17 @@ public sealed class DescribeBackgroundThroughTheBrokerTests
 
         var plain = await tools.DescribeBackgroundAsync("a1", "Checking VAT on gift cards", "Reads the rules.", "exchange #5", ct);
 
+        Assert.Equal(["ok", "kept"], plain.AsObject().Select(p => p.Key));
         Assert.True(plain["ok"]!.GetValue<bool>());
-        Assert.Null(plain["name_cut"]);
-        Assert.Null(plain["link_dropped"]);
+        Assert.True(plain["kept"]!.GetValue<bool>());
 
-        var long_ = await tools.DescribeBackgroundAsync("a2", new string('n', 100), link: "http://example.com/", cancellationToken: ct);
+        var long_ = await tools.DescribeBackgroundAsync(
+            "a2", new string('n', 100), new string('d', 400), "http://example.com/", ct);
 
-        Assert.True(long_["ok"]!.GetValue<bool>());
+        Assert.Equal(["ok", "kept", "name_cut", "description_cut", "link_dropped"], long_.AsObject().Select(p => p.Key));
         Assert.True(long_["name_cut"]!.GetValue<bool>());
-        Assert.NotNull(long_["link_dropped"]);
+        Assert.True(long_["description_cut"]!.GetValue<bool>());
+        Assert.Contains("named host", long_["link_dropped"]!.GetValue<string>(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -89,8 +91,11 @@ public sealed class DescribeBackgroundThroughTheBrokerTests
         var badId = await tools.DescribeBackgroundAsync("not an id", "Checking VAT", cancellationToken: ct);
         var noName = await tools.DescribeBackgroundAsync("a1", "  ", cancellationToken: ct);
 
+        Assert.Equal(["ok", "refused", "why"], badId.AsObject().Select(p => p.Key));
         Assert.False(badId["ok"]!.GetValue<bool>());
+        Assert.Equal("notkept", badId["refused"]!.GetValue<string>());
         Assert.StartsWith("Nothing was kept.", badId["why"]!.GetValue<string>(), StringComparison.Ordinal);
         Assert.False(noName["ok"]!.GetValue<bool>());
+        Assert.Equal("notkept", noName["refused"]!.GetValue<string>());
     }
 }

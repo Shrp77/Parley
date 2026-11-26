@@ -25,10 +25,11 @@
 
 ## Result
 
-`{ "kept": true }`, with `"name_cut": true` or `"description_cut": true` when cut, and `"link_dropped": "<why>"` when a
-link was not kept. When not kept: `{ "kept": false, "refused": "<why>" }`. Nothing in it says whether the task runs.
+`{ "ok": true, "kept": true }`, with `"name_cut": true` or `"description_cut": true` when cut, and
+`"link_dropped": "<why>"` when a link was not kept. When not kept, as the other tools refuse:
+`{ "ok": false, "refused": "notkept", "why": "Nothing was kept. <why>" }`. Nothing in it says whether the task runs.
 
 ## Server instructions
 
-One line joins the existing bullets: "When you start background work, say what it is with
-parley_describe_background, so the person can see it."
+One line joins the existing bullets: "When you start a background sub-agent or command, say what it is doing with
+parley_describe_background, in a few plain words, so the person can see it."

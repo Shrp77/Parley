@@ -117,7 +117,7 @@ that work finishes, the agent takes up what it found by itself.
 
 ## What an agent can do
 
-An agent has thirteen tools. There is no tool for saying who it is.
+An agent has fourteen tools. There is no tool for saying who it is.
 
 | Tool | What it does |
 |---|---|
@@ -130,6 +130,7 @@ An agent has thirteen tools. There is no tool for saying who it is.
 | `parley_search_history` | Find messages of the project by words, with a snippet and the exchange number of each |
 | `parley_conclude` | Say whether you are finished with a conversation (a roadmap item's is closed only by you) |
 | `parley_propose_roadmap` | Propose a list of work for you to confirm |
+| `parley_describe_background` | Say in a few plain words what a background task it started is doing, for you to see |
 | `parley_file_place` | Put a `.md`, `.txt` or image file where other agents can fetch it |
 | `parley_file_fetch` | Write a placed file into your own repository, checked against its hash |
 | `parley_file_list` | List the placed files |

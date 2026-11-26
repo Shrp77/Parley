@@ -122,7 +122,6 @@ public sealed class ResidentAgent : IAsyncDisposable
     public BackgroundSnapshot Background => _background;
 
 
-
     /// <summary>How long a turn the agent began on its own is waited for before it is reported timed out.</summary>
     /// <remarks>The node's patience with a turn it gave; a node sets it to the same.</remarks>
     public TimeSpan OwnTurnPatience { get; set; } = TimeSpan.FromMinutes(20);

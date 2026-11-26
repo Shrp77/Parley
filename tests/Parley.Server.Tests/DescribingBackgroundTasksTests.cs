@@ -232,6 +232,34 @@ public sealed class DescribingBackgroundTasksTests
     }
 
     [Fact]
+    public void The_answer_has_these_fields_and_no_other()
+    {
+        // A field added to say "kept, but your node has not listed it yet" would tell an agent whether its task runs,
+        // which is turn information (SPEC.md §10.1); its name need hold no word the turn guards forbid.
+        var fields = Wire.DescribeBackgroundTaskReply.Descriptor.Fields.InFieldNumberOrder().Select(f => f.Name);
+
+        Assert.Equal(["kept", "refused", "name_cut", "description_cut", "link_dropped"], fields);
+    }
+
+    [Fact]
+    public async Task The_answer_is_the_same_whether_the_task_is_unlisted_listed_or_ended()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinAsync(broker);
+        await LaunchAsync(node, "t-1");
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct, launchToken: "t-1");
+
+        var unlisted = await DescribeAsync(billing, "a1", "Checking VAT", link: "ftp://x");
+        await ReportAsync(node, Billing, 1, ("a1", "Count to three"));
+        var listed = await DescribeAsync(billing, "a1", "Checking VAT", link: "ftp://x");
+        await ReportAsync(node, Billing, 0);
+        var ended = await DescribeAsync(billing, "a1", "Checking VAT", link: "ftp://x");
+
+        Assert.Equal(unlisted, listed);
+        Assert.Equal(unlisted, ended);
+    }
+
+    [Fact]
     public async Task The_person_seat_describes_nothing()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);
@@ -241,5 +269,29 @@ public sealed class DescribingBackgroundTasksTests
         var reply = await DescribeAsync(person, "a1", "Checking VAT");
 
         Assert.False(reply.Kept);
+        AssertSaysNothingAboutTheTask(reply.Refused);
+    }
+
+    [Fact]
+    public async Task A_caller_that_is_not_attached_describes_nothing()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+        // Orders holds no session; the call names it as every Agents call names its caller.
+        var reply = await billing.Client.DescribeBackgroundTaskAsync(
+            new Wire.DescribeBackgroundTaskRequest { Agent = Orders, TaskId = "a1", Name = "Checking VAT" }, cancellationToken: Ct);
+
+        Assert.False(reply.Kept);
+        AssertSaysNothingAboutTheTask(reply.Refused);
+    }
+
+    private static void AssertSaysNothingAboutTheTask(string refused)
+    {
+        Assert.NotEmpty(refused);
+
+        foreach (var word in new[] { "running", "not running", "unknown", "no such", "ended", "finished", "turn" })
+        {
+            Assert.DoesNotContain(word, refused, StringComparison.OrdinalIgnoreCase);
+        }
     }
 }

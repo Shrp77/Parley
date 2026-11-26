@@ -75,7 +75,7 @@ their findings fixed before the next stage begins.
 - [ ] T034 [US3] Confirm by test that no agent operation's reply or roster row carries a task name, count or description (extend the boundary scans if a field could slip through) in tests/Parley.Server.Tests
 - [ ] T035 [US4] Confirm by test that names leave with the count on node leaving, relaunch and broker restart (covered by T011 and T017; add any missing case)
 - [x] T036 Update SPEC.md §10.1 (`describe_background_task`), §10.2 (`registry()` carries running tasks) and §11.6 (the node's list, the broker's holding and clearing, bounds, link shapes), and any Spec.Tests that pin them
-- [ ] T037 [P] Update docs/operating.md (what the person sees) and plugins/parley README (what an agent is told)
+- [ ] T037 [P] Update docs/operating.md (what the person sees), docs/concepts.md (the tool list) and plugins/parley README (what an agent is told)
 - [ ] T038 Take a screenshot round `043-background-tasks` with named tasks in tools/Parley.Screens/rounds/043-background-tasks/ and a review page
 - [ ] T039 **Gate 6**: full build, `pwsh scripts/test.ps1 -Category Smoke`, hygiene grep, three-lens review of the whole feature, fix findings
 

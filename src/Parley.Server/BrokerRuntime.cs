@@ -1760,12 +1760,21 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return false;
         }
 
+        // Looking the agent up waits on the store, and the node may have left and another joined meanwhile: a report from the
+        // connection that left changes nothing, so it never overwrites or clears what the one that joined since has said.
+        if (!_nodes.TryGetValue(machine, out var current) || !ReferenceEquals(current, reporter))
+        {
+            return false;
+        }
+
         BackgroundWork? written = null;
 
         if (tasks == 0)
         {
-            // Only the words for the tasks this ends: a late report of none must not take the words of a task begun since.
-            if (_background.TryRemove(agent, out var ended))
+            // Only the words for the tasks this ends, and only the list this report found: a late report of none must not
+            // take the words of a task begun since.
+            if (_background.TryGetValue(agent, out var ended)
+                && _background.TryRemove(new KeyValuePair<AgentName, BackgroundWork>(agent, ended)))
             {
                 ForgetWords(agent, ended.Named.Select(task => task.Id));
             }
@@ -1947,18 +1956,30 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <remarks>
     /// A new process has started nothing yet, and what the agent said was about work of the last one. The same launch
     /// announced again (a node that left and came back) keeps the words: its next report names the same tasks, and the
-    /// agent will not describe them again. Words said while no launch was known are kept: they show only for an id the
-    /// node lists, which a new process's runner does not reuse.
+    /// agent will not describe them again. Words said while no launch was known take this one; were it a new process's,
+    /// they show only for an id its node lists, which a runner's random ids do not repeat.
     /// </remarks>
     private void ForgetBackground(AgentName agent, string token)
     {
         _ = _background.TryRemove(agent, out _);
 
-        if (_described.TryGetValue(agent, out var held)
-            && held.Token is { } said
-            && !string.Equals(said, token, StringComparison.Ordinal))
+        // Tried again when a word lands between the read and the change, so a describe racing the launch neither survives
+        // into the new process nor is lost from the old one's view of it.
+        while (_described.TryGetValue(agent, out var held))
         {
-            _ = _described.TryRemove(new KeyValuePair<AgentName, DescribedTasks>(agent, held));
+            var done = held.Token switch
+            {
+                // Said while no launch was known (a broker that restarted before its node rejoined): it takes this launch,
+                // which is almost always the same process announcing itself again.
+                null => _described.TryUpdate(agent, held with { Token = token }, held),
+                var said when string.Equals(said, token, StringComparison.Ordinal) => true,
+                _ => _described.TryRemove(new KeyValuePair<AgentName, DescribedTasks>(agent, held)),
+            };
+
+            if (done)
+            {
+                return;
+            }
         }
     }
 
