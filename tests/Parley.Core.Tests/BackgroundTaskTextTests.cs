@@ -165,6 +165,62 @@ public sealed class BackgroundTaskTextTests
         Assert.Equal("file:a.md", BackgroundTaskText.Link("file:a.md")!.Written);
     }
 
+    [Theory]
+    [InlineData("https://127.0.0.1:19100/Inbox")]
+    [InlineData("https://localhost/")]
+    [InlineData("https://[::1]/")]
+    [InlineData("https://intranet/")]
+    [InlineData("https://2130706433/")]
+    public void A_link_to_an_address_in_numbers_this_machine_or_a_single_word_host_is_dropped(string given)
+    {
+        Assert.Null(BackgroundTaskText.Link(given));
+    }
+
+    [Fact]
+    public void A_host_in_another_script_is_kept_in_punycode_so_a_lookalike_shows_as_what_it_is()
+    {
+        // A Cyrillic letter that looks like a Latin a.
+        var link = BackgroundTaskText.Link("https://" + (char)0x0430 + "pple.com/x")!;
+
+        Assert.Equal("https://xn--pple-43d.com/x", link.Written);
+        Assert.Equal("xn--pple-43d.com", link.Host);
+        Assert.All(link.Written, c => Assert.True(char.IsAscii(c)));
+    }
+
+    [Theory]
+    [InlineData("https://tickets.example.com/browse/SHOP-12")]
+    [InlineData("#57")]
+    [InlineData("conversation:returns")]
+    [InlineData("file:a.md")]
+    public void A_kept_link_read_again_is_the_same_link(string given)
+    {
+        var once = BackgroundTaskText.Link(given)!;
+
+        Assert.Equal(once, BackgroundTaskText.Link(once.Written));
+    }
+
+    [Fact]
+    public void A_link_that_escaping_makes_longer_than_the_bound_is_dropped()
+    {
+        // Each of these becomes six characters once escaped: 470 fit as given, and not as followed.
+        Assert.Null(BackgroundTaskText.Link("https://a.com/" + new string((char)0xFC, 470)));
+    }
+
+    [Fact]
+    public void Text_with_nothing_printable_is_none_however_long()
+    {
+        Assert.Equal(new CutText(string.Empty, false), BackgroundTaskText.Name(new string(' ', 2000)));
+        Assert.Equal(new CutText(string.Empty, false), BackgroundTaskText.Name(new string((char)1, 2000)));
+    }
+
+    [Fact]
+    public void No_space_is_left_before_the_ellipsis()
+    {
+        var name = BackgroundTaskText.Name(new string('a', 62) + " " + new string('b', 10));
+
+        Assert.EndsWith("a…", name.Text, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void A_web_link_says_its_host()
     {

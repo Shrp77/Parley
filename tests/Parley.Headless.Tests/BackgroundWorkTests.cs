@@ -78,9 +78,9 @@ public sealed class BackgroundWorkTests : IDisposable
                 ownEnded.TrySetResult(outcome);
                 return Task.CompletedTask;
             },
-            tasks =>
+            work =>
             {
-                told.Enqueue($"background {tasks}");
+                told.Enqueue($"background {work.Count}");
                 return Task.CompletedTask;
             }));
 
@@ -271,9 +271,9 @@ public sealed class BackgroundWorkTests : IDisposable
                     firstEnded.TrySetResult(outcome);
                     return Task.CompletedTask;
                 },
-                tasks =>
+                work =>
                 {
-                    if (tasks == 0)
+                    if (work.Count == 0)
                     {
                         bothInitsRead.Set();
                     }

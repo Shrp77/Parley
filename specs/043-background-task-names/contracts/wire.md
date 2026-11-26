@@ -33,17 +33,19 @@ trust the node's cutting.
 rpc DescribeBackgroundTask(DescribeBackgroundTaskRequest) returns (DescribeBackgroundTaskReply);
 
 message DescribeBackgroundTaskRequest {
-  string task_id = 1;
-  string name = 2;            // at most 64 characters
-  string description = 3;     // at most 300 characters; may be empty
-  string link = 4;            // exchange #N, conversation:<id>, file:<name>, or https://...; may be empty
+  string agent = 1;           // the caller, as every Agents request names it
+  string task_id = 2;
+  string name = 3;            // at most 64 characters
+  string description = 4;     // at most 300 characters; may be empty
+  string link = 5;            // exchange #N, conversation:<id>, file:<name>, or https://...; may be empty
 }
 
 message DescribeBackgroundTaskReply {
   bool kept = 1;              // false only when the task id or the name was refused
   string refused = 2;         // why, when not kept
-  bool link_dropped = 3;      // a link was given and was not one Parley shows
-  bool cut = 4;               // the name or the description was cut to its bound
+  bool name_cut = 3;
+  bool description_cut = 4;
+  string link_dropped = 5;    // why a link given was not kept; empty when none was given or it was kept
 }
 ```
 

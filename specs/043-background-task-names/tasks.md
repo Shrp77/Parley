@@ -16,9 +16,9 @@ their findings fixed before the next stage begins.
 - [ ] T002 [P] Write tests for the bounds, neutralising and link shapes (name 64, description 300, link 500; `exchange #N`, `#N`, `conversation:<id>`, `file:<name>`, `https` only with a host and no user info; everything else dropped) in tests/Parley.Core.Tests/BackgroundTaskTextTests.cs
 - [ ] T003 [P] Add `TaskKind`, `TaskLink` and `BackgroundTask` records in src/Parley.Core/BackgroundTask.cs (data-model.md)
 - [ ] T004 Add `BackgroundTaskText` (Name, Description, Link parse into `TaskLink`, Id grammar, Neutralise) in src/Parley.Core/BackgroundTaskText.cs, making T002 pass
-- [ ] T005 Add `Tasks` (`IReadOnlyList<BackgroundTask>`, default empty) to `TurnStanding` in src/Parley.Core/TurnStanding.cs
+- [ ] T005 Add `Tasks` (`IReadOnlyList<BackgroundTask>?`, null when none, read through `Named`) to `TurnStanding` in src/Parley.Core/TurnStanding.cs
 - [ ] T006 Add `RunningTask`, `TaskKind`, `BackgroundWork.running`, `DescribeBackgroundTask` (request, reply), `BackgroundTaskRow` and `RegistryRow.running_tasks` to proto/parley.proto (contracts/wire.md)
-- [ ] T007 **Gate 1**: build, run Core unit tests, three-lens review of the stage's diff, fix findings
+- [ ] T007 **Gate 1**: build, run every unit test (`pwsh scripts/test.ps1`), three-lens review of the stage's diff, fix findings
 
 ## Phase 3: User Story 1, the person sees what each task is doing (stage 2, node to broker) 🎯 MVP
 
@@ -43,7 +43,7 @@ their findings fixed before the next stage begins.
 - [ ] T017 [P] [US2] Write tests: describe before and after the node's report; another agent's id is never touched (descriptions keyed by caller); a 201st id drops the oldest; a bad task id or empty name refused; a bad link dropped with `link_dropped`; descriptions cleared with the count, in tests/Parley.Server.Tests/DescribingBackgroundTasksTests.cs
 - [ ] T018 [US2] Hold descriptions keyed by (agent, task id), at most 200 per agent, merged into `RunningTasks` (agent's name over the runner's label), cleared with the count, in src/Parley.Server/BrokerRuntime.cs
 - [ ] T019 [US2] Add `DescribeBackgroundTask` to src/Parley.Server/AgentsService.cs, keyed by the attached caller and answering with no turn fact
-- [ ] T020 [P] [US2] Extend tests/Parley.Server.Tests/AgentsCannotSeeTurnsTests.cs (or the test holding it) to the new reply, and confirm `AgentsCannotSetTheirOwnLineTests` and `SurfaceBoundaryTests` still pass unchanged
+- [ ] T020 [P] [US2] Extend tests/Parley.Server.Tests/AgentsCannotSeeTurnsTests.cs (or the test holding it) to the new reply, declare the operation in tests/Parley.Server.Tests/TheAgentsServiceIsDeclaredTests.cs, pin the reply's refusal texts so none states a turn fact, and confirm `AgentsCannotSetTheirOwnLineTests` and `SurfaceBoundaryTests` still pass unchanged
 - [ ] T021 [P] [US2] Write tool tests (parameters, the result shapes of contracts/mcp-tool.md, the description's wording) in tests/Parley.Mcp.Tests/DescribeBackgroundToolTests.cs
 - [ ] T022 [US2] Add `parley_describe_background` to src/Parley.Mcp/ParleyTools.cs and its client call, and the server instructions line (contracts/mcp-tool.md)
 - [ ] T023 **Gate 3**: build, Server and Mcp tests, three-lens review, fix findings

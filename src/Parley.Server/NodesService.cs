@@ -143,7 +143,11 @@ public sealed class NodesService : Wire.Nodes.NodesBase
 
             case Wire.TurnReport.PhaseOneofCase.Background:
                 _ = await _runtime.BackgroundReportedAsync(
-                    machine, agent, request.Background.Tasks, context.CancellationToken).ConfigureAwait(false);
+                    machine,
+                    agent,
+                    request.Background.Tasks,
+                    request.Background.Running.Select(task => new BackgroundTask(task.Id, Conversions.In(task.Kind), task.Label)),
+                    context.CancellationToken).ConfigureAwait(false);
                 break;
         }
 

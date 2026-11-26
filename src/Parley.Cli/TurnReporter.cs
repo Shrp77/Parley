@@ -134,20 +134,39 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
     internal Task EndedOnItsOwnAsync(Parley.Core.AgentName agent, DateTimeOffset began, TurnOutcome outcome) =>
         ReportEndAsync(agent, began, outcome);
 
-    /// <summary>Reports how many background tasks an agent has running now (SPEC.md §11.6).</summary>
+    /// <summary>Reports what an agent has running in the background now: how many tasks, and each by the runner's id,
+    /// kind and label (SPEC.md §11.6).</summary>
     /// <param name="agent">The agent, as this project names it.</param>
-    /// <param name="tasks">How many.</param>
-    /// <param name="stillTrue">Whether the count is still the one to say, asked before a retry; null to always retry.</param>
+    /// <param name="work">What it has running.</param>
+    /// <param name="stillTrue">Whether this is still the one to say, asked before a retry; null to always retry.</param>
     /// <returns>A task that completes when it has been reported, or could not be.</returns>
-    internal Task BackgroundAsync(Parley.Core.AgentName agent, int tasks, Func<bool>? stillTrue = null) =>
-        SendAsync(
+    internal Task BackgroundAsync(Parley.Core.AgentName agent, Parley.Headless.BackgroundWork work, Func<bool>? stillTrue = null)
+    {
+        ArgumentNullException.ThrowIfNull(work);
+
+        var background = new Wire.BackgroundWork { Tasks = work.Count };
+
+        background.Running.AddRange(work.Listed.Select(task => new Wire.RunningTask
+        {
+            Id = task.Id,
+            Kind = task.Kind switch
+            {
+                Parley.Core.TaskKind.Agent => Wire.TaskKind.Agent,
+                Parley.Core.TaskKind.Command => Wire.TaskKind.Command,
+                _ => Wire.TaskKind.Other,
+            },
+            Label = task.Name,
+        }));
+
+        return SendAsync(
             new Wire.TurnReport
             {
                 Machine = machine,
                 Agent = agent.Value,
-                Background = new Wire.BackgroundWork { Tasks = tasks },
+                Background = background,
             },
             stillTrue);
+    }
 
     private Task ReportEndAsync(Parley.Core.AgentName agent, DateTimeOffset started, TurnOutcome? outcome) =>
         SendAsync(new Wire.TurnReport
@@ -224,11 +243,11 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
 
                 // A rejoin clears the broker's count of background work; work still running would read as idle until it
                 // ended, which has no bound (review, lens 1 run 2 on ae1d0e0f).
-                if (resident.BackgroundTasks is var tasks and > 0 && Parley.Core.AgentName.TryJoin(role, machine, out var named))
+                if (resident.Background is { Count: > 0 } work && Parley.Core.AgentName.TryJoin(role, machine, out var named))
                 {
-                    // Not retried once the count has moved: a retry landing behind the pump's newer report would show work
-                    // that has ended (review, lens 1 run B on d99806d9).
-                    await BackgroundAsync(named, tasks, () => resident.BackgroundTasks == tasks).ConfigureAwait(false);
+                    // Not retried once it has moved: a retry landing behind the pump's newer report would show work that has
+                    // ended (review, lens 1 run B on d99806d9). The same snapshot, not an equal one, is what was read.
+                    await BackgroundAsync(named, work, () => ReferenceEquals(resident.Background, work)).ConfigureAwait(false);
                 }
             }
         }

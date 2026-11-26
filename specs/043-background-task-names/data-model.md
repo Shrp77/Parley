@@ -11,7 +11,7 @@ One task the runner lists in `background_tasks_changed`.
 |---|---|---|
 | `Id` | string | The runner's `task_id`. 1 to 64 characters of letters, digits, `-` and `_`; a task with any other id is counted and not named. |
 | `Kind` | enum | `Agent` (`local_agent`), `Command` (`local_bash`), `Other` (any other `task_type`). |
-| `Label` | string? | The runner's `description`, cut to 64 characters and neutralised (`BackgroundTaskText.Name`). Absent when the runner gave none. |
+| `Label` | string | The runner's `description`, cut to 64 characters and neutralised (`BackgroundTaskText.Name`). Empty when the runner gave none. |
 
 A report lists at most 200 tasks with their ids and labels; the count still says how many there are in all.
 
@@ -31,9 +31,11 @@ What an agent says about one of its own tasks (`describe_background_task`).
 | Kind | Written by the agent as | Rule |
 |---|---|---|
 | `Exchange` | `exchange #N` or `#N` | N a positive whole number. |
-| `Conversation` | `conversation:<id>` | `<id>` matches `ConversationName`. |
+| `Conversation` | `conversation:<id>` | `<id>` passes `ConversationId.IsValid`. |
 | `File` | `file:<name>` | `<name>` matches the placed-file name grammar. |
-| `Web` | `https://host/...` | Absolute, `https` only, a host, no user info, at most 500 characters. |
+| `Web` | `https://host/...` | Absolute, `https` only, a named host with a dot (no IP address, no `localhost`), no user info, kept with its host in punycode. |
+
+Every link is at most 500 characters, as given and as kept. `exchange #` is matched in any case; `conversation:` and `file:` only in lower case.
 
 ## BackgroundTask (broker to operator surfaces)
 
@@ -55,6 +57,7 @@ Ordered as the runner listed them. `TurnStanding.BackgroundTasks` stays the coun
 |---|---|---|
 | Node reports a new list | Replaced. | Kept. Only those whose id is listed are shown. |
 | Node reports no tasks | Cleared. | Cleared. |
-| Node leaves, or a new process is launched under the name | Cleared. | Cleared. |
+| Node leaves | Cleared. | Kept: a node that comes back reports the same process's tasks, and the agent will not describe them again. Shown only when listed. |
+| A new process is launched under the name | Cleared. | Cleared. |
 | Broker restarts | Gone. | Gone. |
 | An agent describes a 201st id | Unchanged. | The oldest description goes. |

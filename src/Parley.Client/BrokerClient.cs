@@ -55,7 +55,8 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
                 Read(row.LastTurnEndedUtc),
                 row.LastTurnClean,
                 row.LastTurnPermissionDenials,
-                Math.Max(0, row.BackgroundTasks)),
+                Math.Max(0, row.BackgroundTasks),
+                [.. row.RunningTasks.Select(Task)]),
             row.OpenOutside,
             AgentIdentity.TryRead(row.Identity, out var identity) ? identity : default,
             row.Unsupervised,
@@ -871,6 +872,19 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     };
 
     private static string? Blank(string? value) => string.IsNullOrEmpty(value) ? null : value;
+
+    // Held to the same rules the broker held it to: a surface draws only what they let through, whichever broker sent it.
+    private static BackgroundTask Task(Wire.BackgroundTaskRow row) => new(
+        BackgroundTaskText.IsTaskId(row.Id) ? row.Id : string.Empty,
+        row.Kind switch
+        {
+            Wire.TaskKind.Agent => TaskKind.Agent,
+            Wire.TaskKind.Command => TaskKind.Command,
+            _ => TaskKind.Other,
+        },
+        BackgroundTaskText.Name(row.Name).Text,
+        BackgroundTaskText.Description(row.Description).Text,
+        BackgroundTaskText.Link(row.Link));
 
     private static string Render(DateTimeOffset? instant) =>
         instant?.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture) ?? string.Empty;

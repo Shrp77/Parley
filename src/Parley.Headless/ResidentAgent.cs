@@ -67,7 +67,8 @@ public sealed class ResidentAgent : IAsyncDisposable
         Channel.CreateUnbounded<Func<OwnWork, Task>>(new UnboundedChannelOptions { SingleReader = true });
     private readonly Task _noticePump;
     private readonly Lock _ownLock = new();
-    private volatile int _backgroundTasks;
+    // The count and the list together, replaced whole, so a reader never sees one without the other.
+    private volatile BackgroundWork _background = BackgroundWork.None;
     private volatile bool _answeredOnce;
     private volatile OwnWork? _watch;
     private TaskCompletionSource<RunnerEvent?>? _ownTurn;
@@ -115,7 +116,14 @@ public sealed class ResidentAgent : IAsyncDisposable
     }
 
     /// <summary>How many background tasks the agent last said it has running (SPEC.md §11.6).</summary>
-    public int BackgroundTasks => _backgroundTasks;
+    public int BackgroundTasks => _background.Count;
+
+    /// <summary>What the agent last said it has running in the background: the count, and each task it could name.</summary>
+    public BackgroundWork Background => _background;
+
+    /// <summary>The most tasks one report names; the count still says how many there are (feature 043).</summary>
+    /// <remarks>Far past what a session runs at once; what it bounds is one line of output making a report of any size.</remarks>
+    public const int MostListedTasks = 200;
 
     /// <summary>How long a turn the agent began on its own is waited for before it is reported timed out.</summary>
     /// <remarks>The node's patience with a turn it gave; a node sets it to the same.</remarks>
@@ -133,7 +141,7 @@ public sealed class ResidentAgent : IAsyncDisposable
 
         _watch = watch;
 
-        if (_backgroundTasks is var running and > 0)
+        if (_background is { Count: > 0 } running)
         {
             Notify(w => w.BackgroundChanged(running));
         }
@@ -763,10 +771,13 @@ public sealed class ResidentAgent : IAsyncDisposable
 
         if (evt is { Type: "system", Subtype: "background_tasks_changed", Tasks: { } tasks })
         {
-            if (tasks != _backgroundTasks)
+            var now = new BackgroundWork(tasks, evt.Listed ?? []);
+
+            // Told when the count or what names the tasks changes, and not when the runner says the same again.
+            if (!now.Same(_background))
             {
-                _backgroundTasks = tasks;
-                Notify(w => w.BackgroundChanged(tasks));
+                _background = now;
+                Notify(w => w.BackgroundChanged(now));
             }
 
             return;
@@ -1163,9 +1174,14 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// its own because background work it started finished, <c>peer</c> for one a sub-agent began by handing back its
     /// report, or any other kind: a result with one ends a turn the runner began itself.
     /// </param>
+    /// <param name="Listed">
+    /// Each task that list names, by the runner's id, kind and label (feature 043), at most
+    /// <see cref="MostListedTasks"/>; null when the line has no list.
+    /// </param>
     internal sealed record RunnerEvent(
         string? Type, string? Subtype, string? SessionId, bool IsError, string? StopReason, double CostUsd,
-        int ModelTurns, int PermissionDenials, string? Result, int? Tasks = null, string? OriginKind = null)
+        int ModelTurns, int PermissionDenials, string? Result, int? Tasks = null, string? OriginKind = null,
+        IReadOnlyList<BackgroundTask>? Listed = null)
     {
         /// <summary>Reads one line.</summary>
         /// <param name="line">The line.</param>
@@ -1205,6 +1221,7 @@ public sealed class ResidentAgent : IAsyncDisposable
                 double cost = 0, turns = 0;
                 var denials = 0;
                 int? tasks = null;
+                List<BackgroundTask>? listed = null;
 
                 while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
                 {
@@ -1223,7 +1240,10 @@ public sealed class ResidentAgent : IAsyncDisposable
                         case "num_turns": turns = Number(ref reader); break;
                         case "permission_denials": denials = Count(ref reader); break;
                         case "result": result = String(ref reader); break;
-                        case "tasks" when reader.TokenType == JsonTokenType.StartArray: tasks = Count(ref reader); break;
+                        case "tasks" when reader.TokenType == JsonTokenType.StartArray:
+                            listed = [];
+                            tasks = List(ref reader, listed);
+                            break;
                         case "origin": origin = Kind(ref reader); break;
                     }
 
@@ -1238,7 +1258,7 @@ public sealed class ResidentAgent : IAsyncDisposable
                 }
 
                 return new RunnerEvent(
-                    type, subtype, sessionId, isError, stopReason, cost, (int)turns, denials, result, tasks, origin);
+                    type, subtype, sessionId, isError, stopReason, cost, (int)turns, denials, result, tasks, origin, listed);
             }
             catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException)
             {
@@ -1300,6 +1320,56 @@ public sealed class ResidentAgent : IAsyncDisposable
             }
 
             return kind;
+        }
+
+        // A background_tasks_changed list: every element counted, and each object with an id the node would hold named, to the
+        // bound; left on the array's end. Only task_id, task_type and description are read; everything else is passed over.
+        private static int List(ref Utf8JsonReader reader, List<BackgroundTask> listed)
+        {
+            var count = 0;
+
+            while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+            {
+                count++;
+
+                if (reader.TokenType != JsonTokenType.StartObject)
+                {
+                    reader.Skip();
+                    continue;
+                }
+
+                string? id = null, type = null, description = null;
+
+                while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+                {
+                    var name = Name(ref reader);
+
+                    reader.Read();
+
+                    switch (name)
+                    {
+                        case "task_id": id = String(ref reader); break;
+                        case "task_type": type = String(ref reader); break;
+                        case "description": description = String(ref reader); break;
+                    }
+
+                    reader.Skip();
+                }
+
+                if (listed.Count < MostListedTasks && BackgroundTaskText.IsTaskId(id))
+                {
+                    var kind = type switch
+                    {
+                        "local_agent" => TaskKind.Agent,
+                        "local_bash" => TaskKind.Command,
+                        _ => TaskKind.Other,
+                    };
+
+                    listed.Add(new BackgroundTask(id!, kind, BackgroundTaskText.Name(description).Text));
+                }
+            }
+
+            return count;
         }
 
         // The array's elements, each passed over; left on the array's end.

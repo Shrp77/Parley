@@ -2084,8 +2084,10 @@ public static class NodeCommand
                     await reporter.EndedOnItsOwnAsync(named, began, outcome).ConfigureAwait(false);
                 }
             },
-            async tasks =>
+            async work =>
             {
+                var tasks = work.Count;
+
                 await output.WriteLineAsync(
                     tasks == 0
                         ? $"  {resident.Name.Value}: its background work has finished."
@@ -2094,7 +2096,7 @@ public static class NodeCommand
 
                 foreach (var (reporter, named) in Projects())
                 {
-                    await reporter.BackgroundAsync(named, tasks).ConfigureAwait(false);
+                    await reporter.BackgroundAsync(named, work).ConfigureAwait(false);
                 }
             }));
 
