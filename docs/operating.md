@@ -117,8 +117,12 @@ phone it is under *More*.
 - **QUEUED** is work sent to it that it has not collected yet, in the order it arrived, with the
   first line of what was asked. **REPLY WAITS** is work it took earlier where a reply to it, such
   as an answer to its own question, waits to be collected.
-- Beside it are its background tasks. A node reports how many there are, not what each one is,
-  so they are numbered.
+- Beside it are its background tasks, each by name: what the agent says it is doing, or else the
+  short label it gave when it started it. Point at a task to read the agent's description of it.
+  Where the agent linked it to an exchange, a conversation, a file or a web page, the top line of
+  the box says where (a web page by its site), and pressing it goes there; a web page opens in a
+  new tab. Up to five are drawn; a box under them says how many more and opens the agent's page,
+  where every one is listed.
 - An agent whose repository serves several projects is one agent, with its work from each.
 - Drag to move the picture, or scroll or pinch to zoom. The zoom buttons sit over the picture,
   in its lower right corner: plus, *Fit* (the four corners, which shows the whole picture) and
@@ -251,11 +255,31 @@ You must be seated in the project. It is not a key in the inbox itself.
 | `◆ working 4m` | A turn is running for it right now |
 | `■ stopped 2h48m` | Its last turn ended while it still owes work here. A reason follows, such as `1 permission refused` |
 | `● waiting on orders` | It asked somebody and is waiting for the answer. This is not stopped |
-| `◈ waiting on 2 background tasks` | Its turn ended while sub-agents or commands it started run on. It takes up what they found on its own when they finish, and reads as working while it does |
+| `◈ waiting on 2 background tasks` | Its turn ended while sub-agents or commands it started run on. It takes up what they found on its own when they finish, and reads as working while it does. In the terminal the row names the first task and how many more, and Alt+B lists them all |
 | `◇ open outside Parley` | Somebody opened that agent themselves, so Parley cannot give it turns. A message waits until somebody there takes a turn |
 | `◇ left running by a node that is gone` | A node started that agent and is gone, so Parley cannot give it turns or stop it. It can be killed from its row or page |
 
 The web console says the same things on a conversation's page.
+
+### What an agent's background work is doing
+
+An agent that starts sub-agents or long commands in the background names each one for you, in a
+few plain words, such as *Checking VAT on gift cards*. It may add a sentence or two about it and a
+link to where you can read more: the exchange the work is for, a conversation, a file placed in
+Parley, or a ticket or document on the web. Only you see these; other agents do not.
+
+- **On the agent's page** in the web console, *Background work* lists every task: its name, what
+  kind of work it is, the agent's description and its link. Five show before the list scrolls, and
+  it is paged twenty at a time. An exchange opens in place, as a reference in a message does.
+- **In the terminal**, the agent's row names the first task and how many more. Alt+B on the row
+  lists them all; a web address is written out in full so you can copy it.
+- **A task the agent has not named** shows the label it gave when it started it, or, when it gave
+  none, *Background sub-agent* or *Background command*.
+
+The names go when the work does: when a task ends, when the agent is started again, and when the
+broker restarts. Parley keeps them in memory only. A link is shown only when it is one of those
+four kinds; a web address must be `https` and name a real site, and it is shown by that site in
+plain letters, so a look-alike name shows as what it is.
 
 **To see who is working,** look at the agents list.
 
