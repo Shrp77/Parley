@@ -4763,13 +4763,24 @@ internal sealed partial class Shell : Window
             ? Agents.Registry.FirstOrDefault(record => record.Name == agent)?.Turns
             : null;
 
+    /// <summary>The background work list last opened, as drawn.</summary>
+    internal BackgroundWorkView? BackgroundShown { get; private set; }
+
+    /// <summary>The background work list's session, so it can be closed.</summary>
+    internal SessionToken? BackgroundSession { get; private set; }
+
     /// <summary>Opens every background task of the agent under the cursor, by name (SPEC.md §11.6).</summary>
     /// <returns>Done: the list is read from the registry already held, so nothing is queued.</returns>
+    /// <remarks>The row and its record are read once, so the title and the list are the same agent's whatever a refresh
+    /// does meanwhile.</remarks>
     private Task BackgroundWorkOfSelected()
     {
-        if (App is { } app && Agents.Selected is { Seat: false } row && SelectedTurns is { BackgroundTasks: > 0 } turns)
+        if (App is { } app
+            && Agents.Selected is { Seat: false } row
+            && AgentName.TryCreate(row.Name, out var agent)
+            && Agents.Registry.FirstOrDefault(record => record.Name == agent)?.Turns is { BackgroundTasks: > 0 } turns)
         {
-            _ = BackgroundWorkView.Open(app, row.Name, turns);
+            (BackgroundShown, BackgroundSession) = BackgroundWorkView.Open(app, row.Name, turns);
         }
 
         return Task.CompletedTask;

@@ -545,11 +545,12 @@ internal sealed class AgentsRegion : FrameView
         return turns switch
         {
             { Reported: true, RunningSince: { } running } => "  — " + Activities.For(running, DateTimeOffset.UtcNow),
-            { Reported: true, LastPermissionDenials: > 0, LastEnded: { } ended } => "  — " + Activities.For(ended, DateTimeOffset.UtcNow),
 
             // Waiting on its background work: the first task by name and how many more, so the row says what, not only
-            // how many. Alt+B lists them all.
+            // how many. Alt+B lists them all. Before a refused stop, as the heading decides it (AgentStanding): the agent
+            // waiting on work it started is the one under that heading.
             { Reported: true, BackgroundTasks: > 0 } waiting => "  — " + Safe.Text(FirstOf(waiting)),
+            { Reported: true, LastPermissionDenials: > 0, LastEnded: { } ended } => "  — " + Activities.For(ended, DateTimeOffset.UtcNow),
             _ => string.Empty,
         };
     }

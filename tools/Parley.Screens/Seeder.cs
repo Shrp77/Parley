@@ -201,6 +201,26 @@ internal sealed class Seeder : IAsyncDisposable
                 await LeaveAsync(step.Agent!, cancellationToken).ConfigureAwait(false);
                 break;
 
+            case StepKind.Describe:
+                var described = await _agents.DescribeBackgroundTaskAsync(
+                    new Wire.DescribeBackgroundTaskRequest
+                    {
+                        Agent = _scenario.NameOf(step.Agent!),
+                        TaskId = step.Task!,
+                        Name = step.Name!,
+                        Description = step.Text ?? string.Empty,
+                        Link = step.Link ?? string.Empty,
+                    },
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+
+                // A shot that shows a task's words must not quietly show the runner's instead.
+                if (!described.Kept || described.LinkDropped.Length > 0)
+                {
+                    throw new InvalidOperationException($"the broker did not keep {step.Task}'s words: {described.Refused}{described.LinkDropped}");
+                }
+
+                break;
+
             default:
                 throw new InvalidOperationException($"'{step.Do}' is not a step this tool knows");
         }
@@ -320,6 +340,12 @@ internal sealed class Seeder : IAsyncDisposable
 
             default:
                 report.Background = new Wire.BackgroundWork { Tasks = step.Tasks };
+                report.Background.Running.AddRange((step.Labels ?? []).Select((label, i) => new Wire.RunningTask
+                {
+                    Id = "t" + (i + 1).ToString(CultureInfo.InvariantCulture),
+                    Kind = Wire.TaskKind.Agent,
+                    Label = label,
+                }));
                 break;
         }
 

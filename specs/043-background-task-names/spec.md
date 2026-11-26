@@ -107,8 +107,9 @@ something false about what is being worked on.
 
 - **Two tasks with the same name** are both listed; the list is of tasks, not of distinct names.
 - **A name re-reported unchanged** changes nothing on screen and sends nothing more than the count's report does today.
-- **More tasks than a surface has room for**: the tasks are in a list that scrolls after five and is paged twenty at a
-  time, saying which page of how many and how many tasks in all. No task is dropped and the count is never lost (FR-014).
+- **More tasks than a surface has room for**: on the agent's page the tasks are in a list that scrolls after five and
+  is paged twenty at a time, saying which page of how many and how many tasks in all; the terminal's list scrolls and
+  the graph counts what it does not draw (FR-014). No task is dropped and the count is never lost.
 - **A runner that never describes its tasks** behaves exactly as today, with every task a plain stand-in.
 - **A node older than this feature** reports a count and no names; surfaces show the count's stand-ins, as today.
 - **A name in a language or script the console does not expect** is shown as given, bounded by characters, not bytes.
@@ -154,7 +155,10 @@ something false about what is being worked on.
 - **FR-014**: Where a surface lists an agent's background tasks, the list MUST scroll once it holds more than five and be
   paged twenty to a page, saying which page of how many and the total, on the agent's page in the web console. The
   terminal's list of them (Alt+B on the agent's row) scrolls, Page Up and Page Down moving a screen at a time, with the
-  total in its title, and the row names the first task and how many more. The graph, a picture the person drags, draws
+  total in its title, and the row names the first task and how many more. *This is a change from the person's twenty
+  to a page (exchange #58), made while building, not yet agreed:* a terminal list already takes Page Up and Page Down
+  itself, and paging it twenty at a time would need keys of its own on a surface where every key is declared. Every
+  task is still reachable. To be put to the person. The graph, a picture the person drags, draws
   five under an agent and a box saying how many more, which opens the agent's page (research R6).
 
 ### Key Entities

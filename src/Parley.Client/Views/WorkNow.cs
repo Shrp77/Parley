@@ -250,7 +250,7 @@ public static class WorkNow
             // project it said them through, so the project where it named most itself is drawn, then the one naming most.
             var named = standings
                 .OrderByDescending(s => s.Agent.Turns?.Named.Count(t => t.Said) ?? 0)
-                .ThenByDescending(s => s.Agent.Turns?.Named.Count ?? 0)
+                .ThenByDescending(s => s.Agent.Turns?.Named.Count(t => t.Name.Length > 0) ?? 0)
                 .ThenBy(s => s.Input.Project, StringComparer.Ordinal)
                 .First();
 

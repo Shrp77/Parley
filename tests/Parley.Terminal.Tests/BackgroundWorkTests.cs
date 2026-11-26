@@ -1,5 +1,9 @@
+using Grpc.Net.Client;
+using Parley.Client;
+using Parley.Client.Views;
 using Parley.Configuration;
 using Parley.Core;
+using Terminal.Gui.Input;
 using Xunit;
 
 namespace Parley.Terminal.Tests;
@@ -36,6 +40,58 @@ public sealed class BackgroundWorkTests
     }
 
     [Fact]
+    public void A_row_waiting_on_its_background_work_names_it_even_after_a_refused_stop()
+    {
+        // The heading puts waiting on background work before a refused stop (AgentStanding); the row agrees, so the agent
+        // under "waiting on its background work" names what it waits on.
+        var region = new AgentsRegion();
+        var turns = new TurnStanding(true, null, DateTimeOffset.UtcNow.AddMinutes(-3), false, 1, 1,
+            [new BackgroundTask("a1", TaskKind.Agent, "Checking VAT")]);
+
+        region.Show([Agent("billing@test", turns)], NodeCatalogue.Empty, null);
+
+        var rows = Drawn.Rows(region.List).Select(row => row.TrimEnd()).ToList();
+
+        Assert.Contains(rows, row => row.StartsWith("  billing@test  — Checking VAT", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Alt_B_on_the_agents_row_opens_every_task_by_name_and_is_offered_only_while_there_is_work()
+    {
+        using var driving = Driving.Open();
+        using var directory = new BrokerDirectory(
+            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null)],
+            _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
+        using var shell = new Shell(directory);
+
+        driving.Show(shell);
+        await Walking.GoAsync(shell, Viewing.Project);
+
+        shell.Agents.Show([Agent("billing@test", Waiting(0))], NodeCatalogue.Empty, null);
+        shell.Focus(2);
+        shell.Agents.List.SelectedItem = 1;
+
+        Assert.DoesNotContain(shell.Actions(), a => a.Label == BackgroundWorkView.Heading);
+
+        shell.Agents.Show(
+            [Agent("billing@test", Waiting(3, new BackgroundTask("a1", TaskKind.Agent, "Checking VAT", "Reads the rules.")))],
+            NodeCatalogue.Empty,
+            null);
+        shell.Agents.List.SelectedItem = 1;
+
+        Assert.Contains(shell.Actions(), a => a.Label == BackgroundWorkView.Heading);
+
+        driving.Press(Key.B.WithAlt);
+
+        var view = Assert.IsType<BackgroundWorkView>(shell.BackgroundShown);
+
+        Assert.Equal("Background work of billing@test: 3 tasks", view.Title);
+        Assert.Equal(["1. Checking VAT (sub-agent)", "   Reads the rules.", "2. Background task", "3. Background task"], view.Shown);
+
+        Prompting.Close(driving.App, shell.BackgroundSession);
+    }
+
+    [Fact]
     public void A_row_whose_task_has_no_name_says_what_kind_it_is()
     {
         var region = new AgentsRegion();
@@ -62,7 +118,7 @@ public sealed class BackgroundWorkTests
                 "   Reads the VAT rules.",
                 "   exchange #57",
                 "2. Running the tax tests (command)",
-                "   https://tickets.example.com/SHOP-12 (tickets.example.com)",
+                "   tickets.example.com: https://tickets.example.com/SHOP-12",
                 "3. Background command",
                 "4. Background task",
             ],

@@ -68,7 +68,7 @@ public sealed class TheGraphShowsWorkUnderWayTests
         Assert.Contains("NOW · alpha", fragment, StringComparison.Ordinal);
         Assert.Contains("How should gift cards be taxed?", fragment, StringComparison.Ordinal);
         Assert.Contains("QUEUED 1 · alpha", fragment, StringComparison.Ordinal);
-        Assert.Contains("Background task 2", fragment, StringComparison.Ordinal);
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Count(fragment, ">Background task</text>"));
 
         // The idle agent is left out of the picture and the list, and counted.
         Assert.DoesNotContain(">orders@pc</text>", fragment, StringComparison.Ordinal);
@@ -104,7 +104,7 @@ public sealed class TheGraphShowsWorkUnderWayTests
         Assert.Contains("data-pg-fold=\"billing@pc\" aria-expanded=\"false\"", fragment, StringComparison.Ordinal);
         Assert.Contains("4 items folded", fragment, StringComparison.Ordinal);
         Assert.DoesNotContain("NOW · alpha", fragment, StringComparison.Ordinal);
-        Assert.DoesNotContain("Background task 1", fragment, StringComparison.Ordinal);
+        Assert.DoesNotContain(">Background task</text>", fragment, StringComparison.Ordinal);
         Assert.Contains("Queued 1, not collected yet", fragment, StringComparison.Ordinal);
         Assert.Contains("2 background tasks running:", fragment, StringComparison.Ordinal);
     }

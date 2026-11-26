@@ -161,7 +161,7 @@
                                never as markup. What is followed is the link, drawn as where it goes (a web address by its host),
                                never the name the agent chose. *@
                             var task = agent!.TaskAt(box.Index);
-                            var taskName = task is null ? $"Background task {box.Index + 1}" : TaskWords.Name(task);
+                            var taskName = TaskWords.Name(task);
                             var taskLink = task?.Link is { } l ? TaskLinks.Href(l, agent.TasksProject, AtTask(agent, box.Index, task.Id)) : default;
                             <g class="pg-node pg-task">
                                 <title>@taskName@(task?.Description is { Length: > 0 } said ? ": " + said : "")@(task?.Link is { } shown ? $" ({TaskWords.Link(shown)})" : "")</title>
@@ -276,7 +276,7 @@
                         }
                     </li>
                 }
-                @if (agent.Background > TaskWords.MostListed || agent.Background > WorkNow.MostTasks)
+                @if (agent.Background > WorkNow.MostTasks)
                 {
                     <li><a href="@TaskPage(agent)#background-work">Every background task, on its page.</a></li>
                 }

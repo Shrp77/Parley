@@ -16,8 +16,10 @@ namespace Parley.Terminal;
 /// </para>
 /// <para>
 /// A list that scrolls, which Page Up and Page Down move through a screen at a time, so any number of tasks can be read;
-/// the title says how many. Every line is passed through <see cref="Safe.Text"/>: a task's words are an agent's or a
-/// runner's. A link is said, never followed: a terminal opens nothing.
+/// the title says how many. A task's words reached here neutralised twice, by the broker and by the client reading them
+/// (<see cref="BackgroundTaskText"/>), which takes out what reorders or hides a line; every line is passed through
+/// <see cref="Safe.Text"/> as well, as all text from elsewhere is. A link is said, never followed: a terminal opens
+/// nothing.
 /// </para>
 /// </remarks>
 internal sealed class BackgroundWorkView : TableDialog<BackgroundWorkView>, IKeyTable<BackgroundWorkView>
@@ -73,8 +75,7 @@ internal sealed class BackgroundWorkView : TableDialog<BackgroundWorkView>, IKey
 
             if (task?.Link is { } link)
             {
-                // A web address in full, so the person can copy it; anything else by where it goes in Parley.
-                lines.Add("   " + Safe.Text(link.Kind == TaskLinkKind.Web ? $"{link.Target} ({link.Host})" : TaskWords.Where(link)));
+                lines.Add("   " + Safe.Text(TaskWords.Copyable(link)));
             }
         }
 

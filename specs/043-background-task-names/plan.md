@@ -88,7 +88,7 @@ src/Parley.Mcp/ParleyTools.cs              parley_describe_background; server in
 src/Parley.Web/Pages/Graph.cshtml          task names, tooltip, link
 src/Parley.Web/Pages/Projects/Agent.cshtml background work list, paged
 src/Parley.Terminal/AgentsRegion.cs        first task's name on the row
-src/Parley.Terminal/BackgroundWorkDialog.cs  new: read-only list, a TableDialog
+src/Parley.Terminal/BackgroundWorkView.cs  new: read-only list, a TableDialog, opened by Alt+B
 SPEC.md                                    §10.1, §10.2, §11.6
 docs/operating.md, plugins/parley README   what the person sees; what an agent is told
 ```

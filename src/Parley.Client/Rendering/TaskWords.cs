@@ -17,8 +17,9 @@ namespace Parley.Client.Rendering;
 /// </remarks>
 public static class TaskWords
 {
-    /// <summary>The most tasks a list in the picture's words names before it sends the person to the agent's page.</summary>
-    /// <remarks>The agent's page lists twenty to a page, so the picture's list names one page's worth.</remarks>
+    /// <summary>How many tasks make one page: the agent's page lists this many at a time, and the picture's list in words
+    /// names this many before it sends the person there.</summary>
+    /// <remarks>Twenty, as the person asked.</remarks>
     public const int MostListed = 20;
 
     /// <summary>What a task is called: its name, or what kind of work it is.</summary>
@@ -70,10 +71,22 @@ public static class TaskWords
         };
     }
 
+    /// <summary>A link written so a person can copy it where nothing can be followed (the terminal): a web address by its
+    /// host first and then in full, anything else by where it goes in Parley.</summary>
+    /// <param name="link">The link.</param>
+    /// <returns>The words.</returns>
+    public static string Copyable(TaskLink link)
+    {
+        ArgumentNullException.ThrowIfNull(link);
+
+        return link.Kind == TaskLinkKind.Web ? $"{link.Host}: {link.Target}" : Where(link);
+    }
+
     /// <summary>Every task a count says is running, named where the node named it and a stand-in where it did not.</summary>
     /// <param name="named">The tasks the node named, in its order.</param>
     /// <param name="count">How many are running.</param>
-    /// <returns>As many entries as <paramref name="count"/>: each task, or null for one the node did not name.</returns>
+    /// <returns>As many entries as <paramref name="count"/>, or as the node named if that were ever more: each task, or null
+    /// for one the node did not name.</returns>
     public static IReadOnlyList<BackgroundTask?> Every(IReadOnlyList<BackgroundTask> named, int count)
     {
         ArgumentNullException.ThrowIfNull(named);

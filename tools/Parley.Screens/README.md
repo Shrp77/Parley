@@ -59,7 +59,8 @@ then lists steps in order. Each step is one act a broker understands:
 | `propose` | A roadmap proposal | `by`, `title`, `items`, `label`; `conversation` optional |
 | `confirm` | The person confirms a proposal | `proposal` (its label) |
 | `freeze` | The person freezes an agent | `agent`; `keep` to outlast a broker restart |
-| `turn` | The node reports a turn | `agent`, `phase` (`working`, `ended` or `background`); `tasks` for background |
+| `turn` | The node reports a turn | `agent`, `phase` (`working`, `ended` or `background`); `tasks` for background, and `labels`, the runner's label for each task, which get the ids `t1`, `t2` and on |
+| `describe` | An agent says what one of its background tasks is doing | `agent`, `task` (its id), `name`; `text` (a description) and `link` optional |
 | `leave` | An agent's connection closes | `agent` |
 
 An agent's `started` is `node` (its node started it, so it can be stopped and given turns), `outside` (opened
