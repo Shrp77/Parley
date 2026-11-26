@@ -14,7 +14,8 @@
 }
 @* What is being worked on now (spec 041, reworked by feature 042 from the person's feedback). A fragment: the console's script
    puts it in the panel, sends the filter's choices back and moves and zooms the picture. Every fact in the picture is also in
-   the list below it, so nothing depends on seeing a colour, a line or the picture at all. *@
+   the list after it, so nothing depends on seeing a colour, a line or the picture at all. Freezing every agent in a project is
+   on the project's Agents page. *@
 <div class="pg" data-asof="@Model.AsOf.ToString("O")">
     <div class="pg-filters">
         <details class="pg-filter" data-pg-keep="filter">
@@ -66,6 +67,7 @@
     }
     else
     {
+        <div class="pg-stage">
         <div class="pg-canvas" tabindex="0" data-w="@picture.Width" data-h="@picture.Height"
              aria-label="The picture of what is being worked on. Drag or use the arrow keys to move it; plus and minus zoom.">
             <svg class="pg-svg" viewBox="0 0 @picture.Width @picture.Height" role="img" preserveAspectRatio="xMinYMin meet"
@@ -92,11 +94,23 @@
                         case WorkBoxKind.Agent:
                             var home = agent!.Posts[0];
                             var frozen = agent.Posts.Any(p => p.Frozen);
+                            var under = agent.Current.Count + agent.Queued.Count + agent.Background;
+                            var fx = x + box.Width - 40;
+                            var fy = y + 14;
                             <g class="pg-node pg-agent@(frozen ? " pg-frozen" : "")">
                                 <title>@agent.Name: @agent.Now.Words</title>
                                 <rect x="@x" y="@y" width="@box.Width" height="@box.Height" rx="14" />
                                 <a href="/Projects/Agent?project=@Enc(home.Project)&amp;agent=@Enc(home.Name)"><text x="@(x + 16)" y="@(y + 25)" class="pg-title">@WorkNow.NameLine(agent.Name)</text></a>
-                                <text x="@(x + 16)" y="@(y + 45)" class="pg-sub">@agent.Now.Words@(agent.Posts.Count > 1 ? $" · {agent.Posts.Count} projects" : "")</text>
+                                <text x="@(x + 16)" y="@(y + 45)" class="pg-sub">@agent.Now.Words@(agent.Posts.Count > 1 ? $" · {agent.Posts.Count} projects" : "")@(agent.Folded ? $" · {Plural(under, "item", "items")} folded" : "")</text>
+                                @* Folds what is under the agent, or opens it again; the name is the link to the agent's page.
+                                   Folding changes only the picture, which a screen reader reads as one image; the list holds
+                                   everything either way. *@
+                                <g class="pg-fold" role="button" tabindex="0" data-pg-fold="@agent.Name" aria-expanded="@(agent.Folded ? "false" : "true")"
+                                   aria-label="@(agent.Folded ? "Show" : "Hide") what is under @agent.Name">
+                                    <title>@(agent.Folded ? "Show" : "Hide") what is under it</title>
+                                    <rect x="@fx" y="@fy" width="32" height="32" rx="16" />
+                                    <path d="@(agent.Folded ? $"M {fx + 10} {fy + 13} L {fx + 16} {fy + 19} L {fx + 22} {fy + 13}" : $"M {fx + 10} {fy + 19} L {fx + 16} {fy + 13} L {fx + 22} {fy + 19}")" />
+                                </g>
                             </g>
                             break;
                         case WorkBoxKind.Now:
@@ -155,19 +169,34 @@
                 }
             </svg>
         </div>
-        <div class="pg-zoom" role="group" aria-label="Zoom">
-            <button type="button" class="quiet" data-pg-zoom="out" aria-label="Zoom out"><span class="icon" aria-hidden="true">remove</span></button>
-            <button type="button" class="quiet" data-pg-zoom="fit">Fit</button>
-            <button type="button" class="quiet" data-pg-zoom="in" aria-label="Zoom in"><span class="icon" aria-hidden="true">add</span></button>
-            @if (hiddenWords is not null)
-            {
-                <span class="pg-sub">@hiddenWords.</span>
-            }
+        @* Over the picture, stacked, and moved by its handle (the person's feedback on feature 042); where it was put is kept
+           in this browser. The glyphs are drawn here, not taken from the icon font, which holds only the icons the console
+           named before. *@
+        <div class="pg-tools" role="group" aria-label="Zoom">
+            <button type="button" class="pg-grip" data-pg-grip aria-label="Move these buttons: drag, or use the arrow keys" title="Move these buttons">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="currentColor"><circle cx="9" cy="6" r="1.6" /><circle cx="15" cy="6" r="1.6" /><circle cx="9" cy="12" r="1.6" /><circle cx="15" cy="12" r="1.6" /><circle cx="9" cy="18" r="1.6" /><circle cx="15" cy="18" r="1.6" /></g></svg>
+            </button>
+            <button type="button" data-pg-zoom="in" aria-label="Zoom in" title="Zoom in">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14" /></svg>
+            </button>
+            <button type="button" data-pg-zoom="fit" aria-label="Fit the whole picture" title="Fit the whole picture">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /></svg>
+            </button>
+            <button type="button" data-pg-zoom="out" aria-label="Zoom out" title="Zoom out">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 12h14" /></svg>
+            </button>
         </div>
+        </div>
+        @if (hiddenWords is not null)
+        {
+            <p class="pg-hidden-count">@hiddenWords.</p>
+        }
     }
 
-    <details class="pg-list" data-pg-keep="list">
-        <summary>The same, as a list</summary>
+    @* The picture's facts as words, for a screen reader and the keyboard (spec 041 FR-003). The person asked that it not be
+       shown (feature 042), so it is drawn only while the focus is in it; tabbing past the picture reaches it. *@
+    <section class="pg-list" aria-label="What is being worked on, as a list">
+        <h2 class="pg-list-head">What is being worked on, as a list</h2>
         @if (picture.Working.Count == 0)
         {
             <p>No agent is working.</p>
@@ -211,20 +240,5 @@
                 }
             </p>
         }
-    </details>
-
-    <details class="pg-list" data-pg-keep="projects">
-        <summary>Every project</summary>
-        <ul>
-            @foreach (var name in picture.Projects)
-            {
-                var project = Enc(name);
-                <li>
-                    <a href="/Projects/Agents?project=@project">@name</a>:
-                    <a href="/Projects/Act?project=@project&amp;action=freezeall&amp;subject=@project">Freeze all</a>,
-                    <a href="/Projects/Act?project=@project&amp;action=unfreezeall&amp;subject=@project">Unfreeze all</a>
-                </li>
-            }
-        </ul>
-    </details>
+    </section>
 </div>

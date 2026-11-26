@@ -487,6 +487,13 @@
             </script>
                 </div>
             </details>
+            @* Every agent of the project at once, beside the list of them; each leads to the page that says what it does
+               and does nothing until it is confirmed. *@
+            var everyone = Uri.EscapeDataString(here.Name.Value);
+            <a class="rail-link" href="/Projects/Act?project=@everyone&amp;action=freezeall&amp;subject=@everyone"
+               title="Freeze every agent in @here.Name.Value: each stops once its turn ends, and nothing starts it until you unfreeze it."><span class="icon" aria-hidden="true">warning</span><span class="rail-label">Freeze all</span></a>
+            <a class="rail-link" href="/Projects/Act?project=@everyone&amp;action=unfreezeall&amp;subject=@everyone"
+               title="Unfreeze every agent in @here.Name.Value, so work waiting for it can start it again."><span class="icon" aria-hidden="true">check</span><span class="rail-label">Unfreeze all</span></a>
         }
     }
     else

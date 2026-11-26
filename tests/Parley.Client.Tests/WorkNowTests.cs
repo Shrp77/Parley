@@ -194,6 +194,37 @@ public sealed class WorkNowTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void A_folded_agent_has_nothing_drawn_under_it_and_keeps_what_it_has(bool narrow)
+    {
+        var inputs = new[]
+        {
+            new WorkInput("shop",
+                [Agent("billing@pc", Working with { BackgroundTasks = 2 }), Agent("orders@pc", Working)],
+                [Owed(1, "billing@pc", "returns", collected: false, 5), Owed(2, "orders@pc", "price-feed", collected: false, 3)],
+                null),
+        };
+
+        var open = WorkNow.Build(inputs, Now, narrow: narrow);
+        var picture = WorkNow.Build(inputs, Now, narrow: narrow, folded: ["billing@pc"]);
+
+        var billing = picture.Working.Single(a => a.Name == "billing@pc");
+        Assert.True(billing.Folded);
+        Assert.False(picture.Working.Single(a => a.Name == "orders@pc").Folded);
+
+        // Only its own box is drawn; what it has is still held for the list.
+        var at = picture.Working.ToList().IndexOf(billing);
+        Assert.Equal([WorkBoxKind.Agent], picture.Boxes.Where(b => b.Agent == at).Select(b => b.Kind));
+        Assert.Single(billing.Queued);
+        Assert.Equal(2, billing.Background);
+
+        // The other agent's work is drawn, and the picture is shorter for the fold.
+        Assert.Contains(picture.Boxes, b => b.Agent != at && b.Kind == WorkBoxKind.Queued);
+        Assert.True(picture.Height < open.Height);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void No_two_boxes_overlap_and_every_box_is_inside_the_picture(bool narrow)
     {
         var owed = Enumerable.Range(10, WorkNow.MostQueued + 2).Select(n => Owed(n, "billing@pc", $"q{n}", false, n)).ToList();

@@ -120,15 +120,25 @@ phone it is under *More*.
 - Beside it are its background tasks. A node reports how many there are, not what each one is,
   so they are numbered.
 - An agent whose repository serves several projects is one agent, with its work from each.
-- Drag to move the picture, scroll or pinch to zoom, or use the minus, *Fit* and plus buttons.
-  *Fit* shows the whole picture. On a phone it is drawn in one column so the text stays readable.
+- Drag to move the picture, or scroll or pinch to zoom. The zoom buttons sit over the picture,
+  in its lower right corner: plus, *Fit* (the four corners, which shows the whole picture) and
+  minus. Drag the dotted handle at their top to move them out of the way, or focus it and use the
+  arrow keys. This browser remembers where you put them. On a phone the picture is drawn in one
+  column so the text stays readable.
+- The arrow on an agent's box hides what is under it, so the other agents come up. The box then
+  says how many items it is hiding. Press the arrow again to show them. This browser remembers
+  which agents you folded.
 - *Filter* narrows it to the projects and agents you tick. Each choice shows as a chip; press a
   chip to take it off. The choice is kept in this browser.
-- The same facts follow the picture as a list, with *Freeze* or *Unfreeze* for each working agent
-  in each project it serves. *Every project* below it has *Freeze all* and *Unfreeze all*. An
-  agent that is not working is frozen from its own page.
+- The same facts are also kept as a list after the picture, for a screen reader and the
+  keyboard. It is not shown on screen: press Tab past the picture and it appears while the
+  focus is in it. It has *Freeze* or *Unfreeze* for each working agent in each project it serves.
+  Any agent can be frozen from its own page, and *Freeze all* and *Unfreeze all* for a whole
+  project are on that project's *Agents* page.
 
-*Pin* keeps the graph open as you move between pages. Nothing is read until you open the graph.
+The *Graph* tab on the panel's edge opens and closes it, pinned or not. Where the panel fills
+the screen, as on a phone, it has a *Close* button instead. *Pin* keeps the graph open as you
+move between pages. Nothing is read until you open the graph.
 While it is open, it refreshes every fifteen seconds.
 
 ### The Inbox
@@ -323,7 +333,8 @@ Freeze an agent when you want it to stay stopped: for example, while you work in
 yourself. To keep it stopped through a logon or a reboot, see the last point in the list below.
 
 - **Where:** Enter on its row in the terminal, the *Freeze* button on its page in the web console,
-  or *Freeze* on it in the graph. *Freeze all* in the graph freezes a whole project.
+  or *Freeze* on it in the graph's list. *Freeze all* on a project's *Agents* page freezes a whole
+  project.
 - **What happens:** the agent stops once its current turn ends. Then nothing starts it: not new
   work, not a Start, not a Restart. What it owes stays open and waits. Anybody who sends it a
   message is told it is frozen. It reads as frozen in the agents lists.

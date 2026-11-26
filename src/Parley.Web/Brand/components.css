@@ -1227,8 +1227,10 @@ details.dgrid-row[open] > summary { position: sticky; top: var(--dgrid-head-h); 
 .pg-panel[hidden] { display: none; }
 /* Open, the tab rides the panel's edge, above it, and closes it. */
 .pg-tab.pg-tab-open { right: min(46rem, 100vw); z-index: 42; }
-/* Narrower than the panel, the panel fills the window and the tab would sit past its edge: its Close does it. */
-@media (max-width: 46rem) { .pg-tab.pg-tab-open { display: none; } }
+/* Narrower than the panel and its tab, the panel fills the window and the tab would sit past its edge: its Close does it. */
+@media (max-width: 48rem) { .pg-tab.pg-tab-open { display: none; } }
+/* Wider, the tab on the panel's edge opens and closes it, pinned or not, so the panel has no Close of its own. */
+@media not all and (max-width: 48rem) { #pg-close { display: none; } }
 .pg-panel.pg-pinned { box-shadow: none; }
 body.pg-docked { padding-right: min(46rem, 100vw); }
 .pg-bar { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; padding: 0.6rem 1rem; border-bottom: 1px solid var(--rule); }
@@ -1248,8 +1250,17 @@ body.pg-docked { padding-right: min(46rem, 100vw); }
 .pg-canvas:active { cursor: grabbing; }
 .pg-canvas:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
 .pg-canvas .pg-svg { display: block; width: 100%; height: 100%; }
-.pg-zoom { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; margin: 0.4rem 0 0.6rem; }
-.pg-zoom .pg-sub { margin-left: auto; font-size: 0.85rem; color: var(--md-sys-color-on-surface-variant); }
+/* The zoom buttons lie over the picture, stacked, in its lower right corner until the person moves them by the handle. */
+.pg-stage { position: relative; }
+.pg-tools { position: absolute; bottom: 0.6rem; right: 0.6rem; z-index: 1; display: flex; flex-direction: column; gap: 0.15rem; padding: 0.25rem; border-radius: var(--md-sys-shape-corner-large); background: var(--md-sys-color-surface-container-high); box-shadow: var(--md-sys-elevation-2); }
+.pg-tools button { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; min-height: 0; padding: 0; border: 0; border-radius: var(--md-sys-shape-corner-full); background: transparent; color: var(--md-sys-color-on-surface-variant); box-shadow: none; cursor: pointer; }
+.pg-tools button:hover { background: var(--md-sys-color-surface-container-highest); color: var(--md-sys-color-on-surface); }
+.pg-tools button:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 1px; }
+.pg-tools svg { width: 1.35rem; height: 1.35rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.pg-tools .pg-grip { height: 1.75rem; cursor: grab; touch-action: none; }
+.pg-tools .pg-grip:active { cursor: grabbing; }
+.pg-tools .pg-grip svg { stroke: none; transform: rotate(90deg); }
+.pg-hidden-count { margin: 0.4rem 0 0.6rem; text-align: right; font-size: 0.85rem; color: var(--md-sys-color-on-surface-variant); }
 .pg-node rect { fill: var(--md-sys-color-surface); stroke: var(--md-sys-color-outline-variant); stroke-width: 1.2; }
 .pg-root rect { fill: var(--md-sys-color-secondary-container); stroke: none; }
 .pg-agent rect { fill: var(--md-sys-color-primary-container); stroke: none; }
@@ -1265,12 +1276,21 @@ body.pg-docked { padding-right: min(46rem, 100vw); }
 .pg-tag { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; fill: var(--md-sys-color-primary); }
 .pg-queued .pg-tag { fill: var(--md-sys-color-on-surface-variant); }
 .pg-node a text { text-decoration: underline; cursor: pointer; }
+/* An agent's fold button, on its box. */
+.pg-agent .pg-fold { cursor: pointer; outline: none; }
+.pg-agent .pg-fold rect, .pg-agent.pg-frozen .pg-fold rect { fill: var(--md-sys-color-surface-container-lowest); fill-opacity: 0.55; stroke: none; }
+.pg-agent .pg-fold:hover rect { fill-opacity: 0.9; }
+.pg-agent .pg-fold:focus-visible rect { stroke: var(--md-sys-color-primary); stroke-width: 2; stroke-dasharray: none; }
+.pg-fold path { fill: none; stroke: var(--md-sys-color-on-primary-container); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .pg-edge { fill: none; stroke: var(--md-sys-color-outline); stroke-width: 1.5; }
 .pg-edge-now { stroke: var(--md-sys-color-primary); stroke-width: 2.2; }
 .pg-edge-task { stroke: var(--md-sys-color-tertiary); }
 .pg-empty { margin: 1rem 0; color: var(--md-sys-color-on-surface-variant); }
 .pg-note { font-size: 0.85rem; }
 .pg-acts { display: flex; flex-wrap: wrap; gap: 0.8rem; font-size: 0.9rem; }
+/* The list is the picture in words, for a screen reader and the keyboard: drawn only while the focus is in it. */
+.pg-list:not(:focus-within) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.pg-list-head { font-size: 1rem; margin: 1rem 0 0.2rem; }
 .pg-list h3 { font-size: 0.95rem; margin: 0.8rem 0 0.2rem; }
 .select-grid .row-act, .dgrid-line .row-act { margin: 0; padding: 0; border: 0; background: none; box-shadow: none; }
 .select-grid input[type=checkbox] { margin: 0; align-self: center; }

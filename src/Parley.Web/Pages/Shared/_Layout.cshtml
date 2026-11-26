@@ -1288,10 +1288,13 @@
                 var pin = document.getElementById("pg-pin");
                 var key = "parley.graph";
                 var timer = null;
-                var state = { open: false, pinned: false, projects: [], agents: [] };
+                // folded: the agents whose work the person hid in the picture; tools: where they moved the zoom buttons to, as
+                // distances from the picture's right and top edges, or null for the corner.
+                var state = { open: false, pinned: false, projects: [], agents: [], folded: [], tools: null };
 
                 function names(v) { return Array.isArray(v) ? v.filter(function (n) { return typeof n === "string"; }).slice(0, 200) : []; }
-                function load() { try { var s = JSON.parse(localStorage.getItem(key) || "{}"); if (s && s.pinned) { state.pinned = true; state.open = !!s.open; } if (s) { state.projects = names(s.projects); state.agents = names(s.agents); } } catch (e) { } }
+                function spot(v) { return v && isFinite(v.r) && isFinite(v.t) ? { r: Math.max(0, +v.r), t: Math.max(0, +v.t) } : null; }
+                function load() { try { var s = JSON.parse(localStorage.getItem(key) || "{}"); if (s && s.pinned) { state.pinned = true; state.open = !!s.open; } if (s) { state.projects = names(s.projects); state.agents = names(s.agents); state.folded = names(s.folded).slice(-50); state.tools = spot(s.tools); } } catch (e) { } }
                 function save() { try { localStorage.setItem(key, JSON.stringify(state)); } catch (e) { } }
 
                 var drawn = null;
@@ -1308,6 +1311,7 @@
                     var q = new URLSearchParams();
                     state.projects.forEach(function (n) { q.append("project", n); });
                     state.agents.forEach(function (n) { q.append("agent", n); });
+                    state.folded.forEach(function (n) { q.append("fold", n); });
                     drawnNarrow = narrow();
                     if (drawnNarrow) { q.append("narrow", "true"); }
                     var s = q.toString();
@@ -1327,6 +1331,29 @@
                     var svg = c.querySelector("svg"); var v = view || fit(c);
                     var w = c.clientWidth / v.s, h = c.clientHeight / v.s;
                     svg.setAttribute("viewBox", v.x + " " + v.y + " " + w + " " + h);
+                    stack();
+                }
+                // The zoom buttons are put where the person moved them, kept inside the picture however its size changed.
+                function stack() {
+                    var c = canvas(); var t = body.querySelector(".pg-tools"); if (!c || !t || !state.tools) { return; }
+                    var r = Math.min(state.tools.r, Math.max(0, c.clientWidth - t.offsetWidth));
+                    var top = Math.min(state.tools.t, Math.max(0, c.clientHeight - t.offsetHeight));
+                    t.style.right = r + "px"; t.style.top = top + "px"; t.style.bottom = "auto";
+                }
+                function shift(dr, dt) {
+                    var c = canvas(); var t = body.querySelector(".pg-tools"); if (!c || !t) { return; }
+                    var now = state.tools || { r: c.clientWidth - t.offsetLeft - t.offsetWidth, t: t.offsetTop };
+                    state.tools = {
+                        r: Math.round(Math.min(Math.max(0, c.clientWidth - t.offsetWidth), Math.max(0, now.r + dr))),
+                        t: Math.round(Math.min(Math.max(0, c.clientHeight - t.offsetHeight), Math.max(0, now.t + dt)))
+                    };
+                    stack();
+                }
+                function fold(name) {
+                    var at = state.folded.indexOf(name);
+                    // The oldest fold gives way past fifty, so a fold always takes and the address stays short.
+                    if (at >= 0) { state.folded.splice(at, 1); } else { state.folded.push(name); state.folded = state.folded.slice(-50); }
+                    save(); read();
                 }
                 function zoom(by, cx, cy) {
                     var c = canvas(); if (!c) { return; }
@@ -1347,8 +1374,13 @@
 
                 var pointers = {};
                 var spread = 0;
+                // The zoom buttons' handle, dragged: the pointer it follows and where it was last.
+                var grip = null;
                 body.addEventListener("pointerdown", function (e) {
-                    var c = canvas(); if (!c || !c.contains(e.target) || e.target.closest("a") || (e.pointerType === "mouse" && e.button !== 0)) { return; }
+                    if (e.pointerType === "mouse" && e.button !== 0) { return; }
+                    if (e.target.closest("[data-pg-grip]")) { e.preventDefault(); grip = { id: e.pointerId, x: e.clientX, y: e.clientY }; return; }
+                    // A link or a fold button is pressed, not dragged.
+                    var c = canvas(); if (!c || !c.contains(e.target) || e.target.closest("a, [data-pg-fold]")) { return; }
                     pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
                     try { c.setPointerCapture(e.pointerId); } catch (x) { }
                 });
@@ -1363,7 +1395,14 @@
                     } else { pan(e.clientX - p.x, e.clientY - p.y); }
                     p.x = e.clientX; p.y = e.clientY;
                 });
-                function lift(e) { delete pointers[e.pointerId]; spread = 0; }
+                // On the document, so the handle keeps up with a pointer that leaves it, and across a refresh that replaces it.
+                document.addEventListener("pointermove", function (e) {
+                    if (!grip || e.pointerId !== grip.id) { return; }
+                    shift(grip.x - e.clientX, e.clientY - grip.y);
+                    grip.x = e.clientX; grip.y = e.clientY;
+                });
+                // A refresh that replaces the handle mid-drag takes its capture away; only letting go ends moving it.
+                function lift(e) { delete pointers[e.pointerId]; spread = 0; if (grip && e.pointerId === grip.id && e.type !== "lostpointercapture") { grip = null; save(); } }
                 // On the document, not the panel: a refresh that replaces the canvas mid-drag sends the release elsewhere.
                 document.addEventListener("pointerup", lift);
                 document.addEventListener("pointercancel", lift);
@@ -1375,6 +1414,14 @@
                     zoom(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top);
                 }, { passive: false });
                 body.addEventListener("keydown", function (e) {
+                    var f = e.target.closest && e.target.closest("[data-pg-fold]");
+                    // A key held down folds once, not once for each repeat.
+                    if (f && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); if (!e.repeat) { fold(f.getAttribute("data-pg-fold")); } return; }
+                    if (e.target.closest && e.target.closest("[data-pg-grip]")) {
+                        var by = { ArrowLeft: [16, 0], ArrowRight: [-16, 0], ArrowUp: [0, -16], ArrowDown: [0, 16] }[e.key];
+                        if (by) { e.preventDefault(); shift(by[0], by[1]); save(); }
+                        return;
+                    }
                     var c = canvas(); if (!c || e.target !== c) { return; }
                     var step = 40, done = true;
                     if (e.key === "ArrowLeft") { pan(step, 0); } else if (e.key === "ArrowRight") { pan(-step, 0); }
@@ -1387,6 +1434,8 @@
                     var z = e.target.closest("[data-pg-zoom]");
                     // Fit shows the whole picture, centred; until the person moves it, the picture fits the panel's width.
                     if (z) { var how = z.getAttribute("data-pg-zoom"); if (how === "fit") { whole(); } else { zoom(how === "in" ? 1.2 : 1 / 1.2); } return; }
+                    var f = e.target.closest("[data-pg-fold]");
+                    if (f) { fold(f.getAttribute("data-pg-fold")); return; }
                     var drop = e.target.closest("[data-pg-drop]");
                     if (drop) {
                         var kind = drop.getAttribute("data-pg-drop") === "agent" ? "agents" : "projects";
@@ -1431,9 +1480,15 @@
                                 mark = on.getAttribute("href") !== null ? "a[href='" + CSS.escape(on.getAttribute("href")) + "']"
                                     : on.name ? "input[name='" + CSS.escape(on.name) + "'][value='" + CSS.escape(on.value) + "']"
                                     : on.getAttribute("data-pg-zoom") ? "[data-pg-zoom='" + on.getAttribute("data-pg-zoom") + "']"
+                                    : on.getAttribute("data-pg-fold") !== null ? "[data-pg-fold='" + CSS.escape(on.getAttribute("data-pg-fold")) + "']"
+                                    : on.hasAttribute("data-pg-grip") ? "[data-pg-grip]"
                                     : on.classList.contains("pg-canvas") ? ".pg-canvas"
                                     : on.tagName === "SUMMARY" && on.parentElement.getAttribute("data-pg-keep") ? "details[data-pg-keep='" + on.parentElement.getAttribute("data-pg-keep") + "'] > summary"
                                     : null;
+                                // A conversation's link is in the picture and again in the list, and the list is drawn only
+                                // while the focus is in it, so the focus goes back to the copy in the same place.
+                                if (mark && on.closest(".pg-list")) { mark = ".pg-list " + mark; }
+                                else if (mark && on.closest(".pg-canvas") && !on.classList.contains("pg-canvas")) { mark = ".pg-canvas " + mark; }
                             }
                             var top = body.scrollTop;
 
@@ -1465,11 +1520,10 @@
 
                 function draw() {
                     panel.hidden = !state.open;
-                    // The tab stays on the panel's edge while it lies over the page, and closes it from there (the person's
-                    // feedback on feature 042): one control opens and closes it. Docked beside the page it would sit over the
-                    // page's own edge, so there the panel's Close does it.
+                    // The tab stays on the panel's edge, laid over the page or pinned beside it, and closes it from there (the
+                    // person's feedback on feature 042): one control opens and closes it. Only where the panel fills the window
+                    // and the tab has no edge to ride does the panel's Close do it (the stylesheet shows Close only there).
                     tab.classList.toggle("pg-tab-open", state.open);
-                    tab.hidden = state.open && docked();
                     tab.setAttribute("aria-expanded", state.open ? "true" : "false");
                     Array.prototype.forEach.call(opens, function (b) { b.setAttribute("aria-expanded", state.open ? "true" : "false"); });
                     panel.classList.toggle("pg-pinned", docked());

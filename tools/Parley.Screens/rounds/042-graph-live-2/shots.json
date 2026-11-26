@@ -1,0 +1,106 @@
+// Feature 042: the live graph after the person's notes on round 1 (no Close beside the tab, a fold on each agent, the
+// list kept for screen readers only, and the zoom buttons stacked over the picture and movable).
+{
+  "theme": "light",
+  "scale": 1,
+  "maximumBytes": 0,
+  "shots": [
+    {
+      "file": "graph-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "What is being worked on now, on a phone, with a fold on each agent and the zoom buttons over the picture.",
+      "graph": false,
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        { "click": ".rail-more > summary" },
+        { "click": "[data-pg-open]" },
+        { "pause": 1200 }
+      ]
+    },
+    {
+      "file": "graph-phone-folded-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "billing folded, so orders and its work come up; the zoom buttons moved to the lower left by their handle.",
+      "graph": false,
+      "storage": {
+        "parley-convo-composer": "closed",
+        "parley.graph": "{\"open\":false,\"pinned\":false,\"projects\":[],\"agents\":[],\"folded\":[],\"tools\":{\"r\":290,\"t\":380}}"
+      },
+      "actions": [
+        { "click": ".rail-more > summary" },
+        { "click": "[data-pg-open]" },
+        { "pause": 1200 },
+        { "click": "[data-pg-fold='billing@devbox']" },
+        { "pause": 1200 }
+      ]
+    },
+    {
+      "file": "graph-tablet-light.png",
+      "width": 820,
+      "height": 1180,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "On a tablet: the tab on the panel's edge closes it, and the list and Every project are gone.",
+      "graph": false,
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        { "click": "#pg-tab" },
+        { "pause": 1200 }
+      ]
+    },
+    {
+      "file": "graph-desktop-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "Pinned beside a page: Unpin stays, Close is gone, and the Graph tab on the panel's edge closes it.",
+      "graph": true,
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        { "pause": 1200 }
+      ]
+    },
+    {
+      "file": "graph-desktop-folded-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "billing folded: its box says how many items it is hiding.",
+      "graph": true,
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        { "pause": 1200 },
+        { "click": "[data-pg-fold='billing@devbox']" },
+        { "pause": 1200 }
+      ]
+    },
+    {
+      "file": "agents-freeze-all-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/?tab=agents&project={project}",
+      "shows": "Freeze all and Unfreeze all, moved from the graph to the project's Agents page.",
+      "graph": false,
+      "actions": [
+        { "pause": 600 }
+      ]
+    }
+  ]
+}

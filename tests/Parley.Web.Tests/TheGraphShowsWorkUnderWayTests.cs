@@ -75,13 +75,51 @@ public sealed class TheGraphShowsWorkUnderWayTests
         Assert.DoesNotContain("<h3>orders@pc</h3>", fragment, StringComparison.Ordinal);
         Assert.Contains("1 agent not working is hidden", fragment, StringComparison.Ordinal);
 
-        // Every fact is in the list too, and every project keeps its Freeze all.
+        // Every fact is in the list too, with each agent's Freeze. Freezing a whole project moved to its Agents page, and the
+        // list is drawn only while the focus is in it (the person's feedback on feature 042).
         Assert.Contains("Queued 1, not collected yet", fragment, StringComparison.Ordinal);
-        Assert.Contains("action=freezeall&amp;subject=alpha", fragment, StringComparison.Ordinal);
         Assert.Contains("action=freeze&amp;subject=billing%40pc", fragment, StringComparison.Ordinal);
+        Assert.Contains("<section class=\"pg-list\"", fragment, StringComparison.Ordinal);
+        Assert.DoesNotContain("action=freezeall", fragment, StringComparison.Ordinal);
+        Assert.DoesNotContain("Every project", fragment, StringComparison.Ordinal);
+
+        // The agent can be folded from its box, and the zoom buttons are over the picture.
+        Assert.Contains("data-pg-fold=\"billing@pc\" aria-expanded=\"true\"", fragment, StringComparison.Ordinal);
+        Assert.Contains("<div class=\"pg-tools\" role=\"group\" aria-label=\"Zoom\">", fragment, StringComparison.Ordinal);
 
         // The record was read whole, which takes no delivery.
         Assert.All(console.Broker.ExportsAsked, asked => Assert.False(asked.LatestOnly));
+    }
+
+    [Fact]
+    public async Task A_folded_agent_is_drawn_alone_and_the_list_still_says_all_it_has()
+    {
+        using var console = new TranscriptConsole();
+        Script(console.Broker);
+        using var client = console.CreateClient();
+
+        var fragment = await client.GetStringAsync(new Uri("/Graph?fold=billing%40pc&fold=bad%0Aname", UriKind.Relative), Ct);
+
+        Assert.Contains(">billing@pc</text>", fragment, StringComparison.Ordinal);
+        Assert.Contains("data-pg-fold=\"billing@pc\" aria-expanded=\"false\"", fragment, StringComparison.Ordinal);
+        Assert.Contains("4 items folded", fragment, StringComparison.Ordinal);
+        Assert.DoesNotContain("NOW · alpha", fragment, StringComparison.Ordinal);
+        Assert.DoesNotContain("Background task 1", fragment, StringComparison.Ordinal);
+        Assert.Contains("Queued 1, not collected yet", fragment, StringComparison.Ordinal);
+        Assert.Contains("2 background tasks running.", fragment, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Freezing_every_agent_in_a_project_is_on_its_agents_page()
+    {
+        using var console = new TranscriptConsole();
+        Script(console.Broker);
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(new Uri("/?tab=agents&project=alpha", UriKind.Relative), Ct);
+
+        Assert.Contains("action=freezeall&amp;subject=alpha", page, StringComparison.Ordinal);
+        Assert.Contains("action=unfreezeall&amp;subject=alpha", page, StringComparison.Ordinal);
     }
 
     [Fact]

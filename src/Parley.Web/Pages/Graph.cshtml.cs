@@ -50,8 +50,10 @@ public sealed class GraphModel(BrokerDirectory directory) : PageModel
     /// <param name="project">The projects chosen in the filter; none is every project.</param>
     /// <param name="agent">The agents chosen in the filter; none is every agent.</param>
     /// <param name="narrow">Whether the panel is as narrow as a phone, so the picture is drawn in one column.</param>
+    /// <param name="fold">The agents the person folded in the picture.</param>
     /// <returns>The fragment.</returns>
-    public async Task<IActionResult> OnGetAsync([FromQuery] string[]? project, [FromQuery] string[]? agent, [FromQuery] bool narrow = false)
+    public async Task<IActionResult> OnGetAsync(
+        [FromQuery] string[]? project, [FromQuery] string[]? agent, [FromQuery] bool narrow = false, [FromQuery] string[]? fold = null)
     {
         var token = HttpContext.RequestAborted;
         var now = DateTimeOffset.UtcNow;
@@ -88,7 +90,10 @@ public sealed class GraphModel(BrokerDirectory directory) : PageModel
             inputs.Add(new WorkInput(name, roster.Value, owed, problem));
         }
 
-        Picture = WorkNow.Build(inputs, now, ChosenProjects, ChosenAgents, narrow);
+        // Held to the name grammar and bounded, as the filter's agents are: only a name that could be drawn is looked up.
+        var folded = (fold ?? []).Where(a => AgentName.TryCreate(a, out _)).Distinct(StringComparer.Ordinal).Take(200).ToHashSet(StringComparer.Ordinal);
+
+        Picture = WorkNow.Build(inputs, now, ChosenProjects, ChosenAgents, narrow, folded);
         AsOf = DateTimeOffset.Now;
 
         return Page();

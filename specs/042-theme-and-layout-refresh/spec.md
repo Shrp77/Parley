@@ -275,7 +275,7 @@ does not feel crowded, and the graph pinned beside a conversation leaves the con
 - **FR-022**: The terminal (`parley-terminal`) MUST NOT change.
 - **FR-023**: The console MUST keep working with no script, as each page does today, and inside the roadmap page's frame.
 
-**The graph** (the person's feedback on the graph, exchanges #52 and #54, conversation UI-refresh-and-fixes)
+**The graph** (the person's feedback on the graph, exchanges #52, #54 and #57, conversation UI-refresh-and-fixes)
 
 - **FR-030**: The graph panel MUST show what is being worked on now, not which agents are in which project: only agents
   with a turn running or background work running, each other agent counted as hidden.
@@ -286,9 +286,18 @@ does not feel crowded, and the graph pinned beside a conversation leaves the con
 - **FR-033**: The person MUST be able to narrow the graph to chosen projects and agents, each choice shown as a chip that
   takes it off, the choice kept in the browser only.
 - **FR-034**: The picture MUST be a vertical tree the person can move and zoom by pointer, touch, wheel, buttons and keys,
-  drawn in one column where the panel is as narrow as a phone; every fact in it MUST also be in a list beside it.
+  drawn in one column where the panel is as narrow as a phone; every fact in it MUST also be in a list after it. The person
+  asked that the list not be shown (exchange #57), so it is drawn only while the keyboard's focus is in it, and a screen
+  reader reads it as before (spec 041 FR-003).
 - **FR-035**: Reading the graph MUST change nothing (no delivery taken), and what one refresh reads MUST be bounded, with
   what was left out said.
+- **FR-036**: The tab on the panel's edge MUST open and close it, laid over the page or pinned beside it; the panel has a
+  Close of its own only where it fills the window and the tab has no edge to ride.
+- **FR-037**: Each agent's box MUST carry a button that hides and shows what is drawn under it, saying how many items it
+  hides; the choice is kept in the browser only, and the list still holds everything.
+- **FR-038**: The zoom buttons (zoom in, fit, zoom out) MUST be icons stacked over the picture that the person can move by a
+  handle, with a pointer or the arrow keys, where they were put kept in the browser only. Freezing and unfreezing every agent
+  in a project is on the project's Agents page, not in the graph.
 
 **How the work is shown**
 

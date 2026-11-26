@@ -45,13 +45,15 @@ public sealed record AgentPost(string Project, string Name, bool Frozen);
 /// <param name="Background">How many background tasks its node last said it has running; a node reports a count, not what
 /// each task is (SPEC.md §11.6).</param>
 /// <param name="Posts">The projects it serves.</param>
+/// <param name="Folded">Whether the person folded it, so nothing under it is drawn; the list still holds it all.</param>
 public sealed record WorkingAgent(
     string Name,
     AgentNow Now,
     IReadOnlyList<WorkItem> Current,
     IReadOnlyList<WorkItem> Queued,
     int Background,
-    IReadOnlyList<AgentPost> Posts);
+    IReadOnlyList<AgentPost> Posts,
+    bool Folded = false);
 
 /// <summary>What a box in the picture stands for.</summary>
 public enum WorkBoxKind
@@ -179,13 +181,15 @@ public static class WorkNow
     /// <param name="projects">The projects chosen in the filter; none chosen is every project.</param>
     /// <param name="agents">The agent names chosen in the filter; none chosen is every agent.</param>
     /// <param name="narrow">Whether to draw one column, for a narrow panel.</param>
+    /// <param name="folded">The agent names the person folded, so only their own box is drawn.</param>
     /// <returns>The picture.</returns>
     public static WorkPicture Build(
         IReadOnlyList<WorkInput> inputs,
         DateTimeOffset now,
         IReadOnlyCollection<string>? projects = null,
         IReadOnlyCollection<string>? agents = null,
-        bool narrow = false)
+        bool narrow = false,
+        IReadOnlyCollection<string>? folded = null)
     {
         ArgumentNullException.ThrowIfNull(inputs);
 
@@ -236,7 +240,8 @@ public static class WorkNow
                 [.. standings
                     .Select(s => new AgentPost(s.Input.Project, s.Agent.Name.Value, s.Agent.Frozen))
                     .OrderBy(p => string.Equals(p.Project, best.Input.Project, StringComparison.Ordinal) ? 0 : 1)
-                    .ThenBy(p => p.Project, StringComparer.Ordinal)]));
+                    .ThenBy(p => p.Project, StringComparer.Ordinal)],
+                folded is { Count: > 0 } && folded.Contains(best.Agent.Name.Value)));
         }
 
         working.Sort((a, b) =>
@@ -329,6 +334,11 @@ public static class WorkNow
     /// tasks, each kind bounded and the rest counted.</summary>
     private static IEnumerable<(WorkBoxKind Kind, int Height, int Index)> Under(WorkingAgent agent, bool tasks)
     {
+        if (agent.Folded)
+        {
+            yield break;
+        }
+
         if (!tasks)
         {
             for (var i = 0; i < Math.Max(1, Math.Min(agent.Current.Count, MostHeld)); i++)
@@ -408,7 +418,7 @@ public static class WorkNow
             }
 
             from = y + 30;
-            y = iy + 28;
+            y = agent.Folded ? y + 60 + 24 : iy + 28;
         }
 
         return (boxes, edges, Math.Max(y - 16, 100));
@@ -462,7 +472,8 @@ public static class WorkNow
             }
 
             spineFrom = y + 60;
-            y = Math.Max(bottoms[0], bottoms[1]) + 40;
+            // A folded agent has nothing under it, so the next one follows close.
+            y = agent.Folded ? y + 60 + 36 : Math.Max(bottoms[0], bottoms[1]) + 40;
         }
 
         return (boxes, edges, Math.Max(y - 20, 100));
