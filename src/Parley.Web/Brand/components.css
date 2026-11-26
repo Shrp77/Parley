@@ -1384,7 +1384,7 @@ li.turn { scroll-margin-top: calc(var(--frame) + var(--cmd-h, 0px) + 1rem); }
 }
 
 /* One column, however long: the rail is a nav, and the console's nav rule wraps, which once a long conversation
-   filled the rail's height started a second column of ticks. Only the narrow layout's horizontal rail wraps. */
+   filled the rail's height started a second column of ticks. The narrow layout's rail is one row, and does not wrap either. */
 /* No scrollbar, and still scrollable: by wheel, touch and keys, and by the page itself, which keeps the tick of the
    message being read in view. A bar beside a column of ticks only drew the eye to the wrong thing. */
 .timeline::-webkit-scrollbar { display: none; }
@@ -2022,15 +2022,22 @@ header .build { font: var(--md-sys-typescale-body-small); }
     .minimap { top: calc(var(--frame) + 0.5rem); z-index: 2; order: -1; }
     .minimap .timeline { background: var(--md-sys-color-surface-container-low); box-shadow: var(--md-sys-elevation-1); }
 
+    /* One line, however long, scrolled sideways by touch and by the page as the reader moves through the conversation.
+       It wrapped once, and a long conversation's rows, pinned to the top, filled a phone's screen (the person's
+       feedback on feature 043). Positioned, so each tick's text kept for a screen reader is held in the scroller
+       rather than widening the page by the length of the rail. */
     .timeline {
         flex-direction: row;
-        flex-wrap: wrap;
         align-items: center;
+        overflow-x: auto;
+        overflow-y: hidden;
+        position: relative;
     }
 
+    .timeline > * { flex: none; }
     .timeline .tick { width: 0.5rem; height: 1.1rem; }
     .timeline .tick.ghosted { width: 0.85rem; }
-    .timeline .rail-day { margin: 0 0.2rem; }
+    .timeline .rail-day { margin: 0 0.2rem; white-space: nowrap; }
 
     /* The health page carries six columns and there is no longer width for
        them. Scrolled inside its own box rather than squeezed, because a

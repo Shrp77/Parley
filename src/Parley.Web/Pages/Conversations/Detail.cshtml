@@ -744,6 +744,7 @@ else
         (function () {
             var queued = false;
             var railTop = 0;
+            var railLeft = 0;
 
             function rail() { return document.querySelector(".timeline"); }
 
@@ -793,15 +794,29 @@ else
                     tick.setAttribute("aria-current", "true");
                 }
 
-                // Only a rail that scrolls, and not one the reader is using.
-                if (bar.scrollHeight <= bar.clientHeight + 1 || bar.matches(":hover") || bar.contains(document.activeElement)) { return; }
+                // Only a rail that scrolls, and not one the reader is using. The narrow layout's rail is one line that
+                // scrolls sideways; the wide layout's is a column that scrolls down. "Using" is a pointer that can hover
+                // resting on it, or focus a keyboard put there: a tap on a touch screen leaves both hover and focus on the
+                // tick it jumped from, and the rail would never follow the reader again.
+                var hovering = window.matchMedia("(hover: hover)").matches && bar.matches(":hover");
+
+                if (hovering || bar.querySelector(":focus-visible")) { return; }
 
                 var at = tick.getBoundingClientRect();
                 var box = bar.getBoundingClientRect();
-                var margin = box.height * 0.2;
 
-                if (at.top < box.top + margin || at.bottom > box.bottom - margin) {
-                    bar.scrollTop += (at.top + at.height / 2) - (box.top + box.height / 2);
+                if (bar.scrollWidth > bar.clientWidth + 1) {
+                    var side = box.width * 0.2;
+
+                    if (at.left < box.left + side || at.right > box.right - side) {
+                        bar.scrollLeft += (at.left + at.width / 2) - (box.left + box.width / 2);
+                    }
+                } else if (bar.scrollHeight > bar.clientHeight + 1) {
+                    var margin = box.height * 0.2;
+
+                    if (at.top < box.top + margin || at.bottom > box.bottom - margin) {
+                        bar.scrollTop += (at.top + at.height / 2) - (box.top + box.height / 2);
+                    }
                 }
             }
 
@@ -816,7 +831,7 @@ else
             document.addEventListener("scroll", function (e) {
                 var bar = rail();
 
-                if (bar && e.target === bar) { railTop = bar.scrollTop; }
+                if (bar && e.target === bar) { railTop = bar.scrollTop; railLeft = bar.scrollLeft; }
             }, true);
 
             window.addEventListener("scroll", soon, { passive: true });
@@ -825,9 +840,11 @@ else
             document.addEventListener("parley:followed", function () {
                 var bar = rail();
 
-                if (bar) { bar.scrollTop = railTop; }
+                if (bar) { bar.scrollTop = railTop; bar.scrollLeft = railLeft; }
 
-                track();
+                // A frame later, not now: the filter hides its ticks on this same event, in a listener added after this
+                // one, and a rail measured before that is wider than the one the reader sees.
+                soon();
             });
             window.addEventListener("load", soon);
 
