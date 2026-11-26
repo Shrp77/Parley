@@ -102,6 +102,27 @@ service Agents {
   // exchange, writes no message and creates no roadmap. This is the whole of what an agent can do with one -- there
   // is no read, no change and no marking done, and none may be added (principle 2.12).
   rpc ProposeRoadmap(ProposeRoadmapRequest) returns (ProposeRoadmapReply);
+
+  // The agent's own words for a background task it started: a name, a description and a link, shown to the person only
+  // (section 11.6). Held in memory until the agent's background work clears. The reply says nothing about whether the
+  // task is running, which is turn information (section 10.1).
+  rpc DescribeBackgroundTask(DescribeBackgroundTaskRequest) returns (DescribeBackgroundTaskReply);
+}
+
+message DescribeBackgroundTaskRequest {
+  string agent = 1;                   // the caller, as every Agents request names it
+  string task_id = 2;                 // the runner's id for the task, from the tool's result
+  string name = 3;                    // what it is doing, at most 64 characters
+  string description = 4;             // at most 300 characters; empty when none
+  string link = 5;                    // exchange #N, conversation:<id>, file:<name> or an https address; empty when none
+}
+
+message DescribeBackgroundTaskReply {
+  bool kept = 1;                      // false only when the task id or the name was refused
+  string refused = 2;                 // why, when not kept
+  bool name_cut = 3;
+  bool description_cut = 4;
+  string link_dropped = 5;            // why a link given was not kept; empty when none was given or it was kept
 }
 
 message AttachRequest {
@@ -775,6 +796,21 @@ message TurnReport {
 
 message BackgroundWork {
   int32 tasks = 1;
+  // Each running task the runner listed, in its order, at most 200; `tasks` still counts them all. The broker holds each
+  // entry to the same rules again, and drops one that fails them.
+  repeated RunningTask running = 2;
+}
+
+message RunningTask {
+  string id = 1;                      // the runner's task id
+  TaskKind kind = 2;
+  string label = 3;                   // the runner's description of it, cut and neutralised; empty when it gave none
+}
+
+enum TaskKind {
+  TASK_KIND_OTHER = 0;
+  TASK_KIND_AGENT = 1;                // a sub-agent
+  TASK_KIND_COMMAND = 2;              // a background command
 }
 
 message TurnStarted {
@@ -1201,6 +1237,18 @@ message RegistryRow {
 
   // Whether the person asked that the freeze outlast a start of the broker; false when it is not frozen.
   bool keep_frozen = 22;
+
+  // Each background task running, by name, as far as the node listed them (section 11.6): the agent's own words where it
+  // gave them, else the runner's. At most 200; `background_tasks` is the count.
+  repeated BackgroundTaskRow running_tasks = 23;
+}
+
+message BackgroundTaskRow {
+  string id = 1;
+  TaskKind kind = 2;
+  string name = 3;                    // empty when neither the agent nor the runner named it
+  string description = 4;             // empty when the agent gave none
+  string link = 5;                    // in its one spelling (exchange #N, conversation:<id>, file:<name>, https://...); empty when none
 }
 
 message RefusalsReply {
