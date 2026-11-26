@@ -7,7 +7,8 @@
 running (SPEC.md §11.6). The person wants to see what each background task (a sub-agent or a background command) is
 doing, so the web console's live graph of what Parley is doing now (feature 042) can show each working agent's sub-agents
 as named children, such as 'Reading the VAT rules' or 'Running the tax tests', instead of 'Background task 1, 2'." The
-person chose this as option (b) in exchange #54 of the conversation UI-refresh-and-fixes.
+person chose this as option (b) in exchange #54 of the conversation UI-refresh-and-fixes, and asked in exchange #58 for a
+name, a description and a link for each task, in plain words, and for a paged list.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -35,7 +36,33 @@ page list each running task by its name, and the list follows as tasks start and
 
 ---
 
-### User Story 2 - Names stay the person's, never another agent's (Priority: P1)
+### User Story 2 - Each task says plainly what it is doing, with a link to more (Priority: P1)
+
+The person reads a task at a glance. Its **name** is short and says what is being done, in the person's terms and not
+the agent's: "Checking VAT on gift cards", not "Investigating the tax-calculation module's handling of stored-value
+instruments". Its **description** says a little more, in one or two plain sentences, for when the person wants it. And
+where something says more still (the exchange the work is for, a document, a ticket or work item), the task links to it.
+
+**Why this priority**: the person asked for it (exchange #58). A name in the agent's own long, prosaic words is as hard
+to read as no name, and a link saves the person guessing what the work belongs to.
+
+**Independent Test**: an agent starts a sub-agent with a name, a description and a link to an exchange. The person's
+graph shows the name with the link; the agent's page shows the name, the description and the link.
+
+**Acceptance Scenarios**:
+
+1. **Given** an agent starting a background task, **When** it gives a name, a description and a link, **Then** the graph
+   shows the name with the link, and the agent's page shows all three.
+2. **Given** a task with a name only, **When** it is shown, **Then** it shows the name, with no empty description and no
+   dead link.
+3. **Given** a link that is not one of the kinds Parley shows (FR-012), **When** the task is reported, **Then** the link is
+   dropped and the name and description are still shown.
+4. **Given** an agent told how to describe its work (FR-013), **When** it names a task, **Then** the name says what is
+   being done, verb first, in at most 64 characters.
+
+---
+
+### User Story 3 - Names stay the person's, never another agent's (Priority: P1)
 
 The names say what an agent's own work is about, in the agent's own words. They are for the person running the deployment,
 like the count and the turn standing they sit beside, and no agent reads them.
@@ -55,7 +82,7 @@ the operator's registry does.
 
 ---
 
-### User Story 3 - Names go when the work does (Priority: P2)
+### User Story 4 - Names go when the work does (Priority: P2)
 
 The names live exactly as long as the count does: they are what the node last said, held in the broker's memory with the
 node that said it.
@@ -80,8 +107,8 @@ something false about what is being worked on.
 
 - **Two tasks with the same name** are both listed; the list is of tasks, not of distinct names.
 - **A name re-reported unchanged** changes nothing on screen and sends nothing more than the count's report does today.
-- **More tasks than a surface has room for**: the surface shows the first few and says how many more, never drops the
-  count.
+- **More tasks than a surface has room for**: the tasks are in a list that scrolls after five and is paged twenty at a
+  time, saying which page of how many and how many tasks in all. No task is dropped and the count is never lost (FR-014).
 - **A runner that never describes its tasks** behaves exactly as today, with every task a plain stand-in.
 - **A node older than this feature** reports a count and no names; surfaces show the count's stand-ins, as today.
 - **A name in a language or script the console does not expect** is shown as given, bounded by characters, not bytes.
@@ -92,7 +119,8 @@ something false about what is being worked on.
 
 - **FR-001**: A node MUST report, for each background task its agent has running, a short name taken from the runner's
   own output: the description the agent gave the tool call that started the task (a sub-agent's, or a background
-  command's). Where the runner gives none, the task's name is absent and surfaces show a plain stand-in.
+  command's). Where the runner gives none, the task's name is absent and surfaces show a plain stand-in. A name the
+  agent gave the task itself (FR-011) takes the place of the runner's.
 - **FR-002**: A node MUST report the names whenever the set of running tasks or their names change, in the same report
   that carries the count, so the count and the names never disagree.
 - **FR-003**: The broker MUST hold the names beside the count, in memory, with the node that reported them, and MUST
@@ -100,9 +128,9 @@ something false about what is being worked on.
   a broker restart. Nothing about them is written to the store.
 - **FR-004**: The operator registry (SPEC.md §10.2, `registry()`) MUST carry each agent's running task names in its turn
   standing. The agent operations (§10.1) MUST NOT carry them, as they carry no turn information today.
-- **FR-005**: A name MUST be bounded (at most 120 characters, cut at a character boundary and marked as cut) and MUST
-  have its control characters and line breaks neutralised before it is held. It is never parsed, interpreted or used to
-  address anything.
+- **FR-005**: A name MUST be at most 64 characters and a description at most 300, each cut at a character boundary and
+  marked as cut, with control characters and line breaks neutralised before it is held. Neither is ever parsed,
+  interpreted or used to address anything.
 - **FR-006**: The broker MUST accept names only from a joined node for an agent on that node's machine, as it accepts
   the count today; anything else is ignored and nothing is stored.
 - **FR-007**: The web console MUST show the names wherever it shows an agent's background work: the live graph's children
@@ -111,12 +139,26 @@ something false about what is being worked on.
 - **FR-008**: How an agent's state is derived (working, waiting on its background work, stopped, idle) MUST NOT change;
   the names describe the background work, never decide it.
 - **FR-009**: SPEC.md §11.6 and §10.2 MUST say all of the above, in the same change that builds it.
+- **FR-010**: A task MAY carry a description: one or two plain sentences saying what is being done, for the person.
+  Surfaces show it where there is room (the agent's page, and the graph's tooltip and list), never in place of the name.
+- **FR-011**: *Proposed, awaiting the person (exchange #58).* An agent MAY give a task's name, description and link
+  itself, by an adapter operation it calls as it starts the work, matched to the task by the runner's task id or the
+  tool call that started it. The runner gives only a short label, so a description and a link can come only from the
+  agent. What it says is shown to the person only (FR-004).
+- **FR-012**: A link MUST be one of: an exchange or conversation in the same project (drawn as `exchange #N` and opened in
+  the console), a file placed in Parley, or an `https` address shown with its host, so the person sees where it goes
+  before following it. Anything else is dropped. A link is at most 500 characters, and nothing follows one but the person.
+- **FR-013**: The adapter's instructions MUST tell an agent how to describe background work: the name short, verb first,
+  in the person's terms, saying what is being done rather than how; the description plain and brief; a link where one
+  says more. Parley bounds what is said (FR-005) but cannot judge its wording; the person reads it.
+- **FR-014**: Where a surface lists an agent's background tasks, the list MUST scroll once it holds more than five and be
+  paged twenty to a page, saying which page of how many and the total. The terminal pages the same way.
 
 ### Key Entities
 
 - **Background task**: one piece of work an agent's runner started in the background for the current task (a sub-agent
-  or a background command). It has a name (or none) and lives from the runner's report that it started to the report
-  that it ended.
+  or a background command). It has a name (or none), and may have a description and a link. It lives from the runner's
+  report that it started to the report that it ended.
 - **Turn standing**: what a node last said about an agent's turns and background work, held by the broker in memory. It
   gains the list of running tasks' names beside the count it already carries.
 
@@ -133,6 +175,7 @@ something false about what is being worked on.
 - **SC-004**: No agent, by any operation open to it, can read another agent's (or its own) background task names.
 - **SC-005**: A name of any length or content draws on one line within its bound on every surface, with nothing in it
   acted on.
+- **SC-006**: With fifty tasks running, the person can reach every one on every surface, and the total shown is fifty.
 
 ## Assumptions
 
@@ -143,8 +186,10 @@ something false about what is being worked on.
   lines, and the plan is written from what is found.
 - The runner already describes most background work: an agent gives a sub-agent a short description when it starts one,
   and a background command usually carries one. A task without a description is the exception the stand-in covers.
-- The bound of 120 characters is long enough for a description written to be read as a label and short enough to sit on
-  one line of the graph; it is the owner's to change.
+- The bounds are the person's (exchange #58): 64 characters for a name, short enough for one line of the graph, and 300
+  for a description. They are the owner's to change.
+- **To be settled with the person.** Whether an agent may give a task's name, description and link itself (FR-011).
+  Without that, a description and a link have nowhere to come from, and the feature shows the runner's label only.
 - The wire, enums and protocol change freely before release (CLAUDE.md, state), so the node and broker change together and
   no older peer needs a fallback beyond FR-001's "no names, count only".
 - Feature 042's graph page is the first surface to show the names. It is built to show the count's stand-ins until this
