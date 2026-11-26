@@ -141,8 +141,8 @@ something false about what is being worked on.
 - **FR-009**: SPEC.md §11.6 and §10.2 MUST say all of the above, in the same change that builds it.
 - **FR-010**: A task MAY carry a description: one or two plain sentences saying what is being done, for the person.
   Surfaces show it where there is room (the agent's page, and the graph's tooltip and list), never in place of the name.
-- **FR-011**: *Proposed, awaiting the person (exchange #58).* An agent MAY give a task's name, description and link
-  itself, by an adapter operation it calls as it starts the work, matched to the task by the runner's task id or the
+- **FR-011**: An agent MAY give a task's name, description and link itself (the person's choice, exchange #58), by an
+  adapter operation it calls as it starts the work, matched to the task by the runner's task id or the
   tool call that started it. The runner gives only a short label, so a description and a link can come only from the
   agent. What it says is shown to the person only (FR-004).
 - **FR-012**: A link MUST be one of: an exchange or conversation in the same project (drawn as `exchange #N` and opened in
@@ -188,8 +188,8 @@ something false about what is being worked on.
   and a background command usually carries one. A task without a description is the exception the stand-in covers.
 - The bounds are the person's (exchange #58): 64 characters for a name, short enough for one line of the graph, and 300
   for a description. They are the owner's to change.
-- **To be settled with the person.** Whether an agent may give a task's name, description and link itself (FR-011).
-  Without that, a description and a link have nowhere to come from, and the feature shows the runner's label only.
+- **Settled by the person (exchange #58).** An agent gives a task's name, description and link itself (FR-011), since
+  the runner's own label is all the runner gives. A task the agent says nothing about shows the runner's label.
 - The wire, enums and protocol change freely before release (CLAUDE.md, state), so the node and broker change together and
   no older peer needs a fallback beyond FR-001's "no names, count only".
 - Feature 042's graph page is the first surface to show the names. It is built to show the count's stand-ins until this
