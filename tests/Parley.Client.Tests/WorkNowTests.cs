@@ -71,17 +71,17 @@ public sealed class WorkNowTests
 
         Assert.Equal(8, agent.Background);
         Assert.Equal("shop", agent.TasksProject);
-        Assert.Equal("Task 1", agent.Task(0)!.Name);
-        Assert.Null(agent.Task(7));
+        Assert.Equal("Task 1", agent.TaskAt(0)!.Name);
+        Assert.Null(agent.TaskAt(7));
         Assert.Equal(WorkNow.MostTasks, picture.Boxes.Count(b => b.Kind == WorkBoxKind.Task));
         Assert.Equal(8 - WorkNow.MostTasks, Assert.Single(picture.Boxes, b => b.Kind == WorkBoxKind.MoreTasks).Index);
     }
 
     [Fact]
-    public void Across_projects_the_one_that_says_most_about_the_tasks_names_them()
+    public void Across_projects_the_one_where_the_agent_named_the_tasks_itself_names_them()
     {
         var bare = new[] { new BackgroundTask("t1", TaskKind.Agent, "Count to three") };
-        var said = new[] { new BackgroundTask("t1", TaskKind.Agent, "Checking VAT", "Reads the rules.") };
+        var said = new[] { new BackgroundTask("t1", TaskKind.Agent, "Checking VAT", Said: true) };
         var picture = WorkNow.Build(
             [
                 new WorkInput("shop", [Agent("orders@pc", Idle with { BackgroundTasks = 1, Tasks = bare })], [], null),
@@ -92,7 +92,7 @@ public sealed class WorkNowTests
         var agent = Assert.Single(picture.Working);
 
         Assert.Equal("store", agent.TasksProject);
-        Assert.Equal("Checking VAT", agent.Task(0)!.Name);
+        Assert.Equal("Checking VAT", agent.TaskAt(0)!.Name);
     }
 
     [Fact]

@@ -884,7 +884,8 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
         },
         BackgroundTaskText.Name(row.Name).Text,
         BackgroundTaskText.Description(row.Description).Text,
-        BackgroundTaskText.Link(row.Link));
+        BackgroundTaskText.Link(row.Link),
+        row.Said);
 
     private static string Render(DateTimeOffset? instant) =>
         instant?.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture) ?? string.Empty;

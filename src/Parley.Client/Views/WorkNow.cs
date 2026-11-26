@@ -64,7 +64,7 @@ public sealed record WorkingAgent(
     /// there and a surface draws a plain stand-in.</summary>
     /// <param name="index">Which box, from zero.</param>
     /// <returns>The task, or null.</returns>
-    public BackgroundTask? Task(int index) => Tasks is { } tasks && index < tasks.Count ? tasks[index] : null;
+    public BackgroundTask? TaskAt(int index) => Tasks is { } tasks && index < tasks.Count ? tasks[index] : null;
 }
 
 /// <summary>What a box in the picture stands for.</summary>
@@ -173,8 +173,8 @@ public static class WorkNow
 
     /// <summary>The most background tasks drawn under one agent; the rest are counted in a box that opens the agent's page,
     /// where they are listed in full.</summary>
-    /// <remarks>Five, as the person asked (exchange #58): a picture the person drags cannot scroll a list inside a box, so
-    /// the long list belongs on the page.</remarks>
+    /// <remarks>Five, as the person asked: a picture the person drags cannot scroll a list inside a box, so the long list
+    /// belongs on the page.</remarks>
     public const int MostTasks = 5;
 
     /// <summary>The most characters of an ask drawn on a box.</summary>
@@ -247,10 +247,10 @@ public static class WorkNow
                 .ToList();
 
             // One process, so the same tasks in every project that serves it; the agent's own words are in whichever
-            // project it said them through, so the project naming the most, and saying most about them, is drawn.
+            // project it said them through, so the project where it named most itself is drawn, then the one naming most.
             var named = standings
-                .OrderByDescending(s => s.Agent.Turns?.Named.Count ?? 0)
-                .ThenByDescending(s => s.Agent.Turns?.Named.Count(t => t.Description.Length > 0 || t.Link is not null) ?? 0)
+                .OrderByDescending(s => s.Agent.Turns?.Named.Count(t => t.Said) ?? 0)
+                .ThenByDescending(s => s.Agent.Turns?.Named.Count ?? 0)
                 .ThenBy(s => s.Input.Project, StringComparer.Ordinal)
                 .First();
 

@@ -46,19 +46,19 @@ their findings fixed before the next stage begins.
 - [x] T020 [P] [US2] Extend tests/Parley.Server.Tests/AgentsCannotSeeTurnsTests.cs (or the test holding it) to the new reply, declare the operation in tests/Parley.Server.Tests/TheAgentsServiceIsDeclaredTests.cs, pin the reply's refusal texts so none states a turn fact, and confirm `AgentsCannotSetTheirOwnLineTests` and `SurfaceBoundaryTests` still pass unchanged
 - [x] T021 [P] [US2] Write tool tests (parameters, the result shapes of contracts/mcp-tool.md, the description's wording) in tests/Parley.Mcp.Tests/DescribeBackgroundToolTests.cs
 - [x] T022 [US2] Add `parley_describe_background` to src/Parley.Mcp/ParleyTools.cs and its client call, and the server instructions line (contracts/mcp-tool.md)
-- [ ] T023 **Gate 3**: build, Server and Mcp tests, three-lens review, fix findings
+- [x] T023 **Gate 3**: build, Server and Mcp tests, three-lens review, fix findings
 
 ## Phase 5: User Story 1 and 2 on the web console (stage 4)
 
 **Goal**: the graph and the agent's page show names, descriptions and links, paged.
 **Independent test**: with a scripted registry, the graph draws named task boxes with links, five then "N more" linked to the agent's page; the agent's page lists all with description and link, twenty to a page.
 
-- [ ] T024 [P] [US1] Write tests: named task boxes, tooltip with description, link kinds drawn as console links or https with host and `rel="noopener noreferrer"`, five then a "more" box linking to the agent's page, in tests/Parley.Client.Tests/WorkNowTests.cs and tests/Parley.Web.Tests/TheGraphShowsWorkUnderWayTests.cs
-- [ ] T025 [US1] Carry `BackgroundTask` items on `WorkingAgent`, draw five task boxes then `MoreTasks`, in src/Parley.Client/Views/WorkNow.cs
-- [ ] T026 [US1] Draw each task's name, its description in the tooltip and its link, and the "more" box as a link to the agent's page, in src/Parley.Web/Pages/Graph.cshtml; list them in the graph's text list
-- [ ] T027 [P] [US2] Write tests for the agent page's *Background work* list: names, descriptions, links, a scrolling list after five, page 2 of 3 with 47 tasks, a page past the end shows the last, in tests/Parley.Web.Tests/AgentPageBackgroundWorkTests.cs
-- [ ] T028 [US2] Add the *Background work* section to src/Parley.Web/Pages/Projects/Agent.cshtml and its `[FromQuery] int tasks` page in Agent.cshtml.cs, styles in src/Parley.Web/Brand/components.css
-- [ ] T029 **Gate 4**: build, Web and Client tests, three-lens review, fix findings
+- [x] T024 [P] [US1] Write tests: named task boxes, tooltip with description, link kinds drawn as console links or https with host and `rel="noopener noreferrer"`, five then a "more" box linking to the agent's page, in tests/Parley.Client.Tests/WorkNowTests.cs and tests/Parley.Web.Tests/BackgroundWorkOnTheConsoleTests.cs
+- [x] T025 [US1] Carry `BackgroundTask` items on `WorkingAgent`, draw five task boxes then `MoreTasks`, in src/Parley.Client/Views/WorkNow.cs
+- [x] T026 [US1] Draw each task's name, its description in the tooltip and its link, and the "more" box as a link to the agent's page, in src/Parley.Web/Pages/Graph.cshtml; list them in the graph's text list
+- [x] T027 [P] [US2] Write tests for the agent page's *Background work* list: names, descriptions, links, a scrolling list after five, page 2 of 3 with 47 tasks, a page past the end shows the last, in tests/Parley.Web.Tests/BackgroundWorkOnTheConsoleTests.cs
+- [x] T028 [US2] Add the *Background work* section to src/Parley.Web/Pages/Projects/Agent.cshtml and its `tasks` page (`[BindProperty(SupportsGet = true, Name = "tasks")]`) in Agent.cshtml.cs, styles in src/Parley.Web/Brand/components.css
+- [x] T029 **Gate 4**: build, Web and Client tests, three-lens review, fix findings
 
 ## Phase 6: User Story 1 and 2 in the terminal (stage 5)
 

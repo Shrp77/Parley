@@ -1658,14 +1658,17 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         // A new process has no background work yet: what the last one had running went with it. The same token again is a
         // node telling a broker about a process it already runs, whose count stands.
-        if (!_launches.TryGetValue(agent, out var was) || !string.Equals(was.Token, token, StringComparison.Ordinal))
+        var fresh = !_launches.TryGetValue(agent, out var was) || !string.Equals(was.Token, token, StringComparison.Ordinal);
+
+        // Held with the connection that holds the machine now, so that connection's release takes the token with it
+        // (ReleaseNodeAsync), and a node that rejoins and announces the process again puts it back. Recorded before the
+        // old words are forgotten, so a describe landing in between is said under this launch, not the last.
+        _launches[agent] = (token, reporter);
+
+        if (fresh)
         {
             ForgetBackground(agent, token);
         }
-
-        // Held with the connection that holds the machine now, so that connection's release takes the token with it
-        // (ReleaseNodeAsync), and a node that rejoins and announces the process again puts it back.
-        _launches[agent] = (token, reporter);
 
         // A freeze made while its node was away asked nobody, and the node's return announces the process again: it is asked
         // to stop now, as the freeze would have (SPEC.md §14). Otherwise it ran on, frozen and given no turns, read on every
@@ -1847,7 +1850,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
         var said = _described.TryGetValue(agent, out var described) ? described : DescribedTasks.None;
 
         return [.. work.Named.Select(task => said.Find(task.Id) is { } words
-            ? task with { Name = words.Name, Description = words.Description, Link = words.Link }
+            ? task with { Name = words.Name, Description = words.Description, Link = words.Link, Said = true }
             : task)];
     }
 

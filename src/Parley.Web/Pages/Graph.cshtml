@@ -1,6 +1,7 @@
 @page
 @model Parley.Web.Pages.GraphModel
 @using Parley.Client.Views
+@using Parley.Client.Rendering
 @{
     Layout = null;
     var picture = Model.Picture;
@@ -12,6 +13,9 @@
         var post = agent.Posts.FirstOrDefault(p => p.Project == agent.TasksProject) ?? agent.Posts[0];
         return $"/Projects/Agent?project={Uri.EscapeDataString(post.Project)}&agent={Uri.EscapeDataString(post.Name)}";
     }
+    // One task's place on that page: its page of twenty, and its row.
+    static string AtTask(WorkingAgent agent, int index, string id) =>
+        $"{TaskPage(agent)}&tasks={(index / TaskWords.MostListed) + 1}#task-{Uri.EscapeDataString(id)}";
     var hiddenWords = picture.Hidden == 0 ? null : $"{Plural(picture.Hidden, "agent", "agents")} not working {(picture.Hidden == 1 ? "is" : "are")} hidden";
     var workingWords = Plural(picture.Working.Count, "agent", "agents") + " working";
     var filtered = Model.ChosenProjects.Count + Model.ChosenAgents.Count > 0;
@@ -154,30 +158,30 @@
                             break;
                         case WorkBoxKind.Task:
                             @* Named by the agent where it said, else by the runner; its words are plain text, drawn encoded and
-                               never as markup. Only its link is followed, and a web address says its host first. *@
-                            var task = agent!.Task(box.Index);
-                            var taskName = task is null ? $"Background task {box.Index + 1}" : TaskLinks.Name(task);
-                            var taskPage = TaskPage(agent);
-                            var taskLink = task?.Link is { } l ? TaskLinks.Href(l, agent.TasksProject, taskPage) : default;
+                               never as markup. What is followed is the link, drawn as where it goes (a web address by its host),
+                               never the name the agent chose. *@
+                            var task = agent!.TaskAt(box.Index);
+                            var taskName = task is null ? $"Background task {box.Index + 1}" : TaskWords.Name(task);
+                            var taskLink = task?.Link is { } l ? TaskLinks.Href(l, agent.TasksProject, AtTask(agent, box.Index, task.Id)) : default;
                             <g class="pg-node pg-task">
-                                <title>@taskName@(task?.Description is { Length: > 0 } said ? ": " + said : "")@(task?.Link is { } shown ? $" ({TaskLinks.Words(shown)})" : "")</title>
+                                <title>@taskName@(task?.Description is { Length: > 0 } said ? ": " + said : "")@(task?.Link is { } shown ? $" ({TaskWords.Link(shown)})" : "")</title>
                                 <rect x="@x" y="@y" width="@box.Width" height="@box.Height" rx="12" />
-                                <text x="@(x + 14)" y="@(y + 18)" class="pg-tag">BACKGROUND@(task?.Link is { } tag ? " · " + WorkNow.NameLine(TaskLinks.Words(tag)) : "")</text>
                                 @if (taskLink.Href is { } href)
                                 {
-                                    <a href="@href" target="@(taskLink.External ? "_blank" : null)" rel="@(taskLink.External ? "noopener noreferrer" : null)"><text x="@(x + 14)" y="@(y + 35)" class="pg-title">@WorkNow.NameLine(taskName)</text></a>
+                                    <a href="@href" target="@(taskLink.External ? "_blank" : null)" rel="@(taskLink.External ? "noopener noreferrer" : null)"><text x="@(x + 14)" y="@(y + 18)" class="pg-tag">BACKGROUND · @WorkNow.NameLine(TaskWords.Where(task!.Link!))</text></a>
                                 }
                                 else
                                 {
-                                    <g><text x="@(x + 14)" y="@(y + 35)" class="pg-title">@WorkNow.NameLine(taskName)</text></g>
+                                    <g><text x="@(x + 14)" y="@(y + 18)" class="pg-tag">BACKGROUND</text></g>
                                 }
+                                <text x="@(x + 14)" y="@(y + 35)" class="pg-title">@WorkNow.NameLine(taskName)</text>
                             </g>
                             break;
                         case WorkBoxKind.MoreTasks:
                             <g class="pg-node pg-more">
                                 <title>Every background task, on its page</title>
                                 <rect x="@x" y="@y" width="@box.Width" height="@box.Height" rx="10" />
-                                <a href="@TaskPage(agent!)#background-work"><text x="@(x + 14)" y="@(y + 20)" class="pg-sub">@box.Index more background tasks: see all</text></a>
+                                <a href="@TaskPage(agent!)#background-work"><text x="@(x + 14)" y="@(y + 20)" class="pg-sub">@Plural(box.Index, "more background task", "more background tasks"): see all</text></a>
                             </g>
                             break;
                         default:
@@ -253,22 +257,26 @@
                 {
                     <li>@(agent.Queued.Count - ListedQueued) more queued, not listed.</li>
                 }
+                @* Each task as the picture names it, a stand-in where the node named none, as many as one page of the agent's
+                   page holds; past that, the agent's page lists them all. *@
                 @if (agent.Background > 0)
                 {
-                    <li>@(agent.Background == 1 ? "1 background task" : $"{agent.Background} background tasks") running@(agent.Tasks is { Count: > 0 } ? ":" : ".")</li>
+                    <li>@(agent.Background == 1 ? "1 background task" : $"{agent.Background} background tasks") running:</li>
                 }
-                @foreach (var named in (agent.Tasks ?? []).Take(ListedQueued))
+                @{ var listedTasks = TaskWords.Every(agent.Tasks ?? [], agent.Background); }
+                @for (var t = 0; t < Math.Min(listedTasks.Count, TaskWords.MostListed); t++)
                 {
-                    var listedLink = named.Link is { } ll ? TaskLinks.Href(ll, agent.TasksProject, TaskPage(agent)) : default;
+                    var named = listedTasks[t];
+                    var listedLink = named?.Link is { } ll ? TaskLinks.Href(ll, agent.TasksProject, AtTask(agent, t, named.Id)) : default;
                     <li>
-                        Background: @TaskLinks.Name(named)@(named.Description.Length > 0 ? ". " + named.Description : "")
+                        Background: @TaskWords.Name(named)@(TaskWords.Kind(named) is { Length: > 0 } kind ? $" ({kind})" : "")@(named?.Description is { Length: > 0 } said ? ". " + said : "")
                         @if (listedLink.Href is { } listedHref)
                         {
-                            <a href="@listedHref" target="@(listedLink.External ? "_blank" : null)" rel="@(listedLink.External ? "noopener noreferrer" : null)">@TaskLinks.Words(named.Link!)</a>
+                            <a href="@listedHref" target="@(listedLink.External ? "_blank" : null)" rel="@(listedLink.External ? "noopener noreferrer" : null)">@TaskWords.Link(named!.Link!)</a>
                         }
                     </li>
                 }
-                @if ((agent.Tasks?.Count ?? 0) > ListedQueued)
+                @if (agent.Background > TaskWords.MostListed || agent.Background > WorkNow.MostTasks)
                 {
                     <li><a href="@TaskPage(agent)#background-work">Every background task, on its page.</a></li>
                 }

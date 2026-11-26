@@ -73,39 +73,42 @@ else
            words are plain text, encoded and never read as markup; only its link is followed, a web address with its host
            shown first and opened with no opener. The list scrolls after five and is paged twenty at a time, as the person
            asked. *@
-        var named = turns.Named;
-        var pages = Math.Max(1, (named.Count + AgentModel.TasksPerPage - 1) / AgentModel.TasksPerPage);
+        var every = Parley.Client.Rendering.TaskWords.Every(turns.Named, turns.BackgroundTasks);
+        var pages = Math.Max(1, (every.Count + AgentModel.TasksPerPage - 1) / AgentModel.TasksPerPage);
         var onPage = Math.Clamp(Model.TasksPage, 1, pages);
         var first = (onPage - 1) * AgentModel.TasksPerPage;
         var here = $"/Projects/Agent?project={Uri.EscapeDataString(Model.Project ?? string.Empty)}&agent={Uri.EscapeDataString(agent.Name.Value)}";
         <section id="background-work" class="bg-work" aria-labelledby="background-work-title" data-project="@Model.Project">
             <h2 id="background-work-title">Background work</h2>
             <p class="bg-count">
-                @(turns.BackgroundTasks == 1 ? "1 task" : $"{turns.BackgroundTasks} tasks") running@(named.Count < turns.BackgroundTasks ? $", {named.Count} of them named here" : "").
+                @(turns.BackgroundTasks == 1 ? "1 task" : $"{turns.BackgroundTasks} tasks") running.
                 @if (pages > 1)
                 {
                     <span>Page @onPage of @pages.</span>
                 }
             </p>
             <ol class="bg-tasks" start="@(first + 1)">
-                @foreach (var task in named.Skip(first).Take(AgentModel.TasksPerPage))
+                @foreach (var task in every.Skip(first).Take(AgentModel.TasksPerPage))
                 {
-                    <li id="task-@task.Id">
-                        <span class="bg-name">@Parley.Web.TaskLinks.Name(task)</span>
-                        <span class="bg-kind">@(task.Kind switch { TaskKind.Agent => "sub-agent", TaskKind.Command => "command", _ => "task" })</span>
-                        @if (task.Description.Length > 0)
+                    @* A task the node could not name is still listed, as what kind of work it is. *@
+                    <li id="@(task is { Id.Length: > 0 } ? "task-" + task.Id : null)">
+                        <span class="bg-name">@Parley.Client.Rendering.TaskWords.Name(task)</span>
+                        @if (Parley.Client.Rendering.TaskWords.Kind(task) is { Length: > 0 } kind)
+                        {
+                            <span class="bg-kind">@kind</span>
+                        }
+                        @if (task is { Description.Length: > 0 })
                         {
                             <p class="bg-description">@task.Description</p>
                         }
-                        @if (task.Link is { Kind: TaskLinkKind.Exchange } exchange)
+                        @if (task?.Link is { Kind: TaskLinkKind.Exchange } exchange)
                         {
                             @* Opened in place, as a reference in a message is; the number is digits only. *@
                             <button type="button" class="exchange-ref" data-exchange="@exchange.Target" aria-expanded="false" title="Show exchange #@exchange.Target here">exchange #@exchange.Target</button>
                         }
-                        else if (task.Link is { } link)
+                        else if (task?.Link is { } link && Parley.Web.TaskLinks.Href(link, Model.Project ?? string.Empty, here) is { Href: { } href } followed)
                         {
-                            var (href, external) = Parley.Web.TaskLinks.Href(link, Model.Project ?? string.Empty, here);
-                            <a class="bg-link" href="@href" target="@(external ? "_blank" : null)" rel="@(external ? "noopener noreferrer" : null)">@Parley.Web.TaskLinks.Words(link)@(external ? " (opens a new tab)" : "")</a>
+                            <a class="bg-link" href="@href" target="@(followed.External ? "_blank" : null)" rel="@(followed.External ? "noopener noreferrer" : null)">@Parley.Client.Rendering.TaskWords.Link(link)</a>
                         }
                     </li>
                 }

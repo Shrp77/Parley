@@ -1249,6 +1249,7 @@ message BackgroundTaskRow {
   string name = 3;                    // empty when neither the agent nor the runner named it
   string description = 4;             // empty when the agent gave none
   string link = 5;                    // in its one spelling (exchange #N, conversation:<id>, file:<name>, https://...); empty when none
+  bool said = 6;                      // the agent named it itself, not only its runner
 }
 
 message RefusalsReply {

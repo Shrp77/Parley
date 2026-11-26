@@ -53,8 +53,10 @@ public sealed record TaskLink(TaskLinkKind Kind, string Target, string Host = ""
 /// said, and a surface then draws a plain stand-in.</param>
 /// <param name="Description">One or two sentences the agent gave about it, or empty.</param>
 /// <param name="Link">Where the person can read more, or null.</param>
+/// <param name="Said">Whether the agent named it itself, rather than its runner, whatever else it gave.</param>
 /// <remarks>
 /// Every word in it was cut and neutralised by <see cref="BackgroundTaskText"/> before the broker held it, so a surface
 /// encodes it as text and draws it on one line, and does nothing else with it. Operator-only, like the count beside it.
 /// </remarks>
-public sealed record BackgroundTask(string Id, TaskKind Kind, string Name, string Description = "", TaskLink? Link = null);
+public sealed record BackgroundTask(
+    string Id, TaskKind Kind, string Name, string Description = "", TaskLink? Link = null, bool Said = false);

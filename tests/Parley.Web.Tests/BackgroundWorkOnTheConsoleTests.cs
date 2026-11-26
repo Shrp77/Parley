@@ -48,12 +48,19 @@ public sealed class BackgroundWorkOnTheConsoleTests
         var fragment = await client.GetStringAsync(new Uri("/Graph", UriKind.Relative), Ct);
 
         Assert.Contains(">Checking VAT on gift cards</text>", fragment, StringComparison.Ordinal);
-        // The host said first, on the tag line (the separator is encoded, as text from code is).
-        Assert.Matches("class=\"pg-tag\">BACKGROUND (·|&#xB7;) tickets\\.example\\.com</text>", fragment);
-        Assert.Contains("href=\"https://tickets.example.com/SHOP-12\" target=\"_blank\" rel=\"noopener noreferrer\"", fragment, StringComparison.Ordinal);
 
-        // An agent's words are text: markup in them is encoded, and a markdown link in a name is not a link.
-        Assert.Contains("Reads the &lt;b&gt;rules&lt;/b&gt;.", fragment, StringComparison.Ordinal);
+        // The tooltip says the name, the description and where the link goes, every word encoded.
+        Assert.Contains(
+            "<title>Checking VAT on gift cards: Reads the &lt;b&gt;rules&lt;/b&gt;. (tickets.example.com (opens a new tab))</title>",
+            fragment,
+            StringComparison.Ordinal);
+
+        // What is followed is the link, drawn as where it goes, never the name the agent chose.
+        Assert.Matches(
+            """<a href="https://tickets\.example\.com/SHOP-12" target="_blank" rel="noopener noreferrer"><text [^>]*class="pg-tag">BACKGROUND (·|&#xB7;) tickets\.example\.com</text></a>""",
+            fragment);
+
+        // A markdown link in a name is text, not a link.
         Assert.DoesNotContain("href=\"https://evil.example", fragment, StringComparison.Ordinal);
         Assert.Contains("href=\"/Conversations/Detail?project=alpha&amp;id=returns\"", fragment, StringComparison.Ordinal);
 
@@ -98,6 +105,12 @@ public sealed class BackgroundWorkOnTheConsoleTests
         Assert.Contains("Reads the &lt;i&gt;rules&lt;/i&gt;.", first, StringComparison.Ordinal);
         Assert.Contains("class=\"exchange-ref\" data-exchange=\"57\"", first, StringComparison.Ordinal);
         Assert.Contains("rel=\"noopener noreferrer\">tickets.example.com (opens a new tab)</a>", first, StringComparison.Ordinal);
+
+        // A task with a name only shows nothing empty: no description and no link.
+        var nameOnly = first[first.IndexOf("id=\"task-t3\"", StringComparison.Ordinal)..];
+        nameOnly = nameOnly[..nameOnly.IndexOf("</li>", StringComparison.Ordinal)];
+        Assert.DoesNotContain("bg-description", nameOnly, StringComparison.Ordinal);
+        Assert.DoesNotContain("bg-link", nameOnly, StringComparison.Ordinal);
         Assert.Contains(">Task 20<", first, StringComparison.Ordinal);
         Assert.DoesNotContain(">Task 21<", first, StringComparison.Ordinal);
         Assert.Contains("tasks=2#background-work\">Next 20</a>", first, StringComparison.Ordinal);
@@ -108,6 +121,33 @@ public sealed class BackgroundWorkOnTheConsoleTests
         Assert.Contains("Page 3 of 3.", last, StringComparison.Ordinal);
         Assert.Contains(">Task 47<", last, StringComparison.Ordinal);
         Assert.Contains("start=\"41\"", last, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_task_the_node_did_not_name_is_listed_as_what_kind_of_work_it_is()
+    {
+        using var console = new TranscriptConsole();
+        Script(console.Broker, 3, Task("t1", "Checking VAT"));
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(new Uri("/Projects/Agent?project=alpha&agent=billing%40pc", UriKind.Relative), Ct);
+
+        Assert.Contains("3 tasks running.", page, StringComparison.Ordinal);
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Count(page, "class=\"bg-name\">Background task<"));
+
+        // A named task says its kind; a stand-in already does.
+        Assert.Contains(">Checking VAT</span>", page, StringComparison.Ordinal);
+        Assert.Contains("class=\"bg-kind\">sub-agent<", page, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("javascript:alert(1)")]
+    [InlineData("http://example.com/")]
+    public void A_web_link_that_is_not_one_Parley_shows_is_not_followed_however_it_was_built(string target)
+    {
+        var forged = new Parley.Core.TaskLink(Parley.Core.TaskLinkKind.Web, target, "example.com");
+
+        Assert.Null(TaskLinks.Href(forged, "alpha", "/Projects/Agent").Href);
     }
 
     [Fact]

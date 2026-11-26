@@ -106,7 +106,7 @@ public sealed class TheGraphShowsWorkUnderWayTests
         Assert.DoesNotContain("NOW · alpha", fragment, StringComparison.Ordinal);
         Assert.DoesNotContain("Background task 1", fragment, StringComparison.Ordinal);
         Assert.Contains("Queued 1, not collected yet", fragment, StringComparison.Ordinal);
-        Assert.Contains("2 background tasks running.", fragment, StringComparison.Ordinal);
+        Assert.Contains("2 background tasks running:", fragment, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -117,6 +117,7 @@ internal static class Conversions
             Name = task.Name,
             Description = task.Description,
             Link = task.Link?.Written ?? string.Empty,
+            Said = task.Said,
         };
     }
 
