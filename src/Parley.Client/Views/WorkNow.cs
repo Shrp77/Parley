@@ -314,6 +314,31 @@ public static class WorkNow
         return Counts(agent) && AtWork(Activities.Now(agent, now));
     }
 
+    /// <summary>Each project's rows for the agents the picture will show: every row of an agent at work in any project.</summary>
+    /// <param name="rosters">Each project's registry, or null where it could not be read.</param>
+    /// <param name="now">Now.</param>
+    /// <returns>For each project, the names of its rows that belong to an agent at work somewhere.</returns>
+    /// <remarks>
+    /// <b>Decided across projects, as the picture groups them</b> (<see cref="Build"/>): a given turn is reported only to the
+    /// project that gave it, so an agent working on one project's turn reads idle in the others, and what it owes there
+    /// would otherwise never be read for the agent the picture draws as working (lens 1 run 3 on #115).
+    /// </remarks>
+    public static IReadOnlyDictionary<string, HashSet<string>> AtWorkByProject(
+        IReadOnlyList<(string Project, IReadOnlyList<AgentRecord>? Agents)> rosters, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(rosters);
+
+        var rows = rosters.SelectMany(r => (r.Agents ?? []).Where(Counts).Select(a => (r.Project, Agent: a))).ToList();
+        var working = rows.Where(r => AtWork(Activities.Now(r.Agent, now))).Select(r => Key(r.Agent)).ToHashSet();
+
+        return rosters.ToDictionary(
+            r => r.Project,
+            r => rows.Where(x => x.Project == r.Project && working.Contains(Key(x.Agent)))
+                .Select(x => x.Agent.Name.Value)
+                .ToHashSet(StringComparer.Ordinal),
+            StringComparer.Ordinal);
+    }
+
     private static string Shorten(string text, int most)
     {
         var e = System.Globalization.StringInfo.GetTextElementEnumerator(text);

@@ -1997,7 +1997,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
         while (true)
         {
             if (_background.TryGetValue(agent, out var work)
-                ? _background.TryUpdate(agent, none with { Sequence = Math.Max(work.Sequence, sequence) }, work)
+                ? (sequence > 0 && work.Sequence > sequence)
+
+                    // Read after the launch, so the new process's own: a launch report handled late leaves it.
+                    || _background.TryUpdate(agent, none with { Sequence = Math.Max(work.Sequence, sequence) }, work)
                 : _background.TryAdd(agent, none))
             {
                 break;

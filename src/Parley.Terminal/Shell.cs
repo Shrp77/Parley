@@ -3938,9 +3938,12 @@ internal sealed partial class Shell : Window
                 return;
             }
 
+            // The words a row draws and the tasks Alt+B lists: an agent naming its task, or one task giving way to another at
+            // the same count, changes no activity's words but changes the row (lens 1 run 3 on #115).
             var says = string.Join(
                 '\n',
-                agents.Select(agent => agent.Name.Value + " " + Activities.Now(agent, DateTimeOffset.UtcNow).Words));
+                agents.Select(agent => agent.Name.Value + " " + Activities.Now(agent, DateTimeOffset.UtcNow).Words
+                    + " " + string.Join('\u001f', agent.Turns?.Named.Select(task => task.ToString()) ?? [])));
 
             if (!string.Equals(says, _agentsSaid, StringComparison.Ordinal))
             {

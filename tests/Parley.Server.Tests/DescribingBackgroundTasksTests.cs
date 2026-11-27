@@ -245,6 +245,22 @@ public sealed class DescribingBackgroundTasksTests
     }
 
     [Fact]
+    public async Task A_launch_handled_after_the_new_processs_first_reading_leaves_that_reading()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinAsync(broker);
+        await LaunchAsync(node, "t-1", sequence: 1);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct, launchToken: "t-1");
+
+        // The node launched t-2 at 7, and its first reading, at 8, reached the broker before the launch report did.
+        await ReportReadAtAsync(node, Billing, 8, 2, ("b2", "Serve the site"), ("c3", "Count"));
+        await LaunchAsync(node, "t-2", sequence: 7);
+        await using var again = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct, launchToken: "t-2");
+
+        Assert.Equal(2, (await RowAsync(broker)).BackgroundTasks);
+    }
+
+    [Fact]
     public async Task While_the_node_is_away_nothing_is_shown()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);

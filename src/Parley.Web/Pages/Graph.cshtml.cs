@@ -63,23 +63,30 @@ public sealed class GraphModel(BrokerDirectory directory) : PageModel
         // Held to the name grammar, so a chip never draws a character that could reorder or hide its text.
         ChosenAgents = [.. (agent ?? []).Where(a => AgentName.TryCreate(a, out _)).Distinct(StringComparer.Ordinal).Take(200)];
 
-        var inputs = new List<WorkInput>();
+        var read = new List<(string Name, BrokerClient Broker, IReadOnlyList<AgentRecord>? Agents, string? Problem)>();
 
         foreach (var served1 in directory.Projects)
         {
-            var name = served1.Name.Value;
             var broker = new BrokerClient(directory.ClientFor(served1));
 
             var roster = await BrokerDirectory.ReadAsync(async () =>
                 await broker.RegistryAsync(token).ConfigureAwait(false)).ConfigureAwait(false);
 
-            var owed = new List<OwedWork>();
-            string? problem = roster.Problem;
+            read.Add((served1.Name.Value, broker, roster.Value, roster.Problem));
+        }
 
-            var busy = (roster.Value ?? [])
-                .Where(a => WorkNow.IsAtWork(a, now))
-                .Where(a => ChosenAgents.Count == 0 || ChosenAgents.Contains(a.Name.Value))
-                .Select(a => a.Name.Value)
+        // Who is at work is decided across every project, as the picture groups an agent: what it owes in a project where
+        // its row reads idle is still read when it works in another.
+        var atWork = WorkNow.AtWorkByProject([.. read.Select(r => (r.Name, r.Agents))], now);
+        var inputs = new List<WorkInput>();
+
+        foreach (var (name, broker, agents, problem1) in read)
+        {
+            var owed = new List<OwedWork>();
+            var problem = problem1;
+
+            var busy = atWork[name]
+                .Where(a => ChosenAgents.Count == 0 || ChosenAgents.Contains(a))
                 .ToHashSet(StringComparer.Ordinal);
 
             if (busy.Count > 0 && (ChosenProjects.Count == 0 || ChosenProjects.Contains(name)))
@@ -87,7 +94,7 @@ public sealed class GraphModel(BrokerDirectory directory) : PageModel
                 problem ??= await ReadOwedAsync(broker, busy, owed, token).ConfigureAwait(false);
             }
 
-            inputs.Add(new WorkInput(name, roster.Value, owed, problem));
+            inputs.Add(new WorkInput(name, agents, owed, problem));
         }
 
         // Held to the name grammar and bounded, as the filter's agents are: only a name that could be drawn is looked up.

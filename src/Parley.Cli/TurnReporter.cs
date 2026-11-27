@@ -296,6 +296,10 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
                         Token = token,
                         Identity = identity.ToString(),
                         Workspace = workspace,
+                        // Numbered like a launch: to a project that had not heard of this process it is one, and the last
+                        // process's late reading must lose to it there too (lens 1 run 3 on #115). For a process the
+                        // broker already knows it changes nothing.
+                        Sequence = Parley.Headless.BackgroundSnapshot.NextSequence(),
                     },
                     deadline: deadline),
                     stillRunning)

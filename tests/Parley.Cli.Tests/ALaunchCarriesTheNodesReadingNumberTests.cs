@@ -33,6 +33,23 @@ public sealed class ALaunchCarriesTheNodesReadingNumberTests
         Assert.True(BackgroundSnapshot.NextSequence() > launch.Sequence, "a reading made after the launch is not numbered after it");
     }
 
+    [Fact]
+    public async Task A_process_told_to_another_project_is_numbered_too()
+    {
+        // A checkout in two projects: the second hears of the launch from this report, and to it the process is new.
+        var before = BackgroundSnapshot.NextSequence();
+        var said = new SaysWhatWasSent();
+
+        using var channel = GrpcChannel.ForAddress("http://127.0.0.1:1");
+        var reporter = new TurnReporter(new Wire.Nodes.NodesClient(channel.Intercept(said)), "m1", TextWriter.Null);
+
+        await reporter.ReportRunningAsync(
+            Parley.Core.AgentIdentity.Mint(), "billing", "t-1", "/w", () => true);
+
+        var told = Assert.Single(said.Launches);
+        Assert.True(told.Sequence > before, $"the report was numbered {told.Sequence}, not after {before}");
+    }
+
     /// <summary>Answers each launch report at once, keeping what it said.</summary>
     private sealed class SaysWhatWasSent : Interceptor
     {
