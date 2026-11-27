@@ -1556,6 +1556,9 @@ mark[data-found] {
 .attachment-remove .icon { font-size: 0.9rem; }
 .attach-note { margin: 0 0 0.6rem; font-size: 0.8rem; color: var(--ink-soft); }
 .attach-note[hidden] { display: none; }
+.attach-pick { display: inline-flex; align-items: center; gap: 0.35rem; margin: 0 0 0.4rem; min-height: 2.5rem; padding: 0 0.75rem; font: var(--md-sys-typescale-label-large); }
+.attach-pick[hidden] { display: none; }
+.attach-pick .icon { font-size: 1.15rem; }
 form.dropping { outline: 2px dashed var(--accent); outline-offset: -4px; }
 /* The composer partial's holder lays out as if it were not there, so each page's own layout of the box holds. */
 .composer-box { display: contents; }
@@ -2698,8 +2701,10 @@ table.registry { display: table; width: 100%; }
        which holds the same commands. */
     body:not(.embed):has(.rail-actions):not(:has(.convo-page:not(.panel-closed))) { --cmd-h: 3.75rem; }
     body:has(.rail-actions) main { padding-top: var(--cmd-h, 0px); }
-    /* More commands than fit: the bar's far edge fades, so it reads as going on. */
-    .rail-actions { -webkit-mask-image: linear-gradient(to right, var(--md-sys-color-on-surface) calc(100% - 2rem), transparent); mask-image: linear-gradient(to right, var(--md-sys-color-on-surface) calc(100% - 2rem), transparent); padding-right: 2rem; }
+    /* More commands than fit: the bar's far edge fades, so it reads as going on. A strip of the bar's own color laid over
+       its end, never a mask: a mask hides everything the bar holds that is drawn outside it, and each command's panel is,
+       so on a phone Place a file and every other panel opened to nothing (the person's report, 2026-11-26). */
+    .rail-actions::after { content: ""; position: sticky; right: -0.75rem; flex: none; align-self: stretch; width: 2rem; margin-left: auto; margin-right: -0.75rem; pointer-events: none; background: linear-gradient(to right, transparent, var(--md-sys-color-surface-container)); }
     .rail-actions {
         position: fixed;
         top: var(--frame);

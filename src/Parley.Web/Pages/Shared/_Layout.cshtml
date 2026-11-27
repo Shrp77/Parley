@@ -759,7 +759,7 @@
         })();
     </script>
     @* **Attaching to a message box, the same in every one** (SPEC.md §5.6; owner, 2026-11-13: a screenshot pasted in the
-       Inbox did nothing, because only the conversation page carried this). A pasted or dropped file waits as a chip and
+       Inbox did nothing, because only the conversation page carried this). A pasted, dropped or chosen file waits as a chip and
        goes with the form when it is sent, in the box's file input, because a page that took it straight away would leave
        a file behind for every message the person changed their mind about. An image's thumbnail is drawn from the
        person's own copy and never sent back. Each `data-attach` holder that `_Composer` draws is run here. *@
@@ -858,6 +858,19 @@
                     list.appendChild(item);
                 }
 
+                // A phone's picker may give every photo the same name (image.jpg), and a phone gives no way to rename one,
+                // so a picked image whose name is already waiting is named as a pasted one is.
+                function fresh(chosen) {
+                    var names = files.map(function (w) { return w.name; });
+
+                    return chosen.map(function (f) {
+                        var named = names.indexOf(f.name) >= 0 && images[f.type] ? new File([f], pastedName(images[f.type]), { type: f.type }) : f;
+
+                        names.push(named.name);
+                        return named;
+                    });
+                }
+
                 function addAll(chosen) { say(""); chosen.forEach(add); sync(); document.dispatchEvent(new CustomEvent("parley:compose")); }
 
                 list.addEventListener("click", function (e) {
@@ -902,6 +915,18 @@
                         return images[f.type] ? new File([f], pastedName(images[f.type]), { type: f.type }) : f;
                     }));
                 });
+
+                // Chosen with the picker: the browser puts only what was just chosen in the input, so it is added to what
+                // already waits, and sync puts every waiting file back for the send.
+                var pick = holder.querySelector(".attach-pick");
+
+                if (pick) {
+                    pick.hidden = false;
+                    pick.addEventListener("click", function () { input.click(); });
+                    input.addEventListener("change", function () { addAll(fresh([].slice.call(input.files || []))); });
+                    // A picker closed with nothing chosen may leave the input empty: put back what waits.
+                    input.addEventListener("cancel", sync);
+                }
 
                 holder.parleyAttach = addAll;
                 sync();
