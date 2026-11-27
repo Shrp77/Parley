@@ -142,6 +142,7 @@ section.
 | [Getting started](docs/getting-started.md) | Install, add your first two agents, send your first request |
 | [Using it with Claude Code](docs/claude-code.md) | The plugin, `.mcp.json`, standing instructions, and mail that arrives mid-session |
 | [Configuration](docs/configuration.md) | Projects, launch settings, ownership lines, unattended agents, other machines, retention |
+| [Your phone or tablet](docs/remote-access.md) | Opening the web console from another of your devices with Tailscale, step by step |
 | [Running a deployment](docs/operating.md) | The web console, the terminal, your seat, stopping and freezing agents, roadmaps, files, health, and the commands |
 | [Security](docs/security.md) | What Parley protects, what it doesn't, and why it only listens on loopback |
 | [FAQ](docs/faq.md) | Short answers to common questions |

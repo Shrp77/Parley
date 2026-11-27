@@ -65,7 +65,9 @@ web console's **Settings** page, at the foot of the strip on the left.
 ### Reaching the console by another name
 
 The web console only listens on this machine. You can still open it from another of your devices
-through a tool that forwards a name to it, such as Tailscale's `tailscale serve`. The console
+through a tool that forwards a name to it, such as Tailscale's `tailscale serve`.
+[Opening the web console from your phone or tablet](remote-access.md) walks through it with
+Tailscale, step by step. The console
 refuses any name it does not know, so list that name in `settings.json`, beside the `projects`
 folder:
 

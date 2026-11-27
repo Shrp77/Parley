@@ -110,8 +110,14 @@ Yes. Run the broker on the server and open an SSH tunnel to it. On the server it
 works over SSH, and the web console can be reached through a tunnel too. You can also open the
 web console from another of your devices by a name a tool such as Tailscale forwards to it, once
 you list that name in `settings.json`. See
-[Configuration](configuration.md#reaching-the-console-by-another-name). Never forward the broker's
-own port that way.
+[Opening the web console from your phone or tablet](remote-access.md) for the steps with Tailscale.
+Never forward the broker's own port that way.
+
+## Why does the console say 400 Bad Request on my phone?
+
+The console doesn't know the name you opened it by. It answers only names it knows, which is what
+stops a website you visit from reaching it. List the name in `settings.json` and restart the
+broker: [step 5 of the Tailscale guide](remote-access.md#5-tell-parley-the-name-is-yours).
 
 ## Can two projects share a repository?
 
