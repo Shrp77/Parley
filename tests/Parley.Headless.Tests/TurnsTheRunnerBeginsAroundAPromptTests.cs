@@ -21,7 +21,9 @@ namespace Parley.Headless.Tests;
 [Integration]
 public sealed class TurnsTheRunnerBeginsAroundAPromptTests : IDisposable
 {
-    private static readonly TimeSpan Short = TimeSpan.FromSeconds(5);
+    // Patience for a reply that does come: only how long a failure takes. Five seconds was missed by a cold PowerShell stub's
+    // first reply when the whole suite ran (full run on #115), and no test here waits it out on purpose.
+    private static readonly TimeSpan Short = TimeSpan.FromSeconds(30);
 
     private const string OneTask = """{"type":"system","subtype":"background_tasks_changed","tasks":[{"id":"b1"}]}""";
 
