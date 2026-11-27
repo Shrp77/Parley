@@ -17,37 +17,38 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
   -Hidden`, never `-Reset`. `-Force` ends the broker and every `parley-mcp`, so every tool on a
   machine is one build: **the wire, enums and protocol still change freely**, with no
   compatibility caveats.
-- Features 019–026 and 028–032 are merged; the latest is `specs/032-sub-conversations-and-moves/`.
-- Feature 035, Material 3 across the web console, is in progress: `specs/035-material-3-web-ui/`, with its audit
+- Features 019–026, 028–032 and 035–041 are merged (035–041 together in #106).
+- Feature 035, Material 3 across the web console, is merged: `specs/035-material-3-web-ui/`, with its audit
   of every page and control in `audit.md`.
   Feature 027, session-owned delivery, is not committed yet; its plan predates the rule above and must move its schema
   change into migration 012 (011 holds a person's freeze on an agent, 003 holds file problems, 004 when an agent was first asked what it owns and first refreshed,
   005 a message's limit and the record of its length, 006 conversation links, moves and move notices, 007 image file names,
   008 where a move falls among the messages, 009 who read the exchange history, 010 the message indexes).
-- Feature 037, images in the conversation, a Media view and recipient chips, is built on the 035 branch:
+- Feature 037, images in the conversation, a Media view and recipient chips, is merged:
   `specs/037-images-in-conversations/`. A placed image is served to a browser only by the console's Media page, after
   its leading bytes are checked (SPEC.md §9.5); `read_shared_file` reads a file as the person and records nothing.
 - Feature 036, the Inbox following an exchange after it is answered (In flight, Closed, follow-up, `exchange #N`
-  references), is built on the 035 branch: `specs/036-inbox-follows-exchanges/`.
+  references), is merged: `specs/036-inbox-follows-exchanges/`.
 - Feature 038, a person stopping or restarting an agent its node started (SPEC.md §11.1's fourth way an agent ends), is
-  built on the 035 branch: `specs/038-stop-and-restart-agents/`. The node waits for the turn; it ends a process, never work.
-- Feature 039, background work an agent starts and ends a turn with, shown as waiting on its background work (SPEC.md §11.6), is built on the 035 branch:
+  merged: `specs/038-stop-and-restart-agents/`. The node waits for the turn; it ends a process, never work.
+- Feature 039, background work an agent starts and ends a turn with, shown as waiting on its background work (SPEC.md §11.6), is merged:
   `specs/039-background-work/`.
 - Feature 040, agents reading the exchange history (`read_exchange`, `search_history`, each read shown to the person), is
-  built on the 035 branch: `specs/040-agent-history/`. It took migration 009; feature 027's moves to 012. A read is a
+  merged: `specs/040-agent-history/`. It took migration 009; feature 027's moves to 012. A read is a
   bounded, framed record that changes nothing, and the person is shown each reader (SPEC.md §5.8).
 <!-- SPECKIT START -->
-- Feature 041, a graph panel pinned to every console page and a person's freeze on an agent (SPEC.md §14), is built on the 035
-  branch: `specs/041-agent-freeze-and-graph/`. A freeze is kept per agent in each project that serves it, honoured at the one place
+- Feature 041, a graph panel pinned to every console page and a person's freeze on an agent (SPEC.md §14), is merged:
+  `specs/041-agent-freeze-and-graph/`. A freeze is kept per agent in each project that serves it, honoured at the one place
   the broker asks a node to start an agent (`BrokerRuntime.Ask`), and cleared by a person's `unfreeze` or, unless the person asked
   it to outlast one, by the broker's next start, which lets it lapse and clears it once the start it owes has been asked. It took
   migration 011.
-- Feature 042, the web console's theme and layout refresh (a look the person picks from 2–3 directions shown as screenshots,
-  and a layout for phone, tablet and desktop, on the Material 3 base, with no behaviour change except the graph panel, which now
-  shows work under way with a filter by project and agent), is being built:
+- Feature 042, the web console's theme and layout refresh (the Frost look and palettes the person picks, and a layout for
+  phone, tablet and desktop on the Material 3 base: a bottom bar and More on a phone, each page's commands in the menu, agents
+  grouped by state with an A to Z view, Add files and Choose recipients in every message box, and the graph panel showing
+  work under way with a filter by project and agent), is in PR #115 with 043:
   `specs/042-theme-and-layout-refresh/`. The person's inspiration images are in the git-ignored `artifacts/inspiration/`.
 - Feature 043, named background tasks (each task an agent runs in the background shown to the person by name, with a
-  description and a link the agent gives through `parley_describe_background`), is being built on top of the 042 branch:
+  description and a link the agent gives through `parley_describe_background`), is in PR #115 on top of 042:
   `specs/043-background-task-names/`. Nothing is stored: the broker holds names in memory beside the count (SPEC.md §11.6).
 Current plan: `specs/043-background-task-names/plan.md`
 <!-- SPECKIT END -->

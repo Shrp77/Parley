@@ -182,8 +182,23 @@ internal static class StubRunner
     /// waits instead of writing, and one made with <see cref="Until"/> waits until a file exists.
     /// </param>
     /// <returns>The template.</returns>
-    internal static string Scripted(string directory, params string[][] turns)
+    internal static string Scripted(string directory, params string[][] turns) => Opening(directory, [], turns);
+
+    /// <summary>
+    /// Writes a stub like <see cref="Scripted"/> that also writes some lines after its init line and before it reads any
+    /// prompt, and returns its command template.
+    /// </summary>
+    /// <param name="directory">Where to put the script.</param>
+    /// <param name="opening">
+    /// The lines written at start, after the init line: what a runner says on its own before anybody asks it anything,
+    /// such as a background task carried over from a resumed session. As for a turn's lines, none may hold a single quote.
+    /// </param>
+    /// <param name="turns">The lines to write for each prompt, as for <see cref="Scripted"/>.</param>
+    /// <returns>The template.</returns>
+    internal static string Opening(string directory, IReadOnlyList<string> opening, params string[][] turns)
     {
+        ArgumentNullException.ThrowIfNull(opening);
+
         static string Emit(string line) =>
             line.StartsWith(PauseMark, StringComparison.Ordinal)
                 ? "Start-Sleep -Seconds " + line[PauseMark.Length..]
@@ -198,8 +213,14 @@ internal static class StubRunner
                     ? "while [ ! -e '" + line[UntilMark.Length..] + "' ]; do sleep 0.05; done"
                     : StubRunner.Print(line);
 
-        var windows = new List<string> { Emit(Init), "$n = 0", "while ($null -ne ($line = [Console]::In.ReadLine())) {", "  $n++" };
-        var unix = new List<string> { Print(Init), "n=0", "while IFS= read -r line; do", "  n=$((n+1))" };
+        var windows = new List<string> { Emit(Init) };
+        var unix = new List<string> { Print(Init) };
+
+        windows.AddRange(opening.Select(Emit));
+        unix.AddRange(opening.Select(Print));
+
+        windows.AddRange(["$n = 0", "while ($null -ne ($line = [Console]::In.ReadLine())) {", "  $n++"]);
+        unix.AddRange(["n=0", "while IFS= read -r line; do", "  n=$((n+1))"]);
 
         for (var turn = 0; turn < turns.Length; turn++)
         {

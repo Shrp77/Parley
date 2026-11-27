@@ -296,8 +296,11 @@ plain letters, so a look-alike name shows as what it is.
 - **In the terminal** it groups agents under *working* (with how long), *stopped on a refused
   permission*, *idle* and the rest, and updates every few seconds.
 - **In the web console**, *All Agents* covers every project and a project's *Agents* page covers
-  that project. Working agents come first, under a *Working now* line, and an agent waiting on its
-  own background work sorts with them. In *All Agents* each agent has one line, naming every
+  that project. Agents are grouped by what they are doing, one section per state, each with its
+  badge, a name and a count: working first, then stopped, then the rest. An agent waiting on its
+  own background work sorts with the working ones. *What the badges mean*, beside the list, says
+  what each badge stands for. *A to Z* lists them by name instead, with a *Working now* line at the
+  top naming who is working, and *By state* goes back. In *All Agents* each agent has one line, naming every
   project that lists it, because one repository can be in several projects. Open the line to see
   how it stands in each.
   The page refreshes itself every 10 seconds without reloading, and a line you opened stays open.
