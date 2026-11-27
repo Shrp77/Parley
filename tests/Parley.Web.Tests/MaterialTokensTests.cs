@@ -158,6 +158,29 @@ public sealed partial class MaterialTokensTests
         return Path.Combine(directory!, relative);
     }
 
+    /// <summary>A table too narrow for its columns becomes cards, measured on the table rather than the screen, so an
+    /// upright tablet never scrolls one sideways (the person's Tab S4 on the Inbox, PR #115).</summary>
+    /// <remarks>Every table's columns must fit the width the cards take over below: one wider would scroll sideways
+    /// between its own width and that bound.</remarks>
+    [Fact]
+    public void A_table_that_does_not_fit_its_card_is_drawn_as_cards()
+    {
+        Assert.Contains(".dgrid { container: dgrid / inline-size; }", Layout, StringComparison.Ordinal);
+        Assert.Matches(@"@@container dgrid \(max-width: 46rem\) \{\s*\.dgrid-inner \{ min-width: 0; \}", Layout);
+
+        var pages = Directory.EnumerateFiles(InRepository(Path.Combine("src", "Parley.Web", "Pages")), "*.cshtml", SearchOption.AllDirectories);
+
+        foreach (var page in pages)
+        {
+            foreach (System.Text.RegularExpressions.Match min in System.Text.RegularExpressions.Regex.Matches(File.ReadAllText(page), @"--min: ([0-9.]+)rem"))
+            {
+                Assert.True(
+                    double.Parse(min.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) <= 46,
+                    $"{Path.GetFileName(page)} draws a table {min.Groups[1].Value}rem wide, past the 46rem the cards take over below");
+            }
+        }
+    }
+
     [Fact]
     public void Every_control_shows_material_3s_focus_indicator()
     {

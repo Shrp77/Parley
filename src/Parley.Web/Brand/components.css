@@ -2788,3 +2788,21 @@ table.registry { display: table; width: 100%; }
     .dgrid-detail .facts { grid-template-columns: minmax(0, 1fr); gap: 0 1rem; }
     .dgrid-detail .facts dd + dt { margin-top: 0.5rem; }
 }
+
+/* A table that does not fit its card becomes cards, whatever the screen (the person's Tab S4, upright: the Inbox's
+   six columns need 46rem and a tablet's page beside the menu has about 36). Measured on the grid itself, so a tablet
+   held sideways, or any window wide enough, keeps the table, as the person asked of feature 042; only one too narrow
+   for its columns stops scrolling sideways. The grid still scrolls down inside its view on a tablet. */
+.dgrid { container: dgrid / inline-size; }
+@container dgrid (max-width: 46rem) {
+    .dgrid-inner { min-width: 0; }
+    .dgrid-head { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+    .dgrid-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 1.1rem; padding: 0.9rem 1rem; }
+    .dgrid-line > :first-child { flex: 1 1 100%; }
+    /* Beside a menu the grid scrolls inside its view, under no column heads; on a phone the page scrolls, and the
+       phone's own rule keeps an open row under the top bar. */
+    @media (min-width: 37.5rem) { details.dgrid-row[open] > summary { top: 0; } }
+    .dgrid-detail { padding: 0.4rem 1rem 1rem; }
+    .dgrid-detail .facts { grid-template-columns: minmax(0, 1fr); gap: 0 1rem; }
+    .dgrid-detail .facts dd + dt { margin-top: 0.5rem; }
+}
