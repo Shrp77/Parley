@@ -120,7 +120,9 @@ public sealed class AReannouncedCountThatMovedIsNotSentAgainTests : IAsyncDispos
         Assert.Equal(0, resident.BackgroundTasks);
         Assert.True(held.Held, "the background report was never sent, so nothing was held");
         Assert.True(read > 0, "the runner's reading was never numbered");
-        Assert.Equal(read, held.Sequence);
+        // At the runner's number, or at the launch's when that is later: the announcement before it holds nothing running
+        // at the launch's number, and a reading numbered earlier would lose to it.
+        Assert.True(held.Sequence >= read, $"the reading was sent at {held.Sequence}, older than the {read} it was read at");
 
         var row = (await new BrokerClient(_broker.Operators).RegistryAsync(Ct)).Single(agent => agent.Name == Billing);
 

@@ -95,10 +95,14 @@ public sealed class TheNodeReportsWhatAnAgentDoesOnItsOwnTests : IAsyncDisposabl
             Ct);
 
         // One given turn: it starts a background task and ends while the task runs; the task finishes, and the agent
-        // begins a turn of its own, with nobody's prompt, and ends it. Each pause is a state the registry is read in.
+        // begins a turn of its own, with nobody's prompt, and ends it. The runner holds each state the registry is read in
+        // until both projects have read it: a fixed pause was spent on a slow runner before anybody looked, the node read
+        // the own turn's init and its result at once, and that turn ran for no time at all.
+        var waitedOn = Path.Combine(_root, "background-seen");
+        var ownTurnSeen = Path.Combine(_root, "own-turn-seen");
         var command = StubRunner.Scripted(
             Path.Combine(_root, "runner"),
-            [OneTask, Started, StubRunner.Pause(2), Finished, NoTasks, Init, StubRunner.Pause(2), Done]);
+            [OneTask, Started, StubRunner.Until(waitedOn), Finished, NoTasks, Init, StubRunner.Until(ownTurnSeen), Done]);
 
         var cataloguePath = Path.Combine(_root, NodeCatalogue.DefaultFileName);
         await File.WriteAllTextAsync(
@@ -148,7 +152,7 @@ public sealed class TheNodeReportsWhatAnAgentDoesOnItsOwnTests : IAsyncDisposabl
 
             // (a) The given turn has ended and the task it started runs on: waiting on its background work, not idle.
             var alphaBefore = await UntilItReadsAsync(
-                _alpha, InAlpha, agent => agent.Turns is { RunningSince: null, BackgroundTasks: 1 },
+                _alpha, InAlpha, agent => agent.Turns is { RunningSince: null, BackgroundTasks: 1, LastEnded: not null },
                 "alpha never read the agent as waiting on one background task, with no turn running");
             var betaBefore = await UntilItReadsAsync(
                 _beta, InBeta, agent => agent.Turns is { RunningSince: null, BackgroundTasks: 1 },
@@ -164,6 +168,8 @@ public sealed class TheNodeReportsWhatAnAgentDoesOnItsOwnTests : IAsyncDisposabl
             Assert.NotNull(alphaBefore.Turns.LastEnded);
             Assert.Null(betaBefore.Turns!.LastEnded);
 
+            await File.WriteAllTextAsync(waitedOn, string.Empty, Ct);
+
             // (b) The task finished and the agent began a turn nobody gave it: working, with nothing in the background.
             _ = await UntilItReadsAsync(
                 _alpha, InAlpha, agent => agent.Turns is { RunningSince: not null, BackgroundTasks: 0 },
@@ -171,6 +177,8 @@ public sealed class TheNodeReportsWhatAnAgentDoesOnItsOwnTests : IAsyncDisposabl
             _ = await UntilItReadsAsync(
                 _beta, InBeta, agent => agent.Turns is { RunningSince: not null, BackgroundTasks: 0 },
                 "beta never read the agent's own turn as running");
+
+            await File.WriteAllTextAsync(ownTurnSeen, string.Empty, Ct);
 
             // And its end: no turn running, nothing in the background, and an end later than the given turn's.
             var alphaAfter = await UntilItReadsAsync(
