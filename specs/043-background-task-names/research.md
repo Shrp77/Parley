@@ -98,12 +98,12 @@ view, so it is held tighter: no `javascript:`, `data:` or `http:` address, and n
   says "page 2 of 3, 47 tasks".
 - **The terminal**: the agent's row shows the first task's name and how many more. *Background work* (Alt+B on the
   agent's row) opens a read-only list of them all, which scrolls, Page Up and Page Down moving a screen at a time.
-  The plan had them move twenty; the list takes those keys itself, so twenty would need keys of its own, and the
-  change is to be put to the person (spec FR-014).
+  The plan had them move twenty; the list takes those keys itself, so twenty would need keys of its own. The
+  person agreed this on exchange #58 (spec FR-014).
 
 **Rationale**: a picture cannot scroll a list inside a box without becoming a second scrolling surface inside one the
 person already drags. The page is where a long list belongs. This meets FR-014 as amended, and the spec records the terminal's
-change as one the person has not yet agreed.
+change, which the person agreed on exchange #58.
 
 ## R7. Protocol and version
 

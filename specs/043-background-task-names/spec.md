@@ -156,10 +156,10 @@ something false about what is being worked on.
 - **FR-014**: Where a surface lists an agent's background tasks, the list MUST scroll once it holds more than five and be
   paged twenty to a page, saying which page of how many and the total, on the agent's page in the web console. The
   terminal's list of them (Alt+B on the agent's row) scrolls, Page Up and Page Down moving a screen at a time, with the
-  total in its title, and the row names the first task and how many more. *This is a change from the person's twenty
-  to a page (exchange #58), made while building, not yet agreed:* a terminal list already takes Page Up and Page Down
-  itself, and paging it twenty at a time would need keys of its own on a surface where every key is declared. Every
-  task is still reachable. To be put to the person. The graph, a picture the person drags, draws
+  total in its title, and the row names the first task and how many more. This differs from the person's
+  twenty to a page, and the person agreed it on exchange #58: the terminal shows a list, not the graph, with whatever
+  paging the list needs. A terminal list already takes Page Up and Page Down itself, and paging it twenty at a time
+  would need keys of its own on a surface where every key is declared. Every task is still reachable. The graph, a picture the person drags, draws
   five under an agent and a box saying how many more, which opens the agent's page (research R6).
 
 ### Key Entities
