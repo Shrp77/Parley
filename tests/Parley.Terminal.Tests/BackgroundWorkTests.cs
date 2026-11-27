@@ -154,6 +154,32 @@ public sealed class BackgroundWorkTests
             new BackgroundTask("a1", TaskKind.Agent, "Name" + (char)0x1B + "[2J", "Line" + (char)0x0A + "break")));
 
         Assert.All(lines, line => Assert.DoesNotContain(line, c => char.IsControl(c)));
+
+        // The agent's row draws the first task's name too, and is made inert itself: what it is handed here has not been
+        // through the client, so nothing before the row took the escape, the line feed or the line separator out.
+        var region = new AgentsRegion();
+
+        region.Show(
+            [Agent("billing@test", Waiting(2, new BackgroundTask(
+                "a1", TaskKind.Agent, "Name" + (char)0x1B + "[2J" + (char)0x0A + "next" + (char)0x2028 + "line")))],
+            NodeCatalogue.Empty,
+            null);
+
+        var rows = Drawn.Rows(region.List);
+        var billing = Assert.Single(rows, row => row.StartsWith("  billing@test  — Name", StringComparison.Ordinal));
+
+        Assert.DoesNotContain(billing, c => char.IsControl(c) || c == (char)0x2028);
+        Assert.Contains("next", billing, StringComparison.Ordinal);
+        Assert.Contains("line, +1 more", billing, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void One_tasks_list_is_titled_one_task()
+    {
+        using var driving = Driving.Open();
+        using var view = new BackgroundWorkView("billing@test", Waiting(1, new BackgroundTask("a1", TaskKind.Agent, "Checking VAT")));
+
+        Assert.Equal("Background work of billing@test: 1 task", view.Title);
     }
 
     [Fact]

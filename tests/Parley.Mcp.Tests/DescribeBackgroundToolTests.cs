@@ -94,8 +94,15 @@ public sealed class DescribeBackgroundThroughTheBrokerTests
         Assert.Equal(["ok", "refused", "why"], badId.AsObject().Select(p => p.Key));
         Assert.False(badId["ok"]!.GetValue<bool>());
         Assert.Equal("notkept", badId["refused"]!.GetValue<string>());
-        Assert.StartsWith("Nothing was kept.", badId["why"]!.GetValue<string>(), StringComparison.Ordinal);
+        // The broker's own sentence follows, so the agent is told which of its words to change.
+        Assert.Equal(
+            "Nothing was kept. The task id is not one the runner gives: 1 to 64 letters, digits, hyphens and underscores, as the tool's result says it.",
+            badId["why"]!.GetValue<string>());
+        Assert.Equal(["ok", "refused", "why"], noName.AsObject().Select(p => p.Key));
         Assert.False(noName["ok"]!.GetValue<bool>());
         Assert.Equal("notkept", noName["refused"]!.GetValue<string>());
+        Assert.Equal(
+            "Nothing was kept. A name is needed: what the task is doing, in a few words.",
+            noName["why"]!.GetValue<string>());
     }
 }

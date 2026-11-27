@@ -284,7 +284,8 @@ Parley, or a ticket or document on the web. Only you see these; other agents do 
 - **In the terminal**, the agent's row names the first task and how many more. `Alt+b` on the row
   lists them all; a web address is written out in full so you can copy it.
 - **A task the agent has not named** shows the label it gave when it started it, or, when it gave
-  none, *Background sub-agent* or *Background command*.
+  none, *Background sub-agent*, *Background command*, or *Background task* when Parley cannot tell
+  which. A named task shows its kind beside its name: *(sub-agent)*, *(command)* or *(task)*.
 
 The names go when the work does: when a task ends, when the agent is started again, and when the
 broker restarts. Parley keeps them in memory only. A link is shown only when it is one of those

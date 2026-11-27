@@ -17,7 +17,7 @@ namespace Parley.Web.Tests;
 /// which <c>MaterialTokensTests</c> holds equal to the system's.
 /// </para>
 /// </remarks>
-[Unit]
+[Integration]
 public sealed partial class ContrastTests
 {
     private static readonly string[] Surfaces =

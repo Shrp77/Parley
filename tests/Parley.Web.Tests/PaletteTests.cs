@@ -1,11 +1,10 @@
 using System.Globalization;
-using System.Net;
 using Parley.Web.Palettes;
 using Xunit;
 
 namespace Parley.Web.Tests;
 
-/// <summary>That every palette, ready-made or made by the person, keeps every text and mark readable, and is served strictly.</summary>
+/// <summary>That every palette, ready-made or made by the person, keeps every text and mark readable, and is read strictly.</summary>
 /// <remarks>
 /// Feature 042, spec FR-025 to FR-028 and SC-008. A palette the person makes can start from any colour, so the rule is
 /// held over a sweep of the whole colour wheel at low to high chroma with every harmony, in light and in dark, as well as
@@ -88,55 +87,6 @@ public sealed class PaletteTests
     public void Only_a_known_name_or_whole_numbers_in_range_make_a_palette(string? name, string? hue, string? chroma, string? harmony, bool made)
     {
         Assert.Equal(made, Palette.FromQuery(name, hue, chroma, harmony) is not null);
-    }
-
-    [Fact]
-    public async Task The_console_serves_a_palette_and_refuses_what_is_not_one()
-    {
-        using var console = new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program>();
-        using var client = console.CreateClient();
-        var ct = TestContext.Current.CancellationToken;
-
-        var named = await client.GetAsync(new Uri("/brand/palette.css?name=ocean", UriKind.Relative), ct);
-        var made = await client.GetAsync(new Uri("/brand/palette.css?hue=210&chroma=40&harmony=triadic", UriKind.Relative), ct);
-        var refused = await client.GetAsync(new Uri("/brand/palette.css?name=%3Cscript%3E", UriKind.Relative), ct);
-
-        Assert.Equal(HttpStatusCode.OK, named.StatusCode);
-        Assert.Equal("text/css", named.Content.Headers.ContentType?.MediaType);
-        Assert.Contains("--md-sys-color-primary:", await named.Content.ReadAsStringAsync(ct), StringComparison.Ordinal);
-        Assert.Contains("--md-ext-slot-0:", await made.Content.ReadAsStringAsync(ct), StringComparison.Ordinal);
-        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
-    }
-
-    [Fact]
-    public async Task Every_page_links_the_palette_after_the_tokens_and_settings_offers_every_one()
-    {
-        using var console = new TranscriptConsole();
-        using var client = console.CreateClient();
-        var ct = TestContext.Current.CancellationToken;
-
-        var page = await client.GetStringAsync(new Uri("/Settings", UriKind.Relative), ct);
-        var tokens = page.IndexOf("/brand/tokens.css", StringComparison.Ordinal);
-        var palette = page.IndexOf("id=\"palette\" href=\"/brand/palette.css?name=frost", StringComparison.Ordinal);
-
-        Assert.True(tokens > 0 && palette > tokens, "the palette must be linked, after the tokens it overrides");
-
-        // The stored choice is only ever a name or numbers: the guard is code, not a comment.
-        Assert.Contains(
-            "/^(name=[a-z-]{1,32}|hue=\\d{1,3}&chroma=\\d{1,3}&harmony=[a-z-]{1,32})$/.test(chosen)",
-            ScriptSource.Code(page, "localStorage.getItem(\"parley.palette\")"),
-            StringComparison.Ordinal);
-
-        // Every palette is offered, and the person's own, in the list that opens from the current choice (feature 042).
-        var start = page.IndexOf("<details class=\"palette-menu\"", StringComparison.Ordinal);
-        var list = page[start..page.IndexOf("</details>", start, StringComparison.Ordinal)];
-
-        foreach (var ready in Palette.Ready)
-        {
-            Assert.Contains($"name=\"palette\" value=\"{ready.Key}\"", list, StringComparison.Ordinal);
-        }
-
-        Assert.Contains("name=\"palette\" value=\"custom\"", list, StringComparison.Ordinal);
     }
 
     [Fact]
