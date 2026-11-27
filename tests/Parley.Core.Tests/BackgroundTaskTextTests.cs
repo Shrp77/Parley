@@ -141,6 +141,7 @@ public sealed class BackgroundTaskTextTests
     [InlineData("exchange #0")]
     [InlineData("exchange #-3")]
     [InlineData("exchange #99999999999999999999")]
+    [InlineData("exchange #9999999999999999999")]
     [InlineData("conversation:has space")]
     [InlineData("file:../../secrets.md")]
     [InlineData("file:notes.exe")]
@@ -222,6 +223,15 @@ public sealed class BackgroundTaskTextTests
         var name = BackgroundTaskText.Name(new string('a', 62) + " " + new string('b', 10));
 
         Assert.EndsWith("a…", name.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_exchange_number_of_eighteen_digits_is_kept_and_nineteen_never_reach_a_number_that_overflows()
+    {
+        // Nineteen nines are past the largest number an exchange id can be, and read as one they would throw where a link
+        // is followed; eighteen always fit.
+        Assert.Equal("999999999999999999", BackgroundTaskText.Link("exchange #999999999999999999")!.Target);
+        Assert.Null(BackgroundTaskText.Link("exchange #9999999999999999999"));
     }
 
     [Fact]

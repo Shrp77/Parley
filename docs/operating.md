@@ -108,7 +108,7 @@ Open a project and its own pages appear under its name:
   what it owns. Renaming a project is the terminal's, in two steps: remove it and name the new
   one. Its conversations stay behind and its repositories must be enrolled again.
 
-**Settings** at the foot of the strip is Parley's own. It holds the console's theme (light, dark
+**Settings** at the foot of the menu (under *More* on a phone) is Parley's own. It holds the console's theme (light, dark
 or the system's), its colors (one of the ready-made palettes, or your own from a color you pick)
 and density, kept in this browser only. It also holds how many days the Inbox's
 *Closed* view covers, which the terminal reads too.
@@ -300,7 +300,7 @@ plain letters, so a look-alike name shows as what it is.
   that project. Agents are grouped by what they are doing, one section per state, each with its
   badge, a name and a count: working first, then stopped, then the rest. An agent waiting on its
   own background work sorts with the working ones. *What the badges mean*, beside the list, says
-  what each badge stands for. *A to Z* lists them by name instead, with a *Working now* line at the
+  what each badge stands for. *A–Z* lists them by name instead, with a *Working now* line at the
   top naming who is working, and *By state* goes back. In *All Agents* each agent has one line, naming every
   project that lists it, because one repository can be in several projects. Open the line to see
   how it stands in each.

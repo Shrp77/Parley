@@ -210,11 +210,15 @@ public sealed class BackgroundWorkOnTheConsoleTests
     }
 
     [Theory]
-    [InlineData("javascript:alert(1)")]
-    [InlineData("http://example.com/")]
-    public void A_web_link_that_is_not_one_Parley_shows_is_not_followed_however_it_was_built(string target)
+    [InlineData("javascript:alert(1)", "example.com")]
+    [InlineData("http://example.com/", "example.com")]
+    // Labelled with one host and going to another: followed, the person would be sent somewhere the words did not say.
+    [InlineData("https://evil.example.com/", "good.example.com")]
+    // Not in the one spelling a kept link has, so not one Parley made.
+    [InlineData("https://EXAMPLE.com", "EXAMPLE.com")]
+    public void A_web_link_that_is_not_one_Parley_shows_is_not_followed_however_it_was_built(string target, string host)
     {
-        var forged = new Parley.Core.TaskLink(Parley.Core.TaskLinkKind.Web, target, "example.com");
+        var forged = new Parley.Core.TaskLink(Parley.Core.TaskLinkKind.Web, target, host);
 
         Assert.Null(TaskLinks.Href(forged, "alpha", "/Projects/Agent").Href);
     }
