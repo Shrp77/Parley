@@ -124,6 +124,51 @@ public sealed class BackgroundWorkOnTheConsoleTests
     }
 
     [Fact]
+    public async Task The_agents_page_offers_the_previous_page_from_the_second_on_and_the_next_page_until_the_last()
+    {
+        using var console = new TranscriptConsole();
+        Script(console.Broker, 47, [.. Enumerable.Range(1, 47).Select(i => Task($"t{i}", $"Task {i}"))]);
+        using var client = console.CreateClient();
+
+        async Task<string> PageAsync(int page) => await client.GetStringAsync(
+            new Uri($"/Projects/Agent?project=alpha&agent=billing%40pc&tasks={page}", UriKind.Relative), Ct);
+
+        var first = await PageAsync(1);
+
+        Assert.Contains("Page 1 of 3.", first, StringComparison.Ordinal);
+        Assert.DoesNotContain("Previous 20", first, StringComparison.Ordinal);
+        Assert.Contains("tasks=2#background-work\">Next 20</a>", first, StringComparison.Ordinal);
+
+        var middle = await PageAsync(2);
+
+        Assert.Contains("Page 2 of 3.", middle, StringComparison.Ordinal);
+        Assert.Contains("tasks=1#background-work\">Previous 20</a>", middle, StringComparison.Ordinal);
+        Assert.Contains("tasks=3#background-work\">Next 20</a>", middle, StringComparison.Ordinal);
+
+        var last = await PageAsync(3);
+
+        Assert.Contains("Page 3 of 3.", last, StringComparison.Ordinal);
+        Assert.Contains("tasks=2#background-work\">Previous 20</a>", last, StringComparison.Ordinal);
+        Assert.DoesNotContain("Next 20", last, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_graphs_list_in_words_names_twenty_tasks_and_sends_the_person_to_the_agents_page_for_the_rest()
+    {
+        using var console = new TranscriptConsole();
+        Script(console.Broker, 30, [.. Enumerable.Range(1, 30).Select(i => Task($"t{i}", $"Task {i}"))]);
+        using var client = console.CreateClient();
+
+        var fragment = await client.GetStringAsync(new Uri("/Graph", UriKind.Relative), Ct);
+
+        Assert.Contains("30 background tasks running:", fragment, StringComparison.Ordinal);
+        Assert.Equal(20, System.Text.RegularExpressions.Regex.Count(fragment, @"Background: Task \d+\b"));
+        Assert.Matches(@"Background: Task 20\b", fragment);
+        Assert.DoesNotMatch(@"Background: Task 21\b", fragment);
+        Assert.Contains("Every background task, on its page.", fragment, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_task_the_node_did_not_name_is_listed_as_what_kind_of_work_it_is()
     {
         using var console = new TranscriptConsole();

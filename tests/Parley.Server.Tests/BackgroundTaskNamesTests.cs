@@ -154,6 +154,24 @@ public sealed class BackgroundTaskNamesTests
     }
 
     [Fact]
+    public async Task However_many_the_node_lists_at_most_two_hundred_are_named_and_the_count_stands()
+    {
+        var (broker, node, agent) = await StartAsync();
+        await using var _ = broker;
+        await using var __ = node;
+        await using var ___ = agent;
+
+        var claimed = 500;
+        await ReportAsync(node, claimed, [.. Enumerable.Range(0, claimed).Select(i => Task($"t{i}", $"Task {i}"))]);
+
+        var row = await RowAsync(broker);
+
+        Assert.Equal(claimed, row.BackgroundTasks);
+        Assert.Equal(Parley.Core.BackgroundTaskText.MostTasks, row.RunningTasks.Count);
+        Assert.Equal(Enumerable.Range(0, Parley.Core.BackgroundTaskText.MostTasks).Select(i => $"t{i}"), row.RunningTasks.Select(t => t.Id));
+    }
+
+    [Fact]
     public async Task One_open_outside_Parley_shows_no_names_whatever_was_said()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);

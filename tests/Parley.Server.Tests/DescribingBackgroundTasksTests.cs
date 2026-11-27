@@ -377,6 +377,165 @@ public sealed class DescribingBackgroundTasksTests
         AssertSaysNothingAboutTheTask(reply.Refused);
     }
 
+    [Fact]
+    public async Task Describing_a_task_again_replaces_what_was_said()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinAsync(broker);
+        await LaunchAsync(node, "t-1");
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct, launchToken: "t-1");
+
+        await ReportAsync(node, Billing, 1, ("a1", "Count to three"));
+        _ = await DescribeAsync(billing, "a1", "Checking VAT", "First words.", "exchange #5");
+        _ = await DescribeAsync(billing, "a1", "Checking VAT on gift cards", "Second words.", "exchange #6");
+
+        var task = Assert.Single((await RowAsync(broker)).RunningTasks);
+
+        Assert.Equal("Checking VAT on gift cards", task.Name);
+        Assert.Equal("Second words.", task.Description);
+        Assert.Equal("exchange #6", task.Link);
+    }
+
+    [Fact]
+    public async Task Words_said_before_any_launch_was_known_take_the_launch_that_is_reported_next()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinAsync(broker);
+
+        // The adapter attaches before its node announces the process (a broker that restarted before the node rejoined),
+        // and the agent describes its task meanwhile: no launch is known to say the words under.
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct, launchToken: "t-1");
+        Assert.True((await DescribeAsync(billing, "a1", "Checking VAT")).Kept);
+
+        await LaunchAsync(node, "t-1");
+        await ReportAsync(node, Billing, 1, ("a1", "Count to three"));
+
+        Assert.Equal("Checking VAT", Assert.Single((await RowAsync(broker)).RunningTasks).Name);
+    }
+
+    [Fact]
+    public async Task The_row_says_which_tasks_the_agent_named_itself()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinAsync(broker);
+        await LaunchAsync(node, "t-1");
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct, launchToken: "t-1");
+
+        await ReportAsync(node, Billing, 2, ("a1", "Count to three"), ("b2", "Wait twenty-five seconds"));
+        _ = await DescribeAsync(billing, "a1", "Checking VAT");
+
+        var row = await RowAsync(broker);
+
+        Assert.Equal([true, false], row.RunningTasks.Select(t => t.Said));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task An_agent_that_gave_no_link_is_not_told_its_link_was_dropped(string link)
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinAsync(broker);
+        await LaunchAsync(node, "t-1");
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct, launchToken: "t-1");
+
+        var reply = await DescribeAsync(billing, "a1", "Checking VAT", link: link);
+
+        Assert.True(reply.Kept);
+        Assert.Equal(string.Empty, reply.LinkDropped);
+    }
+
+    [Fact]
+    public async Task One_agents_words_on_the_registry_stop_at_its_share_of_the_reply_and_links_count_toward_it()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinAsync(broker);
+        await LaunchAsync(node, "t-1");
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct, launchToken: "t-1");
+
+        var most = Parley.Core.BackgroundTaskText.MostTasks;
+        var ids = Enumerable.Range(0, most).Select(i => $"t{i}").ToArray();
+        await ReportAsync(node, Billing, most, [.. ids.Select(id => (id, "Runner"))]);
+
+        // Every word at its bound, three bytes a character, and a link at its bound: about 1,600 bytes a task, of which a
+        // third is the link. Two hundred of them are far past one row's share.
+        var name = new string((char)0x4E00, Parley.Core.BackgroundTaskText.LongestName);
+        var description = new string((char)0x4E00, Parley.Core.BackgroundTaskText.LongestDescription);
+        var link = "https://tickets.example.com/";
+        link += new string('a', Parley.Core.BackgroundTaskText.LongestLink - link.Length);
+
+        foreach (var id in ids)
+        {
+            Assert.True((await DescribeAsync(billing, id, name, description, link)).Kept);
+        }
+
+        var row = await RowAsync(broker);
+        var share = OperatorsService.MostTaskWordBytes / TaskWordBudget.Shares;
+
+        // Every task still travels, by id, so the count and the list agree; those past the share go as stand-ins.
+        Assert.Equal(ids, row.RunningTasks.Select(t => t.Id));
+        Assert.Contains(row.RunningTasks, t => t.Name.Length == 0);
+        Assert.Contains(row.RunningTasks, t => t.Link == link);
+        Assert.True(WordBytes(row) <= share, $"{WordBytes(row)} bytes of words on one row, past its share of {share}");
+    }
+
+    [Fact]
+    public async Task The_whole_registry_reply_stops_at_its_budget_however_many_agents_say_how_much()
+    {
+        // One more agent than there are shares, each saying as much as a row may carry and more.
+        var roles = Enumerable.Range(0, TaskWordBudget.Shares + 1).Select(i => $"agent{i}").ToArray();
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, roles, Ct, reportsTurns: true);
+
+        var name = new string((char)0x4E00, Parley.Core.BackgroundTaskText.LongestName);
+        var description = new string((char)0x4E00, Parley.Core.BackgroundTaskText.LongestDescription);
+        var link = "https://tickets.example.com/";
+        link += new string('a', Parley.Core.BackgroundTaskText.LongestLink - link.Length);
+        var most = Parley.Core.BackgroundTaskText.MostTasks;
+        var ids = Enumerable.Range(0, most).Select(i => $"t{i}").ToArray();
+        var agents = new List<AttachedClient>();
+
+        try
+        {
+            foreach (var role in roles)
+            {
+                var agent = $"{role}@{Here}";
+                await LaunchAsync(node, $"t-{role}", agent);
+                var client = await AttachedClient.AttachAsync(broker, agent, cancellationToken: Ct, launchToken: $"t-{role}");
+                agents.Add(client);
+                await ReportAsync(node, agent, most, [.. ids.Select(id => (id, "Runner"))]);
+
+                foreach (var id in ids)
+                {
+                    _ = await DescribeAsync(client, id, name, description, link);
+                }
+            }
+
+            var rows = (await broker.ConnectAsOperator().DescribeRegistryAsync(new Wire.Empty(), cancellationToken: Ct)).Rows
+                .Where(row => roles.Any(role => row.Name == $"{role}@{Here}"))
+                .ToList();
+
+            Assert.Equal(roles.Length, rows.Count);
+            Assert.All(rows, row => Assert.Equal(ids, row.RunningTasks.Select(t => t.Id)));
+            Assert.True(rows.Sum(WordBytes) <= OperatorsService.MostTaskWordBytes);
+
+            // The budget is spent: the row drawn last finds nothing left, and every one of its tasks is a stand-in.
+            Assert.Contains(rows, row => row.RunningTasks.All(t => t.Name.Length == 0 && t.Link.Length == 0));
+        }
+        finally
+        {
+            foreach (var agent in agents)
+            {
+                await agent.DisposeAsync();
+            }
+        }
+    }
+
+    private static long WordBytes(Wire.RegistryRow row) => row.RunningTasks.Sum(t =>
+        (long)System.Text.Encoding.UTF8.GetByteCount(t.Name)
+        + System.Text.Encoding.UTF8.GetByteCount(t.Description)
+        + System.Text.Encoding.UTF8.GetByteCount(t.Link));
+
     private static void AssertSaysNothingAboutTheTask(string refused)
     {
         Assert.NotEmpty(refused);

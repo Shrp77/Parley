@@ -104,7 +104,7 @@ service Agents {
   rpc ProposeRoadmap(ProposeRoadmapRequest) returns (ProposeRoadmapReply);
 
   // The agent's own words for a background task it started: a name, a description and a link, shown to the person only
-  // (section 11.6). Held in memory until the agent's background work clears. The reply says nothing about whether the
+  // (section 11.6). Held in memory until the task ends. The reply says nothing about whether the
   // task is running, which is turn information (section 10.1).
   rpc DescribeBackgroundTask(DescribeBackgroundTaskRequest) returns (DescribeBackgroundTaskReply);
 }
@@ -118,7 +118,7 @@ message DescribeBackgroundTaskRequest {
 }
 
 message DescribeBackgroundTaskReply {
-  bool kept = 1;                      // false only when the task id or the name was refused
+  bool kept = 1;                      // false when refused: the id, the name, a caller not attached, or the person and Parley
   string refused = 2;                 // why, when not kept
   bool name_cut = 3;
   bool description_cut = 4;

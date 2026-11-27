@@ -1,7 +1,7 @@
 namespace Parley.Server;
 
 /// <summary>What became of an agent's words for one of its background tasks (<see cref="BrokerRuntime.DescribeBackgroundTask"/>).</summary>
-/// <param name="Kept">Whether they were kept; false only when the task id or the name was refused.</param>
+/// <param name="Kept">Whether they were kept; false when they were refused: the task id, the name, a caller that is not attached, or the person and Parley.</param>
 /// <param name="Refused">Why, when they were not kept.</param>
 /// <param name="NameCut">Whether the name was cut to its bound.</param>
 /// <param name="DescriptionCut">Whether the description was cut to its bound.</param>

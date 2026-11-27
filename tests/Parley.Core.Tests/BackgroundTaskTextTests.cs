@@ -237,4 +237,58 @@ public sealed class BackgroundTaskTextTests
     {
         Assert.Equal(shown, BackgroundTaskText.Link(link)!.Host);
     }
+
+    [Fact]
+    public void A_link_is_held_to_five_hundred_characters_as_given_even_when_trimming_would_leave_a_short_one()
+    {
+        // Trimmed, this is exchange #57; as given it is past the bound, so it is read no further.
+        Assert.Null(BackgroundTaskText.Link("#57" + new string(' ', 600)));
+        Assert.NotNull(BackgroundTaskText.Link("#57" + new string(' ', 400)));
+    }
+
+    [Theory]
+    [InlineData("https://tickets.example.com/a b")]
+    [InlineData("https://tickets.example.com/a\tb")]
+    public void A_web_link_with_whitespace_inside_it_is_dropped_rather_than_escaped(string given)
+    {
+        Assert.Null(BackgroundTaskText.Link(given));
+    }
+
+    [Theory]
+    [InlineData("https://192.0.2.10/")]
+    [InlineData("https://198.51.100.7/tickets")]
+    [InlineData("https://[2001:db8::1]/")]
+    [InlineData("https://[::ffff:192.0.2.10]/")]
+    public void A_link_to_an_address_in_numbers_off_this_machine_is_dropped(string given)
+    {
+        Assert.Null(BackgroundTaskText.Link(given));
+    }
+
+    [Fact]
+    public void A_name_of_exactly_sixty_four_characters_is_whole_and_sixty_five_is_cut()
+    {
+        var whole = BackgroundTaskText.Name(new string('a', 64));
+
+        Assert.False(whole.Cut);
+        Assert.Equal(new string('a', 64), whole.Text);
+
+        var cut = BackgroundTaskText.Name(new string('a', 65));
+
+        Assert.True(cut.Cut);
+        Assert.Equal(new string('a', 63) + "…", cut.Text);
+    }
+
+    [Fact]
+    public void A_description_of_exactly_three_hundred_characters_is_whole_and_three_hundred_and_one_is_cut()
+    {
+        var whole = BackgroundTaskText.Description(new string('b', 300));
+
+        Assert.False(whole.Cut);
+        Assert.Equal(new string('b', 300), whole.Text);
+
+        var cut = BackgroundTaskText.Description(new string('b', 301));
+
+        Assert.True(cut.Cut);
+        Assert.Equal(new string('b', 299) + "…", cut.Text);
+    }
 }

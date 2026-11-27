@@ -40,6 +40,26 @@ public sealed class BackgroundWorkTests
     }
 
     [Fact]
+    public void A_row_with_two_tasks_names_the_first_and_one_more_and_a_row_with_one_names_only_it()
+    {
+        var region = new AgentsRegion();
+
+        region.Show(
+            [
+                Agent("billing@test", Waiting(2, new BackgroundTask("a1", TaskKind.Agent, "Checking VAT on gift cards"))),
+                Agent("orders@test", Waiting(1, new BackgroundTask("b1", TaskKind.Agent, "Running the tax tests"))),
+            ],
+            NodeCatalogue.Empty,
+            null);
+
+        var rows = Drawn.Rows(region.List).Select(row => row.TrimEnd()).ToList();
+
+        Assert.Contains(rows, row => row.StartsWith("  billing@test  — Checking VAT on gift cards, +1 more", StringComparison.Ordinal));
+        var orders = Assert.Single(rows, row => row.StartsWith("  orders@test  — Running the tax tests", StringComparison.Ordinal));
+        Assert.DoesNotContain("more", orders, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_row_waiting_on_its_background_work_names_it_even_after_a_refused_stop()
     {
         // The heading puts waiting on background work before a refused stop (AgentStanding); the row agrees, so the agent

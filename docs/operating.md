@@ -74,7 +74,8 @@ an agent's own.
 ## The web console
 
 A strip down the left side of every page takes you where you want to go. Its arrow at the bottom
-folds it to icons, and the console remembers that.
+folds it to icons, and the console remembers that. On a phone the strip is a bar along the bottom
+of the screen instead, with your four main places on it and *More* holding the rest.
 
 - **Projects** is where the console opens: a grid of your projects. Each row says whether its
   broker is answering, how many agents it has and how many are running, and how many
@@ -100,7 +101,8 @@ Open a project and its own pages appear under its name:
   one. Its conversations stay behind and its repositories must be enrolled again.
 
 **Settings** at the foot of the strip is Parley's own. It holds the console's theme (light, dark
-or the system's) and density, kept in this browser only. It also holds how many days the Inbox's
+or the system's), its colors (one of the ready-made palettes, or your own from a color you pick)
+and density, kept in this browser only. It also holds how many days the Inbox's
 *Closed* view covers, which the terminal reads too.
 
 **The bell** at the top tells you when something needs you.

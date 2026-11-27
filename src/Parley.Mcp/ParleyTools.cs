@@ -824,7 +824,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 conversation:<id>, file:<name> for a file placed in Parley, or an https address of a ticket or
                 document.
 
-        Only the person sees what you write here; no other agent does. It is kept until your background work ends.
+        Only the person sees what you write here; no other agent does. It is kept until that task ends.
         It is a label, not a message: nobody answers it, and it holds no secrets, credentials or other agents' words.
         """)]
     public async Task<JsonNode> DescribeBackgroundAsync(
