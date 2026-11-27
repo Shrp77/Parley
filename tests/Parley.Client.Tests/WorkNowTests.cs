@@ -213,6 +213,19 @@ public sealed class WorkNowTests
         Assert.EndsWith("…", whole, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(15)]
+    [InlineData(WorkNow.WholeShown)]
+    public void A_whole_ask_that_fits_is_drawn_as_it_was_written_with_no_mark_of_a_cut(int length)
+    {
+        var ask = new string('x', length);
+        var picture = WorkNow.Build(
+            [new WorkInput("shop", [Agent("billing@pc", Working)], [Owed(1, "billing@pc", "a", false, 1, ask)], null)],
+            Now);
+
+        Assert.Equal(ask, Assert.Single(Assert.Single(picture.Working).Queued).Whole);
+    }
+
     [Fact]
     public void More_than_the_picture_has_room_for_is_counted_not_dropped()
     {

@@ -139,6 +139,39 @@ public sealed class DescribingBackgroundTasksTests
     }
 
     [Fact]
+    public async Task Words_said_again_while_no_launch_is_known_keep_the_launch_they_were_first_said_under()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        var node = await JoinAsync(broker);
+        await LaunchAsync(node, "t-1");
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct, launchToken: "t-1");
+
+        _ = await DescribeAsync(billing, "a1", "Checking VAT");
+
+        // The node leaves, and the broker forgets the launch it reported; the process runs on, attached, and says its words
+        // again while no launch is known.
+        await node.DisposeAsync();
+        var row = await RowAsync(broker);
+
+        for (var tries = 0; tries < 50 && !row.OpenOutside; tries++)
+        {
+            await Task.Delay(100, Ct);
+            row = await RowAsync(broker);
+        }
+
+        Assert.True(row.OpenOutside);
+        Assert.True((await DescribeAsync(billing, "a1", "Said while away")).Kept);
+
+        // A node comes back and launches a new process: the words were the last process's, said under t-1, and go.
+        await using var back = await JoinAsync(broker);
+        await LaunchAsync(back, "t-2");
+        await using var again = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct, launchToken: "t-2");
+        await ReportAsync(back, Billing, 1, ("a1", "Count to three"));
+
+        Assert.Equal("Count to three", Assert.Single((await RowAsync(broker)).RunningTasks).Name);
+    }
+
+    [Fact]
     public async Task Work_ending_takes_the_words_for_what_ended_and_leaves_words_for_work_begun_since()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);

@@ -112,6 +112,56 @@ public sealed class TheGraphSaysWhatItCouldNotDrawTests
         Assert.Contains("could not be read in full.", fragment, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(20, 20, null, null)]
+    [InlineData(21, 20, "1 more it holds, not listed.", null)]
+    [InlineData(20, 21, null, "1 more queued, not listed.")]
+    public async Task The_list_in_words_counts_what_it_held_back_only_past_its_bound(
+        int held, int queued, string? moreHeld, string? moreQueued)
+    {
+        using var console = new TranscriptConsole();
+        var now = DateTimeOffset.UtcNow;
+
+        // Billing owes `queued` requests it has not collected, and holds `held` it collected and has not answered.
+        Owing(console.Broker, queued, _ => "returns");
+
+        for (var n = queued + 1; n <= queued + held; n++)
+        {
+            console.Broker.Messages.Add(new Wire.Message
+            {
+                Id = n, ExchangeId = n, Type = Wire.MessageType.Request, From = "orders@pc", To = "billing@pc",
+                PayloadJson = """{"ask":"Price the order"}""", ConversationId = "gift-cards",
+                CreatedUtc = Utc(now.AddMinutes(-30).AddSeconds(n)), DeliveredUtc = Utc(now.AddMinutes(-29).AddSeconds(n)),
+            });
+            console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = "orders@pc", WaitedOn = "billing@pc", ExchangeId = n });
+        }
+
+        var fragment = await GraphAsync(console);
+        var list = fragment[fragment.IndexOf("<section class=\"pg-list\"", StringComparison.Ordinal)..];
+
+        // Every item it does list is listed, so the bound is the one under test.
+        Assert.Equal(20, System.Text.RegularExpressions.Regex.Count(list, "<li>Holds: "));
+        Assert.Equal(20, System.Text.RegularExpressions.Regex.Count(list, "<li>Queued \\d+, "));
+
+        if (moreHeld is null)
+        {
+            Assert.DoesNotContain("more it holds, not listed", list, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Contains(moreHeld, list, StringComparison.Ordinal);
+        }
+
+        if (moreQueued is null)
+        {
+            Assert.DoesNotContain("more queued, not listed", list, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Contains(moreQueued, list, StringComparison.Ordinal);
+        }
+    }
+
     [Fact]
     public async Task Past_the_most_conversations_read_the_panel_says_so()
     {

@@ -147,6 +147,8 @@ public sealed class BackgroundTaskTextTests
     [InlineData("file:notes.exe")]
     [InlineData("https://example.com/\nsecond-line")]
     [InlineData("https://user:secret@example.com/")]
+    [InlineData(@"https:\/example.com/x")]
+    [InlineData(@"https:/\example.com/x")]
     public void Any_other_link_is_dropped(string given)
     {
         Assert.Null(BackgroundTaskText.Link(given));

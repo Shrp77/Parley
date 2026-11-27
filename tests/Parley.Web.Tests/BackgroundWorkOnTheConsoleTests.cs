@@ -153,6 +153,51 @@ public sealed class BackgroundWorkOnTheConsoleTests
     }
 
     [Fact]
+    public async Task Twenty_tasks_are_one_page_and_forty_are_two()
+    {
+        using var console = new TranscriptConsole();
+        Script(console.Broker, 20, [.. Enumerable.Range(1, 20).Select(i => Task($"t{i}", $"Task {i}"))]);
+        using var client = console.CreateClient();
+
+        var twenty = await client.GetStringAsync(new Uri("/Projects/Agent?project=alpha&agent=billing%40pc", UriKind.Relative), Ct);
+
+        Assert.Contains(">Task 20<", twenty, StringComparison.Ordinal);
+        Assert.DoesNotContain("Page 1 of", twenty, StringComparison.Ordinal);
+        Assert.DoesNotContain("Next 20", twenty, StringComparison.Ordinal);
+
+        using var forty = new TranscriptConsole();
+        Script(forty.Broker, 40, [.. Enumerable.Range(1, 40).Select(i => Task($"t{i}", $"Task {i}"))]);
+        using var fortyClient = forty.CreateClient();
+
+        var second = await fortyClient.GetStringAsync(
+            new Uri("/Projects/Agent?project=alpha&agent=billing%40pc&tasks=2", UriKind.Relative), Ct);
+
+        Assert.Contains("Page 2 of 2.", second, StringComparison.Ordinal);
+        Assert.Contains(">Task 40<", second, StringComparison.Ordinal);
+        Assert.DoesNotContain("Next 20", second, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-3)]
+    public async Task A_page_before_the_first_shows_the_first(int page)
+    {
+        using var console = new TranscriptConsole();
+        Script(console.Broker, 47, [.. Enumerable.Range(1, 47).Select(i => Task($"t{i}", $"Task {i}"))]);
+        using var client = console.CreateClient();
+
+        var shown = await client.GetStringAsync(
+            new Uri($"/Projects/Agent?project=alpha&agent=billing%40pc&tasks={page}", UriKind.Relative), Ct);
+
+        Assert.Contains("Page 1 of 3.", shown, StringComparison.Ordinal);
+        Assert.Contains("<ol class=\"bg-tasks\" start=\"1\">", shown, StringComparison.Ordinal);
+        Assert.Contains(">Task 1<", shown, StringComparison.Ordinal);
+        Assert.DoesNotContain(">Task 21<", shown, StringComparison.Ordinal);
+        Assert.DoesNotContain("Previous 20", shown, StringComparison.Ordinal);
+        Assert.Contains("tasks=2#background-work\">Next 20</a>", shown, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task The_graphs_list_in_words_names_twenty_tasks_and_sends_the_person_to_the_agents_page_for_the_rest()
     {
         using var console = new TranscriptConsole();
