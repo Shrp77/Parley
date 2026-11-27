@@ -70,7 +70,7 @@ public sealed class NodesService : Wire.Nodes.NodesBase
 
             if (named is { } filed)
             {
-                _ = _runtime.LaunchReported(machine, filed, request.Token);
+                _ = _runtime.LaunchReported(machine, filed, request.Token, request.Sequence);
             }
         }
 

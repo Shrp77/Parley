@@ -28,9 +28,9 @@ public sealed class DescribingBackgroundTasksTests
         (await broker.ConnectAsOperator().DescribeRegistryAsync(new Wire.Empty(), cancellationToken: Ct)).Rows
         .Single(row => row.Name == agent);
 
-    private static async Task LaunchAsync(JoinedNodeClient node, string token, string agent = Billing) =>
+    private static async Task LaunchAsync(JoinedNodeClient node, string token, string agent = Billing, long sequence = 0) =>
         _ = await node.Nodes.ReportLaunchAsync(
-            new Wire.LaunchReport { Machine = Here, Agent = agent, Token = token }, cancellationToken: Ct);
+            new Wire.LaunchReport { Machine = Here, Agent = agent, Token = token, Sequence = sequence }, cancellationToken: Ct);
 
     private static Task ReportAsync(JoinedNodeClient node, string agent, int tasks, params (string Id, string Label)[] running) =>
         ReportReadAtAsync(node, agent, 0, tasks, running);
@@ -220,6 +220,28 @@ public sealed class DescribingBackgroundTasksTests
         await ReportReadAtAsync(node, Billing, 4, 1, ("a1", "Count to three"));
 
         Assert.Equal(0, (await RowAsync(broker)).BackgroundTasks);
+    }
+
+    [Fact]
+    public async Task The_last_processs_reading_that_lands_after_a_launch_is_older_than_the_launch()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinAsync(broker);
+        await LaunchAsync(node, "t-1", sequence: 1);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct, launchToken: "t-1");
+
+        // The old process read one task at 5 and again at 6; the node launched the new one at 7, and the reading at 6,
+        // retried, lands after the launch. Newer than anything the broker had heard, but older than the launch.
+        await ReportReadAtAsync(node, Billing, 5, 1, ("a1", "Count to three"));
+        await LaunchAsync(node, "t-2", sequence: 7);
+        await using var again = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct, launchToken: "t-2");
+        await ReportReadAtAsync(node, Billing, 6, 1, ("a1", "Count to three"));
+
+        Assert.Equal(0, (await RowAsync(broker)).BackgroundTasks);
+
+        // The new process's own reading, made after the launch, lands.
+        await ReportReadAtAsync(node, Billing, 8, 1, ("b2", "Serve the site"));
+        Assert.Equal(1, (await RowAsync(broker)).BackgroundTasks);
     }
 
     [Fact]

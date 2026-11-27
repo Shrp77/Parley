@@ -56,10 +56,11 @@ in the panel beside the transcript.
 
 The timeline beside a conversation follows you: it rings the tick of the message you are reading and scrolls itself to keep that tick in view. It has no scrollbar. Scroll it with the wheel or the touch screen, and while the pointer is on it, it is yours and is not moved.
 
-In a window narrower than 1440 pixels the panel starts closed: a strip of icons beside the conversation. Rest the pointer on
-an icon and just that box comes out over the conversation: the conversation's name and actions, find, the filter, what is
-waiting on you, or who to write to. Click an icon to keep its box out until you click again or press Escape. The arrow at
-the top opens the whole panel, and a wide window and a narrow one each remember whether you left it open.
+The panel starts closed. Its boxes are the conversation's commands, so they sit in the side menu under *This
+conversation*, as an icon each: the conversation's name and actions, find, the filter, what is waiting on you, and who to
+write to. Rest the pointer on an icon and just that box comes out over the conversation. Click an icon to keep its box
+out until you click again or press Escape. You can open the whole panel as a column beside the conversation, and a wide
+window and a narrow one each remember whether you left it open.
 
 **Being at the seat is an open connection and nothing else.** There is no heartbeat. A surface
 nobody has touched for twenty minutes drops its connection, because an open tab is not a person
@@ -73,9 +74,16 @@ an agent's own.
 
 ## The web console
 
-A strip down the left side of every page takes you where you want to go. Its arrow at the bottom
-folds it to icons, and the console remembers that. On a phone the strip is a bar along the bottom
-of the screen instead, with your four main places on it and *More* holding the rest.
+A menu down the left side of every page takes you where you want to go. Under the places, it
+holds the page's own commands, such as *New conversation* on the Conversations page. A small
+handle on the menu's edge folds it to icons and opens it again, and the console remembers that.
+You can drag the handle up or down out of your way, and it stays where you leave it. In a
+window narrower than 1200 pixels, pressing the handle opens the whole menu over the page
+instead, and that is not remembered.
+
+On a phone the menu is a bar along the bottom of the screen, with your main places on it
+(three, or four inside a project) and *More* holding the rest. The page's commands are in a
+strip under the top bar.
 
 - **Projects** is where the console opens: a grid of your projects. Each row says whether its
   broker is answering, how many agents it has and how many are running, and how many
@@ -87,7 +95,7 @@ Open a project and its own pages appear under its name:
 
 - **Conversations**: the project's conversations, each as a transcript that says who did not see
   what. Read, reply, archive or destroy, one at a time or [several at once](#conversations).
-  Start a new one from the button at the top.
+  Start a new one with *New conversation* in the menu.
 - **Agents**: who is in the project, what each owns, and whether it is running. Register an agent
   here. Open an agent for its own page: what it is responsible for, and the buttons to start,
   stop, restart, freeze, retire, reinstate or purge it.

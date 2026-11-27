@@ -1639,12 +1639,14 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="machine">The reporting node's machine.</param>
     /// <param name="agent">The agent it is starting.</param>
     /// <param name="token">The token it chose for this launch.</param>
+    /// <param name="sequence">The node's reading number when it launched, so the last process's readings, lower, change
+    /// nothing once this lands; 0 when it gave none.</param>
     /// <returns>Whether the report was accepted.</returns>
     /// <remarks>
     /// Only from the node joined for the agent's machine, and never for the person or Parley, whom no node starts — the
     /// same checks a turn report meets. A newer launch's token replaces an older one's, which is what a restart is.
     /// </remarks>
-    public bool LaunchReported(string machine, AgentName agent, string token)
+    public bool LaunchReported(string machine, AgentName agent, string token, long sequence = 0)
     {
         if (PersonSeat.Is(agent)
             || Facilitation.Is(agent)
@@ -1667,7 +1669,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         if (fresh)
         {
-            ForgetBackground(agent, token);
+            ForgetBackground(machine, agent, token, sequence);
         }
 
         // A freeze made while its node was away asked nobody, and the node's return announces the process again: it is asked
@@ -1797,10 +1799,12 @@ public sealed class BrokerRuntime : IAsyncDisposable
         {
             if (_background.TryGetValue(agent, out var held))
             {
-                // **Older than what is held, from the same node: it changes nothing.** The node sends from its runner's
-                // notices and from a rejoin's reading, and nothing orders the two; taking the older last would show work
-                // that has ended, or end work still running and forget the agent's words for it (lens 1 run 1 on #115).
-                if (string.Equals(held.Machine, machine, StringComparison.Ordinal) && held.Sequence > sequence)
+                // **Older than what is held: it changes nothing.** The node sends from its runner's notices and from a
+                // rejoin's reading, and nothing orders the two; taking the older last would show work that has ended, or end
+                // work still running and forget the agent's words for it (lens 1 run 1 on #115). Only one node is heard for
+                // an agent, the one joined for the machine its name carries, and its leaving clears what it said, so every
+                // number held was that node's.
+                if (held.Sequence > sequence)
                 {
                     return false;
                 }
@@ -1974,21 +1978,30 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
     /// <summary>Forgets what an agent had running in the background, and its words about it when they were said under
     /// another launch.</summary>
+    /// <param name="machine">The node that launched it.</param>
     /// <param name="agent">The agent.</param>
     /// <param name="token">The launch now running under the name.</param>
+    /// <param name="sequence">The node's reading number at the launch.</param>
     /// <remarks>
     /// A new process has started nothing yet, and what the agent said was about work of the last one. The same launch
     /// announced again (a node that left and came back) keeps the words: its next report names the same tasks, and the
     /// agent will not describe them again. Words said while no launch was known take this one; were it a new process's,
     /// they show only for an id its node lists, which a runner's random ids do not repeat.
     /// </remarks>
-    private void ForgetBackground(AgentName agent, string token)
+    private void ForgetBackground(string machine, AgentName agent, string token, long sequence)
     {
-        // Held as nothing running rather than removed, keeping how far the node's readings had come, so a report the last
-        // process's node sent before the launch and that lands after it does not bring that work back.
-        while (_background.TryGetValue(agent, out var work)
-               && !_background.TryUpdate(agent, work with { Tasks = 0, Named = [] }, work))
+        // Held as nothing running at the launch's number rather than removed, so a reading the last process's node made
+        // before the launch, and that lands after it, is older and does not bring that work back (lens 3 run 2 on #115).
+        var none = new BackgroundWork(0, machine, [], sequence);
+
+        while (true)
         {
+            if (_background.TryGetValue(agent, out var work)
+                ? _background.TryUpdate(agent, none with { Sequence = Math.Max(work.Sequence, sequence) }, work)
+                : _background.TryAdd(agent, none))
+            {
+                break;
+            }
         }
 
         // Tried again when a word lands between the read and the change, so a describe racing the launch neither survives

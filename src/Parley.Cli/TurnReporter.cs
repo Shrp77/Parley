@@ -203,7 +203,13 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
         try
         {
             _ = await PatientlyAsync(async deadline => await nodes.ReportLaunchAsync(
-                    new Wire.LaunchReport { Machine = machine, Agent = agent.Value, Token = token },
+                    new Wire.LaunchReport
+                    {
+                        Machine = machine,
+                        Agent = agent.Value,
+                        Token = token,
+                        Sequence = Parley.Headless.BackgroundSnapshot.NextSequence(),
+                    },
                     deadline: deadline))
                 .ConfigureAwait(false);
         }
