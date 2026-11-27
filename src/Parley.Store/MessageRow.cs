@@ -44,6 +44,13 @@ public sealed class MessageRow
     /// <summary>Gets the <c>delivered_utc</c> column, or <see langword="null"/> while pending.</summary>
     public string? DeliveredUtc { get; init; }
 
+    /// <summary>
+    /// Gets the first string in the payload that held the first word searched for, when the row came from a search
+    /// (SPEC.md §10.1), or <see langword="null"/>.
+    /// </summary>
+    /// <remarks>Read by the store's own JSON functions, so no code parses a payload to cut a snippet.</remarks>
+    public string? MatchedText { get; init; }
+
     /// <summary>Translates this row into the domain record.</summary>
     /// <returns>The message.</returns>
     /// <exception cref="ArgumentException">A stored agent name does not satisfy the grammar.</exception>

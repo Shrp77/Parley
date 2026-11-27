@@ -76,8 +76,9 @@ public sealed record Payload(
                 ? new Payload(string.Empty, [], json)
                 : new Payload(said, points, null);
         }
-        catch (JsonException)
+        catch (Exception e) when (e is JsonException or InvalidOperationException)
         {
+            // InvalidOperationException: a lone surrogate escape passes json_valid, and reading it as a string throws.
             return new Payload(string.Empty, [], json);
         }
     }

@@ -25,6 +25,8 @@ namespace Parley.Terminal.Tests;
 /// per-region tests do not ask: they check the rows.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class DoorsAreReadableTests
 {
     /// <summary>What a hostile value tries to do to the screen.</summary>

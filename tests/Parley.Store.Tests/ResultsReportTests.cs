@@ -12,6 +12,7 @@ namespace Parley.Store.Tests;
 /// that a Result lands in the right counts once — including the broker's own <c>closed</c> Results, which are
 /// the record that a person ended work, and must not be mistaken for work an agent finished.
 /// </remarks>
+[Integration]
 public sealed class ResultsReportTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

@@ -19,6 +19,7 @@ namespace Parley.Client.Tests.Views;
 /// safe because a person can see that something is being kept out of the list.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class ConversationsViewTests
 {
     private static ConversationRow Row(

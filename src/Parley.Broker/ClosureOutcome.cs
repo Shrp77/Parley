@@ -19,7 +19,16 @@ public enum ClosureError
     /// that is genuinely a participant never sees this, because it holds the exchange that made
     /// it one.
     /// </remarks>
-    NotAParticipant
+    NotAParticipant,
+
+    /// <summary>
+    /// The conversation is the work on a live roadmap item, which only the person closes (SPEC.md §5.7).
+    /// </summary>
+    /// <remarks>
+    /// Told only to a participant, after the participation check, so it says nothing about a conversation the caller
+    /// is not in. What it does say, that the conversation is an item's, is the reason the caller cannot close it.
+    /// </remarks>
+    PersonCloses,
 }
 
 /// <summary>
@@ -73,4 +82,9 @@ public sealed record ClosureOutcome
     /// <returns>A refusal carrying nothing.</returns>
     internal static ClosureOutcome NotAParticipant() =>
         new(concluded: false, ClosureError.NotAParticipant);
+
+    /// <summary>Creates the outcome for a conversation that is a live roadmap item's, which only the person closes.</summary>
+    /// <returns>A refusal; the conversation stays open.</returns>
+    internal static ClosureOutcome PersonCloses() =>
+        new(concluded: false, ClosureError.PersonCloses);
 }

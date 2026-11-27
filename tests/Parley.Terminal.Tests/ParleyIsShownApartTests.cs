@@ -16,6 +16,8 @@ namespace Parley.Terminal.Tests;
 /// offer it retire, purge, instruct and "ask what it owns", each of which the broker refuses — and a project counting it
 /// would say it had an agent on the day it was created.
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class ParleyIsShownApartTests
 {
     private static BrokerDirectory Directory() =>

@@ -31,6 +31,8 @@ namespace Parley.Terminal.Tests;
 /// drawing from it. <see cref="Loopback.NothingListens"/> is outside that range.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class UnreachableProjectTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

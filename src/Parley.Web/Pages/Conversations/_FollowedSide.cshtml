@@ -1,0 +1,4 @@
+@model Parley.Web.Pages.Conversations.DetailModel
+@* The panel's changing half, in the element a following page replaces the children of: replacing the element itself would
+   put the panel's scrolling back at the top every time anything changed. *@
+<div id="followed-side" class="side"><partial name="_Side" model="Model" /></div>

@@ -356,6 +356,11 @@ public sealed class ConversationRepository(SqliteConnection connection)
     /// Work still open when the participants agree ends <c>closed</c>, with the broker's Result to each
     /// participant holding it, exactly as a person's close does (§14).
     /// </para>
+    /// <para>
+    /// <b>Agreement never closes a live roadmap item's conversation</b> (§5.7). Only the person closes one, because a
+    /// closed conversation never reopens and an item has only the one: agents agreeing to close it while a part was
+    /// blocked would leave the item with nowhere to carry on.
+    /// </para>
     /// </remarks>
     public async Task<bool> TryConcludeAsync(
         string conversationId,
@@ -394,12 +399,51 @@ public sealed class ConversationRepository(SqliteConnection connection)
             return false;
         }
 
+        // A poll on a live item's conversation can only be one begun before agreement stopped closing them, and it is
+        // discarded rather than left to ask its participants a question whose answer can never close anything.
+        if (await BelongsToALiveItemAsync(conversationId, scope.Transaction, cancellationToken).ConfigureAwait(false))
+        {
+            _ = await VoidPollAsync(conversationId, scope.Transaction, cancellationToken).ConfigureAwait(false);
+            scope.Complete();
+            return false;
+        }
+
         var closed = await CloseAsync(
             conversationId, ConversationCloser.Consensus, reason: null, nowUtc, scope.Transaction,
             cancellationToken).ConfigureAwait(false);
 
         scope.Complete();
         return closed;
+    }
+
+    /// <summary>Says whether a conversation is the one reserved for a roadmap item that has not been removed.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns><see langword="true"/> if a live item reserves it.</returns>
+    /// <remarks>
+    /// Read from the reservation and never from the name, so an agent cannot make a conversation an item's (§5.7). A
+    /// removed item's conversation belongs to no item, and its participants may close it as any other.
+    /// </remarks>
+    public async Task<bool> BelongsToALiveItemAsync(
+        string conversationId,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(conversationId);
+
+        return await _connection.ExecuteScalarAsync<long>(
+            new CommandDefinition(
+                """
+                SELECT count(*)
+                  FROM roadmap_item_conversations c
+                  JOIN roadmap_items i ON i.id = c.item_id
+                 WHERE c.conversation_id = @Conversation
+                   AND i.removed_rev IS NULL;
+                """,
+                new { Conversation = conversationId },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false) > 0;
     }
 
     /// <summary>Closes a conversation on the person's word, regardless of its participants' votes.</summary>
@@ -427,6 +471,71 @@ public sealed class ConversationRepository(SqliteConnection connection)
     }
 
     /// <summary>
+    /// Closes one open Request the person is a party to, without an answer, and leaves its conversation open.
+    /// </summary>
+    /// <param name="exchangeId">The exchange.</param>
+    /// <param name="reason">The person's reason, if one was given.</param>
+    /// <param name="nowUtc">The instant of closure.</param>
+    /// <param name="transaction">A transaction to enlist in, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>The exchange, if this call closed it, so the caller can tell its two sides.</returns>
+    /// <remarks>
+    /// §10.2's <c>close_request</c>. A question goes stale: it was answered somewhere else, or stopped mattering. Closing
+    /// its conversation would end everything else in it, and answering it would put words in the record the person does
+    /// not mean. It is the same <c>closed</c> Result a person's close of a conversation writes, so both sides are told.
+    /// <b>Only the person's own.</b> Between two agents a Request is closed by its receiver, or with its conversation:
+    /// closing one out from under them from here would also strand what a facilitator's question keeps beside it.
+    /// </remarks>
+    public async Task<Exchange?> CloseRequestAsync(
+        long exchangeId,
+        string? reason,
+        DateTimeOffset nowUtc,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var scope = WriteScope.Begin(_connection, transaction);
+
+        var exchanges = new ExchangeRepository(_connection);
+        var exchange = await exchanges.GetAsync(exchangeId, scope.Transaction, cancellationToken).ConfigureAwait(false);
+
+        var persons = exchange is null
+            ? 0
+            : await _connection.ExecuteScalarAsync<long>(
+                new CommandDefinition(
+                    "SELECT count(*) FROM agents WHERE name IN (@Requester, @Receiver) AND adapter = 'parley-console';",
+                    new { Requester = exchange.Requester.Value, Receiver = exchange.Receiver.Value },
+                    scope.Transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        if (exchange is null || persons == 0 || exchange.State != ExchangeState.Open)
+        {
+            scope.Complete();
+            return null;
+        }
+
+        var payload = RenderClosed(
+            "The person closed this request without an answer.", ConversationCloser.Person, reason);
+        var messages = new MessageRepository(_connection);
+
+        await messages.AppendAsync(
+            exchange.Id, MessageType.Result, exchange.Receiver, exchange.Requester, Responder.Broker,
+            payload, nowUtc, scope.Transaction, cancellationToken).ConfigureAwait(false);
+
+        await messages.AppendAsync(
+            exchange.Id, MessageType.Result, exchange.Requester, exchange.Receiver, Responder.Broker,
+            payload, nowUtc, scope.Transaction, cancellationToken).ConfigureAwait(false);
+
+        if (!exchange.CloseWithConversation(nowUtc).Succeeded
+            || !await exchanges.SaveAsync(exchange, scope.Transaction, cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException($"Exchange {exchange.Id} changed while it was being closed.");
+        }
+
+        scope.Complete();
+        return exchange;
+    }
+
+    /// <summary>
     /// Closes a conversation, and ends every exchange still open in it with the broker's <c>closed</c>
     /// Result to each participant holding it — in one write.
     /// </summary>
@@ -446,8 +555,8 @@ public sealed class ConversationRepository(SqliteConnection connection)
     /// <para>
     /// Both parties are told: the receiver so it stops, the requester so it knows its work was not done.
     /// Each notice is a Result carrying an outcome of <c>closed</c> for every item the Request carried,
-    /// attributed to <c>parley:broker</c>, which the schema requires of a closed outcome and forbids of
-    /// anything else (§9.3). It says who closed it and nothing a participant wrote, so it cannot exceed
+    /// attributed to <c>parley:broker</c>, which the schema requires of an exchange first closing as closed and
+    /// forbids of anything else (§9.3). It says who closed it and nothing a participant wrote, so it cannot exceed
     /// the message cap by quoting one.
     /// </para>
     /// </remarks>
@@ -516,12 +625,16 @@ public sealed class ConversationRepository(SqliteConnection connection)
     }
 
     private static string ClosedResult(
-        string conversationId, ConversationCloser closer, string? reason)
-    {
-        var text = closer == ConversationCloser.Person
-            ? $"The person running the deployment closed conversation {conversationId} before this was finished."
-            : $"The participants agreed conversation {conversationId} was finished before this was.";
+        string conversationId, ConversationCloser closer, string? reason) =>
+        RenderClosed(
+            closer == ConversationCloser.Person
+                ? $"The person running the deployment closed conversation {conversationId} before this was finished."
+                : $"The participants agreed conversation {conversationId} was finished before this was.",
+            closer,
+            reason);
 
+    private static string RenderClosed(string text, ConversationCloser closer, string? reason)
+    {
         if (!string.IsNullOrWhiteSpace(reason))
         {
             var trimmed = reason.Trim();
@@ -640,6 +753,7 @@ public sealed class ConversationRepository(SqliteConnection connection)
 
     /// <summary>Lists the closure polls outstanding against one participant.</summary>
     /// <param name="agent">The participant collecting its inbox.</param>
+    /// <param name="most">The most to return, oldest first, or <see langword="null"/> for all.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>The polls it has been asked and not yet answered.</returns>
     /// <remarks>
@@ -649,6 +763,7 @@ public sealed class ConversationRepository(SqliteConnection connection)
     /// </remarks>
     public async Task<IReadOnlyList<ClosurePoll>> GetOutstandingPollsAsync(
         AgentName agent,
+        int? most = null,
         CancellationToken cancellationToken = default)
     {
         var rows = await _connection.QueryAsync<PollRow>(
@@ -656,9 +771,10 @@ public sealed class ConversationRepository(SqliteConnection connection)
                 $"""
                 SELECT p.conversation_id AS ConversationId, p.polled_utc AS PolledUtc
                 {OutstandingPolls}
-                 ORDER BY p.polled_utc, p.conversation_id;
+                 ORDER BY p.polled_utc, p.conversation_id
+                 LIMIT @Most;
                 """,
-                new { Agent = agent.Value },
+                new { Agent = agent.Value, Most = most ?? -1 },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         return [.. rows.Select(r => new ClosurePoll(r.ConversationId, ExchangeRow.ParseTimestamp(r.PolledUtc)))];
@@ -722,37 +838,54 @@ public sealed class ConversationRepository(SqliteConnection connection)
             new CommandDefinition(
                 """
                 WITH messaged AS (
-                    SELECT conversation_id      AS id,
-                           count(*)             AS messages,
-                           min(created_utc)     AS first_utc,
-                           max(created_utc)     AS last_utc
-                      FROM messages
-                     GROUP BY conversation_id
+                    -- The first and last message of each conversation are two ends of an index (conversation_id,
+                    -- created_utc), not a pass over every message: a GROUP BY here read the whole table for every page
+                    -- of 50, and the Inbox reads every page. The count is taken for the rows returned, below.
+                    SELECT c.id,
+                           (SELECT min(created_utc) FROM messages WHERE conversation_id = c.id) AS first_utc,
+                           (SELECT max(created_utc) FROM messages WHERE conversation_id = c.id) AS last_utc
+                      FROM conversations c
                 ),
                 -- A conversation started by placing a file has no message (SPEC.md §5.0), and is still a line of work
                 -- a person must be able to find: its activity is when it opened, until a message says otherwise. One
                 -- that was named and never used — no message, no participant, no file — still does not appear.
                 activity AS (
                     SELECT c.id                                   AS id,
-                           coalesce(m.messages, 0)                AS messages,
                            coalesce(m.first_utc, c.opened_utc)    AS first_utc,
                            coalesce(m.last_utc, c.opened_utc)     AS last_utc
                       FROM conversations c
                       LEFT JOIN messaged m ON m.id = c.id
-                     WHERE m.id IS NOT NULL
+                     WHERE m.last_utc IS NOT NULL
                         OR EXISTS (SELECT 1 FROM conversation_participants p WHERE p.conversation_id = c.id)
                         OR EXISTS (SELECT 1 FROM shared_files f WHERE f.conversation_id = c.id)
+                        -- Everything moved out of it: it stays, and says what left (SPEC.md 5.0).
+                        OR EXISTS (SELECT 1 FROM conversation_moves mv WHERE mv.source = c.id)
+                ),
+                -- Each conversation's newest close, found in one pass rather than once per conversation: nothing indexes
+                -- exchanges by conversation, and a lookup per row read the whole table for every conversation on every page
+                -- (review, lens 1 round 19). Every closed_utc is written as UTC round-trip text, so the greatest text is the
+                -- latest instant.
+                closes AS (
+                    SELECT conversation_id AS id, max(closed_utc) AS last_closed
+                      FROM exchanges
+                     WHERE closed_utc IS NOT NULL
+                     GROUP BY conversation_id
                 )
                 SELECT c.id                                       AS Id,
-                       a.messages                                 AS Messages,
+                       0                                          AS Messages,
                        a.first_utc                                AS FirstActivityUtc,
                        a.last_utc                                 AS LastActivityUtc,
                        EXISTS (SELECT 1 FROM exchanges e
                                 WHERE e.conversation_id = c.id
                                   AND e.state = 'OPEN')           AS HasOpenExchange,
-                       (c.archived_utc IS NOT NULL)               AS Archived
+                       (c.archived_utc IS NOT NULL)               AS Archived,
+                       (SELECT l.parent FROM conversation_links l
+                         WHERE l.child = c.id)                    AS Parent,
+                       (c.state = 'CLOSED')                       AS Closed,
+                       cl.last_closed                             AS LastClosedUtc
                   FROM conversations c
                   JOIN activity a ON a.id = c.id
+                  LEFT JOIN closes cl ON cl.id = c.id
                  WHERE (@IncludeArchived OR c.archived_utc IS NULL)
                    AND (@Participant IS NULL
                         OR EXISTS (SELECT 1 FROM conversation_participants p
@@ -793,6 +926,13 @@ public sealed class ConversationRepository(SqliteConnection connection)
                     new { row.Id },
                     cancellationToken: cancellationToken)).ConfigureAwait(false);
 
+            // Counted for the page's rows only: counting for every conversation to find the page read every message.
+            var messageCount = await _connection.ExecuteScalarAsync<int>(
+                new CommandDefinition(
+                    "SELECT count(*) FROM messages WHERE conversation_id = @Id;",
+                    new { row.Id },
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+
             // By the reservation and by nothing else: a payload or a name that merely looks like an item's marks no
             // conversation as one (SPEC.md §5.7).
             var reserved = await new RoadmapRepository(_connection)
@@ -801,12 +941,15 @@ public sealed class ConversationRepository(SqliteConnection connection)
             summaries.Add(new ConversationSummary(
                 row.Id,
                 [.. participants.Select(AgentName.Create)],
-                row.Messages,
+                messageCount,
                 ExchangeRow.ParseTimestamp(row.FirstActivityUtc),
                 ExchangeRow.ParseTimestamp(row.LastActivityUtc),
                 row.HasOpenExchange,
                 row.Archived,
-                reserved is { } r ? new RoadmapItemRef(r.RoadmapId, r.RoadmapNumber, r.Title, r.ItemNumber, r.Removed) : null));
+                reserved is { } r ? new RoadmapItemRef(r.RoadmapId, r.RoadmapNumber, r.Title, r.ItemNumber, r.Removed) : null,
+                row.Parent,
+                row.Closed,
+                row.LastClosedUtc is { Length: > 0 } closed ? ExchangeRow.ParseTimestamp(closed) : null));
         }
 
         return summaries;
@@ -832,18 +975,18 @@ public sealed class ConversationRepository(SqliteConnection connection)
             new CommandDefinition(
                 """
                 WITH messaged AS (
-                    SELECT conversation_id      AS id,
-                           max(created_utc)     AS last_utc
-                      FROM messages
-                     GROUP BY conversation_id
+                    SELECT c.id,
+                           (SELECT max(created_utc) FROM messages WHERE conversation_id = c.id) AS last_utc
+                      FROM conversations c
                 ),
                 activity AS (
                     SELECT c.id AS id, coalesce(m.last_utc, c.opened_utc) AS last_utc
                       FROM conversations c
                       LEFT JOIN messaged m ON m.id = c.id
-                     WHERE m.id IS NOT NULL
+                     WHERE m.last_utc IS NOT NULL
                         OR EXISTS (SELECT 1 FROM conversation_participants p WHERE p.conversation_id = c.id)
                         OR EXISTS (SELECT 1 FROM shared_files f WHERE f.conversation_id = c.id)
+                        OR EXISTS (SELECT 1 FROM conversation_moves mv WHERE mv.source = c.id)
                 )
                 SELECT count(*)
                   FROM conversations c
@@ -968,6 +1111,24 @@ public sealed class ConversationRepository(SqliteConnection connection)
     {
         ArgumentException.ThrowIfNullOrEmpty(conversationId);
 
+        var outcome = await RazeAsync(conversationId, nowUtc, transaction, cancellationToken).ConfigureAwait(false);
+
+        // Once committed: within a caller's transaction there is nothing in the file yet to flush.
+        if (transaction is null)
+        {
+            ParleyDatabase.Flush(_connection);
+        }
+
+        return outcome;
+    }
+
+    private async Task<DestroyOutcome> RazeAsync(
+        string conversationId,
+        DateTimeOffset nowUtc,
+        SqliteTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
+
         using var scope = WriteScope.Begin(_connection, transaction);
 
         var exists = await _connection.ExecuteScalarAsync<long>(
@@ -1020,6 +1181,39 @@ public sealed class ConversationRepository(SqliteConnection connection)
 
         await RazeAsync("messages", "DELETE FROM messages WHERE conversation_id = @Conversation;")
             .ConfigureAwait(false);
+
+        // Named rather than left to the cascade, so the operator is told (SPEC.md §14): one may be an agent's answer
+        // waiting for the person's review.
+        await RazeAsync(
+            "ownership_questions",
+            "DELETE FROM ownership_questions WHERE conversation_id = @Conversation;")
+            .ConfigureAwait(false);
+
+        // An exchange that ceases to exist is not news about where it went (SPEC.md §14).
+        await ExecuteAsync(
+            """
+            DELETE FROM move_notices
+             WHERE exchange_id IN (SELECT id FROM exchanges WHERE conversation_id = @Conversation);
+            """).ConfigureAwait(false);
+
+        // A move can leave what was settled elsewhere and what settled it here (SPEC.md 5.0). Nothing can name what is gone,
+        // so the question stays closed and says only that: destroying is the person's erase control and has no exception.
+        await ExecuteAsync(
+            """
+            UPDATE exchanges
+               SET settled_by = NULL, outcome = 'closed'
+             WHERE conversation_id <> @Conversation
+               AND settled_by IN (SELECT id FROM exchanges WHERE conversation_id = @Conversation);
+            """).ConfigureAwait(false);
+
+        // What agents read of these exchanges (SPEC.md §5.8) goes with them: destroying is the person's erase control, and a tally of
+        // who read an exchange that is gone is a trace of it. It holds no text, so it is not reported as removed text.
+        await ExecuteAsync(
+            """
+            DELETE FROM history_reads
+             WHERE kind = 'exchange'
+               AND exchange_id IN (SELECT id FROM exchanges WHERE conversation_id = @Conversation);
+            """).ConfigureAwait(false);
 
         await RazeAsync("exchanges", "DELETE FROM exchanges WHERE conversation_id = @Conversation;")
             .ConfigureAwait(false);
@@ -1113,6 +1307,10 @@ public sealed class ConversationRepository(SqliteConnection connection)
     {
         public string Id { get; init; } = string.Empty;
 
+        public string? Parent { get; init; }
+
+        public bool Closed { get; init; }
+
         public int Messages { get; init; }
 
         public string FirstActivityUtc { get; init; } = string.Empty;
@@ -1122,6 +1320,8 @@ public sealed class ConversationRepository(SqliteConnection connection)
         public bool HasOpenExchange { get; init; }
 
         public bool Archived { get; init; }
+
+        public string? LastClosedUtc { get; init; }
     }
 
     private sealed class ConversationRow

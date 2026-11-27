@@ -33,6 +33,8 @@ namespace Parley.Terminal.Tests;
 /// which is a change nobody should have to argue for.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class PaintedTests
 {
     private static BrokerDirectory Directory() =>

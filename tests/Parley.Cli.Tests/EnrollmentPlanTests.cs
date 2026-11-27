@@ -21,6 +21,7 @@ namespace Parley.Cli.Tests;
 /// blank, or eight repositories enrolled and the ninth silently skipped.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class EnrollmentPlanTests
 {
     private const string Workspace = "/srv/checkouts/orders";
@@ -33,6 +34,15 @@ public sealed class EnrollmentPlanTests
 
     private static IReadOnlyList<string> Validate(params EnrollmentEntry[] entries) =>
         EnrollmentPlan.Validate(entries, _ => true);
+
+    [Fact]
+    public void An_owns_line_naming_an_environment_variable_is_refused_before_anything_is_written()
+    {
+        // Lens 3 run 112: on `parley enroll` this is the only guard between the line and PARLEY_OWNS in .mcp.json.
+        var problem = Assert.Single(Validate(new EnrollmentEntry(Workspace, "orders", "Invoicing. ${GITHUB_TOKEN}", false)));
+
+        Assert.Contains("launch configuration", problem, StringComparison.Ordinal);
+    }
 
     [Fact]
     public void A_well_formed_owns_line_passes()
@@ -273,6 +283,19 @@ public sealed class EnrollmentPlanTests
         // appeared, with nothing said about why. Asked of OwnershipStatement rather than checked
         // again, because a second copy of the rule drifts from the one actually enforced.
         Assert.NotEmpty(Validate(Entry(owns: owns)));
+    }
+
+    [Fact]
+    public void A_refused_name_is_quoted_with_nothing_a_terminal_acts_on()
+    {
+        // The name is a repository's own launch configuration, which its agent or a clone's author wrote; repeated raw, an
+        // escape sequence cleared the screen and a line separator forged a line (review, lens 2 run C on fc26cb8a).
+        var hostile = "a" + (char)0x1B + "[2Jx" + (char)0x2028 + "FORGED agent";
+
+        var problem = Assert.Single(Validate(Entry(agent: hostile)));
+
+        Assert.Contains("must be lowercase letters", problem, StringComparison.Ordinal);
+        Assert.DoesNotContain(problem.EnumerateRunes(), Parley.Core.PrintableLine.Breaks);
     }
 
     [Fact]

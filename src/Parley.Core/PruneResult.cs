@@ -13,6 +13,10 @@ namespace Parley.Core;
 /// <param name="Capped">
 /// Whether this pass stopped at its own limit with spent messages still to remove.
 /// </param>
+/// <param name="Applied">
+/// The policy this pass applied, so a person told what was removed is also told under which numbers (SPEC.md §9.4); null
+/// on <see cref="Nothing"/>, where no pass ran.
+/// </param>
 /// <remarks>
 /// <para>
 /// Three numbers rather than one because they answer different questions and a single total
@@ -45,7 +49,7 @@ namespace Parley.Core;
 /// </para>
 /// </remarks>
 public sealed record PruneResult(
-    int Removed, int HeldByFloor, int Contended, bool Capped)
+    int Removed, int HeldByFloor, int Contended, bool Capped, RetentionPolicy? Applied = null)
 {
     /// <summary>
     /// The result of a pass that did nothing, including a tick that did not reach its retention

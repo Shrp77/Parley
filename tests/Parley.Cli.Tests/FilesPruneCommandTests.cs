@@ -10,6 +10,7 @@ namespace Parley.Cli.Tests;
 /// undone across a whole project, and a <c>yes</c> here would be the one door in the deployment easier to walk through
 /// by habit.
 /// </remarks>
+[Integration]
 public sealed class FilesPruneCommandTests : IAsyncDisposable
 {
     private const string Billing = FileLocationFixture.Billing;

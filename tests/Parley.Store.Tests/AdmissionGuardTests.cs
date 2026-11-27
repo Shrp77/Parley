@@ -13,6 +13,7 @@ namespace Parley.Store.Tests;
 /// the repositories entirely and write the rows such a broker would write. Payloads are built by SQLite's
 /// json_object so that no JSON quoting is nested inside a C# string, which is otherwise where the mistakes go.
 /// </remarks>
+[Integration]
 public sealed class AdmissionGuardTests : IDisposable
 {
     private const string Stamp = "2026-01-01T00:00:00.0000000+00:00";

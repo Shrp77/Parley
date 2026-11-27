@@ -85,14 +85,28 @@ internal static class Adding
             return "Name a repository directory on this machine.";
         }
 
-        if (!Directory.Exists(workspace))
+        var git = Path.Combine(workspace, ".git");
+
+        // Before anything else, as on the web console's Enrol page: the lookup itself is what reaches another machine, so
+        // every lookup here opens each part as itself (LocalOpen) and none follows a link to a share, however timed.
+        if (LocalOpen.Folder(workspace) == LocalOpenStatus.OffThisMachine
+            || LocalOpen.Entry(git) == LocalOpenStatus.OffThisMachine)
+        {
+            return LocalPath.OffThisMachine;
+        }
+
+        // Said at the field, as the enrolment plan will say it: only this machine's own disks.
+        if (LocalStorage.Problem(workspace) is { } notLocal)
+        {
+            return notLocal;
+        }
+
+        if (LocalOpen.Folder(workspace) is not (LocalOpenStatus.Opened or LocalOpenStatus.Busy or LocalOpenStatus.Unreadable))
         {
             return $"There is no directory at {workspace}.";
         }
 
-        var git = Path.Combine(workspace, ".git");
-
-        return Directory.Exists(git) || File.Exists(git)
+        return LocalOpen.Entry(git) == LocalOpenStatus.Opened
             ? null
             : $"{workspace} is not a repository: it holds no .git.";
     }
@@ -122,7 +136,7 @@ internal static class Adding
     /// </para>
     /// </remarks>
     internal static string? OwnsProblem(string owns) =>
-        OwnershipStatement.IsValid((owns ?? string.Empty).Trim(), out var error) ? null : error;
+        OwnershipStatement.IsLaunchable((owns ?? string.Empty).Trim(), out var error) ? null : error;
 
     /// <summary>What would be written, in the order it would be written.</summary>
     /// <param name="workspace">The repository.</param>
@@ -297,7 +311,7 @@ internal static class Adding
         Action<string>? remember,
         Func<string?, Task>? enrolling)
     {
-        var workspace = Path.GetFullPath(values[0].Trim());
+        var workspace = OffMachineLinks.FullPath(values[0].Trim());
         var role = values[1].Trim();
 
         var asking = Prompting.Choose(
@@ -568,10 +582,10 @@ internal sealed record Catalogue(string? ManifestPath, string? Given = null)
             return named;
         }
 
-        if (ManifestPath is { Length: > 0 } manifest
-            && Path.GetDirectoryName(Path.GetFullPath(manifest)) is { Length: > 0 } directory)
+        // In the root itself, never its parent: the manifest path is the root (`ProjectResolution.BesideTheManifest`).
+        if (ManifestPath is { Length: > 0 } manifest)
         {
-            return Path.Combine(directory, NodeCatalogue.DefaultFileName);
+            return Path.Combine(Path.GetFullPath(manifest), NodeCatalogue.DefaultFileName);
         }
 
         return NodeCatalogue.DefaultFileName;

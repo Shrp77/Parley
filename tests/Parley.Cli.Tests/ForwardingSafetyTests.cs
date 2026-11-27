@@ -30,6 +30,7 @@ namespace Parley.Cli.Tests;
 /// than the wrapper.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ForwardingSafetyTests
 {
     [Fact]
@@ -102,6 +103,6 @@ public sealed class ForwardingSafetyTests
             complained);
 
         Assert.Equal(69, code);
-        Assert.Contains("dotnet tool install", complained.ToString(), StringComparison.Ordinal);
+        Assert.Contains("install.ps1 -Only parley-definitely-not-a-real-tool-name", complained.ToString(), StringComparison.Ordinal);
     }
 }

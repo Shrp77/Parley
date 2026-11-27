@@ -92,6 +92,12 @@ public static class NodeCommand
     /// identity, so one checkout is one process however many projects ask for it. Null makes its own, which
     /// is what a node running alone wants.
     /// </param>
+    /// <param name="keepTrying">
+    /// Whether a broker that cannot be reached is waited for rather than the end of this node, keeping every agent it is
+    /// running. For an entry nobody is watching: a person who typed the command wants to be told. A broker that answers and
+    /// refuses still ends it, because retrying cannot fix that, except that a second node may only be this machine's last
+    /// connection, which clears.
+    /// </param>
     public static async Task<int> RunAsync(
         GrpcChannel channel,
         string endpoint,
@@ -99,7 +105,8 @@ public static class NodeCommand
         TextWriter output,
         string? project = null,
         ConcurrentDictionary<AgentIdentity, ResidentAgent>? residents = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool keepTrying = false)
     {
         ArgumentNullException.ThrowIfNull(channel);
         ArgumentException.ThrowIfNullOrWhiteSpace(catalogueFile);
@@ -125,7 +132,7 @@ public static class NodeCommand
         // **Whoever makes this table is whoever stops it.** The table is shared across every project one
         // process hosts, so sweeping it whenever any node loop returns would send away every agent on the
         // machine, including the ones still serving other projects: `serve` stops and restarts a project
-        // whose store or endpoint changed, and `project remove` ends one outright. SPEC.md §12 says what
+        // whose store or endpoint changed, and `project remove` ends one outright. SPEC.md §11.1 says what
         // that costs — the process is what held everything each agent had learned.
         var ours = residents is null;
 
@@ -144,6 +151,26 @@ public static class NodeCommand
         // because a refusal then is a real second node.
         var rejoin = false;
         var refusals = 0;
+        var outages = 0;
+        var secondNodeSaid = false;
+        var outageSaid = false;
+
+        // From 2 seconds, doubling to 30, for as long as it takes: nothing times out, and a machine that comes up before its
+        // tunnel is an ordinary start. Said once for each spell, because a line every 30 seconds is a line nobody reads.
+        async Task WaitOutAsync()
+        {
+            if (!outageSaid && !secondNodeSaid)
+            {
+                outageSaid = true;
+                await output.WriteLineAsync($"No broker is answering at {endpoint}. Keeping this node's agents and trying again.")
+                    .ConfigureAwait(false);
+            }
+
+            outages++;
+            await Task.Delay(
+                TimeSpan.FromSeconds(Math.Min(30, 2 * Math.Pow(2, Math.Min(outages - 1, 5)))),
+                cancellationToken).ConfigureAwait(false);
+        }
 
         try
         {
@@ -153,6 +180,7 @@ public static class NodeCommand
                 {
                     Machine = NodeCatalogue.Machine,
                     Facts = Observe(),
+                    ProtocolVersion = ProtocolVersion.Current,
 
                     // This node reports the turns it gives (SPEC.md §11.6), so its agents can be told working from stopped.
                     ReportsTurns = true,
@@ -177,6 +205,10 @@ public static class NodeCommand
                 var watcher = WatchAsync(
                     catalogueFile, project, announceable.Names, output, rejoining, watching.Token);
                 var refused = false;
+                var lost = false;
+
+                // This attempt's place on the board every node loop sharing the table can read (TellJoinedAsync).
+                var seat = new object();
 
                 try
                 {
@@ -191,6 +223,41 @@ public static class NodeCommand
                                 refusals = 0;
                                 await ReportJoinedAsync(
                                     command.Joined, catalogue, project, catalogueFile, endpoint, output)
+                                    .ConfigureAwait(false);
+
+                                // Before any command: a broker that restarted must know these are Parley's when they
+                                // reattach (SPEC.md §11.7). Only what this project's catalogue starts: the table is the
+                                // machine's, shared by every project this process hosts, and another project's agent
+                                // under the same name would put its token here in place of this one's (lens 2 run 107).
+                                //
+                                // **Under the name this project gives it** (lens 2 run 108): one checkout is one process
+                                // in every project that enrols it, under a name in each, and the process carries the
+                                // name of whichever started it.
+                                var named = catalogue.NamesIn(project);
+                                var joined = new TurnReporter(nodes, request.Machine, output);
+
+                                secondNodeSaid = false;
+
+                                outages = 0;
+
+                                if (outageSaid)
+                                {
+                                    outageSaid = false;
+                                    await output.WriteLineAsync($"The broker at {endpoint} is answering again. Rejoined.")
+                                        .ConfigureAwait(false);
+                                }
+
+                                // And from now on told of every launch any loop sharing the table makes of what this
+                                // project starts (lens 1 run 107). **Seated before the table is read** (lens 1 run 109):
+                                // a launch puts its process in the table and then reads the board, so a launch between
+                                // this read and a later seat would reach neither. Both orders at once only report twice.
+                                Boards.GetOrCreateValue(residents).Join(seat, joined, named);
+
+                                await joined
+                                    .ReannounceAsync(residents
+                                        .Where(pair => named.ContainsKey(pair.Key))
+                                        .Select(pair => (pair.Key, pair.Value, named[pair.Key]))
+                                        .ToList())
                                     .ConfigureAwait(false);
                                 break;
 
@@ -212,6 +279,17 @@ public static class NodeCommand
                                     command.Refresh, catalogue, project, residents, output, cancellationToken,
                                     new TurnReporter(nodes, request.Machine, output))
                                     .ConfigureAwait(false);
+                                break;
+
+                            case Wire.NodeCommand.CommandOneofCase.Stop:
+                                await StopAsync(
+                                    command.Stop, catalogue, project, residents, output, cancellationToken,
+                                    new TurnReporter(nodes, request.Machine, output))
+                                    .ConfigureAwait(false);
+                                break;
+
+                            case Wire.NodeCommand.CommandOneofCase.Kill:
+                                await KillAsync(command.Kill, residents, output).ConfigureAwait(false);
                                 break;
 
                             default:
@@ -242,8 +320,32 @@ public static class NodeCommand
                 {
                     refused = true;
                 }
+                catch (RpcException failure) when (keepTrying && IsAnOutage(failure) && !cancellationToken.IsCancellationRequested)
+                {
+                    lost = true;
+                }
+                catch (RpcException failure) when (
+                    keepTrying && failure.StatusCode == StatusCode.AlreadyExists && !cancellationToken.IsCancellationRequested)
+                {
+                    // A broker that has not noticed this machine's last connection die, which a reboot or a dead tunnel
+                    // leaves behind for as long as it takes, reads exactly like a second node. Stopping for it would leave a
+                    // machine nobody is watching with no node at all, so this waits and says so. A real second node keeps
+                    // saying so too, in a log.
+                    if (!secondNodeSaid)
+                    {
+                        secondNodeSaid = true;
+                        await output.WriteLineAsync(Inert.Line(failure.Status.Detail)).ConfigureAwait(false);
+                        await output.WriteLineAsync(
+                            "If that is this machine's last connection, the broker lets go of it within a few minutes, so this keeps trying. If another node "
+                            + "is running here, stop one of them.").ConfigureAwait(false);
+                    }
+
+                    lost = true;
+                }
                 finally
                 {
+                    Boards.GetOrCreateValue(residents).Leave(seat);
+
                     await watching.CancelAsync().ConfigureAwait(false);
                 }
 
@@ -256,6 +358,15 @@ public static class NodeCommand
                 }
 
                 var changed = await watcher.ConfigureAwait(false);
+
+                // A broker that ended the stream has gone away, to a node that was told to wait for one.
+                if (lost || (changed is null && keepTrying && !cancellationToken.IsCancellationRequested))
+                {
+                    catalogue = changed ?? catalogue;
+                    rejoin = true;
+                    await WaitOutAsync().ConfigureAwait(false);
+                    continue;
+                }
 
                 if (changed is null)
                 {
@@ -276,6 +387,12 @@ public static class NodeCommand
         {
             // Ctrl+C, which is how this command is meant to end.
         }
+        catch (RpcException failure) when (failure.StatusCode == StatusCode.Cancelled && cancellationToken.IsCancellationRequested)
+        {
+            // **Ctrl+C, SIGTERM or SIGHUP, arriving as the node's stream ending.** The stream is cancelled from this side,
+            // which gRPC reports as an RpcException rather than an OperationCanceledException: told as "the broker refused
+            // that" and exit 74, a `systemctl stop` of `parley up` read as a failed stop (review, lens 1 run A on 6561e9ea).
+        }
         catch (RpcException failure) when (failure.StatusCode == StatusCode.Unavailable)
         {
             await output.WriteLineAsync(
@@ -284,9 +401,9 @@ public static class NodeCommand
 
             return Unavailable;
         }
-        catch (RpcException failure) when (failure.StatusCode == StatusCode.AlreadyExists)
+        catch (RpcException failure) when (failure.StatusCode is StatusCode.AlreadyExists or StatusCode.FailedPrecondition)
         {
-            await output.WriteLineAsync(failure.Status.Detail).ConfigureAwait(false);
+            await output.WriteLineAsync(Inert.Line(failure.Status.Detail)).ConfigureAwait(false);
             return Config;
         }
         finally
@@ -352,7 +469,7 @@ public static class NodeCommand
                 if (!complained)
                 {
                     await output.WriteLineAsync(
-                        $"{catalogueFile} could not be read: {problem} " +
+                        $"{catalogueFile} could not be read: {Inert.Line(problem)} " +
                         "Keeping the roles already announced.").ConfigureAwait(false);
 
                     complained = true;
@@ -381,6 +498,22 @@ public static class NodeCommand
         return null;
     }
 
+    /// <summary>Whether a failure says the broker could not be reached, rather than that it answered and refused.</summary>
+    /// <param name="failure">The failure.</param>
+    /// <returns><see langword="true"/> when trying again could help.</returns>
+    /// <remarks>
+    /// Named by the outages rather than by the refusals: a stopping broker has been seen to end a stream in several of
+    /// these, and a code this does not name ends a node that nobody is watching, so what is named here is checked by a test
+    /// that stops a real broker.
+    /// </remarks>
+    private static bool IsAnOutage(RpcException failure) =>
+        failure.StatusCode is StatusCode.Unavailable
+            or StatusCode.Cancelled
+            or StatusCode.Internal
+            or StatusCode.Unknown
+            or StatusCode.DeadlineExceeded
+            or StatusCode.Aborted;
+
     /// <summary>Whether an ended stream ended because this asked it to.</summary>
     /// <param name="ending">What came out of the stream.</param>
     /// <returns>Whether it is a cancellation rather than a failure.</returns>
@@ -395,8 +528,13 @@ public static class NodeCommand
     /// <summary>The names a node offers, in a stable order, for a report.</summary>
     /// <param name="names">What it announced.</param>
     /// <returns>The names, or a phrase saying there are none.</returns>
+    /// <remarks>
+    /// Inert: a name is taken from a repository's launch configuration, which its agent can edit, and is not held to the name
+    /// grammar there, so an escape sequence or a line separator in it forged a line of the node's log (review, lens 2 run C
+    /// on fc26cb8a).
+    /// </remarks>
     private static string Listed(IReadOnlyList<string> names) =>
-        names.Count == 0 ? "nothing" : string.Join(", ", names);
+        names.Count == 0 ? "nothing" : Inert.Line(string.Join(", ", names));
 
     /// <summary>Reports what the broker knows about this machine.</summary>
     /// <param name="joined">The acknowledgement.</param>
@@ -420,7 +558,7 @@ public static class NodeCommand
     /// like a machine nobody has listed any agents on yet.
     /// </para>
     /// </remarks>
-    private static async Task ReportJoinedAsync(
+    internal static async Task ReportJoinedAsync(
         Wire.Joined joined,
         NodeCatalogue catalogue,
         string? project,
@@ -432,7 +570,7 @@ public static class NodeCommand
 
         var startable = announceable.Names.Count == 0
             ? string.Create(CultureInfo.InvariantCulture, $"nothing (no agents in {catalogueFile})")
-            : string.Join(", ", announceable.Names);
+            : Inert.Line(string.Join(", ", announceable.Names));
 
         await output.WriteLineAsync(string.Create(
             CultureInfo.InvariantCulture,
@@ -445,7 +583,7 @@ public static class NodeCommand
         foreach (var contested in announceable.Contested)
         {
             await output.WriteLineAsync(
-                $"  {contested}: claimed by more than one catalogued workspace, so nothing answers to it "
+                $"  {Inert.Line(contested)}: claimed by more than one catalogued workspace, so nothing answers to it "
                 + "here. Enrol one of them under another name, or re-mint its identity.")
                 .ConfigureAwait(false);
         }
@@ -453,15 +591,15 @@ public static class NodeCommand
         foreach (var unread in announceable.Unread)
         {
             await output.WriteLineAsync(
-                $"  {unread.Workspace}: its launch configuration could not be read, so nothing it answers "
-                + $"to is offered. {unread.Problem}")
+                $"  {Inert.Line(unread.Workspace)}: its launch configuration could not be read, so nothing it answers "
+                + $"to is offered. {Inert.Line(unread.Problem)}")
                 .ConfigureAwait(false);
         }
 
         foreach (var strange in catalogue.Unreadable)
         {
             await output.WriteLineAsync(
-                $"  {strange}: not an agent identity, so this catalogue entry is ignored. Re-enrol that "
+                $"  {Inert.Line(strange)}: not an agent identity, so this catalogue entry is ignored. Re-enrol that "
                 + "repository to give it one.")
                 .ConfigureAwait(false);
         }
@@ -595,11 +733,28 @@ public static class NodeCommand
 
             if (residents.TryGetValue(identity, out var existing))
             {
+                if (existing.IsAlive && existing.IsStopping)
+                {
+                    // **Being stopped, and not gone yet.** Its input is closed, so a turn given to it now comes back as a
+                    // process that died, and the stop then starts nothing: the broker was told the agent was started and
+                    // nothing ran. The stop is told a start is wanted and makes it once the process has gone
+                    // (RefreshWhenIdleAsync), under this same gate, so the two cannot miss each other.
+                    existing.StartAskedWhileStopping = true;
+
+                    await output.WriteLineAsync(
+                        $"  {agent.Value}: asked for while it is being stopped, so it is started again once it has gone.")
+                        .ConfigureAwait(false);
+
+                    return;
+                }
+
                 if (existing.IsAlive)
                 {
                     // Already here, and "here" is machine-wide rather than this node's own. This is also how
-                    // one checkout stays one process when a second project asks for it under another name.
-                    DispatchTurn(existing, output, cancellationToken, reporter);
+                    // one checkout stays one process when a second project asks for it under another name; that
+                    // project already knows its token, told at the launch (TellJoinedAsync) or on joining since
+                    // (ReannounceAsync).
+                    DispatchTurn(existing, agent, output, cancellationToken, reporter);
                     return;
                 }
 
@@ -625,15 +780,50 @@ public static class NodeCommand
                 return;
             }
 
+            // **A workspace that is gone retires its agent, only where that can be told from a disk absent or replaced**
+            // (SPEC.md §14; WorkspaceGoneAsync): a deleted repository is worth a judgement, a drive briefly unmounted or swapped
+            // is not, and one unavailable volume must not retire every agent on it at once. The node looks because the broker
+            // never reads this disk.
+            if (catalogue.WorkspaceFor(identity) is { } catalogued
+                && !string.IsNullOrWhiteSpace(catalogued)
+                && !Directory.Exists(catalogued))
+            {
+                await WorkspaceGoneAsync(agent, catalogued, output, reporter).ConfigureAwait(false);
+
+                return;
+            }
+
+            // **Never started in a folder that leads off this machine.** The agent can make its own folder a link to a share
+            // after it was enrolled, and starting a process there makes Windows offer the person's sign-in to that host
+            // (review, lens 2 round 15). Asked by opening each part as itself (LocalOpen), so a link is not followed to
+            // judge it either. Said and not retired: the folder is not gone, it is somewhere this node will not go.
+            if (catalogue.WorkspaceFor(identity) is { Length: > 0 } elsewhere
+                && LocalOpen.Folder(elsewhere) != LocalOpenStatus.Opened)
+            {
+                await output.WriteLineAsync(
+                    $"  {agent.Value}: not started — its workspace {Inert.Line(elsewhere)} leads to another machine or could not be checked.")
+                    .ConfigureAwait(false);
+
+                return;
+            }
+
             try
             {
                 var invocation = InvocationCommand.Parse(command);
                 var workspace = catalogue.WorkspaceFor(identity) ?? Directory.GetCurrentDirectory();
 
-                // Named to the broker first, so the process it starts is known as Parley's (SPEC.md §11.7).
-                var launched = reporter is null ? null : await reporter.LaunchAsync(agent).ConfigureAwait(false);
-                var resident = ResidentAgent.Start(agent, invocation, workspace, TimeProvider.System, launched);
+                // Named to the broker first, so the process it starts is known as Parley's (SPEC.md §11.7). Numbered before
+                // it starts, and every project is told that number, so a reading the process makes before another project
+                // hears of it is newer than the launch there and is kept (lens 3 run 4 on #115).
+                var launch = BackgroundSnapshot.NextSequence();
+                var launched = reporter is null ? null : await reporter.LaunchAsync(agent, launch).ConfigureAwait(false);
+                var resident = Watched(
+                    ResidentAgent.Start(agent, invocation, workspace, TimeProvider.System, launched), identity, residents, output);
                 residents[identity] = resident;
+
+                // Every project joined here that starts this checkout knows it as Parley's too (this one again, with
+                // the same token).
+                await TellJoinedAsync(residents, identity, resident, launch).ConfigureAwait(false);
 
                 // **A replacement says so, and that is not decoration.** Starting an agent because nothing
                 // was running is an ordinary event; starting one because the process behind an attached
@@ -641,14 +831,14 @@ public static class NodeCommand
                 // where it meets it. Reading a node's log, the two are completely different pieces of news.
                 await output.WriteLineAsync(
                     replacing
-                        ? $"  {agent.Value}: restarted ({start.Because}) — the previous process had gone."
-                        : $"  {agent.Value}: started ({start.Because}).").ConfigureAwait(false);
+                        ? $"  {agent.Value}: restarted ({Inert.Line(start.Because)}) — the previous process had gone."
+                        : $"  {agent.Value}: started ({Inert.Line(start.Because)}).").ConfigureAwait(false);
 
-                DispatchTurn(resident, output, cancellationToken, reporter);
+                DispatchTurn(resident, agent, output, cancellationToken, reporter);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                await output.WriteLineAsync($"  {agent.Value}: could not start — {exception.Message}")
+                await output.WriteLineAsync($"  {agent.Value}: could not start — {Inert.Line(exception.Message)}")
                     .ConfigureAwait(false);
             }
         }
@@ -656,6 +846,306 @@ public static class NodeCommand
         {
             _ = Residency.Release();
         }
+    }
+
+    /// <summary>Says an agent's workspace is missing, and asks the broker to retire it when it is on the disk holding the person's home folder, with the folder above it still there, in use, no mount folder and reached through no link.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="workspace">Its catalogued workspace, which does not exist.</param>
+    /// <param name="output">Where to report.</param>
+    /// <param name="reporter">The broker's ear, or null when there is none.</param>
+    /// <returns>A task that completes when it is said.</returns>
+    private static async Task WorkspaceGoneAsync(AgentName agent, string workspace, TextWriter output, TurnReporter? reporter)
+    {
+        string full;
+
+        try
+        {
+            full = Path.TrimEndingDirectorySeparator(OffMachineLinks.FullPath(workspace));
+        }
+        catch (Exception unreadable) when (unreadable is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            await output.WriteLineAsync(
+                $"  {agent.Value}: not started — its workspace '{Inert.Line(workspace)}' is not a path this machine can read, so "
+                + "nothing is concluded.").ConfigureAwait(false);
+
+            return;
+        }
+
+        var parent = Path.GetDirectoryName(full);
+
+        if (parent is null || !Directory.Exists(parent))
+        {
+            await output.WriteLineAsync(
+                $"  {agent.Value}: not started — its workspace {Inert.Line(workspace)} and the folder above it are both missing, "
+                + "so nothing is concluded (a drive may be unmounted); it is tried again when next asked for.")
+                .ConfigureAwait(false);
+
+            return;
+        }
+
+        if (ThroughALink(full))
+        {
+            await output.WriteLineAsync(
+                $"  {agent.Value}: not started — its workspace {Inert.Line(workspace)} is missing, and its path runs through a link, "
+                + "whose far side may be a drive not mounted, so nothing is concluded; it is tried again when next asked for.")
+                .ConfigureAwait(false);
+
+            return;
+        }
+
+        // **Only on the disk that holds the person's home folder, and never at the root of a volume** (the owner's calls,
+        // 2026-10-30). Elsewhere another disk can answer at the same path — a swapped removable drive, a disk with the same
+        // label, a backup laid out the same way — and a folder that is there and in use says nothing about whether it is
+        // the same disk (lens 1 run 89). The home disk cannot be swapped while the node runs, but its mount folders can
+        // hold whichever disk is plugged in (lens 1 run 88). A repository missing from anywhere else is left for a person.
+        if (!MayRetireUnder(parent))
+        {
+            await output.WriteLineAsync(
+                $"  {agent.Value}: not started — its workspace {Inert.Line(workspace)} is missing where a disk that is absent or replaced "
+                + "cannot be told from a deletion (a disk other than your home folder's, a drive's root, a folder removable "
+                + "disks are mounted in, a mount table that cannot be read, or no home folder), so nothing is concluded; it is "
+                + "tried again when next asked for.")
+                .ConfigureAwait(false);
+
+            return;
+        }
+
+        // **The folder above must be one somebody is using, not one a volume left behind.** An unmounted Linux volume leaves
+        // its mount folder in place and empty, and a mount point is no link, so an empty parent concludes nothing (lens 1
+        // run 87); a repository that was the only thing in its folder is then left for a person to retire.
+        if (HoldsNothing(parent))
+        {
+            await output.WriteLineAsync(
+                $"  {agent.Value}: not started — its workspace {Inert.Line(workspace)} is missing and the folder above it holds "
+                + "nothing else, as a volume not mounted leaves it, so nothing is concluded; it is tried again when next "
+                + "asked for.")
+                .ConfigureAwait(false);
+
+            return;
+        }
+
+        // Looked at once more: a volume that came back while the checks ran shows its workspace again (lens 1 run 88).
+        if (Directory.Exists(full))
+        {
+            await output.WriteLineAsync(
+                $"  {agent.Value}: not started — its workspace {Inert.Line(workspace)} came back while it was being looked at; it is "
+                + "started when next asked for.").ConfigureAwait(false);
+
+            return;
+        }
+
+        var retired = reporter is null ? null : await reporter.WorkspaceGoneAsync(agent).ConfigureAwait(false);
+
+        await output.WriteLineAsync(
+            retired == true
+                ? $"  {agent.Value}: not started — its workspace {Inert.Line(workspace)} is gone, so the broker retired it. Reinstate "
+                  + "it in the terminal once the repository is back."
+                : $"  {agent.Value}: not started — its workspace {Inert.Line(workspace)} is gone.")
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>Whether a missing workspace directly in this folder may retire its agent, as far as disks go.</summary>
+    /// <param name="folder">The folder above the workspace, which exists.</param>
+    /// <returns>True only on the home volume, and not at a volume's root or in a folder removable disks are mounted in.</returns>
+    internal static bool MayRetireUnder(string folder) => OnTheHomeVolume(folder) && !AtAVolumeRoot(folder);
+
+    /// <summary>Whether a folder that is there is on the volume holding the person's home folder.</summary>
+    /// <param name="folder">A full path to a folder that exists.</param>
+    /// <returns>True when it is; false when it is not, or when that cannot be told.</returns>
+    /// <remarks>
+    /// Windows compares drive roots with the profile's. Linux finds each path's mount point in the process's mount table, so
+    /// a disk mounted anywhere is told from the one under the home folder. macOS asks the mounted volumes for their roots
+    /// (<see cref="OnTheSameMacVolume"/>). A process with no home folder concludes nothing.
+    /// </remarks>
+    internal static bool OnTheHomeVolume(string folder)
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        if (string.IsNullOrEmpty(home))
+        {
+            return false;
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            return string.Equals(
+                Path.GetPathRoot(OffMachineLinks.FullPath(folder)),
+                Path.GetPathRoot(OffMachineLinks.FullPath(home)),
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            string[] roots;
+
+            try
+            {
+                roots = [.. DriveInfo.GetDrives().Select(drive => drive.RootDirectory.FullName)];
+            }
+            catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+            {
+                return false;
+            }
+
+            return OnTheSameMacVolume(folder, home, roots);
+        }
+
+        string[] mounts;
+
+        try
+        {
+            mounts = File.ReadAllLines("/proc/self/mountinfo");
+        }
+        catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+
+        return MountPointOf(folder, mounts) is { } here
+               && string.Equals(here, MountPointOf(home, mounts), StringComparison.Ordinal);
+    }
+
+    /// <summary>The mount point a path lies under, from the lines of a Linux mount table.</summary>
+    /// <param name="path">A full path.</param>
+    /// <param name="mountInfo">The lines of <c>/proc/self/mountinfo</c>.</param>
+    /// <returns>The longest mount point the path lies under, or null when none is listed.</returns>
+    /// <remarks>The fifth field is the mount point, with a space, tab, newline or backslash written as an octal escape.</remarks>
+    internal static string? MountPointOf(string path, IEnumerable<string> mountInfo) =>
+        LongestUnder(
+            path,
+            mountInfo.Select(line => line.Split(' ')).Where(fields => fields.Length >= 5).Select(fields => Unescape(fields[4])),
+            StringComparison.Ordinal);
+
+    /// <summary>The macOS rule: whether a folder is on the same mounted volume as the home folder.</summary>
+    /// <param name="folder">A full path.</param>
+    /// <param name="home">The home folder.</param>
+    /// <param name="roots">The roots of the mounted volumes.</param>
+    /// <returns>True when neither is in /Volumes and both lie under the same longest root.</returns>
+    /// <remarks>
+    /// Disks ignore case unless formatted otherwise, so /volumes is /Volumes; and a disk can be mounted at any folder, so the
+    /// mounted volumes are asked for their roots rather than /Volumes taken as the only place (lens 2 run 92). Its own
+    /// function, with its inputs passed in, so it runs as a unit test on every platform: CI runs only unit tests on macOS
+    /// (lens 3 run 102).
+    /// </remarks>
+    internal static bool OnTheSameMacVolume(string folder, string home, IEnumerable<string> roots)
+    {
+        if (IsUnder(folder, "/Volumes", StringComparison.OrdinalIgnoreCase)
+            || IsUnder(home, "/Volumes", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var listed = roots as IReadOnlyCollection<string> ?? [.. roots];
+
+        return LongestUnder(folder, listed, StringComparison.OrdinalIgnoreCase) is { } mounted
+               && string.Equals(
+                   mounted, LongestUnder(home, listed, StringComparison.OrdinalIgnoreCase), StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The longest of some mount points that a path lies under.</summary>
+    /// <param name="path">A full path.</param>
+    /// <param name="points">Mount points.</param>
+    /// <param name="comparison">How names compare: ignoring case where the disks do.</param>
+    /// <returns>The longest point the path lies under, or null when none.</returns>
+    internal static string? LongestUnder(string path, IEnumerable<string> points, StringComparison comparison)
+    {
+        string? best = null;
+
+        foreach (var point in points)
+        {
+            if (IsUnder(path, point, comparison) && (best is null || point.Length > best.Length))
+            {
+                best = point;
+            }
+        }
+
+        return best;
+    }
+
+    private static bool IsUnder(string path, string point, StringComparison comparison = StringComparison.Ordinal) =>
+        point == "/"
+        || string.Equals(path, point.TrimEnd('/'), comparison)
+        || path.StartsWith(point.TrimEnd('/') + "/", comparison);
+
+    private static string Unescape(string field) =>
+        System.Text.RegularExpressions.Regex.Replace(
+            field,
+            @"\\([0-7]{3})",
+            match => ((char)Convert.ToInt32(match.Groups[1].Value, 8)).ToString(),
+            System.Text.RegularExpressions.RegexOptions.None,
+            TimeSpan.FromSeconds(1));
+
+    /// <summary>Whether a folder is a drive's root, or a folder removable volumes are mounted directly in.</summary>
+    /// <param name="folder">The folder above a workspace, as a full path.</param>
+    /// <returns>True when a workspace directly in it may be a volume's root, or sit on a volume another disk can replace.</returns>
+    /// <remarks>
+    /// A drive's root (<c>E:\</c>, <c>/</c>, a share's root); <c>/Volumes</c> on macOS; <c>/mnt</c>, <c>/media</c>, and a
+    /// user's folder in <c>/media</c> or <c>/run/media</c>, where a desktop mounts each removable disk under its label.
+    /// </remarks>
+    internal static bool AtAVolumeRoot(string folder)
+    {
+        var trimmed = Path.TrimEndingDirectorySeparator(folder);
+
+        if (string.Equals(trimmed, Path.TrimEndingDirectorySeparator(Path.GetPathRoot(folder) ?? string.Empty), StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var unix = trimmed.Replace(Path.DirectorySeparatorChar, '/');
+        var above = unix.LastIndexOf('/') is var cut and > 0 ? unix[..cut] : null;
+
+        // Ignoring case: a macOS disk does, and on Linux a folder these names only fail safe.
+        return new[] { "/Volumes", "/mnt", "/media", "/run/media" }.Contains(unix, StringComparer.OrdinalIgnoreCase)
+               || new[] { "/media", "/run/media" }.Contains(above, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Whether a folder holds nothing, or cannot be listed.</summary>
+    /// <param name="folder">The folder.</param>
+    /// <returns>True when it is empty or unreadable; either way it is no evidence a repository was deleted from it.</returns>
+    private static bool HoldsNothing(string folder)
+    {
+        try
+        {
+            return !Directory.EnumerateFileSystemEntries(folder).Any();
+        }
+        catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>Whether any part of a path that is there, from its root down, is a link: a junction or a symbolic link.</summary>
+    /// <param name="path">A full path.</param>
+    /// <returns>True when a link is on the way, including the path itself as a link whose target is gone.</returns>
+    /// <remarks>
+    /// <b>A link outlives what it leads to.</b> A folder above the workspace that is a junction to a second disk still exists
+    /// when that disk is gone, so the parent check alone would retire every agent on the disk at once (found by review,
+    /// lens 2 run 89), and a workspace that is itself a link to an unmounted drive reads as missing beside a parent that is
+    /// there. Either way the path says nothing about whether the repository was deleted, so nothing is concluded from it.
+    /// </remarks>
+    private static bool ThroughALink(string path)
+    {
+        var root = Path.GetPathRoot(path) ?? string.Empty;
+        var at = root;
+
+        foreach (var part in path[root.Length..].Split(
+                     [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries))
+        {
+            at = Path.Combine(at, part);
+            var entry = new DirectoryInfo(at);
+
+            if (entry.LinkTarget is not null)
+            {
+                return true;
+            }
+
+            if (!entry.Exists)
+            {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Serialises every change to who lives in the resident table.</summary>
@@ -755,11 +1245,15 @@ public static class NodeCommand
 
         // Reported like any other turn once it is actually given. Only the "not mine" case is
         // silent; a turn that fails is a turn the operator needs to hear about.
-        DispatchTurn(resident, output, cancellationToken, reporter);
+        DispatchTurn(resident, agent, output, cancellationToken, reporter);
     }
 
     /// <summary>Starts a turn without holding up the command stream.</summary>
     /// <param name="resident">The agent to give a turn.</param>
+    /// <param name="asked">
+    /// The name the asking project gave it, which the turn is reported under: one checkout is one process however many
+    /// projects ask for it, under a name in each (lens 2 run 108).
+    /// </param>
     /// <param name="output">Where to report.</param>
     /// <param name="cancellationToken">Stops the turn.</param>
     /// <param name="reporter">Tells the broker when the turn begins and ends (SPEC.md §11.6), or null to report nothing.</param>
@@ -785,9 +1279,13 @@ public static class NodeCommand
     /// </para>
     /// </remarks>
     private static void DispatchTurn(
-        ResidentAgent resident, TextWriter output, CancellationToken cancellationToken, TurnReporter? reporter = null)
+        ResidentAgent resident,
+        AgentName asked,
+        TextWriter output,
+        CancellationToken cancellationToken,
+        TurnReporter? reporter = null)
     {
-        _ = Observe(GiveTurnAsync(resident, output, cancellationToken, reporter));
+        _ = Observe(GiveTurnAsync(resident, asked, output, cancellationToken, reporter));
 
 #pragma warning disable CA1031 // Do not catch general exception types
         static async Task Observe(Task turn)
@@ -815,12 +1313,17 @@ public static class NodeCommand
 
     /// <summary>Gives a resident agent a turn.</summary>
     /// <param name="resident">The agent.</param>
+    /// <param name="asked">The name the asking project gave it, which the turn is reported under.</param>
     /// <param name="output">Where to report.</param>
     /// <param name="cancellationToken">Stops the turn.</param>
     /// <param name="reporter">Tells the broker when the turn begins and ends (SPEC.md §11.6), or null to report nothing.</param>
     /// <returns>A task that completes when the turn ends.</returns>
     private static async Task GiveTurnAsync(
-        ResidentAgent resident, TextWriter output, CancellationToken cancellationToken, TurnReporter? reporter = null)
+        ResidentAgent resident,
+        AgentName asked,
+        TextWriter output,
+        CancellationToken cancellationToken,
+        TurnReporter? reporter = null)
     {
         try
         {
@@ -828,7 +1331,7 @@ public static class NodeCommand
             // it having ended — and see what it was refused.
             var outcome = await TurnReporter.Run(
                     reporter,
-                    resident,
+                    asked,
                     began => resident.TakeTurnAsync(InvocationCommand.Prompt, TurnTimeout, began, cancellationToken))
                 .ConfigureAwait(false);
 
@@ -838,7 +1341,7 @@ public static class NodeCommand
                 // agent's own words, which TurnOutcome keeps out of every record on purpose — and the broker's log
                 // is never pruned and a line break in them would forge a line of it.
                 await output.WriteLineAsync(
-                        $"  {resident.Name.Value}: turn ended without finishing — {outcome.Describe()} after " +
+                        $"  {resident.Name.Value}: turn ended without finishing — {Inert.Line(outcome.Describe())} after " +
                         $"{outcome.Elapsed.TotalSeconds:0}s, {outcome.PermissionDenials} permission(s) refused" +
                         WhyItFailed(outcome))
                     .ConfigureAwait(false);
@@ -846,7 +1349,7 @@ public static class NodeCommand
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            await output.WriteLineAsync($"  {resident.Name.Value}: turn failed — {exception.Message}")
+            await output.WriteLineAsync($"  {resident.Name.Value}: turn failed — {Inert.Line(exception.Message)}")
                 .ConfigureAwait(false);
         }
     }
@@ -899,62 +1402,374 @@ public static class NodeCommand
         TurnReporter? reporter = null)
     {
         ArgumentNullException.ThrowIfNull(refresh);
-        ArgumentNullException.ThrowIfNull(catalogue);
+
+        await ReplaceWhenIdleAsync(
+            refresh.Agent, refresh.Identity, Ending.Refresh, catalogue, project, residents, output, cancellationToken,
+            reporter).ConfigureAwait(false);
+    }
+
+    /// <summary>Stops an agent this node started once its turn is over, as a person asked, and restarts it if asked to.</summary>
+    /// <param name="stop">The command.</param>
+    /// <param name="catalogue">What this machine can start, which is what resolves a name.</param>
+    /// <param name="project">The project this node serves, or null to accept every claim.</param>
+    /// <param name="residents">The agents running here.</param>
+    /// <param name="output">Where to report.</param>
+    /// <param name="cancellationToken">Stops the node, and with it the wait.</param>
+    /// <param name="reporter">Reports a restarted agent's first turn to the broker, when there is a broker to tell.</param>
+    /// <returns>A task that completes once the stop has been handed off.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>A person's, where a refresh is the broker's</b> (SPEC.md §11.1), and the same mechanism: wait for the turn
+    /// lock off this loop, then end the process under <see cref="Residency"/>. A turn is bounded by the node's patience,
+    /// so the wait is too.
+    /// </para>
+    /// <para>
+    /// <b>A stop starts nothing of its own.</b> The next work for the agent starts it again through the ordinary start,
+    /// which is what the person is told; a start that arrives while the process is still going is made once it has gone.
+    /// </para>
+    /// </remarks>
+    internal static async Task StopAsync(
+        Wire.StopAgent stop,
+        NodeCatalogue catalogue,
+        string? project,
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents,
+        TextWriter output,
+        CancellationToken cancellationToken,
+        TurnReporter? reporter = null)
+    {
+        ArgumentNullException.ThrowIfNull(stop);
+
+        await ReplaceWhenIdleAsync(
+            stop.Agent, stop.Identity, stop.Restart ? Ending.Restart : Ending.Stop, catalogue, project, residents, output,
+            cancellationToken, reporter).ConfigureAwait(false);
+    }
+
+    /// <summary>Ends a process a node that is gone left running, which a person asked for (SPEC.md §11.1).</summary>
+    /// <param name="kill">What the broker said: the agent, and the process its adapter named.</param>
+    /// <param name="residents">The agents running here, none of which this ends.</param>
+    /// <param name="output">Where to report.</param>
+    /// <returns>A task that completes once the process has ended or been refused.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The process is a label an adapter gave and is checked before anything is ended.</b> It must be a running process
+    /// named <c>claude</c>, which is what the node starts for an agent; it must not be one this node hosts, which is
+    /// stopped, not killed; and it must not be this node. Whatever else is named is refused and said, so an adapter that
+    /// named the wrong process, or a number that has since been reused, ends nothing.
+    /// </para>
+    /// <para>
+    /// <b>It does not wait for a turn.</b> No node holds the process, so nothing can say when one ends. The whole tree
+    /// ends, which is what the agent's own shells and tests are part of.
+    /// </para>
+    /// </remarks>
+    internal static async Task KillAsync(
+        Wire.KillProcess kill,
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents,
+        TextWriter output)
+    {
+        ArgumentNullException.ThrowIfNull(kill);
         ArgumentNullException.ThrowIfNull(residents);
         ArgumentNullException.ThrowIfNull(output);
 
-        if (!AgentName.TryCreate(refresh.Agent, out var agent)
-            || !Resolve(catalogue, project, agent, refresh.Identity, out var identity, out _))
+        await output.WriteLineAsync($"  {kill.Agent}: {EndProcess(kill, residents)}").ConfigureAwait(false);
+    }
+
+    private static string EndProcess(Wire.KillProcess asked, ConcurrentDictionary<AgentIdentity, ResidentAgent> residents)
+    {
+        if (asked.ProcessId is <= 1 or > int.MaxValue)
         {
-            return;
+            return "not ended: the broker named no process that can be one.";
         }
 
-        if (!residents.TryGetValue(identity, out var resident) || !resident.IsAlive)
-        {
-            await output.WriteLineAsync(
-                $"  {agent.Value}: not refreshed — this node is not running it, so it reads its new ownership line " +
-                "the next time it starts.").ConfigureAwait(false);
+        var id = (int)asked.ProcessId;
 
-            return;
+        if (id == Environment.ProcessId)
+        {
+            return "not ended: the process named is this node.";
         }
 
-        _ = Observed(RefreshWhenIdleAsync(
-            agent, identity, resident, catalogue, residents, output, cancellationToken, reporter));
+        if (residents.Values.Any(resident => resident.ProcessId == id))
+        {
+            return $"not ended: process {id} is one this node hosts. Stop it instead, which waits for its turn.";
+        }
 
-#pragma warning disable CA1031 // Do not catch general exception types
-        static async Task Observed(Task refreshing)
+        System.Diagnostics.Process process;
+
+        try
+        {
+            process = System.Diagnostics.Process.GetProcessById(id);
+        }
+        catch (ArgumentException)
+        {
+            return $"nothing to end: process {id} is not running.";
+        }
+
+        using (process)
         {
             try
             {
-                await refreshing.ConfigureAwait(false);
+                if (!string.Equals(process.ProcessName, "claude", StringComparison.OrdinalIgnoreCase))
+                {
+                    return $"not ended: process {id} is '{Inert.Line(process.ProcessName)}', not an agent's own kind of process.";
+                }
+
+                process.Kill(entireProcessTree: true);
+
+                return process.WaitForExit(TimeSpan.FromSeconds(5))
+                    ? $"ended process {id} ({Inert.Line(asked.Because)})."
+                    : $"asked process {id} to end ({Inert.Line(asked.Because)}); it has not yet.";
             }
-            catch
+            catch (AggregateException incomplete)
             {
-                // The same boundary DispatchTurn's Observe is, for the same reason: nothing awaits this, and a node must
-                // not be taken off the air by the reporting of one agent's refresh.
+                // Off Windows, a tree holding a process this account cannot signal (a child sudo runs as another user) throws
+                // this after ending what it could. Uncaught, it ended the node's loop: nothing on the machine was started again,
+                // or every agent the node ran was stopped (review, lens 2 run 1 on 6fde4ef3, Linux).
+                return process.WaitForExit(TimeSpan.FromSeconds(5))
+                    ? $"ended process {id} ({Inert.Line(asked.Because)}), but not every process it started: {Inert.Line(incomplete.InnerExceptions[0].Message)}."
+                    : $"not ended: process {id}: {Inert.Line(incomplete.Message)}";
+            }
+            catch (Exception failure) when (failure is InvalidOperationException
+                or System.ComponentModel.Win32Exception or NotSupportedException)
+            {
+                return $"not ended: process {id}: {Inert.Line(failure.Message)}";
             }
         }
-#pragma warning restore CA1031
     }
 
-    /// <summary>Waits for an agent's turn to end, stops it, and starts it again.</summary>
-    /// <returns>A task that completes when the new process is running, or the refresh was abandoned.</returns>
-    private static async Task RefreshWhenIdleAsync(
-        AgentName agent,
-        AgentIdentity identity,
-        ResidentAgent resident,
+    /// <summary>Finds the resident a refresh, restart or stop is for, and hands its ending off the loop.</summary>
+    /// <param name="named">The agent's name, as the wire carried it.</param>
+    /// <param name="identityText">Its identity, as the wire carried it, or empty.</param>
+    /// <param name="ending">What the ending is for.</param>
+    /// <param name="catalogue">What this machine can start, which is what resolves a name.</param>
+    /// <param name="project">The project this node serves, or null to accept every claim.</param>
+    /// <param name="residents">The agents running here.</param>
+    /// <param name="output">Where to report.</param>
+    /// <param name="cancellationToken">Stops the node, and with it the wait.</param>
+    /// <param name="reporter">Reports a restarted agent's first turn to the broker, when there is a broker to tell.</param>
+    /// <returns>A task that completes once the ending has been handed off.</returns>
+    private static async Task ReplaceWhenIdleAsync(
+        string named,
+        string identityText,
+        Ending ending,
         NodeCatalogue catalogue,
+        string? project,
         ConcurrentDictionary<AgentIdentity, ResidentAgent> residents,
         TextWriter output,
         CancellationToken cancellationToken,
         TurnReporter? reporter)
     {
-        _ = await resident.ShutdownWhenIdleAsync(ShutdownGrace, cancellationToken).ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(catalogue);
+        ArgumentNullException.ThrowIfNull(residents);
+        ArgumentNullException.ThrowIfNull(output);
+
+        if (!AgentName.TryCreate(named, out var agent)
+            || !Resolve(catalogue, project, agent, identityText, out var identity, out _))
+        {
+            return;
+        }
+
+        // **The last ending asked of a resident is the one done** (review, lens 1 run C on Linux: a person's stop then restart,
+        // restart then stop, or a refresh then a stop, during one turn, kept the first and dropped the second without a word).
+        // One waiter per resident: a later ending only replaces what it will do, read under the same gate the waiter takes,
+        // so the two cannot miss each other, and a process that has already exited but not yet been taken still counts.
+        string? said = null;
+        ResidentAgent? resident = null;
+        var asker = new Asker(agent, catalogue, output, reporter, cancellationToken);
 
         await Residency.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
+            if (residents.TryGetValue(identity, out var held) && EndingsAsked.TryGetValue(held, out var asked))
+            {
+                said = Supersede(asked, ending, asker);
+            }
+            else if (held is null || !held.IsAlive)
+            {
+                said = ending.NotRunning;
+            }
+            else
+            {
+                EndingsAsked.Add(held, new EndingAsked(ending, asker));
+                resident = held;
+            }
+        }
+        finally
+        {
+            _ = Residency.Release();
+        }
+
+        if (resident is null)
+        {
+            await output.WriteLineAsync($"  {agent.Value}: {said}").ConfigureAwait(false);
+
+            return;
+        }
+
+        _ = Observed(RefreshWhenIdleAsync(identity, resident, ending, asker, residents));
+    }
+
+    /// <summary>Awaits an ending's waiter that nothing else awaits.</summary>
+    /// <param name="refreshing">The waiter.</param>
+    /// <returns>A task that completes when the waiter has, whatever it threw.</returns>
+#pragma warning disable CA1031 // Do not catch general exception types
+    private static async Task Observed(Task refreshing)
+    {
+        try
+        {
+            await refreshing.ConfigureAwait(false);
+        }
+        catch
+        {
+            // The same boundary DispatchTurn's Observe is, for the same reason: nothing awaits this, and a node must
+            // not be taken off the air by the reporting of one agent's refresh.
+        }
+    }
+#pragma warning restore CA1031
+
+    /// <summary>Who asked for an ending: the node loop it is done for, and what that loop reports and starts with.</summary>
+    /// <param name="Agent">The agent's name, as that node resolved it.</param>
+    /// <param name="Catalogue">What that node's machine can start.</param>
+    /// <param name="Output">Where that node reports.</param>
+    /// <param name="Reporter">Reports a restarted agent's first turn to that node's broker, when there is one to tell.</param>
+    /// <param name="Token">Stops that node.</param>
+    /// <remarks>
+    /// <b>One residents table serves every project <c>parley serve</c> runs, each with its own node loop</b>, so the asker
+    /// of the ending a waiter does need not be the one whose loop started the waiter. The waiter does the ending in its
+    /// asker's name, and when the loop it runs on stops, it is handed to the latest asker's (review, lens 1 run B on
+    /// 5de89187: a later ending from another project was dropped when the first project's node stopped).
+    /// </remarks>
+    private sealed record Asker(
+        AgentName Agent,
+        NodeCatalogue Catalogue,
+        TextWriter Output,
+        TurnReporter? Reporter,
+        CancellationToken Token);
+
+    /// <summary>What ending a resident is for, and how each step of it is said.</summary>
+    /// <param name="NotRunning">Said when this node holds no live process for it.</param>
+    /// <param name="Restarts">Whether it is started again once it has stopped.</param>
+    /// <param name="Stopped">Said once it has stopped, when it is not started again.</param>
+    /// <param name="Restarted">Said once it is running again.</param>
+    /// <param name="For">What it was stopped for, in the lines that say it was not started again.</param>
+    private sealed record Ending(string NotRunning, bool Restarts, string Stopped, string Restarted, string For)
+    {
+        /// <summary>The broker's one restart, for an agent's first line accepted automatically.</summary>
+        public static readonly Ending Refresh = new(
+            "not refreshed — this node is not running it, so it reads its new ownership line the next time it starts.",
+            Restarts: true,
+            string.Empty,
+            "restarted once its turn was over, so it reads its new ownership line.",
+            "a refresh");
+
+        /// <summary>A person's restart.</summary>
+        public static readonly Ending Restart = new(
+            "not restarted — this node is not running it.",
+            Restarts: true,
+            string.Empty,
+            "restarted once its turn was over, as a person asked.",
+            "a restart");
+
+        /// <summary>A person's stop.</summary>
+        public static readonly Ending Stop = new(
+            "not stopped — this node is not running it.",
+            Restarts: false,
+            "stopped once its turn was over, as a person asked. The next work for it starts it again, unless it is frozen.",
+            string.Empty,
+            "a stop");
+    }
+
+    /// <summary>The ending a resident's one waiter will do once its turn is over: the latest asked.</summary>
+    /// <param name="latest">The ending asked first.</param>
+    /// <param name="asker">Who asked it.</param>
+    /// <remarks>Read and written only under <see cref="Residency"/>.</remarks>
+    private sealed class EndingAsked(Ending latest, Asker asker)
+    {
+        /// <summary>Gets or sets the ending the waiter does.</summary>
+        public Ending Latest { get; set; } = latest;
+
+        /// <summary>Gets or sets who asked the ending the waiter does, in whose name it is done.</summary>
+        public Asker Asker { get; set; } = asker;
+    }
+
+    /// <summary>The resident each waiting ending is for; a resident with none has no waiter.</summary>
+    /// <remarks>Weak, so a resident that is gone takes its entry with it.</remarks>
+    private static readonly ConditionalWeakTable<ResidentAgent, EndingAsked> EndingsAsked = new();
+
+    /// <summary>Records an ending asked while another waits for the same resident's turn, and says what will be done.</summary>
+    /// <param name="asked">What the waiter will do.</param>
+    /// <param name="ending">The ending asked now.</param>
+    /// <param name="asker">Who asked it.</param>
+    /// <returns>The line to report.</returns>
+    /// <remarks>
+    /// <b>The latest wins, except a refresh.</b> A person's later word replaces their earlier one or the broker's refresh, and
+    /// its asker becomes the one it is done for: that node's catalogue starts a restart, and that node's loop keeps the
+    /// waiter going if the first asker's stops. A refresh needs only that the process end before the agent next starts,
+    /// which any ending already waiting gives it, so it never undoes a person's stop and replaces nothing.
+    /// </remarks>
+    private static string Supersede(EndingAsked asked, Ending ending, Asker asker)
+    {
+        var earlier = asked.Latest;
+
+        if (ReferenceEquals(ending, Ending.Refresh))
+        {
+            return $"not refreshed on its own — {earlier.For} already waits for its turn to end, and it reads its new "
+                + "ownership line the next time it starts.";
+        }
+
+        asked.Latest = ending;
+        asked.Asker = asker;
+
+        return ReferenceEquals(earlier, ending)
+            ? $"{ending.For} was asked again; it is still waiting for its turn to end."
+            : $"{ending.For} was asked while {earlier.For} waited for its turn to end, so {ending.For} is what is done.";
+    }
+
+    /// <summary>Waits for an agent's turn to end, stops it, and starts it again unless it was only stopped.</summary>
+    /// <returns>A task that completes when the new process is running, or it was stopped and left.</returns>
+    private static async Task RefreshWhenIdleAsync(
+        AgentIdentity identity,
+        ResidentAgent resident,
+        Ending ending,
+        Asker asker,
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents)
+    {
+        try
+        {
+            _ = await resident.ShutdownWhenIdleAsync(ShutdownGrace, asker.Token).ConfigureAwait(false);
+
+            await Residency.WaitAsync(asker.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (asker.Token.IsCancellationRequested)
+        {
+            // The node loop this waiter ran on has stopped. A later asker's may not have, and the waiter goes on in its name.
+            if (await HandedOnAsync(identity, resident, residents).ConfigureAwait(false))
+            {
+                return;
+            }
+
+            throw;
+        }
+        catch
+        {
+            // No waiter now, so an ending asked later is not handed to one that will never act on it.
+            _ = EndingsAsked.Remove(resident);
+
+            throw;
+        }
+
+        try
+        {
+            // **The latest ending asked, and its asker, taken under the gate they were written under** (Supersede), so one
+            // asked after this finds the resident gone and says so rather than being handed to a waiter that has already read.
+            if (EndingsAsked.TryGetValue(resident, out var asked))
+            {
+                ending = asked.Latest;
+                asker = asked.Asker;
+                _ = EndingsAsked.Remove(resident);
+            }
+
+            var (agent, catalogue, output, reporter, cancellationToken) = asker;
+
             // A start that got here first found the process gone and replaced it, which already reads the launch
             // configuration afresh — so there is nothing left to do, and the corpse is the start's to dispose.
             if (!residents.TryGetValue(identity, out var current) || !ReferenceEquals(current, resident))
@@ -964,6 +1779,20 @@ public static class NodeCommand
 
             _ = residents.TryRemove(identity, out _);
             await resident.DisposeAsync().ConfigureAwait(false);
+
+            // A stop starts nothing, unless a start was asked for while the process was going (StartAsync): that start was
+            // not made then, so it is made now, as a restart is.
+            var wanted = !ending.Restarts && resident.StartAskedWhileStopping;
+
+            if (!ending.Restarts)
+            {
+                await output.WriteLineAsync($"  {agent.Value}: {ending.Stopped}").ConfigureAwait(false);
+
+                if (!wanted)
+                {
+                    return;
+                }
+            }
 
             // A node that has swept starts nothing more (see StartAsync).
             if (Shut.TryGetValue(residents, out _))
@@ -977,35 +1806,116 @@ public static class NodeCommand
             if (catalogue.CommandFor(identity) is not { } command)
             {
                 await output.WriteLineAsync(
-                    $"  {agent.Value}: stopped for a refresh, and this machine no longer has a way to start it.")
+                    $"  {agent.Value}: stopped for {ending.For}, and this machine no longer has a way to start it.")
                     .ConfigureAwait(false);
 
                 return;
             }
 
-            var launched = reporter is null ? null : await reporter.LaunchAsync(agent).ConfigureAwait(false);
-            var restarted = ResidentAgent.Start(
-                agent,
-                InvocationCommand.Parse(command),
-                catalogue.WorkspaceFor(identity) ?? Directory.GetCurrentDirectory(),
-                TimeProvider.System,
-                launched);
+            // As at a start (StartAsync): never restarted in a folder that leads off this machine. The agent's own answer
+            // asks for this restart, and its folder can have been swapped for a link to a share in the meantime (review,
+            // lens 2 round 16).
+            if (catalogue.WorkspaceFor(identity) is { Length: > 0 } elsewhere
+                && LocalOpen.Folder(elsewhere) != LocalOpenStatus.Opened)
+            {
+                await output.WriteLineAsync(
+                    $"  {agent.Value}: stopped for {ending.For}, and not restarted — its workspace {Inert.Line(elsewhere)} "
+                    + "leads to another machine or could not be checked.").ConfigureAwait(false);
+
+                return;
+            }
+
+            var launch = BackgroundSnapshot.NextSequence();
+            var launched = reporter is null ? null : await reporter.LaunchAsync(agent, launch).ConfigureAwait(false);
+            var restarted = Watched(
+                ResidentAgent.Start(
+                    agent,
+                    InvocationCommand.Parse(command),
+                    catalogue.WorkspaceFor(identity) ?? Directory.GetCurrentDirectory(),
+                    TimeProvider.System,
+                    launched),
+                identity,
+                residents,
+                output);
 
             residents[identity] = restarted;
 
+            // As at a start, and after it is in the table, as there (lens 1 run 109): every project joined here that starts
+            // this checkout learns its new token, and one joining meanwhile finds it in the table.
+            await TellJoinedAsync(residents, identity, restarted, launch).ConfigureAwait(false);
+
             await output.WriteLineAsync(
-                $"  {agent.Value}: restarted once its turn was over, so it reads its new ownership line.")
+                $"  {agent.Value}: {(wanted ? "started again, for the start that was asked for while it was stopping." : ending.Restarted)}")
                 .ConfigureAwait(false);
 
             // **And given a turn, as a fresh start is** (StartAsync). A turn asked for while the old process was stopping
             // queued on it and came back died, and the broker's wake stays claimed until a drain — so without this the
             // restarted agent would sit on mail nothing asks it to read.
-            DispatchTurn(restarted, output, cancellationToken, reporter);
+            DispatchTurn(restarted, agent, output, cancellationToken, reporter);
         }
         finally
         {
             _ = Residency.Release();
         }
+    }
+
+    /// <summary>Hands a waiter whose node loop has stopped to the latest asker's, or ends it.</summary>
+    /// <param name="identity">The agent.</param>
+    /// <param name="resident">The process the waiter was waiting to end.</param>
+    /// <param name="residents">The agents running here.</param>
+    /// <returns>True when a new waiter goes on in the latest asker's name; false when there is no waiter now.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The last ending asked during one turn is done</b> (SPEC.md §11.1), and the loop that started the waiter is not
+    /// always the latest asker's: <c>parley serve</c> keeps one residents table for every project, and a project's node
+    /// stops when the project is removed or its broker is restarted. Without this the later ending was dropped after the
+    /// node had said it was what is done, and the old process ran on, a frozen one included.
+    /// </para>
+    /// <para>
+    /// <b>Taken with no token</b>, since the one the waiter had is the one that has just been cancelled, and under the gate
+    /// <see cref="Supersede"/> writes under, so an ending asked meanwhile is either read here or finds no waiter and starts
+    /// its own. A waiter is handed on only while its resident is still the one in the table and the latest asker's loop is
+    /// still running; anything else ends it, as a stopping node always did.
+    /// </para>
+    /// </remarks>
+    private static async Task<bool> HandedOnAsync(
+        AgentIdentity identity,
+        ResidentAgent resident,
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents)
+    {
+        Ending? ending = null;
+        Asker? next = null;
+
+        await Residency.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+
+        try
+        {
+            if (EndingsAsked.TryGetValue(resident, out var asked)
+                && !asked.Asker.Token.IsCancellationRequested
+                && residents.TryGetValue(identity, out var current)
+                && ReferenceEquals(current, resident))
+            {
+                ending = asked.Latest;
+                next = asked.Asker;
+            }
+            else
+            {
+                _ = EndingsAsked.Remove(resident);
+            }
+        }
+        finally
+        {
+            _ = Residency.Release();
+        }
+
+        if (ending is null || next is null)
+        {
+            return false;
+        }
+
+        _ = Observed(RefreshWhenIdleAsync(identity, resident, ending, next, residents));
+
+        return true;
     }
 
     /// <summary>Ends one resident and says so.</summary>
@@ -1018,7 +1928,16 @@ public static class NodeCommand
         _ = await resident.ShutdownAsync(ShutdownGrace).ConfigureAwait(false);
         await resident.DisposeAsync().ConfigureAwait(false);
 
-        await output.WriteLineAsync($"  {named}: stopped.").ConfigureAwait(false);
+        try
+        {
+            await output.WriteLineAsync($"  {named}: stopped.").ConfigureAwait(false);
+        }
+        catch (IOException)
+        {
+            // **The terminal has gone, which is why this sweep runs.** After a hangup every write to it fails; thrown, the
+            // first line aborted the process and every agent after the first was never told to quit (review, lens 1 run A
+            // on 6561e9ea). The agent has stopped either way; only the line about it is lost.
+        }
     }
 
     /// <summary>Stops every agent this node started.</summary>
@@ -1026,7 +1945,7 @@ public static class NodeCommand
     /// <param name="output">Where to report.</param>
     /// <returns>A task that completes when they have all stopped.</returns>
     /// <remarks>
-    /// SPEC.md §11.1 gives a resident agent three ways to end, and this is one of them: the
+    /// SPEC.md §11.1 gives a resident agent four ways to end, and this is one of them: the
     /// supervisor that started it telling it to stop. Leaving them running would be worse than
     /// untidy — they would hold sessions the broker still counts, and nothing would be left that
     /// could stop them.
@@ -1040,7 +1959,7 @@ public static class NodeCommand
         // resident happens inside `Residency`, so without this a start already past that gate lands its
         // process in the table *after* the sweep has walked it — and this is the last thing the process
         // does, so nothing sweeps again. That is an agent still running with nothing left that would stop
-        // it, which breaks the promise SPEC.md §12 makes: stopping a node tells every agent it started
+        // it, which breaks the promise SPEC.md §11.1 makes: stopping a node tells every agent it started
         // to quit.
         await Residency.WaitAsync().ConfigureAwait(false);
 
@@ -1075,6 +1994,141 @@ public static class NodeCommand
     /// </remarks>
     private static readonly ConditionalWeakTable<
         ConcurrentDictionary<AgentIdentity, ResidentAgent>, object> Shut = new();
+
+    /// <summary>The projects joined from each shared table, so a launch one makes reaches every one that starts it.</summary>
+    /// <remarks>
+    /// Kept beside the table, as <see cref="Shut"/> is: <c>serve</c> hosts a node loop per project over one table, and a
+    /// checkout enrolled in two is one process for both. Told only to the project that started it, its token left the
+    /// other reading it as open outside Parley until that project's node joined again (lens 1 run 107).
+    /// </remarks>
+    private static readonly ConditionalWeakTable<
+        ConcurrentDictionary<AgentIdentity, ResidentAgent>, LaunchBoard> Boards = new();
+
+    /// <summary>
+    /// Tells every project joined from this table that starts a checkout that its process is running, the launching
+    /// project's own seat included (a second report of the same token).
+    /// </summary>
+    /// <param name="residents">The table.</param>
+    /// <param name="identity">The checkout.</param>
+    /// <param name="resident">Its process.</param>
+    /// <param name="launch">The node's reading number for the launch, taken before the process started.</param>
+    /// <returns>A task that completes when each has been told, or could not be.</returns>
+    private static async Task TellJoinedAsync(
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents, AgentIdentity identity, ResidentAgent resident, long launch)
+    {
+        if (resident.IssuedToken is not { Length: > 0 } token)
+        {
+            return;
+        }
+
+        foreach (var (reporter, role) in Boards.GetOrCreateValue(residents).Starting(identity))
+        {
+            await reporter.ReportRunningAsync(
+                    identity, role, token, resident.Workspace, () => TurnReporter.Current(resident, token), launch)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Tells every project joined from this table that starts a checkout what its process does on its own: its background
+    /// work, and the turns it begins itself when that work finishes (SPEC.md §11.6).
+    /// </summary>
+    /// <param name="resident">The process, just started.</param>
+    /// <param name="identity">The checkout.</param>
+    /// <param name="residents">The table.</param>
+    /// <param name="output">Where to say it.</param>
+    /// <returns>The same process.</returns>
+    /// <remarks>
+    /// <b>Every project that starts it, as a launch is told</b>, not only the one whose wake started it: one checkout is
+    /// one process for every project, and its background work is the process's, so each would otherwise read it as idle.
+    /// The board is read at each report, so a project that joins later hears the next one.
+    /// </remarks>
+    internal static ResidentAgent Watched(
+        ResidentAgent resident,
+        AgentIdentity identity,
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents,
+        TextWriter output)
+    {
+        ArgumentNullException.ThrowIfNull(resident);
+        ArgumentNullException.ThrowIfNull(residents);
+        ArgumentNullException.ThrowIfNull(output);
+
+        resident.OwnTurnPatience = TurnTimeout;
+
+        List<(TurnReporter Reporter, AgentName Named)> Projects()
+        {
+            var projects = new List<(TurnReporter, AgentName)>();
+
+            foreach (var (reporter, role) in Boards.GetOrCreateValue(residents).Starting(identity))
+            {
+                if (AgentName.TryJoin(role, resident.Name.Machine, out var named))
+                {
+                    projects.Add((reporter, named));
+                }
+            }
+
+            return projects;
+        }
+
+        resident.Watch(new OwnWork(
+            async began =>
+            {
+                await output.WriteLineAsync(
+                    $"  {resident.Name.Value}: began a turn on its own, as background work it started finished.")
+                    .ConfigureAwait(false);
+
+                foreach (var (reporter, named) in Projects())
+                {
+                    await reporter.BeganOnItsOwnAsync(named, began).ConfigureAwait(false);
+                }
+            },
+            async (began, outcome) =>
+            {
+                foreach (var (reporter, named) in Projects())
+                {
+                    await reporter.EndedOnItsOwnAsync(named, began, outcome).ConfigureAwait(false);
+                }
+            },
+            async work =>
+            {
+                var tasks = work.Count;
+
+                await output.WriteLineAsync(
+                    tasks == 0
+                        ? $"  {resident.Name.Value}: its background work has finished."
+                        : $"  {resident.Name.Value}: {tasks} background task{(tasks == 1 ? string.Empty : "s")} running.")
+                    .ConfigureAwait(false);
+
+                foreach (var (reporter, named) in Projects())
+                {
+                    await reporter.BackgroundAsync(named, work).ConfigureAwait(false);
+                }
+            }));
+
+        return resident;
+    }
+
+    /// <summary>The node loops joined from one table, each with what its project calls the checkouts it starts.</summary>
+    private sealed class LaunchBoard
+    {
+        private readonly ConcurrentDictionary<object, (TurnReporter Reporter, IReadOnlyDictionary<AgentIdentity, string> Names)>
+            _joined = new();
+
+        /// <summary>Takes a seat for a joined loop, or brings its names up to date.</summary>
+        public void Join(object seat, TurnReporter reporter, IReadOnlyDictionary<AgentIdentity, string> names) =>
+            _joined[seat] = (reporter, names);
+
+        /// <summary>Gives a seat up, when its loop's stream ends.</summary>
+        public void Leave(object seat) => _ = _joined.TryRemove(seat, out _);
+
+        /// <summary>Every joined loop whose project starts a checkout, with that project's name for it.</summary>
+        public IReadOnlyList<(TurnReporter Reporter, string Role)> Starting(AgentIdentity identity) =>
+        [
+            .. _joined.Values
+                .Where(entry => entry.Names.ContainsKey(identity))
+                .Select(entry => (entry.Reporter, entry.Names[identity])),
+        ];
+    }
 
     /// <summary>What <see cref="Shut"/> records; its presence is the whole of the meaning.</summary>
     private static readonly object Sentinel = new();

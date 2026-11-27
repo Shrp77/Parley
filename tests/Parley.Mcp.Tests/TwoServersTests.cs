@@ -19,6 +19,7 @@ namespace Parley.Mcp.Tests;
 /// that cannot say which side a failure came from.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class TwoServersTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 3, 1, 9, 0, 0, TimeSpan.Zero);

@@ -45,8 +45,8 @@ public enum WakeOutcome
     /// <remarks>
     /// The coalescing bound, seen from the sender's side. It is not a failure and not a delay: the
     /// turn already coming will collect this message along with everything else pending, because
-    /// draining an inbox collects all of it. One turn for sixty messages is the correct
-    /// number rather than a rationed one.
+    /// a turn collects until nothing is waiting, and a collection that leaves some asks again (SPEC.md §5.4).
+    /// One turn for sixty messages is the correct number rather than a rationed one.
     /// </remarks>
     AlreadyComing = 2,
 
@@ -88,5 +88,27 @@ public enum WakeOutcome
     /// suppress every wake after it, while the sender was told its receiver was running. Somebody opened that
     /// repository in an editor, and only they can make it read.
     /// </remarks>
-    OpenOutside = 5
+    OpenOutside = 5,
+
+    /// <summary>
+    /// A person has frozen the recipient (SPEC.md §14): nobody was asked to start it, and the work waits in its mail until it
+    /// is unfrozen.
+    /// </summary>
+    /// <remarks>
+    /// Not <see cref="Unreachable"/>, which says nothing can run it now and the machine may be off: this is a decision a
+    /// person made and can reverse, and the work is not lost. Not <see cref="WithThePerson"/> either, since nobody is deciding
+    /// the work itself.
+    /// </remarks>
+    Frozen = 6,
+
+    /// <summary>
+    /// The recipient is running only as a process a node that is gone left running (SPEC.md §11.1): nobody was asked, and it
+    /// is started for the message once that process has gone, unless a person ends it or freezes it first.
+    /// </summary>
+    /// <remarks>
+    /// Not <see cref="OpenOutside"/>, which tells the sender somebody will prompt the agent in an editor. Nobody has a left
+    /// process open: it finishes the turn it was on when its node went, finds its input ended and exits, and nothing could
+    /// prompt it meanwhile. What the sender is owed is the start the broker asks for when it goes.
+    /// </remarks>
+    LeftRunning = 7
 }

@@ -29,6 +29,8 @@ namespace Parley.Terminal.Tests;
 /// toolkit does with the caret afterwards.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class FieldsCorrectAsTypedTests
 {
     private static void Type(Driving.Session driving, string text)

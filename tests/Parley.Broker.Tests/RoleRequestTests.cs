@@ -14,6 +14,7 @@ namespace Parley.Broker.Tests;
 /// the restraint: that the group binds nothing, that a refusal for one member is not a refusal for the rest, and
 /// that every member lands in the same conversation.
 /// </remarks>
+[Integration]
 public sealed class RoleRequestTests : IDisposable
 {
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 9, 0, 0, TimeSpan.Zero);

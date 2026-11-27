@@ -20,6 +20,8 @@ namespace Parley.Terminal.Tests;
 /// presses is still a key nothing presses.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class TickingTests
 {
     private static TickDialog Over(params string[] labels) =>

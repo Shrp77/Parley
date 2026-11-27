@@ -25,6 +25,7 @@ namespace Parley.Cli.Tests;
 /// survive, only their whitespace changes, and the length recorded is the agent's own message.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class AskedWithNobodyAskingTests : IAsyncDisposable
 {
     private const string Project = "alpha";
@@ -139,6 +140,122 @@ public sealed class AskedWithNobodyAskingTests : IAsyncDisposable
         Assert.Equal(Line, row.OwnsAccepted);
         Assert.Equal(Wire.OwnershipSource.Automatic, row.OwnsSource);
         Assert.Contains("is now its ownership line", log.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_answer_naming_an_environment_variable_waits_for_a_person_and_nothing_is_written()
+    {
+        // Lens 2 run 101: written as PARLEY_OWNS, Claude Code would expand it when the refresh restarted the agent, and
+        // the variable's value would be reported as its line to every agent.
+        var before = await File.ReadAllTextAsync(Path.Combine(_workspace, ".mcp.json"), Ct);
+        var agents = new Wire.Agents.AgentsClient(_channel);
+
+        using var attached = agents.Attach(
+            new Wire.AttachRequest
+            {
+                Agent = Orders.Value,
+                Adapter = "test",
+                Tier = Wire.AgentTier.Pull,
+                Workspace = _workspace,
+                ProtocolVersion = ProtocolVersion.Current
+            },
+            cancellationToken: Ct);
+
+        Assert.True(await attached.ResponseStream.MoveNext(Ct));
+
+        var log = new StringWriter();
+        await ServeCommand.FacilitateOnceAsync(_runtime, Project, log, Ct);
+
+        var question = Assert.Single(
+            (await agents.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Orders.Value }, cancellationToken: Ct)).Messages);
+
+        Assert.True((await agents.ResultAsync(
+            new Wire.ResultRequest
+            {
+                From = Orders.Value,
+                ExchangeId = question.Message.ExchangeId,
+                ResponderModel = "some-model-9",
+                PayloadJson = new JsonObject
+                {
+                    ["outcomes"] = new JsonArray(new JsonObject
+                    {
+                        ["id"] = PayloadShape.WholeRequest,
+                        ["outcome"] = "answered",
+                        ["text"] = "Orders and their totals. Not tax. ${GITHUB_TOKEN}"
+                    })
+                }.ToJsonString()
+            },
+            cancellationToken: Ct)).Ok);
+
+        await ServeCommand.FacilitateOnceAsync(_runtime, Project, log, Ct);
+
+        Assert.Equal(before, await File.ReadAllTextAsync(Path.Combine(_workspace, ".mcp.json"), Ct));
+
+        var waiting = Assert.Single(
+            (await new Wire.Operators.OperatorsClient(_channel).FacilitationAsync(new Wire.Empty(), cancellationToken: Ct)).Questions);
+
+        Assert.Equal(Wire.QuestionState.Waiting, waiting.State);
+
+        // The pass's own words, so its guard is held apart from the writer's, which says the same after them.
+        Assert.StartsWith("it cannot be a line as written", waiting.WaitingBecause, StringComparison.Ordinal);
+        Assert.Contains("launch configuration", waiting.WaitingBecause, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_blocked_answer_waits_for_a_person_and_nothing_is_written()
+    {
+        // Lens 3 run 114: no test built a blocked answer, so the pass's refusal of one was held by nothing.
+        var before = await File.ReadAllTextAsync(Path.Combine(_workspace, ".mcp.json"), Ct);
+        var agents = new Wire.Agents.AgentsClient(_channel);
+
+        using var attached = agents.Attach(
+            new Wire.AttachRequest
+            {
+                Agent = Orders.Value,
+                Adapter = "test",
+                Tier = Wire.AgentTier.Pull,
+                Workspace = _workspace,
+                ProtocolVersion = ProtocolVersion.Current
+            },
+            cancellationToken: Ct);
+
+        Assert.True(await attached.ResponseStream.MoveNext(Ct));
+
+        var log = new StringWriter();
+        await ServeCommand.FacilitateOnceAsync(_runtime, Project, log, Ct);
+
+        var question = Assert.Single(
+            (await agents.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Orders.Value }, cancellationToken: Ct)).Messages);
+
+        Assert.True((await agents.ResultAsync(
+            new Wire.ResultRequest
+            {
+                From = Orders.Value,
+                ExchangeId = question.Message.ExchangeId,
+                ResponderModel = "some-model-9",
+                PayloadJson = new JsonObject
+                {
+                    ["outcomes"] = new JsonArray(new JsonObject
+                    {
+                        ["id"] = PayloadShape.WholeRequest,
+                        ["outcome"] = "blocked",
+                        ["blocker"] = "missing_information",
+                        ["text"] = "Orders and their totals, once I know whether tax is ours."
+                    })
+                }.ToJsonString()
+            },
+            cancellationToken: Ct)).Ok);
+
+        await ServeCommand.FacilitateOnceAsync(_runtime, Project, log, Ct);
+
+        Assert.Equal(before, await File.ReadAllTextAsync(Path.Combine(_workspace, ".mcp.json"), Ct));
+
+        var waiting = Assert.Single(
+            (await new Wire.Operators.OperatorsClient(_channel).FacilitationAsync(new Wire.Empty(), cancellationToken: Ct)).Questions);
+
+        Assert.Equal(Wire.QuestionState.Waiting, waiting.State);
+
+        Assert.Contains("blocked", waiting.WaitingBecause, StringComparison.Ordinal);
     }
 
     [Fact]

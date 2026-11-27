@@ -22,6 +22,7 @@ namespace Parley.Terminal.Tests;
 /// <c>SeatVoice</c>, so this surface cannot grow another by having somebody type one.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class GuardOwnershipTests
 {
     [Fact]

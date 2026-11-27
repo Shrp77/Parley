@@ -24,6 +24,8 @@ namespace Parley.Terminal.Tests;
 /// session's own resize and never mention <c>Lay</c>.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class StackOnResizeTests
 {
     [Fact]

@@ -23,6 +23,7 @@ namespace Parley.Terminal.Tests;
 /// reads — whose move it is — and that a new Request is admitted whatever is open.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class TypingAlwaysLandsTests : IDisposable
 {
     private static readonly AgentName Me = AgentName.Create("arvind@test");

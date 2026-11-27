@@ -6,7 +6,6 @@
 
 <h1>@(Model.Roadmap is { } named ? $"Edit #{named.Number} {named.Title}" : "Edit roadmap")</h1>
 
-<p><a href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@Model.Id">Back to the roadmap</a></p>
 
 @if (Model.Problem is { Length: > 0 } problem)
 {
@@ -23,8 +22,9 @@ else if (Model.Roadmap is { } roadmap)
         <input type="hidden" name="Revision" value="@Model.Revision" />
 
         <p>
-            <label for="text">The roadmap as text. Take a line out to remove it, change a line to reword it, add a line for a new item.</label><br />
-            <textarea id="text" name="Text" rows="@Math.Clamp(roadmap.Items.Count + 2, 6, 24)" cols="90" required>@Model.Text</textarea>
+            <partial name="_Composer" model="@(new Parley.Web.ComposerBox(
+                "Text", Model.Text, Id: "text", Rows: Math.Clamp(roadmap.Items.Count + 2, 6, 24),
+                Label: "The roadmap as text. Take a line out to remove it, change a line to reword it, add a line for a new item."))" />
         </p>
 
         <p class="composer-note">
@@ -45,7 +45,22 @@ else if (Model.Roadmap is { } roadmap)
             </p>
         }
 
-        <button type="submit">Save</button>
-        <a href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@Model.Id">Leave it as it is</a>
+        @if (Model.Warning is { Length: > 0 } warning)
+        {
+            @* Said before anything is saved; the second submit is the deliberate act. *@
+            <p class="unreachable" role="alert">@warning</p>
+            <input type="hidden" name="Removing" value="@Model.Removing" />
+            <button type="submit" name="ConfirmRemoval" value="true">Remove them and save</button>
+        }
+        else
+        {
+            <button type="submit">Save</button>
+        }
+        <a class="button quiet" href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@Model.Id">Leave it as it is</a>
     </form>
+}
+
+@section Actions {
+    @* This page's commands, in the rail like every page's; the places the menu already leads to are not repeated (feature 042). *@
+    <a class="rail-link" href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@Model.Id" title="Back to the roadmap"><span class="icon" aria-hidden="true">chevron_left</span><span class="rail-label">The roadmap</span></a>
 }

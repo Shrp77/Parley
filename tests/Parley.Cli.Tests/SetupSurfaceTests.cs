@@ -19,6 +19,7 @@ namespace Parley.Cli.Tests;
 /// file rather than a number that quietly moves.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SetupSurfaceTests
 {
     private static readonly Assembly Setup = typeof(Enrolment).Assembly;
@@ -54,6 +55,8 @@ public sealed class SetupSurfaceTests
 
         Assert.Equal(
             [
+                // Public because the terminal and the web console both call it: one implementation of withdrawing an agent.
+                "AgentWithdrawal",
                 "AutostartPlan",
                 "ConsolePicker",
                 "EnrollCommand",
@@ -90,7 +93,6 @@ public sealed class SetupSurfaceTests
 
                 // One agent that was enrolled and did not register, with why. `EnrolmentOutcome` lists them.
                 "NotStarted",
-
                 // **The only thing that makes an accepted ownership line reach anybody.** The
                 // registry's `owns` is filled from the launch environment on attach and no operation
                 // writes it, so `record_ownership` stores a decision and this puts it where the

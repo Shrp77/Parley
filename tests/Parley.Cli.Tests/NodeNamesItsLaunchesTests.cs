@@ -9,6 +9,7 @@ namespace Parley.Cli.Tests;
 /// <summary>
 /// That a node names each launch to the broker and starts the process with the token in its environment (SPEC.md §11.7).
 /// </summary>
+[Integration]
 public sealed class NodeNamesItsLaunchesTests : IDisposable
 {
     private readonly string _workspace = Directory.CreateTempSubdirectory("parley-launch-token").FullName;
@@ -53,7 +54,9 @@ public sealed class NodeNamesItsLaunchesTests : IDisposable
 
         string? found = null;
 
-        for (var tries = 0; tries < 100 && found is not { Length: > 0 }; tries++)
+        // Up to a minute: PowerShell's first start on a loaded Linux runner took more than the ten seconds this once
+        // allowed, twice. The loop ends as soon as the stub has written.
+        for (var tries = 0; tries < 600 && found is not { Length: > 0 }; tries++)
         {
             await Task.Delay(100, Ct);
 

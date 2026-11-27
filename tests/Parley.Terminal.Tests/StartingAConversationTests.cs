@@ -18,6 +18,7 @@ namespace Parley.Terminal.Tests;
 /// said how; and Instruct, which they reached for, answered that the agent's machine was not connected when the machine
 /// was and the agent simply was not running.
 /// </remarks>
+[Integration]
 public sealed class StartingAConversationTests
 {
     [Fact]

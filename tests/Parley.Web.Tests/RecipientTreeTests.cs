@@ -12,6 +12,7 @@ namespace Parley.Web.Tests;
 /// bottom bar. The filter itself is script and is checked in a browser; what is pinned here is that the page carries
 /// what the script reads.
 /// </remarks>
+[Integration]
 public sealed class RecipientTreeTests
 {
     private static readonly Uri PageUri = new(
@@ -39,6 +40,40 @@ public sealed class RecipientTreeTests
         ]);
 
         return console;
+    }
+
+    [Fact]
+    public async Task A_conversation_with_one_agent_in_it_starts_with_that_agent_ticked_so_an_answer_back_needs_no_choosing()
+    {
+        // Owner, 2026-11-20: a spin-off was answered and the reply box had nobody ticked. One other party is unambiguous.
+        using var console = Project();
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+        var to = page[page.IndexOf("aria-label=\"Who to talk to\"", StringComparison.Ordinal)..];
+
+        Assert.Contains("name=\"Targets\" value=\"orders@beta\" checked", to, StringComparison.Ordinal);
+        Assert.DoesNotContain("name=\"Targets\" value=\"billing@beta\" checked", to, StringComparison.Ordinal);
+        Assert.DoesNotContain("name=\"Targets\" value=\"ledger@gamma\" checked", to, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_conversation_with_two_agents_in_it_ticks_nobody_and_a_link_that_names_who_wins()
+    {
+        using var console = Project();
+        console.Broker.Request(2, "billing@beta", "human-user@alpha", "And which year?");
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+        var to = page[page.IndexOf("aria-label=\"Who to talk to\"", StringComparison.Ordinal)..];
+
+        Assert.DoesNotContain("name=\"Targets\" value=\"orders@beta\" checked", to, StringComparison.Ordinal);
+        Assert.DoesNotContain("name=\"Targets\" value=\"billing@beta\" checked", to, StringComparison.Ordinal);
+
+        var linked = await client.GetStringAsync(new Uri(PageUri + "&with=billing@beta", UriKind.Relative), TestContext.Current.CancellationToken);
+
+        Assert.Contains("name=\"Targets\" value=\"billing@beta\" checked", linked, StringComparison.Ordinal);
+        Assert.DoesNotContain("name=\"Targets\" value=\"orders@beta\" checked", linked, StringComparison.Ordinal);
     }
 
     [Fact]

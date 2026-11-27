@@ -13,6 +13,8 @@ namespace Parley.Terminal.Tests;
 /// typed was not a directory. What this adds is the walk; what it does not take away is the field,
 /// which is still typed into and pasted into.
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class BrowsingTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("parley-browsing-").FullName;

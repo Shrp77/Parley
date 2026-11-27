@@ -21,10 +21,11 @@ namespace Parley.Web.Tests;
 /// perfect. These assert what a browser would receive.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FrameTests
 {
     private static string Layout =>
-        File.ReadAllText(RepositoryPath("src/Parley.Web/Pages/Shared/_Layout.cshtml"));
+        ScriptSource.Page("src/Parley.Web/Pages/Shared/_Layout.cshtml");
 
     [Fact]
     public void The_frame_is_pinned_to_the_top()
@@ -39,7 +40,8 @@ public sealed class FrameTests
     }
 
     [Theory]
-    [InlineData(".timeline {")]
+    // The minimap's box: the rail and the note above it stick together (TimelineStaysBesideTheTranscriptTests).
+    [InlineData("        .minimap {")]
     public void Everything_that_sticks_below_it_is_offset_by_what_it_occupies(string rule)
     {
         // Each was `top: 1rem`, which put it behind the header the moment it stopped
@@ -67,12 +69,16 @@ public sealed class FrameTests
         // The constant is right until the frame wraps to two lines, which it does on a narrow
         // screen — and then every offset above is wrong by however much it grew, with nothing
         // anywhere reporting it.
-        Assert.Contains("ResizeObserver", Layout, StringComparison.Ordinal);
-        Assert.Contains("'--frame'", Layout, StringComparison.Ordinal);
+        // Read as code, comments out, so a measurement commented out no longer counts as there.
+        var measures = ScriptSource.Code(Layout, "'--frame'");
+
+        Assert.Contains("new ResizeObserver(apply).observe(frame);", measures, StringComparison.Ordinal);
+        Assert.Contains("document.documentElement.style.setProperty( '--frame', frame.getBoundingClientRect().height + 'px');", measures, StringComparison.Ordinal);
 
         // And the stylesheet still carries a real figure, because that is what a reader with no
         // scripts keeps.
-        Assert.Contains("--frame: 3.6rem", Layout, StringComparison.Ordinal);
+        // Material 3's top app bar is 64px.
+        Assert.Contains("--frame: 4rem", Layout, StringComparison.Ordinal);
     }
 
     [Theory]

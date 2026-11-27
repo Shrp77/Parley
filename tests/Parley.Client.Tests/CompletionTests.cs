@@ -18,6 +18,7 @@ namespace Parley.Client.Tests;
 /// while an exact identifier decides the send, which are two different comparisons.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class CompletionTests
 {
     private static readonly string[] Ids = ["add", "archive", "close"];

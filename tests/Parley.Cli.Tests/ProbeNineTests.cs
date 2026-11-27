@@ -22,6 +22,8 @@ namespace Parley.Cli.Tests;
 /// wedged tool, which is why the bound exists — but a probe should say which of the two this is.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class ProbeNineTests : IDisposable
 {
     private readonly string _root =

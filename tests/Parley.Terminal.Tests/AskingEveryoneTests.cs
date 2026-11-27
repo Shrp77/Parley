@@ -22,6 +22,8 @@ namespace Parley.Terminal.Tests;
 /// recorded, and each is in a conversation of its own.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class AskingEveryoneTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

@@ -11,6 +11,7 @@ namespace Parley.Mcp.Tests;
 /// exotic — a second editor window on a repository somebody is already working in, and the
 /// first run of any project at all.
 /// </remarks>
+[Integration]
 public sealed class SecondSessionTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 3, 1, 9, 0, 0, TimeSpan.Zero);

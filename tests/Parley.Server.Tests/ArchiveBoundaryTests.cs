@@ -17,6 +17,7 @@ namespace Parley.Server.Tests;
 /// something agents can observe and work around.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ArchiveBoundaryTests
 {
     private static async Task<(AttachedClient Orders, AttachedClient Billing)> TwoAsync(LoopbackBroker broker, CancellationToken token) =>
@@ -98,6 +99,36 @@ public sealed class ArchiveBoundaryTests
         var export = await broker.ConnectAsOperator().ExportAsync(new Wire.ExportRequest { ConversationId = "a-discussion" }, cancellationToken: token);
 
         Assert.NotEmpty(export.Messages);
+    }
+
+    [Fact]
+    public async Task The_listing_says_when_an_exchange_in_a_conversation_last_closed()
+    {
+        // The Inbox finds an exchange that closed with no message in its own conversation by this field alone; dropped on
+        // the wire, the Closed view lost it again with every other test green (review, lens 3 round 17).
+        var token = TestContext.Current.CancellationToken;
+
+        await using var broker = await LoopbackBroker.StartAsync(token);
+        var (orders, billing) = await TwoAsync(broker, token);
+        await using var _ = orders;
+        await using var __ = billing;
+
+        await SendAsync(orders, billing, "who owns the totals", token);
+
+        var operators = broker.ConnectAsOperator();
+        var before = Assert.Single((await operators.ListConversationsAsync(new Wire.ListConversationsRequest(), cancellationToken: token)).Conversations);
+
+        Assert.Empty(before.LastClosedUtc);
+
+        await operators.ForceConcludeAsync(new Wire.ForceConcludeRequest { ConversationId = "a-discussion" }, cancellationToken: token);
+
+        var after = Assert.Single(
+            (await operators.ListConversationsAsync(new Wire.ListConversationsRequest { IncludeArchived = true }, cancellationToken: token)).Conversations);
+
+        Assert.True(
+            DateTimeOffset.TryParse(after.LastClosedUtc, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var closed),
+            $"no close time on the wire: '{after.LastClosedUtc}'");
+        Assert.True(closed > DateTimeOffset.UtcNow.AddMinutes(-5));
     }
 
     [Fact]

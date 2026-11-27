@@ -19,6 +19,7 @@ namespace Parley.Web.Tests;
 /// have made the deployment worse rather than merely unfinished.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class InboxTests
 {
     private static string Page =>
@@ -35,6 +36,19 @@ public sealed class InboxTests
         Assert.DoesNotContain("OnPostTakeAsync", Model, StringComparison.Ordinal);
         Assert.DoesNotContain("asp-page-handler=\"Take\"", Page, StringComparison.Ordinal);
         Assert.DoesNotContain("Take delivery", Page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_refused_send_puts_what_the_person_wrote_back_in_the_box()
+    {
+        // By reading the page rather than driving it: no console here holds a live seat with work owed. The boxes used to
+        // come back empty, so a reply over the limit lost everything typed. Conversations/Detail and the terminal keep it.
+        Assert.Contains("Model.KeptText(projectName, item.Message.ExchangeId, id),", Page, StringComparison.Ordinal);
+        Assert.Contains("Model.Kept(projectName, item.Message.ExchangeId) ? Model.Clarification : null,", Page, StringComparison.Ordinal);
+        Assert.Contains(">@Model.Value</textarea>", File.ReadAllText(RepositoryPath("src/Parley.Web/Pages/Shared/_Composer.cshtml")), StringComparison.Ordinal);
+        Assert.Contains("open=\"@Model.Kept(projectName, item.Message.ExchangeId)\"", Page, StringComparison.Ordinal);
+        // Off the send's flag: its words were matched once, and a Result that went ("Sent, and…") read as refused.
+        Assert.Contains("_refused = !sent.Closed;", Model, StringComparison.Ordinal);
     }
 
     // `The_inbox_sends_nobody_who_has_not_joined` was here: it expected a redirect to Join. There is no

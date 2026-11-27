@@ -130,22 +130,17 @@ internal sealed class MenuBarView(
         var menu = new PopoverMenu(Views(items));
 
         // **Left and Right go to the neighbouring menu**, because F10 opens only the first and a bar a person can enter
-        // and not cross is half a bar. Taken on the menu's own key event, which runs before its bindings do.
-        menu.KeyDown += (_, key) =>
+        // and not cross is half a bar.
+        KeyRouting.Walking(menu, by =>
         {
-            if (key == Key.CursorRight || key == Key.CursorLeft)
+            var next = (at + by + offered.Count) % offered.Count;
+            var now = menus();
+
+            if (now.Count > 0)
             {
-                key.Handled = true;
-
-                var next = (at + (key == Key.CursorRight ? 1 : -1) + offered.Count) % offered.Count;
-                var now = menus();
-
-                if (now.Count > 0)
-                {
-                    OpenAt(now, Math.Min(next, now.Count - 1));
-                }
+                OpenAt(now, Math.Min(next, now.Count - 1));
             }
-        };
+        });
 
         popovers.Register(menu);
 
@@ -277,13 +272,14 @@ internal sealed class MenuBarView(
     /// <summary>One menu's lines as toolkit views: an item per action, a rule per separator.</summary>
     /// <param name="items">The menu's lines.</param>
     /// <returns>The views.</returns>
-    private IEnumerable<View> Views(IReadOnlyList<MenuItem> items)
+    /// <remarks>Not private, so <c>KeysTakenBeforeTheTableTests</c> can hold that no line it makes carries a key.</remarks>
+    internal IEnumerable<View> Views(IReadOnlyList<MenuItem> items)
     {
         foreach (var item in items)
         {
             if (item.Divides)
             {
-                yield return new Line();
+                yield return new Line { HotKeySpecifier = Plain.NoHotKey };
 
                 continue;
             }
@@ -293,7 +289,7 @@ internal sealed class MenuBarView(
             // The key goes in the help column rather than being bound. A bound key would be answered by a
             // menu nobody has opened -- the toolkit offers keys to registered popovers -- and the region's
             // own handler answers it too, so one press would run the action twice.
-            var line = new ToolkitItem(label, stroke, () => run(stroke, label));
+            var line = new ToolkitItem(label, stroke, () => run(stroke, label)) { HotKeySpecifier = Plain.NoHotKey };
 
             if (line.CommandView is { } command)
             {

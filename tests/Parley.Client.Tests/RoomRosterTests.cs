@@ -7,6 +7,7 @@ namespace Parley.Client.Tests;
 /// <summary>
 /// Who a conversation's room offers beside the agents that have taken part (SPEC.md §5.0).
 /// </summary>
+[Unit]
 public sealed class RoomRosterTests
 {
     private static AgentName Name(string value) => AgentName.Create(value);

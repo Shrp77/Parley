@@ -83,6 +83,44 @@ internal static class Conversions
         _ => throw new ArgumentOutOfRangeException(nameof(presence), presence, "Not a defined presence.")
     };
 
+    /// <summary>Converts a background task's kind for the wire.</summary>
+    /// <param name="kind">The kind.</param>
+    /// <returns>The wire value; any kind this broker does not know travels as other.</returns>
+    public static Wire.TaskKind Out(TaskKind kind) => kind switch
+    {
+        TaskKind.Agent => Wire.TaskKind.Agent,
+        TaskKind.Command => Wire.TaskKind.Command,
+        _ => Wire.TaskKind.Other,
+    };
+
+    /// <summary>Reads a background task's kind off the wire.</summary>
+    /// <param name="kind">The wire value.</param>
+    /// <returns>The kind; a value this broker does not know reads as other, since a node names what its runner said.</returns>
+    public static TaskKind In(Wire.TaskKind kind) => kind switch
+    {
+        Wire.TaskKind.Agent => TaskKind.Agent,
+        Wire.TaskKind.Command => TaskKind.Command,
+        _ => TaskKind.Other,
+    };
+
+    /// <summary>Converts a running background task for the registry row.</summary>
+    /// <param name="task">The task, its words already held to their bounds.</param>
+    /// <returns>The wire row; its link in its one spelling.</returns>
+    public static Wire.BackgroundTaskRow Out(BackgroundTask task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+
+        return new Wire.BackgroundTaskRow
+        {
+            Id = task.Id,
+            Kind = Out(task.Kind),
+            Name = task.Name,
+            Description = task.Description,
+            Link = task.Link?.Written ?? string.Empty,
+            Said = task.Said,
+        };
+    }
+
     /// <summary>Converts a message type for the wire.</summary>
     /// <param name="type">The type.</param>
     /// <returns>The wire value.</returns>
@@ -338,6 +376,8 @@ internal static class Conversions
         Core.WakeOutcome.Unreachable => Wire.WakeOutcome.Unreachable,
         Core.WakeOutcome.WithThePerson => Wire.WakeOutcome.WithThePerson,
         Core.WakeOutcome.OpenOutside => Wire.WakeOutcome.OpenOutside,
+        Core.WakeOutcome.Frozen => Wire.WakeOutcome.Frozen,
+        Core.WakeOutcome.LeftRunning => Wire.WakeOutcome.LeftRunning,
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Not a defined wake outcome.")
     };
 
@@ -349,6 +389,7 @@ internal static class Conversions
     {
         Parley.Broker.ClosureError.None => Wire.ClosureError.None,
         Parley.Broker.ClosureError.NotAParticipant => Wire.ClosureError.NotAParticipant,
+        Parley.Broker.ClosureError.PersonCloses => Wire.ClosureError.PersonCloses,
         _ => throw new ArgumentOutOfRangeException(nameof(error), error, "Not a defined error.")
     };
 
@@ -435,6 +476,11 @@ internal static class Conversions
             SentUtc = Stamp(a.SentUtc),
             Envelope = a.Envelope
         }));
+
+        if (delivered.RoleRequest is { } role)
+        {
+            wire.RoleRequest = new Wire.RoleRequestProgress { Asked = role.Asked, Answered = role.Answered };
+        }
 
         return wire;
     }
@@ -536,7 +582,12 @@ internal static class Conversions
             LastTurnEndedUtc = record.Turns?.LastEnded is { } ended ? Stamp(ended) : string.Empty,
             LastTurnClean = record.Turns?.LastClean ?? false,
             LastTurnPermissionDenials = record.Turns?.LastPermissionDenials ?? 0,
+            BackgroundTasks = record.Turns?.BackgroundTasks ?? 0,
+            RunningTasks = { (record.Turns?.Named ?? []).Select(Out) },
             OpenOutside = record.OpenOutside,
+            Unsupervised = record.Unsupervised,
+            FrozenUtc = record.FrozenUtc is { } frozenUtc ? Stamp(frozenUtc) : string.Empty,
+            KeepFrozen = record.KeepFrozen,
             Identity = record.Identity.Known ? record.Identity.ToString() : string.Empty,
         };
     }
@@ -560,6 +611,8 @@ internal static class Conversions
         FileRejection.NotFetched => Wire.FileRejection.NotFetched,
         FileRejection.TooManyNames => Wire.FileRejection.TooManyNames,
         FileRejection.SafeNameTaken => Wire.FileRejection.SafeNameTaken,
+        FileRejection.NameHoldsOtherContent => Wire.FileRejection.NameHoldsOtherContent,
+        FileRejection.Tampered => Wire.FileRejection.Tampered,
         _ => throw new ArgumentOutOfRangeException(nameof(rejection), rejection, "Not a defined file rejection.")
     };
 
@@ -570,10 +623,10 @@ internal static class Conversions
     public static Wire.PlaceOutcome Out(PlaceOutcome outcome) => outcome switch
     {
         PlaceOutcome.Placed => Wire.PlaceOutcome.Placed,
-        PlaceOutcome.Replaced => Wire.PlaceOutcome.Replaced,
         PlaceOutcome.AlreadyCurrent => Wire.PlaceOutcome.AlreadyCurrent,
         PlaceOutcome.PlacedByAnother => Wire.PlaceOutcome.PlacedByAnother,
         PlaceOutcome.DoesNotFit => Wire.PlaceOutcome.DoesNotFit,
+        PlaceOutcome.HoldsOtherContent => Wire.PlaceOutcome.HoldsOtherContent,
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Not a defined place outcome.")
     };
 
@@ -593,7 +646,6 @@ internal static class Conversions
             Sha256 = file.Sha256.Value,
             PlacedBy = file.PlacedBy?.Value ?? string.Empty,
             PlacedUtc = Stamp(file.PlacedUtc),
-            ChangedUtc = Stamp(file.ChangedUtc),
             Folder = file.Folder
         };
     }
@@ -640,7 +692,7 @@ internal static class Conversions
         return reply;
     }
 
-    /// <summary>Converts a change notice for the wire.</summary>
+    /// <summary>Converts a gone notice for the wire.</summary>
     /// <param name="notice">The notice.</param>
     /// <returns>The wire notice.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="notice"/> is null.</exception>
@@ -653,10 +705,30 @@ internal static class Conversions
             ConversationId = notice.ConversationId,
             Name = notice.Name,
             Sha256Had = notice.Had.Value,
-            Sha256Now = notice.Now?.Value ?? string.Empty,
-            SizeBytes = notice.SizeBytes ?? 0,
-            ChangedUtc = Stamp(notice.ChangedUtc),
-            Gone = notice.Gone
+            GoneUtc = Stamp(notice.GoneUtc),
+            Sha256Found = notice.Found?.Value ?? string.Empty,
+        };
+    }
+
+    /// <summary>Converts a problem with the file location for the wire.</summary>
+    /// <param name="problem">The problem.</param>
+    /// <returns>The wire view.</returns>
+    public static Wire.FileProblemView Out(FileProblem problem)
+    {
+        ArgumentNullException.ThrowIfNull(problem);
+
+        return new Wire.FileProblemView
+        {
+            Id = problem.Id,
+            Kind = problem.Kind == FileProblemKind.Quarantined ? Wire.FileProblemKind.Quarantined : Wire.FileProblemKind.Locked,
+            ConversationId = problem.ConversationId ?? string.Empty,
+            Path = problem.Path,
+            Sha256Placed = problem.PlacedSha256?.Value ?? string.Empty,
+            Sha256Found = problem.FoundSha256?.Value ?? string.Empty,
+            MovedTo = problem.MovedTo ?? string.Empty,
+            Detail = problem.Detail,
+            RaisedUtc = Stamp(problem.RaisedUtc),
+            DismissedUtc = problem.DismissedUtc is { } dismissed ? Stamp(dismissed) : string.Empty,
         };
     }
 
@@ -819,6 +891,7 @@ internal static class Conversions
             State = Out(proposal.State),
             CreatedUtc = Stamp(proposal.CreatedUtc),
             DecidedUtc = Stamp(proposal.DecidedUtc),
+            ItemCount = proposal.ItemCount ?? proposal.Content.Items.Count,
         };
     }
 
@@ -858,7 +931,7 @@ internal static class Conversions
             Blocker = facts.Blocker ?? string.Empty,
             ClosedBy = facts.ClosedBy ?? string.Empty,
             Destroyed = facts.Destroyed,
-            FirstSentText = facts.FirstSentText ?? string.Empty,
+            TextEditedSinceStarted = facts.TextEditedSinceStarted,
         };
 
         wire.OpenExchangeIds.AddRange(facts.OpenIds);

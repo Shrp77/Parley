@@ -19,6 +19,8 @@ namespace Parley.Web.Tests;
 /// archived.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class ListingStateTests
 {
     [Theory]

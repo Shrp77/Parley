@@ -46,6 +46,7 @@ internal sealed class ConfigurationRegion : FrameView
 
     internal ConfigurationRegion()
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = RegionTitle;
         CanFocus = true;
         SetScheme(Colours.Region(Colours.Projects));

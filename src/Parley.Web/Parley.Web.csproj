@@ -35,6 +35,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Markdig" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Parley.Client\Parley.Client.csproj" />
     <ProjectReference Include="..\Parley.Configuration\Parley.Configuration.csproj" />
     <ProjectReference Include="..\Parley.Transport\Parley.Transport.csproj" />
@@ -69,6 +73,10 @@
     <EmbeddedResource Include="Brand\icon.png" />
     <EmbeddedResource Include="Brand\wordmark.png" />
     <EmbeddedResource Include="Brand\material-symbols.woff2" />
+    <EmbeddedResource Include="Brand\roboto-flex.woff2" />
+    <EmbeddedResource Include="Brand\RobotoFlex-OFL.txt" />
+    <EmbeddedResource Include="Brand\tokens.css" />
+    <EmbeddedResource Include="Brand\components.css" />
   </ItemGroup>
 
 

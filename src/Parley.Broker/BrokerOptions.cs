@@ -10,6 +10,7 @@ namespace Parley.Broker;
 /// <param name="ResumeGate">Asked before any agent is woken for outstanding work (§14).</param>
 /// <param name="Retention">What the log is pruned to (§9.4).</param>
 /// <param name="RetentionInterval">How often retention runs.</param>
+/// <param name="SearchTimeLimit">The longest a search of the history may run (§10.1), or <see langword="null"/> for the default.</param>
 /// <remarks>
 /// Operator configuration, resolved before any agent-facing path is reached. Nothing here is a parameter
 /// an agent can supply.
@@ -19,7 +20,8 @@ public sealed record BrokerOptions(
     ResumePolicy ResumePolicy,
     IResumeGate ResumeGate,
     RetentionPolicy Retention,
-    TimeSpan RetentionInterval)
+    TimeSpan RetentionInterval,
+    TimeSpan? SearchTimeLimit = null)
 {
     /// <summary>The retention interval when none is configured.</summary>
     /// <remarks>
@@ -29,8 +31,8 @@ public sealed record BrokerOptions(
 
     /// <summary>The options when a deployment configures none.</summary>
     /// <remarks>
-    /// <see cref="ResumePolicy.Never"/>, the safe default for interactive use (§14): the surprising outcome
-    /// is work resuming that somebody stopped on purpose.
+    /// <see cref="ResumePolicy.Never"/>, which is what a broker built in a test or by a host gets. The broker the
+    /// <c>serve</c> command runs sets <see cref="ResumePolicy.Always"/> (SPEC.md §14), by the owner's decision.
     /// </remarks>
     public static BrokerOptions Default { get; } = new(
         Core.ExchangePolicy.Default,

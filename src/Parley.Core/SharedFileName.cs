@@ -19,7 +19,7 @@ public enum SharedFileNameProblem
     /// <summary>No name was given.</summary>
     Empty,
 
-    /// <summary>The name does not end in <c>.md</c> or <c>.txt</c>.</summary>
+    /// <summary>The name does not end in one of <see cref="SharedFileName.AllowedExtensions"/>.</summary>
     ExtensionNotAllowed,
 
     /// <summary>
@@ -48,9 +48,10 @@ public enum SharedFileNameProblem
 /// (§9.3); this is the one that can say what was wrong.
 /// </para>
 /// <para>
-/// <b>Only <c>.md</c> and <c>.txt</c>.</b> A person may open a placed file with
+/// <b>Only text and images (<see cref="AllowedExtensions"/>).</b> A person may open a placed file with
 /// the application their system registers for it, and for most other extensions that application runs
-/// code. Code travels as text: <c>PriceSnapshot.cs.txt</c>. Only the name is checked; the bytes never are.
+/// code. Code travels as text: <c>PriceSnapshot.cs.txt</c>. SVG is not an image here, because it can carry scripts. Only the
+/// name is checked; the bytes never are.
 /// </para>
 /// <para>
 /// <b>Only letters A to Z, digits, <c>.</c>, <c>_</c> and <c>-</c>, and a placement is renamed rather than
@@ -62,13 +63,29 @@ public enum SharedFileNameProblem
 /// <para>
 /// <see cref="Safe"/> replaces each character outside the set with <c>_</c>, one for one, so a renamed
 /// placement is the same length as the name asked for. The broker renames; nothing else does. A name
-/// arriving anywhere else — a fetch, a removal, a file a person copied in by hand — is checked as it is,
+/// arriving anywhere else — a fetch, a removal, an opening — is checked as it is,
 /// because renaming a name somebody is looking <i>up</i> would find a different file from the one they
 /// meant.
 /// </para>
 /// </remarks>
 public sealed class SharedFileName : IEquatable<SharedFileName>
 {
+    /// <summary>What a placed file's name may end in. The schema holds the same list (§9.3).</summary>
+    public static IReadOnlyList<string> AllowedExtensions { get; } = [".md", ".txt", ".png", ".jpg", ".jpeg", ".gif", ".webp"];
+
+    /// <summary>The same list, as a sentence would say it.</summary>
+    public const string AllowedExtensionsInWords = ".md, .txt, .png, .jpg, .jpeg, .gif or .webp";
+
+    /// <summary>Whether a name or path ends in an extension a placed file may have.</summary>
+    /// <param name="nameOrPath">The name or path.</param>
+    /// <returns>Whether it does, in any case.</returns>
+    public static bool HasAllowedExtension(string nameOrPath)
+    {
+        ArgumentNullException.ThrowIfNull(nameOrPath);
+
+        return AllowedExtensions.Any(extension => nameOrPath.EndsWith(extension, StringComparison.OrdinalIgnoreCase));
+    }
+
     /// <summary>The longest a file's path inside the location may be: its folder, a separator and its name.</summary>
     /// <remarks>
     /// Counted without the location's own path, so the same names are legal wherever a broker keeps its store.
@@ -171,8 +188,7 @@ public sealed class SharedFileName : IEquatable<SharedFileName>
             return SharedFileNameProblem.LeadingDot;
         }
 
-        if (!candidate.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
-            && !candidate.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
+        if (!HasAllowedExtension(candidate))
         {
             return SharedFileNameProblem.ExtensionNotAllowed;
         }
@@ -220,7 +236,7 @@ public sealed class SharedFileName : IEquatable<SharedFileName>
         SharedFileNameProblem.None => "The name is acceptable.",
         SharedFileNameProblem.Empty => "A file needs a name.",
         SharedFileNameProblem.ExtensionNotAllowed =>
-            "Only .md and .txt files can be placed. To place anything else, add .txt to its name, such as " +
+            $"Only {AllowedExtensionsInWords} files can be placed. To place anything else, add .txt to its name, such as " +
             "PriceSnapshot.cs.txt.",
         SharedFileNameProblem.DisallowedCharacter => $"A file name uses only {AllowedCharactersInWords}.",
         SharedFileNameProblem.LeadingDot => "A file name cannot begin with a dot.",
@@ -266,7 +282,7 @@ public sealed class SharedFileName : IEquatable<SharedFileName>
     /// <remarks>
     /// Refused rather than replaced even when the caller placed the file already there: <c>a:b.md</c> and
     /// <c>a?b.md</c> are both <c>a_b.md</c>, and a placement that silently replaced one with the other would be a
-    /// rename nobody asked for. Placing again under the safe spelling replaces it on purpose. The name asked for is
+    /// rename nobody asked for, and a placed file is never changed in any case (SPEC.md §9.5). The name asked for is
     /// quoted with its control characters made visible, since it is the one thing in the sentence nothing checked.
     /// </remarks>
     public static string SafeNameTaken(string asked, string safe, string existing)
@@ -278,8 +294,8 @@ public sealed class SharedFileName : IEquatable<SharedFileName>
         var shown = new string(asked.Select(c => char.IsControl(c) ? '?' : c).ToArray());
 
         return $"File '{shown}' has illegal characters and will be named '{safe}', which collides with an existing " +
-               $"file with that name ('{existing}'). Nothing was placed. Choose another name, or place it as " +
-               $"'{safe}' to replace that file if it is yours.";
+               $"file with that name ('{existing}'). Nothing was placed. Choose another name: a placed file is " +
+               "never changed.";
     }
 
     /// <summary>The key a name is compared by: every letter in upper case.</summary>

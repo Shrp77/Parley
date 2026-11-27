@@ -13,7 +13,7 @@ namespace Parley.Core;
 /// <para>
 /// There is no type the broker alone may send. When the person closes a conversation the broker
 /// writes a Result whose items are all <see cref="Outcome.Closed"/>, attributed to
-/// <c>parley:broker</c>, and the schema holds that attribution and that outcome together (§9.3).
+/// <c>parley:broker</c>, and the schema holds that attribution and that outcome together when an exchange first closes (§9.3).
 /// </para>
 /// </remarks>
 public enum MessageType

@@ -21,6 +21,7 @@ namespace Parley.Cli.Tests;
 /// it was removed from, which is worse than either state alone.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WithdrawOneProjectTests : IDisposable
 {
     private readonly string _root =

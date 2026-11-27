@@ -20,8 +20,10 @@ process serves every project the machine names, each on its own store and port.
   `.mcp.json`. The screen says so every time. Destroying one is the deliberate version.
   It stops the broker, deletes the store and everything beside it, and lists the repositories that
   were agents in it. It asks you to type the project's own name first.
-- **Projects are created in the terminal or the web console, and removed or renamed only in the
-  terminal.** The command line has one project command, `parley project list`, and it changes
+- **Projects are created in the terminal or the web console, and removed only in the terminal.**
+  Renaming is two steps in the terminal, removing the project and naming the new one: the
+  conversations stay in the old store, and every enrolled repository still names the old project until
+  it is enrolled in the new one. The command line has one project command, `parley project list`, and it changes
   nothing.
 
 ### Which project does a command act on?
@@ -50,6 +52,48 @@ parley use                                           # which project a command h
 The choice lasts until that terminal closes. There is deliberately no saved "current project".
 Chosen in one window, it could silently apply to a destructive command in another.
 
+### Settings for every project
+
+A few settings belong to Parley on this machine rather than to one project. Change them on the
+web console's **Settings** page, at the foot of the menu on the left (under *More* on a phone).
+
+- **How many days the Inbox's *Closed* view covers.** Seven unless you change it, from 1 to 365.
+  It is kept in `settings.json` beside the `projects` folder, so the terminal's Inbox uses the
+  same number.
+- **The console's theme, colors and density.** These are kept in your browser only.
+
+### Reaching the console by another name
+
+The web console only listens on this machine. You can still open it from another of your devices
+through a tool that forwards a name to it, such as Tailscale's `tailscale serve`.
+[Opening the web console from your phone or tablet](remote-access.md) walks through it with
+Tailscale, step by step. The console
+refuses any name it does not know, so list that name in `settings.json`, beside the `projects`
+folder:
+
+```json
+{
+  "webUi": {
+    "hosts": [ "mymachine.tailnet-name.ts.net" ]
+  }
+}
+```
+
+Then restart the broker, or the web UI, so the console reads it. When it starts, it says which
+names it also answers to.
+
+- **Write each name out in full.** A wildcard such as `*.ts.net`, an IP address or a port is left
+  out, and the console says so when it starts. Up to 16 names are taken.
+- **Forward it over HTTPS** (plain `tailscale serve` does). Over plain HTTP a browser does not say
+  which site asked for a page, so Parley refuses every request that comes in under a listed name
+  that way.
+- **Give the console a name of its own.** Anything else served under the same name counts as the
+  console's own page, so it could act through it.
+- **Anyone who can reach that name acts as you.** The console has no sign-in. With Tailscale,
+  your tailnet's access rules decide who that is.
+- **Never make the name public.** Tailscale Funnel, or any tunnel open to the internet, would let
+  anyone act as you.
+
 ### Running the broker
 
 `parley serve` runs the broker for every project, and `parley autostart install` registers it to
@@ -63,8 +107,11 @@ None needs administrator rights. `parley autostart status` says whether it is se
 `parley autostart remove` undoes it without stopping a broker that is already running. The
 install script runs `autostart install` for you.
 
-The one process also runs this machine's node in every project and starts the web console on
-`127.0.0.1:5280`. `--web-ui <url>` moves the console and `--no-web-ui` leaves it out. If the
+The process the entry starts also runs this machine's node in every project and starts the web console
+on `127.0.0.1:5280`. `autostart install --web-ui <url>` moves the console and `autostart install
+--no-web-ui` leaves it out. A `parley serve` you start yourself runs neither unless given `--with-node`
+and `--with-web-ui`. A node it runs that loses its connection to the broker keeps its agents and joins
+again by itself, as `parley up --keep-trying` does. If the
 console cannot start, because the address is taken or the tool is not installed, the broker says
 so and keeps serving.
 
@@ -76,8 +123,12 @@ at. A server that must answer with nobody signed in needs a real service, and th
 privileges.
 
 Nothing else may open the store. A store has one broker, and a second one says so and exits. The
-store must not be on a network share. SQLite in WAL mode needs shared memory that is coherent
-between every process touching it, so a store on a share is corrupted, not just slow.
+deployment's root, and so every store, must be on this machine's own disk: Parley refuses a synced
+cloud folder (OneDrive, Google Drive, Dropbox, iCloud Drive, Box), a network drive or a virtual file system (a FUSE mount such as rclone or sshfs on Linux and macOS; on Windows, any drive that is not a
+local disk volume),
+and a folder reached through a link or a `subst` letter to one. SQLite in WAL mode needs shared memory that is coherent
+between every process touching it, and a sync client copies a store while it is being written. If
+the default root is in such a folder, set another with `--config` or `PARLEY_CONFIG`.
 
 ## The launch configuration
 
@@ -86,6 +137,7 @@ An agent's identity and settings come from its launch configuration. For Claude 
 
 ```jsonc
 {
+  "parleyAgentId": "6f1c…",                        // the repository's identity, written by enroll
   "mcpServers": {
     "parley-acme": {                                   // parley-<project>, or `parley` if no projects
       "command": "parley-mcp",
@@ -105,7 +157,7 @@ An agent's identity and settings come from its launch configuration. For Claude 
 
 | Setting | What it does |
 |---|---|
-| `PARLEY_AGENT` | The agent's role. This is its identity. No tool can change it. |
+| `PARLEY_AGENT` | The agent's role: the name a project shows. Its identity is `parleyAgentId`, so changing the role renames the agent ([how](launch-configuration.md)). No tool can change either. |
 | `PARLEY_PROJECT` | The project to connect to. Use this on a machine that serves several. |
 | `PARLEY_BROKER` | A broker address, instead of a project. If both are set, the address wins and the server says so. |
 | `PARLEY_OWNS` | The ownership line (see below). |
@@ -158,20 +210,24 @@ not, once. That costs the agent one turn, the first time only.
 **Auto Accept** is a project setting and is on by default. With it on, the answer becomes the
 line. Parley writes it into the launch configuration, records it as accepted automatically, and
 restarts the agent once it is idle so its peers see it. Nothing is restarted mid-turn. An answer
-that cannot be a line as written, or that comes from an agent on another machine, waits for you.
-Turn Auto Accept off, in **Configuration** (`F3`) or the Project menu, and every answer waits for
-you.
+that cannot be a line as written, that the agent said was blocked, or that comes from an agent on
+another machine, waits for you.
+Turn Auto Accept off, in the terminal's **Configuration** (`F3`) or Project menu, or at the top of
+the web console's **Review ownership** page, and every answer waits for you.
 
 **Checking and correcting lines.** The ownership review (`Alt+v` on the agents pane in the
-terminal, or **Review ownership** on a project's page in the web console) shows each agent's
+terminal, or **Review ownership** in a project's Settings in the web console) shows each agent's
 line, whether a person or nobody has read it, and any answer waiting. From there you can accept,
 edit or discard an answer, write a line yourself, reply if the agent asked something back, or have
 the facilitator ask again. `Alt+n` on an agent shows what it has said and lets you edit its line
-in place. `Alt+e` asks every agent at once. The web console offers the same.
+in place. `Alt+e` asks every agent at once. The web console offers the same: *What this agent is
+responsible for* on an agent's page, and *Ask every agent again what it owns* in a project's
+Settings.
 
-**No tool an agent has can set the line.** A field an agent could write would be worth only a
-model's opinion of itself. A line an agent proposed and a person accepted is something a peer can
-act on, and which of those produced it is recorded. Change a line and every peer sees the new one
+**No tool an agent has writes the line directly.** It answers Parley's question, and the answer
+becomes the line only by acceptance: Auto Accept's, recorded as `automatic`, or yours. With Auto
+Accept on, a line is the agent's own account of itself until somebody reviews it, so the review
+says whether a person or nobody has read each one. Change a line and every peer sees the new one
 the next time that agent's server starts. Delete it and the claim is withdrawn.
 
 **There is no length limit by default.** This is a recorded reduction in a safety control. The
@@ -191,7 +247,7 @@ alone, an exchange between two repositories needs a person at both ends. A **nod
 
 **What a node is.** A node is the part of a machine that starts agents. How to start a repository
 belongs to the machine it is on, so it lives in `node.json` on that machine and never reaches the
-broker. There is one for the whole machine, in the same folder as your projects. `PARLEY_NODE_CONFIG`
+broker. There is one for the whole machine, at the deployment root (`<root>/node.json`), beside the `projects` folder. `PARLEY_NODE_CONFIG`
 or `--node-config` names a different file. The broker holds no launch command at all, which keeps
 the trusted surface small as a deployment spreads across machines.
 
@@ -230,18 +286,23 @@ parley up
 
 Leave it running. Ctrl+C stops the node and every agent it started. An agent is also told to quit
 when you retire it, or when you remove its launch setting and open the repository once, so that a
-withdrawal reaches a process that is already running.
+withdrawal reaches a process that is already running. You can also stop, restart or freeze one
+agent from the terminal or the web console; see
+[Running a deployment](operating.md#stopping-and-restarting-an-agent).
 
 **It responds and does not initiate.** A node starts agents that have something waiting: a result
-they owe, or any message they have not collected. With nothing waiting it starts nobody. The first
+they owe, or any message they have not collected. With nothing waiting it starts nobody. When the
+broker has just started, each agent that owes open work is started once, so work interrupted by a
+reboot or an install carries on. While an agent is frozen, nothing starts it. The first
 request still comes from a person or an agent with a reason to ask. After that the loop needs no
 one: the receiver is started to do the work, a clarification hands the turn back, and the
 requester is started in its turn.
 
 **It spends money while nobody is watching.** That is the feature and the risk in one sentence.
-Every turn is a real session on your account. `parley up` prints what each turn cost, and the
-broker keeps the same figures: count, duration, cost, and how often an agent ran and still owed
-exactly what it owed. That last figure is the shape a runaway takes before it looks like one.
+Every turn is a real session on your account. The broker records each turn: count, duration,
+the cost the runner reports (for Claude Code, the session's running total at the end of that turn), and how often an agent ran and still owed exactly what it owed, which is the shape a runaway
+takes before it looks like one. No screen shows those figures yet, so your provider's bill is
+where you see the cost; `parley up` prints a turn that failed.
 
 ## Reaching a broker from another machine
 
@@ -290,23 +351,33 @@ so left unbounded it would become the shared context store Parley exists to avoi
 So it forgets by default:
 
 - a discussion whose exchanges have all closed is removed once it has been quiet for
-  `PARLEY_RETENTION_IDLE_HOURS` (three days if unset),
-- and nothing outlives `PARLEY_RETENTION_MAX_AGE_HOURS` (thirty days if unset).
+  `PARLEY_RETENTION_IDLE_HOURS` (three days if unset); closing it, by its agents or by you, does not
+  shorten that,
+- and nothing but open work outlives `PARLEY_RETENTION_MAX_AGE_HOURS` (thirty days if unset).
+
+The retention pass runs once an hour. A prune from the terminal or the web console runs it now and
+says which idle period and age cap it applied.
 
 ```
 PARLEY_RETENTION_IDLE_HOURS=72
 PARLEY_RETENTION_MAX_AGE_HOURS=720
-PARLEY_TICK_SECONDS=5                 # how often deadlines are swept
+PARLEY_TICK_SECONDS=5                 # the broker's tick: closing polls, Parley's passes, new projects
 ```
 
 **Set these in the broker's environment**, meaning the process that runs `parley serve`. Not in
 your shell, and not on the agents' servers. The broker is the only process that reads them. Set
 them anywhere else and the broker quietly keeps the default. Pruning from the terminal only brings
-the next sweep forward, under the same policy.
+the next retention pass forward, under the same policy.
 
-A floor bounds the other direction and is not configurable. Tightening retention can never delete
-a message nobody has collected, anything on an exchange that is still open, the request a
-not-yet-collected result carries back, or the recent rows that deduplication still reads.
+A floor bounds the other direction and is not configurable. The idle rule never deletes a message
+nobody has collected, anything on an exchange that is still open, the request a not-yet-collected
+result carries back, or the recent rows that deduplication still reads. The age cap is stricter:
+only text on an exchange that is still open outlives it. A message nobody collected goes once it is
+older than the cap, so lowering `PARLEY_RETENTION_MAX_AGE_HOURS` can delete mail an agent never
+picked up.
+
+The record of which agents read or searched the history keeps no message text. A line of it goes
+once its agent has not read again for the age cap.
 
 To keep a conversation beyond the policy, export it. The export is a file you own.
 
@@ -315,12 +386,18 @@ need. The terminal's health view reports how deep exchanges actually go.
 
 ## Message size
 
-A message is capped at 8,000 characters. The cap lives in the database, so no code path can
-route around it. It is a context-poisoning defence, not a buffer size: what one agent sends lands
-in another's working memory. The number is a judgement. Every refusal for length is counted, and
-the health view shows how often agents hit the ceiling and by how much. The refused text is never
-kept, only its length, because storing what was refused for being too long would keep exactly
-what the cap exists to keep out.
+A message past 16,000 characters is delivered whole, and its sender is told it was long. A message
+past 512,000 characters is refused. The broker refuses it before the store is asked, and the database holds a second wall, so no code path can route
+around it. It is a context-poisoning defence, not a buffer size: what one agent sends lands in
+another's working memory. Both count the message as stored, so line breaks and quotes count twice.
+
+The health view shows how long messages have been: how many, the median, the longest and how many
+passed 16,000, overall, by agent and by position in a conversation. It counts refusals too. Only
+lengths are kept, and they outlive the messages. The refused text is never kept, because storing
+what was refused for being too long would keep exactly what the limit exists to keep out.
+
+An agent on Claude Code receives a very long message through a file the client saves, and reads it
+when it needs it. Another client may handle a large tool result differently.
 
 ## Versions
 
@@ -328,7 +405,7 @@ Three numbers answer different questions:
 
 | Number | Where | Moves when |
 |---|---|---|
-| Tool version | the `parley` and `parley-mcp` packages | anything ships |
+| Tool version | the `parley`, `parley-mcp`, `parley-terminal` and `parley-web-ui` packages | anything ships |
 | Protocol version | the top of [SPEC.md](../SPEC.md) | the wire contract changes |
 | Schema version | SQLite's `user_version` | the tables change |
 

@@ -52,6 +52,9 @@ internal sealed class Seated : IAsyncDisposable
     private readonly BrokerDirectory _directory;
     private readonly SeatBook _seats;
 
+    /// <summary>A second project's store and broker, when the fixture was asked for one.</summary>
+    private (SqliteConnection Connection, LoopbackOperator Broker)? _beta;
+
     private Seated(
         SqliteConnection connection,
         LoopbackOperator broker,
@@ -85,6 +88,12 @@ internal sealed class Seated : IAsyncDisposable
     /// <summary>The operator client, for asking what the broker actually recorded.</summary>
     internal BrokerClient Operators => new(_broker.Operators);
 
+    /// <summary>A second project, <c>beta</c>, with its own broker, when asked for (for what must not cross projects).</summary>
+    internal static ProjectName Beta { get; } = ProjectName.Create("beta");
+
+    /// <summary>The second project's operator client.</summary>
+    internal BrokerClient BetaOperators => new(_beta!.Value.Broker.Operators);
+
     /// <summary>Opens one.</summary>
     /// <param name="cancellationToken">Stops the reads.</param>
     /// <param name="width">How wide the terminal is.</param>
@@ -92,6 +101,8 @@ internal sealed class Seated : IAsyncDisposable
     /// <param name="addressing">Where who-each-line-goes-to is kept, or null for this run only.</param>
     /// <param name="mailEvery">How often the waiting count is asked for, or null (the default) not to poll at all.</param>
     /// <param name="followEvery">How often the open conversation is read again, or null (the default) not to follow.</param>
+    /// <param name="withBeta">Whether to add a second project, beta, on its own broker, for what must not cross projects.</param>
+    /// <param name="root">A deployment folder to follow, so what the terminal reads there (settings.json) is real; none by default.</param>
     /// <returns>The fixture.</returns>
     internal static async Task<Seated> OpenAsync(
         CancellationToken cancellationToken,
@@ -99,7 +110,9 @@ internal sealed class Seated : IAsyncDisposable
         int height = 40,
         AddressBook? addressing = null,
         TimeSpan? mailEvery = null,
-        TimeSpan? followEvery = null)
+        TimeSpan? followEvery = null,
+        bool withBeta = false,
+        string? root = null)
     {
         var connection = ParleyDatabase.OpenInMemory();
         var agents = new AgentRepository(connection);
@@ -112,9 +125,37 @@ internal sealed class Seated : IAsyncDisposable
         }
 
         var broker = LoopbackOperator.Start(connection);
-        var directory = new BrokerDirectory(
-            [new ProjectSettings(Walking.Alpha, "unused.db", broker.Address, null)],
-            _ => GrpcChannel.ForAddress(broker.Address));
+        (SqliteConnection Connection, LoopbackOperator Broker)? beta = null;
+
+        if (withBeta)
+        {
+            var betaConnection = ParleyDatabase.OpenInMemory();
+
+            foreach (var agent in new[] { Orders, Billing })
+            {
+                await new AgentRepository(betaConnection).UpsertAsync(
+                    new AgentRecord(agent, "mcp", AgentTier.Pull, null, null, null, false, AgentStatus.Active),
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            beta = (betaConnection, LoopbackOperator.Start(betaConnection));
+        }
+
+        ProjectSettings[] projects =
+        [
+            new ProjectSettings(Walking.Alpha, "unused.db", broker.Address, null),
+            .. beta is { } b ? [new ProjectSettings(Beta, "unused-beta.db", b.Broker.Address, null)] : Array.Empty<ProjectSettings>(),
+        ];
+
+        // With a root the terminal follows a deployment folder, so what it reads there (settings.json) is real.
+        if (root is not null)
+        {
+            Parley.Configuration.ProjectManifest.Write(root, projects);
+        }
+
+        var directory = root is null
+            ? new BrokerDirectory(projects, address => GrpcChannel.ForAddress(address))
+            : BrokerDirectory.FollowingRoot(root, address => GrpcChannel.ForAddress(address));
 
         var seats = new SeatBook(directory.AgentsFor);
         var driving = Driving.Open(width, height);
@@ -161,7 +202,7 @@ internal sealed class Seated : IAsyncDisposable
         await Walking.GoAsync(shell, Viewing.Conversation, Conversation).ConfigureAwait(false);
         await shell.Settled.ConfigureAwait(false);
 
-        return new Seated(connection, broker, directory, seats, driving, shell);
+        return new Seated(connection, broker, directory, seats, driving, shell) { _beta = beta };
     }
 
     /// <summary>The person's seat, as the broker named it.</summary>
@@ -261,5 +302,11 @@ internal sealed class Seated : IAsyncDisposable
         await _broker.DisposeAsync().ConfigureAwait(false);
 
         _connection.Dispose();
+
+        if (_beta is { } beta)
+        {
+            await beta.Broker.DisposeAsync().ConfigureAwait(false);
+            beta.Connection.Dispose();
+        }
     }
 }

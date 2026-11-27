@@ -107,6 +107,23 @@
   </ItemGroup>
 
   <!--
+    Markdig draws agents' Markdown in the web console. Every build already restores it through
+    Terminal.Gui, so this adds no new package to audit. The version is the one Terminal.Gui brings.
+  -->
+  <ItemGroup Label="Web">
+    <PackageVersion Include="Markdig" Version="1.3.2" />
+  </ItemGroup>
+
+  <!--
+    Playwright drives a browser for tools/Parley.Screens, the console's screenshots, and for
+    nothing else. Nothing shipped references it. The tool launches a browser already installed
+    on the machine (Edge or Chrome, by channel), so no browser download is part of a build.
+  -->
+  <ItemGroup Label="Tools">
+    <PackageVersion Include="Microsoft.Playwright" Version="1.65.1" />
+  </ItemGroup>
+
+  <!--
     xUnit v3. The entire v2 package family (xunit, xunit.core, xunit.assert) is marked
     deprecated on NuGet: legacy, security fixes only, all feature work moved to v3. The
     package name carries the product version in v3 so the package version itself can follow

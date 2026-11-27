@@ -24,6 +24,8 @@ namespace Parley.Terminal.Tests;
 /// over the top of a pane, or one that took its row twice, is the failure worth catching.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class MenuBarOnScreenTests
 {
     internal static BrokerDirectory Directory() =>

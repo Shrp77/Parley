@@ -18,6 +18,8 @@ namespace Parley.Cli.Tests;
 /// passed.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class MovedToTheTerminalTests
 {
     /// <summary>Every verb that moved.</summary>
@@ -30,6 +32,7 @@ public sealed class MovedToTheTerminalTests
     [
         "retire", "reinstate", "purge", "export", "force-conclude", "prune", "start",
         "archive", "unarchive", "destroy", "refusals", "clarifications", "results", "flags",
+        "spin-off", "move", "stop", "restart", "kill", "freeze", "unfreeze",
     ];
 
     [Theory]

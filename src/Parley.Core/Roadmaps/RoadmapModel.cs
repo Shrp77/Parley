@@ -77,7 +77,29 @@ public sealed record RoadmapProposal(
     long Size,
     ProposalState State,
     DateTimeOffset CreatedUtc,
-    DateTimeOffset? DecidedUtc);
+    DateTimeOffset? DecidedUtc)
+{
+    /// <summary>
+    /// How many items it has, when it was read as a heading: its title cut to <see cref="HeadingLength"/>, no items.
+    /// Null when <see cref="Content"/> carries every item.
+    /// </summary>
+    /// <remarks>
+    /// <b>A list is read as headings.</b> Roadmap text has no bound, so a list of whole proposals is as large as an agent
+    /// makes it, and a list is read on every refresh. A heading is small whatever the agent wrote; the whole proposal
+    /// is read when the person opens it.
+    /// </remarks>
+    public int? ItemCount { get; init; }
+
+    /// <summary>How many characters of a title or title hint a heading carries.</summary>
+    public const int HeadingLength = 200;
+
+    /// <summary>How many headings, newest first, a list carries; a count says how many there are in all.</summary>
+    /// <remarks>
+    /// Nothing bounds how many proposals an agent makes, so a list without a limit is as long as an agent makes it, and a
+    /// list is read on every refresh. Conversations are listed in pages for the same reason.
+    /// </remarks>
+    public const int HeadingLimit = 200;
+}
 
 /// <summary>
 /// One roadmap in a list (SPEC.md §10.2 <c>roadmaps</c>).
@@ -98,12 +120,15 @@ public sealed record RoadmapSummary(
 /// <param name="OpenExchanges">How many exchanges in it are open.</param>
 /// <param name="Collected">Whether every open exchange's request has been collected by its receiver.</param>
 /// <param name="CompleteExchanges">How many closed exchanges ended with a Result that did the work or answered.</param>
-/// <param name="BlockedExchanges">One when the latest closed exchange ended blocked, otherwise zero.</param>
-/// <param name="ClosedExchanges">How many closed exchanges ended with no Result, closed by the broker or a person.</param>
-/// <param name="Blocker">The blocker kind a blocked exchange named, or <see langword="null"/>.</param>
+/// <param name="BlockedExchanges">How many agents' latest answer on the person's requests was blocked.</param>
+/// <param name="ClosedExchanges">How many of the person's requests were closed with no Result, by the broker or a person.</param>
+/// <param name="Blocker">The blocker kind one of the exchanges counted in <c>BlockedExchanges</c> named, or <see langword="null"/>.</param>
 /// <param name="ClosedBy">Who closed the conversation, or <see langword="null"/> while it is not closed.</param>
 /// <param name="Destroyed">Whether the conversation was destroyed (SPEC.md §14).</param>
-/// <param name="FirstSentText">The words first sent for the item, or <see langword="null"/> if none were.</param>
+/// <param name="TextEditedSinceStarted">
+/// Whether the item's text was edited after the first request was sent into its conversation. Taken from the item's own
+/// edit record and not from comparing words, because the person may change the words before sending them.
+/// </param>
 /// <param name="OpenExchangeIds">
 /// The identifiers of the open exchanges, so a surface can join them to the wait-for graph and learn whose move each is.
 /// </param>
@@ -123,7 +148,7 @@ public sealed record ItemFacts(
     string? Blocker,
     string? ClosedBy,
     bool Destroyed,
-    string? FirstSentText,
+    bool TextEditedSinceStarted,
     IReadOnlyList<long> OpenExchangeIds)
 {
     /// <summary>Gets the open exchanges' identifiers.</summary>
@@ -214,7 +239,7 @@ public sealed record RoadmapChange(
 /// <param name="Outcome">Confirmed, declined or superseded.</param>
 /// <param name="CreatedUtc">When the decision was made.</param>
 /// <remarks>
-/// Not a message: it opens nothing, is owed nothing and wakes nobody, as a change notice for a file does not.
+/// Not a message: it opens nothing, is owed nothing and wakes nobody, as a gone notice for a file does not.
 /// </remarks>
 public sealed record RoadmapNotice(
     long ProposalId, string Title, ProposalState Outcome, DateTimeOffset CreatedUtc);

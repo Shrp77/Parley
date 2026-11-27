@@ -10,6 +10,7 @@ namespace Parley.Cli.Tests;
 /// Each refusal is checked by what is still in the location afterwards, not only by what was printed: a command that
 /// said "Nothing was removed." and removed something is the failure that matters.
 /// </remarks>
+[Integration]
 public sealed class FilesRemoveCommandTests : IAsyncDisposable
 {
     private const string Billing = FileLocationFixture.Billing;

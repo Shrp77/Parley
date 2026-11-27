@@ -18,6 +18,7 @@ namespace Parley.Store.Tests;
 /// shows up somewhere other than on the exchange itself.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FlagRepositoryTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

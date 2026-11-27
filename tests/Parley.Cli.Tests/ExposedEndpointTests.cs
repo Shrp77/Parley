@@ -20,6 +20,7 @@ namespace Parley.Cli.Tests;
 /// is what would make the warning silent on exactly the configuration that needs it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ExposedEndpointTests
 {
     [Theory]

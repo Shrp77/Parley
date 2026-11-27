@@ -1,5 +1,5 @@
-using System.Globalization;
 using System.Text;
+using Parley.Core;
 
 namespace Parley.Setup;
 
@@ -35,7 +35,8 @@ internal static class Quoting
     /// <param name="value">Whatever was in the file.</param>
     /// <returns>The same value without anything that could rearrange the line.</returns>
     /// <remarks>
-    /// Control, format, line-separator and paragraph-separator categories all go. Format is the one
+    /// Every character <see cref="PrintableLine.Breaks"/> names goes: control, format, line-separator and
+    /// paragraph-separator. Format is the one
     /// worth naming: it carries the bidirectional overrides, which are invisible and reverse the
     /// order of what follows — a role called <c>orders</c> can be made to read as something else
     /// entirely without a single visible character being wrong.
@@ -51,10 +52,7 @@ internal static class Quoting
 
         foreach (var rune in value.EnumerateRunes())
         {
-            if (CharUnicodeInfo.GetUnicodeCategory(rune.Value) is UnicodeCategory.Control
-                or UnicodeCategory.Format
-                or UnicodeCategory.LineSeparator
-                or UnicodeCategory.ParagraphSeparator)
+            if (PrintableLine.Breaks(rune))
             {
                 continue;
             }

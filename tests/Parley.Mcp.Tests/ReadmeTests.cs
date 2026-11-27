@@ -21,6 +21,7 @@ namespace Parley.Mcp.Tests;
 /// sentence — and strict about the two things a reader cannot recover on their own.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ReadmeTests
 {
     /// <summary>The README and the pages under <c>docs/</c>, normalised and located from the test assembly.</summary>

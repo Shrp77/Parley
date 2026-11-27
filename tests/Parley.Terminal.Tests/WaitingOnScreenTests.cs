@@ -31,6 +31,8 @@ namespace Parley.Terminal.Tests;
 /// Over a real socket, because what is being checked is that the broker is asked at all.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class WaitingOnScreenTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

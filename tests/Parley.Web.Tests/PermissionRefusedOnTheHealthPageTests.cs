@@ -13,6 +13,7 @@ namespace Parley.Web.Tests;
 /// stopped by a refused command would have told the person the agent had been retired. The sentence is the one the
 /// terminal's Health uses, from <see cref="Activities.RefusedFlag"/>, so the two cannot disagree.
 /// </remarks>
+[Unit]
 public sealed class PermissionRefusedOnTheHealthPageTests
 {
     [Fact]

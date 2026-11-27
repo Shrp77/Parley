@@ -21,6 +21,13 @@ public sealed record ProjectHealth(
     /// <summary>Whether this project's broker answered at all.</summary>
     public bool Reachable => Problem is null;
 
+    /// <summary>Whether the project's endpoint cannot be dialled as written, rather than its broker not answering.</summary>
+    /// <remarks>
+    /// Two different repairs: a broker that is down is started, an endpoint that is not an address is corrected in
+    /// <c>project.json</c>. Saying "not answering" for both sends somebody to start a broker that could never be reached.
+    /// </remarks>
+    public bool Undiallable => Problem?.StartsWith(UnusableEndpoint.Said, StringComparison.Ordinal) == true;
+
     /// <summary>Whether it answered with a version this console was built against.</summary>
     public bool Agrees =>
         Reachable && string.Equals(Speaks, ProtocolVersion.Current, StringComparison.Ordinal);
@@ -60,7 +67,7 @@ public sealed record ProjectHealth(
             warnings.Add(
                 $"This project's store is not the shape this broker expects ({string.Join("; ", store.Take(3))}"
                 + (store.Count > 3 ? $"; and {store.Count - 3} more" : string.Empty)
-                + "). It was made by another build. Reset the project's store, or add what is missing, before relying on it.");
+                + "). It was made by another build. Do not reset it, which would lose its work: see `A store from another build` in docs/operating.md.");
         }
 
         return warnings;

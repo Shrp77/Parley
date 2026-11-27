@@ -20,9 +20,15 @@ namespace Parley.Server.Tests;
 /// <c>permission_denials</c> fails it whatever message it lands in.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class AgentsCannotSeeTurnsTests
 {
-    private static readonly string[] Forbidden = ["turn", "permission_denial", "permission_refus"];
+    // "background" since 039 put an agent's background work in the turn standing (RegistryRow.background_tasks); "working"
+    // and "busy" because that is how a surface says a turn is running. Enum values are read too: a presence of WORKING is
+    // turn information however its field is named.
+    // "running_task" and "task_kind" since 043 named each background task on the registry row (RegistryRow.running_tasks).
+    private static readonly string[] Forbidden =
+        ["turn", "permission_denial", "permission_refus", "background", "working", "busy", "running_task", "task_kind"];
 
     [Fact]
     public void No_reply_the_Agents_service_gives_mentions_a_turn()
@@ -69,6 +75,15 @@ public sealed class AgentsCannotSeeTurnsTests
             if (field.FieldType == FieldType.Message)
             {
                 Walk(field.MessageType, path, seen, found);
+            }
+
+            if (field.FieldType == FieldType.Enum)
+            {
+                found.AddRange(field.EnumType.Values
+                    // NOT_YOUR_TURN is whose turn it is to speak in an exchange, not a process's turn.
+                    .Where(value => !value.Name.EndsWith("_NOT_YOUR_TURN", StringComparison.Ordinal))
+                    .Where(value => Forbidden.Any(word => value.Name.Contains(word, StringComparison.OrdinalIgnoreCase)))
+                    .Select(value => $"{where}={value.Name}"));
             }
         }
     }

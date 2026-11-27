@@ -7,6 +7,7 @@ namespace Parley.Store.Tests;
 /// Migration mechanics only: version tracking, idempotency, and resource discovery. The
 /// constraints the migration creates are covered by <see cref="SchemaIntegrityTests"/>.
 /// </summary>
+[Integration]
 public sealed class SchemaMigratorTests
 {
     [Fact]

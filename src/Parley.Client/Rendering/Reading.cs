@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Parley.Core;
 
@@ -142,20 +143,59 @@ public static class Reading
     /// <summary>Lays a conversation out for reading, with what each reply settled beneath it (SPEC.md §5.6).</summary>
     /// <param name="export">The conversation: its messages and the state of its exchanges.</param>
     /// <param name="zone">The zone to render times in, or <see langword="null"/> for this machine's.</param>
+    /// <param name="conversation">The conversation being read, for what moved in or out of it; <see langword="null"/> leaves that out.</param>
+    /// <param name="files">
+    /// The conversation's placed files, each drawn as a line where its placement time falls (SPEC.md §9.5); <see langword="null"/>
+    /// leaves them out.
+    /// </param>
     /// <returns>The transcript, line by line.</returns>
     /// <remarks>
     /// <b>From the record, never from the reply's words.</b> The person must see what an agent decided its words settled,
     /// and the broker cannot check that a model said so — so the list is drawn from the exchanges the reply closed, the
     /// way <see cref="Settled"/> finds them, beneath the reply that closed them.
     /// </remarks>
-    public static IReadOnlyList<TranscriptLine> Lines(ConversationExport export, TimeZoneInfo? zone = null)
+    public static IReadOnlyList<TranscriptLine> Lines(
+        ConversationExport export, TimeZoneInfo? zone = null, string? conversation = null, IReadOnlyList<SharedFile>? files = null)
     {
         ArgumentNullException.ThrowIfNull(export);
 
         var lines = new List<TranscriptLine>();
 
+        // By the placement record, never by a message's words (SPEC.md §9.5, §13).
+        var placed = new Queue<SharedFile>(Files.Placements.InOrder(files ?? []));
+
+        // Looked up by id once each, not searched for at every header: that was quadratic in the messages (lens 1 round 17).
+        var byId = export.Messages.GroupBy(m => m.Id).ToDictionary(g => g.Key, g => g.First());
+        var readsBy = (export.Reads ?? []).Where(r => r.ExchangeId is not null).ToLookup(r => r.ExchangeId!.Value);
+
+        // A move's note sits where the entries are, or were, by its earliest message's place in the broker's order (SPEC.md §5.0).
+        var moves = new Queue<MoveRecord>(
+            conversation is null ? [] : (export.Moves ?? []).Where(m => m.FirstMessage is not null).OrderBy(m => m.FirstMessage));
+
+        // Each goes straight after the message the agent last sent or received here (SPEC.md §5.0).
+        var wrote = new Queue<WroteElsewhere>(
+            conversation is null ? [] : (export.WroteElsewhere ?? []).OrderBy(w => w.AfterMessage).ThenBy(w => w.Message));
+
         foreach (var line in Lines(export.Messages, zone))
         {
+            if (line.Kind == LineKind.Header && line.Message is { } at)
+            {
+                while (wrote.Count > 0 && wrote.Peek().AfterMessage < at)
+                {
+                    lines.Add(new TranscriptLine(Pad(ConversationWording.WroteElsewhereLine(wrote.Dequeue())), LineKind.Annotation, null));
+                }
+
+                while (moves.Count > 0 && moves.Peek().FirstMessage <= at)
+                {
+                    lines.Add(new TranscriptLine(Pad(ConversationWording.MoveLine(moves.Dequeue(), conversation!, zone)), LineKind.Annotation, null));
+                }
+
+                foreach (var file in Files.Placements.Before(placed, byId[at].CreatedUtc))
+                {
+                    lines.Add(new TranscriptLine(Pad(Files.Placements.Line(file, zone)), LineKind.Annotation, null));
+                }
+            }
+
             lines.Add(line);
 
             if (line.Kind != LineKind.Header || line.Message is not { } id)
@@ -163,16 +203,171 @@ public static class Reading
                 continue;
             }
 
-            var message = export.Messages.First(m => m.Id == id);
+            var message = byId[id];
 
             if (Settled(message, export) is { Count: > 0 } settled)
             {
                 lines.Add(new TranscriptLine(Pad(SettledLine(settled)), LineKind.Annotation, null, id));
             }
+
+            if (RoleRequest(message, export) is { } role)
+            {
+                lines.Add(new TranscriptLine(Pad(role), LineKind.Annotation, null, id));
+            }
+
+            if (message.Type == MessageType.Request && readsBy[message.ExchangeId].ToList() is { Count: > 0 } ofExchange && ReadLine(ofExchange, zone) is { } read)
+            {
+                lines.Add(new TranscriptLine(Pad(read), LineKind.Annotation, null, id));
+            }
+        }
+
+        foreach (var file in placed)
+        {
+            lines.Add(new TranscriptLine(Pad(Files.Placements.Line(file, zone)), LineKind.Annotation, null));
+        }
+
+        // What the project's agents searched the history for, for the person only (SPEC.md §5.8).
+        foreach (var search in SearchLines(export.Reads))
+        {
+            lines.Add(new TranscriptLine(Pad("Searched the history: " + HistoryText.Neutralised(search)), LineKind.Annotation, null));
+        }
+
+        if (conversation is not null)
+        {
+            foreach (var left in wrote)
+            {
+                lines.Add(new TranscriptLine(Pad(ConversationWording.WroteElsewhereLine(left)), LineKind.Annotation, null));
+            }
+
+            foreach (var move in moves.Concat((export.Moves ?? []).Where(m => m.FirstMessage is null)))
+            {
+                lines.Add(new TranscriptLine(Pad(ConversationWording.MoveLine(move, conversation, zone)), LineKind.Annotation, null));
+            }
+
+            foreach (var pair in export.SettledElsewhere ?? [])
+            {
+                lines.Add(new TranscriptLine(Pad(ConversationWording.SettledLine(pair)), LineKind.Annotation, null));
+            }
         }
 
         return lines;
     }
+
+    /// <summary>Where a Request to a role stands, beneath the first of its Requests in the conversation (SPEC.md §5.5).</summary>
+    /// <param name="message">A message in the conversation.</param>
+    /// <param name="export">The conversation.</param>
+    /// <returns>The sentence, or <see langword="null"/> for any message but the first Request of a Request to a role.</returns>
+    /// <remarks>
+    /// Counted from how each member's exchange closed, not from the messages present, so a Result whose words retention
+    /// pruned still counts as an answer. Said once per Request, beneath its first member, since every member's Request
+    /// carries the same words.
+    /// </remarks>
+    public static string? RoleRequest(Message message, ConversationExport export)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        ArgumentNullException.ThrowIfNull(export);
+
+        if (message.Type != MessageType.Request
+            || export.Exchanges.FirstOrDefault(e => e.ExchangeId == message.ExchangeId)?.RequestGroup is not { } group)
+        {
+            return null;
+        }
+
+        var members = export.Exchanges.Where(e => e.RequestGroup == group).Select(e => e.ExchangeId).ToHashSet();
+        var first = export.Messages.FirstOrDefault(m => m.Type == MessageType.Request && members.Contains(m.ExchangeId));
+
+        if (first?.Id != message.Id)
+        {
+            return null;
+        }
+
+        var answered = export.Exchanges.Count(e => members.Contains(e.ExchangeId)
+                                                    && e.Outcome is ExchangeOutcome.Complete or ExchangeOutcome.Blocked);
+
+        return RoleRequestLine(message.To.Role, members.Count, answered);
+    }
+
+    /// <summary>A Request to a role's standing, as one sentence.</summary>
+    /// <param name="role">The role it went to.</param>
+    /// <param name="asked">How many agents it reached.</param>
+    /// <param name="answered">How many have answered.</param>
+    /// <returns>The sentence.</returns>
+    public static string RoleRequestLine(string role, int asked, int answered) =>
+        $"Sent to every agent in role {role} ({asked}): {answered} of {asked} answered.";
+
+    /// <summary>Who read an exchange, as one sentence beneath its first message (SPEC.md §5.8).</summary>
+    /// <param name="reads">What the export carries of what agents read.</param>
+    /// <param name="exchangeId">The exchange.</param>
+    /// <param name="zone">The zone the times are shown in, or <see langword="null"/> for this machine's.</param>
+    /// <returns>For example <c>Read by billing@acme at 09:30</c>, or <see langword="null"/> when nobody read it.</returns>
+    /// <remarks>
+    /// Said to the person only: no agent can read who read what. At most five readers are named and the rest counted.
+    /// </remarks>
+    public static string? ReadLine(IReadOnlyList<HistoryRead>? reads, long exchangeId, TimeZoneInfo? zone) =>
+        ReadLine((reads ?? []).Where(r => r.ExchangeId == exchangeId).ToList(), zone);
+
+    /// <summary>The same line from the reads of one exchange already picked out.</summary>
+    /// <param name="ofExchange">The tally rows of one exchange: one for each agent that read it.</param>
+    /// <param name="zone">The zone the times are shown in, or <see langword="null"/> for this machine's.</param>
+    /// <returns>The line, or <see langword="null"/> when nobody read it.</returns>
+    /// <remarks>
+    /// The store keeps one row for each agent and exchange with how often, so an agent reading a great deal is one entry and
+    /// cannot push another out of the line. Callers drawing a long conversation pick the rows out once, by exchange, and
+    /// call this for each request, so the cost does not grow with requests times rows.
+    /// </remarks>
+    public static string? ReadLine(IReadOnlyList<HistoryRead> ofExchange, TimeZoneInfo? zone)
+    {
+        ArgumentNullException.ThrowIfNull(ofExchange);
+
+        if (ofExchange.Count == 0)
+        {
+            return null;
+        }
+
+        zone ??= TimeZoneInfo.Local;
+
+        var readers = ofExchange.OrderBy(r => r.CreatedUtc).ToList();
+
+        var named = readers.Take(HistoryLimits.ReadersNamed).Select(r =>
+            $"{r.Reader.Value} at {TimeZoneInfo.ConvertTime(r.CreatedUtc, zone).ToString("d MMM HH:mm", CultureInfo.InvariantCulture)}"
+            + (r.Count > 1 ? $" ({r.Count} times)" : string.Empty));
+
+        return "Read by " + string.Join(", ", named) + (readers.Count > HistoryLimits.ReadersNamed ? $" and {readers.Count - HistoryLimits.ReadersNamed} more" : string.Empty);
+    }
+
+    /// <summary>What each agent searched the history for lately, one line for each (SPEC.md §5.8).</summary>
+    /// <param name="reads">What the export carries of what agents read.</param>
+    /// <returns>
+    /// One line for each of the newest agents that searched, how many searches in all and the newest with its matches, and a last
+    /// line counting the rest.
+    /// </returns>
+    /// <remarks>
+    /// For the person only. The store keeps one row for each agent's searches, so an agent cannot make its searches vanish by
+    /// making many; and the agents past those shown are counted, so none is dropped without a word. The words are the agent's own
+    /// and are neutralised by whoever draws the line.
+    /// </remarks>
+    public static IReadOnlyList<string> SearchLines(IReadOnlyList<HistoryRead>? reads)
+    {
+        var searchers = (reads ?? []).Where(r => r.ExchangeId is null).OrderByDescending(r => r.CreatedUtc).ToList();
+
+        var lines = searchers
+            .Take(HistoryLimits.SearchersShown)
+            .Select(r => $"{r.Reader.Value}: {r.Count} {(r.Count == 1 ? "search" : "searches")}, newest “{Unquoted(r.Words)}”"
+                + $" ({r.Matches ?? 0} {(r.Matches == 1 ? "match" : "matches")})")
+            .ToList();
+
+        if (searchers.Count > HistoryLimits.SearchersShown)
+        {
+            lines.Add($"{searchers.Count - HistoryLimits.SearchersShown} more agents searched");
+        }
+
+        return lines;
+    }
+
+    /// <summary>An agent's words with the curly quotes that frame them in <see cref="SearchLines"/> made plain.</summary>
+    /// <remarks>Otherwise words could close the frame and read as a second entry of the console's own.</remarks>
+    private static string Unquoted(string? words) =>
+        (words ?? string.Empty).Replace('“', '"').Replace('”', '"');
 
     /// <summary>What a reply settled, as one sentence beneath it.</summary>
     /// <param name="settled">The start of each question settled.</param>
@@ -332,9 +527,10 @@ public static class Reading
             return [];
         }
 
-        return text.Replace("\r\n", "\n", StringComparison.Ordinal)
-                   .Replace("\r", "\n", StringComparison.Ordinal)
-                   .Split('\n');
+        // Every break .NET itself breaks at (CR, LF, CRLF, NEL, form feed, U+2028, U+2029), never only CR and LF: a surface
+        // drawing these rows breaks them that way again, and text after a break this missed began a row with no indent,
+        // where only a header may stand (review, lens 2 run 81).
+        return text.ReplaceLineEndings("\n").Split('\n');
     }
 
     /// <summary>Lays a JSON document out over lines, or returns it unchanged.</summary>

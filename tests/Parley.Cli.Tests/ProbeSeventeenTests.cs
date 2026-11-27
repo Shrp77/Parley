@@ -20,6 +20,7 @@ namespace Parley.Cli.Tests;
 /// decides which entry a withdrawal takes.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeSeventeenTests : IDisposable
 {
     private readonly string _root =

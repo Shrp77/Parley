@@ -22,6 +22,7 @@ namespace Parley.Cli.Tests;
 /// else.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeSixteenTests : IDisposable
 {
     private readonly string _root =
@@ -195,7 +196,7 @@ public sealed class ProbeSixteenTests : IDisposable
         var billing = AgentIdentity.Mint();
 
         var orders = await SeedAsync(
-            Workspace("orders"), "claude", "/srv/orders", (billing, "/srv/billing"));
+            Workspace("orders"), "claude", Workspace("orders"), (billing, "/srv/billing"));
 
         await Enrolment.WithdrawAsync(
             Workspace("orders"), "orders", "alpha", Catalogue, TestContext.Current.CancellationToken);

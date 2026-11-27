@@ -26,6 +26,7 @@ namespace Parley.Cli.Tests;
 /// refuses a second open whoever makes it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SecondServeTests : IDisposable
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(30);
@@ -89,7 +90,7 @@ public sealed class SecondServeTests : IDisposable
 
                     return Task.FromResult(0);
                 },
-                alongside: (_, _, _) =>
+                alongside: (_, _, _, _) =>
                 {
                     _ = Interlocked.Increment(ref webUis);
 

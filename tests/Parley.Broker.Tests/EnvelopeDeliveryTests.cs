@@ -19,6 +19,7 @@ namespace Parley.Broker.Tests;
 /// trusted.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class EnvelopeDeliveryTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");
@@ -157,8 +158,8 @@ public sealed class EnvelopeDeliveryTests : IDisposable
     [Fact]
     public async Task A_drain_returns_only_traffic_addressed_to_the_caller()
     {
-        // The isolation of §1 rests on this. Everything else guarding it — no history operation, no search —
-        // is undone the moment a drain hands over a message addressed elsewhere.
+        // The isolation of §1 rests on this. Everything else guarding it, such as history being read only by number
+        // or by search and framed as a record, is undone the moment a drain hands over a message addressed elsewhere.
         var inventory = AgentName.Create("inventory@test");
         Requests.Register(_connection, inventory);
 

@@ -20,6 +20,7 @@ namespace Parley.Core.Tests;
 /// is invisible to a reader and to a diff.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class SharedFileNameTests
 {
     [Theory]
@@ -30,6 +31,12 @@ public sealed class SharedFileNameTests
     [InlineData("log_2026-09-14.txt")]
     [InlineData("con-notes.md")]
     [InlineData("console.txt")]
+    [InlineData("shot.png")]
+    [InlineData("SHOT.PNG")]
+    [InlineData("photo.jpg")]
+    [InlineData("photo.jpeg")]
+    [InlineData("loop.gif")]
+    [InlineData("still.webp")]
     public void A_well_formed_name_is_accepted(string candidate)
     {
         Assert.Equal(SharedFileNameProblem.None, SharedFileName.Check(candidate));
@@ -44,6 +51,9 @@ public sealed class SharedFileNameTests
     [InlineData("notes")]
     [InlineData("notes.md.exe")]
     [InlineData("archive.zip")]
+    [InlineData("drawing.svg")]
+    [InlineData("shot.png.exe")]
+    [InlineData("page.html")]
     public void Any_other_extension_is_refused_with_the_way_to_place_it(string candidate)
     {
         Assert.Equal(SharedFileNameProblem.ExtensionNotAllowed, SharedFileName.Check(candidate));
@@ -213,6 +223,33 @@ public sealed class SharedFileNameTests
         Assert.Contains("will be named 'a_b.md'", said, StringComparison.Ordinal);
         Assert.Contains("('A_B.md')", said, StringComparison.Ordinal);
         Assert.DoesNotContain("\n", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_not_listed_sentence_says_nothing_placed_them_and_how_a_file_is_shared()
+    {
+        // Files enter the location only by placement (SPEC.md §9.5), so a file in a folder that nothing placed is counted
+        // whatever its name, and the person is told how to share one.
+        var said = SharedFileListing.NotListedSentenceFor(1)!;
+
+        Assert.Contains("nothing placed them", said, StringComparison.Ordinal);
+        Assert.Contains("Place a file through Parley", said, StringComparison.Ordinal);
+        Assert.Null(SharedFileListing.NotListedSentenceFor(0));
+    }
+
+    [Fact]
+    public void The_extensions_in_words_are_exactly_the_extensions_accepted()
+    {
+        // Without this tie, an extension added to AllowedExtensions and not to the words (or the reverse) had every
+        // refusal and every prompt name the wrong set, sending a person or an agent to rename a file that would have
+        // been accepted (review, lens 3 round 32).
+        var named = System.Text.RegularExpressions.Regex.Matches(SharedFileName.AllowedExtensionsInWords, @"\.[A-Za-z0-9]+")
+            .Select(match => match.Value)
+            .ToList();
+
+        Assert.Equal(
+            SharedFileName.AllowedExtensions.Order(StringComparer.Ordinal),
+            named.Order(StringComparer.Ordinal));
     }
 
     [Fact]

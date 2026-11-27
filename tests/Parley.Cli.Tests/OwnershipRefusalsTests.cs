@@ -22,6 +22,7 @@ namespace Parley.Cli.Tests;
 /// somebody a fact that is not true.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class OwnershipRefusalsTests
 {
     private static AgentName Elsewhere(string machine = "server-b") =>

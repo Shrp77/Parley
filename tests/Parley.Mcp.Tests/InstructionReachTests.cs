@@ -19,6 +19,7 @@ namespace Parley.Mcp.Tests;
 /// handed, by name, so a tool that acquired the word cannot arrive quietly.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class InstructionReachTests
 {
     [Fact]

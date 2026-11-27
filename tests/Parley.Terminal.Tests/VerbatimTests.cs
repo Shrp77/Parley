@@ -28,6 +28,8 @@ namespace Parley.Terminal.Tests;
 /// the message around it — and a corrupted envelope is not a rendering bug, it is a forged field.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class VerbatimTests : IAsyncDisposable
 {
     /// <summary>Everything that breaks an envelope built by concatenation, in one sentence.</summary>

@@ -190,17 +190,41 @@ public sealed class StoreLock : IDisposable
             CultureInfo.InvariantCulture,
             $"pid={Environment.ProcessId}\nstarted={started:O}\nbuild={Build()}\n");
 
+        // Written beside the name and renamed over it, so a link something else left at the name is replaced, never
+        // written through to whatever it reaches. The staging name is new, so nothing can be waiting there.
+        var owner = StorePath + StoreFiles.Owner;
+        var pending = owner + "." + Guid.NewGuid().ToString("N");
+
         try
         {
-            File.WriteAllText(StorePath + StoreFiles.Owner, record);
+            using (var written = new FileStream(pending, FileMode.CreateNew, FileAccess.Write))
+            {
+                written.Write(System.Text.Encoding.UTF8.GetBytes(record));
+            }
+
+            File.Move(pending, owner, overwrite: true);
         }
         catch (IOException)
         {
             // The label, not the claim.
+            TryDelete(pending);
         }
         catch (UnauthorizedAccessException)
         {
             // The same.
+            TryDelete(pending);
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception left) when (left is IOException or UnauthorizedAccessException)
+        {
+            // A staging copy of a label; nothing reads it.
         }
     }
 

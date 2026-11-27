@@ -21,6 +21,7 @@ namespace Parley.Server.Tests;
 /// here was watched to admit the forgery with its guard removed.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class NobodyIsParleyTests
 {
     private static Wire.OpenRequest Request(string from, string to, string responder = "test") =>

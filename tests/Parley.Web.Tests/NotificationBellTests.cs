@@ -7,6 +7,7 @@ namespace Parley.Web.Tests;
 /// <summary>
 /// The bell beside the person's name: what the console told them, kept so it can be read again.
 /// </summary>
+[Integration]
 public sealed class NotificationBellTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

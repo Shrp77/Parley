@@ -45,13 +45,18 @@ public static class ConsoleHost
     /// The broker to offer when this machine's manifest names no projects — what every other
     /// operator command would have connected to. Null to offer none.
     /// </param>
+    /// <param name="deploymentRoot">
+    /// The deployment root whose settings.json may list further host names (<c>webUi.hosts</c>), or null to answer only
+    /// this machine's own names. A seam: <see cref="RunAsync"/> passes the machine's root, and a test passes its own.
+    /// </param>
     /// <returns>The application, built and not yet running.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="args"/> is null.</exception>
     public static WebApplication Build(
         string[] args,
         string? address = null,
         TextWriter? warn = null,
-        string? fallbackBroker = null)
+        string? fallbackBroker = null,
+        string? deploymentRoot = null)
     {
         ArgumentNullException.ThrowIfNull(args);
 
@@ -114,7 +119,29 @@ public static class ConsoleHost
         // token and posts it back. Antiforgery is the only thing between a
         // browser and purge and every transcript, so the Host is checked before anything else. Set only when
         // the deployment has not chosen its own `AllowedHosts`.
-        builder.Configuration["AllowedHosts"] ??= AllowedHosts(chosen);
+        // The names the person listed in settings.json (webUi.hosts), for a forwarder such as Tailscale's serve that hands
+        // this loopback console a request under its own name. Read once: a change takes the console's next start.
+        IReadOnlyList<string> listed = [];
+        IReadOnlyList<string> leftOut = [];
+
+        if (deploymentRoot is { Length: > 0 })
+        {
+            listed = ParleySettings.ReadWebUiHosts(deploymentRoot, out leftOut);
+        }
+
+        foreach (var why in leftOut)
+        {
+            (warn ?? Console.Error).WriteLine("Parley console: " + why);
+        }
+
+        if (listed.Count > 0 && builder.Configuration["AllowedHosts"] is null)
+        {
+            (warn ?? Console.Error).WriteLine(
+                "Parley console: also answering to " + string.Join(", ", listed) + " (settings.json, webUi.hosts). "
+                + "Anyone who can reach those names acts as you: the console has no sign-in.");
+        }
+
+        builder.Configuration["AllowedHosts"] ??= AllowedHosts(chosen, listed);
 
         // The application part named rather than discovered. Razor Pages are found by walking the
         // entry assembly and its dependencies, and the entry assembly is not this one when a
@@ -139,7 +166,38 @@ public static class ConsoleHost
         builder.Services.AddSingleton<Notifications.NotificationLog>();
         builder.Services.AddSingleton<EnrolmentRuns>();
 
+        // What the Inbox last asked about which questions are still open. One for the process, for the same reason.
+        builder.Services.AddSingleton<Parley.Client.Seating.StillOpenAsks>();
+
         var app = builder.Build();
+
+        // **Nothing another site starts reaches a page.** A page here does things on a GET: it takes the person's seat and
+        // records their mail as delivered. An image or a link on any site the person visits would send that GET with the
+        // console's own Host, which the host check admits, and forge the delivery record (review, lens 2 run 66). The
+        // browser says who started a request; another site, or another port on this machine, is refused before any page
+        // runs. A typed address or a bookmark says `none`, the console's own pages `same-origin`.
+        //
+        // A listed name must also say who asked. A browser sends Sec-Fetch-Site only to a secure origin: loopback is one, and a
+        // listed name forwarded over HTTPS is one, but over plain HTTP (a port proxy, `tailscale serve --http`) nothing
+        // arrives, and an image or a navigation another site started reached a page that acts (review, lens 2 run A on
+        // d99806d9). So a listed name is answered only to a browser that marks its requests, which means only over HTTPS.
+        app.Use(async (context, next) =>
+        {
+            if (StartedElsewhere(context)
+                || (listed.Count > 0
+                    && !context.Request.Headers.ContainsKey("Sec-Fetch-Site")
+                    // The header as sent: Request.Host decodes an xn-- label to Unicode, which the ASCII list never matched
+                    // (review, lens 2 run 3 on 6fde4ef3).
+                    && listed.Contains(new HostString(context.Request.Headers.Host.ToString()).Host, StringComparer.OrdinalIgnoreCase)))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsync(StartedElsewhereSaid, context.RequestAborted).ConfigureAwait(false);
+
+                return;
+            }
+
+            await next(context).ConfigureAwait(false);
+        });
 
         // **No other page may frame this one.** The console can purge an agent and read every transcript, and a page in
         // another tab that frames it can place its own buttons over the console's and have the person press them
@@ -150,10 +208,15 @@ public static class ConsoleHost
         {
             var headers = context.Response.Headers;
 
-            headers["X-Frame-Options"] = "DENY";
+            // The one page the console frames itself, a roadmap item's conversation, may be framed by the console's own
+            // pages and no other; every other page by nothing.
+            var framed = Embedded(context);
+
+            headers["X-Frame-Options"] = framed ? "SAMEORIGIN" : "DENY";
             headers["X-Content-Type-Options"] = "nosniff";
             headers["Referrer-Policy"] = "no-referrer";
-            headers["Content-Security-Policy"] = "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'";
+            headers["Content-Security-Policy"] =
+                $"frame-ancestors {(framed ? "'self'" : "'none'")}; base-uri 'none'; object-src 'none'; form-action 'self'";
 
             await next(context).ConfigureAwait(false);
         });
@@ -164,20 +227,85 @@ public static class ConsoleHost
         return app;
     }
 
-    /// <summary>The brand images and the icon font, and the names they are reached by.</summary>
+    /// <summary>What a request another site started is told.</summary>
+    internal const string StartedElsewhereSaid =
+        "This console answers only its own pages, and an address typed or bookmarked. Open it from its own address.";
+
+    /// <summary>Whether the browser says another site started a request.</summary>
+    /// <param name="context">The request.</param>
+    /// <returns>
+    /// True when <c>Sec-Fetch-Site</c> is <c>cross-site</c> or <c>same-site</c>, or <c>Sec-Purpose</c> says the browser is
+    /// prefetching or prerendering.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// A speculative load is refused whoever asked for it. Chrome sends speculation rules from another loopback port's
+    /// page as <c>Sec-Fetch-Site: none</c>, the same as a typed address, so the site header alone let that page have the
+    /// Inbox run and mark the person's mail delivered with the person never seeing it (review, lens 2 run S3 on
+    /// 3b752970). A page the person then opens is fetched again, so nothing they asked for is lost.
+    /// </para>
+    /// <para>
+    /// <c>same-site</c> is refused too: on a loopback address every port is the same site, so another program's page on
+    /// this machine reads as one. A request with no such header comes from something that is not a browser, or one too
+    /// old to send it, and is left to the host check.
+    /// </para>
+    /// </remarks>
+    internal static bool StartedElsewhere(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (context.Request.Headers["Sec-Purpose"]
+            .Any(line => (line ?? string.Empty).Contains("prefetch", StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        // Every value: a header written twice reads as one joined text ('none,cross-site'), which no comparison matched.
+        return context.Request.Headers["Sec-Fetch-Site"]
+            .SelectMany(line => (line ?? string.Empty).Split(','))
+            .Select(site => site.Trim())
+            .Any(site => string.Equals(site, "cross-site", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(site, "same-site", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Whether a request is the console framing one of its own conversation pages.</summary>
+    /// <param name="context">The request.</param>
+    /// <returns>True for the conversation page asked for with <c>embed</c> and loaded into a frame.</returns>
+    /// <remarks>
+    /// <b>Embedded drops the console's frame, and with it the project's name.</b> An agent's message renders as live
+    /// links, so a link with <c>embed</c> opened as a page of its own would hide which project the person's act lands in.
+    /// So only the conversation page embeds, the one a roadmap's item frame loads, and only when the browser says it is
+    /// loading a frame (<c>Sec-Fetch-Dest</c>, which a page cannot set for a link the person follows).
+    /// </remarks>
+    internal static bool Embedded(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        return context.Request.Query.ContainsKey("embed")
+            && context.Request.Path.StartsWithSegments("/Conversations/Detail", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(context.Request.Headers["Sec-Fetch-Dest"], "iframe", StringComparison.Ordinal);
+    }
+
+    /// <summary>The brand images, the fonts and the stylesheets, and the names they are reached by.</summary>
     /// <remarks>
     /// A fixed table rather than a name composed from the route. The alternative reads a
     /// manifest resource named by whatever a caller asked for, which is the same shape as
     /// serving a file named by a caller — and while assembly resources hold no directories to
     /// escape into, a lookup that can be pointed at anything is not worth having for the sake of
-    /// three entries. The font is Material Symbols Outlined (Apache License 2.0), cut down to
-    /// the icons the console names; see the comment beside it in the layout.
+    /// three entries. The icon font is Material Symbols Outlined (Apache License 2.0), cut down to
+    /// the icons the console names; see the comment beside it in the layout. The text face is Roboto Flex (SIL Open Font
+    /// License 1.1), cut to Latin with only its weight and optical size left to vary, and its licence is served beside it,
+    /// as the licence asks of anything that distributes the font.
     /// </remarks>
     private static readonly (string Route, string Resource, string ContentType)[] Brand =
     [
         ("icon.png", "Parley.Web.Brand.icon.png", "image/png"),
         ("wordmark.png", "Parley.Web.Brand.wordmark.png", "image/png"),
-        ("material-symbols.woff2", "Parley.Web.Brand.material-symbols.woff2", "font/woff2")
+        ("material-symbols.woff2", "Parley.Web.Brand.material-symbols.woff2", "font/woff2"),
+        ("roboto-flex.woff2", "Parley.Web.Brand.roboto-flex.woff2", "font/woff2"),
+        ("roboto-flex-license.txt", "Parley.Web.Brand.RobotoFlex-OFL.txt", "text/plain; charset=utf-8"),
+        ("tokens.css", "Parley.Web.Brand.tokens.css", "text/css; charset=utf-8"),
+        ("components.css", "Parley.Web.Brand.components.css", "text/css; charset=utf-8")
     ];
 
     /// <summary>Serves the brand images out of the assembly.</summary>
@@ -195,6 +323,25 @@ public static class ConsoleHost
         }
 
         app.MapGet("/favicon.ico", (HttpContext context) => Image(context, Brand[0].Resource, Brand[0].ContentType));
+
+        // The person's palette as a stylesheet (feature 042): a ready-made one by name, or one built from a base hue,
+        // chroma and harmony. The query comes from the person's browser storage, so only a known name or whole numbers in
+        // range are taken, and nothing from it but computed colours reaches the response.
+        app.MapGet("/brand/palette.css", (HttpContext context) =>
+        {
+            var query = context.Request.Query;
+            var palette = Palettes.Palette.FromQuery(
+                query["name"].FirstOrDefault(), query["hue"].FirstOrDefault(), query["chroma"].FirstOrDefault(), query["harmony"].FirstOrDefault());
+
+            if (palette is null)
+            {
+                return Results.BadRequest();
+            }
+
+            context.Response.Headers.CacheControl = "public, max-age=86400";
+
+            return Results.Text(Palettes.Scheme.Stylesheet(palette), "text/css; charset=utf-8");
+        });
     }
 
     /// <summary>Reads one embedded file, as a response.</summary>
@@ -229,7 +376,18 @@ public static class ConsoleHost
     /// <param name="fallbackBroker">
     /// The broker to offer when this machine's manifest names no projects. Null to offer none.
     /// </param>
+    /// <param name="serving">
+    /// Called once the console has bound and started, with the addresses it listens on. Null to be told nothing.
+    /// </param>
     /// <param name="cancellationToken">Stops the console.</param>
+    /// <remarks>
+    /// <para>The machine's deployment root is found here, at the top, and handed to <see cref="Build"/>.</para>
+    /// <para>
+    /// <b>Told after the start, never before.</b> A broker that starts the console announces it to a person only once
+    /// this has been called. Whether the address accepts a connection is no answer: another program can hold it while
+    /// this console fails to bind.
+    /// </para>
+    /// </remarks>
     /// <returns>A task completing when the console stops.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="args"/> is null.</exception>
     public static async Task RunAsync(
@@ -237,9 +395,11 @@ public static class ConsoleHost
         string? address = null,
         TextWriter? warn = null,
         string? fallbackBroker = null,
+        Func<IReadOnlyCollection<string>, Task>? serving = null,
         CancellationToken cancellationToken = default)
     {
-        var app = Build(args, address, warn, fallbackBroker);
+        var app = Build(
+            args, address, warn, fallbackBroker, ProjectManifest.Locate(null, Environment.GetEnvironmentVariable));
 
         // Started and waited on separately rather than through RunAsync, which takes no token,
         // so the caller's cancellation stops the console: one that ignored the interrupt would
@@ -248,6 +408,12 @@ public static class ConsoleHost
 
         try
         {
+            // StartAsync returns once Kestrel has bound every address, so what is read here is what it bound.
+            if (serving is not null)
+            {
+                await serving([.. app.Urls]).ConfigureAwait(false);
+            }
+
             await app.WaitForShutdownAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -261,13 +427,14 @@ public static class ConsoleHost
 
     /// <summary>The Host names this console answers to, separated as <c>AllowedHosts</c> reads them.</summary>
     /// <param name="chosen">The address it binds, or null for the loopback default.</param>
-    /// <returns>The loopback names, and each host the bind address names.</returns>
+    /// <param name="listed">Further whole host names the person listed (settings.json, <c>webUi.hosts</c>).</param>
+    /// <returns>The loopback names, each host the bind address names, and the listed names.</returns>
     /// <remarks>
     /// A bind on every interface (<c>*</c>, <c>+</c>, <c>0.0.0.0</c>, <c>[::]</c>) names no host, so this machine's own
     /// name is allowed for it — what a person on the network types — and never a wildcard, which would be the rebinding
     /// hole again. Somebody who reaches it by an IP address sets <c>AllowedHosts</c> themselves, and the host keeps it.
     /// </remarks>
-    internal static string AllowedHosts(string? chosen)
+    internal static string AllowedHosts(string? chosen, IReadOnlyList<string>? listed = null)
     {
         var hosts = new List<string> { "localhost", "127.0.0.1", "[::1]" };
 
@@ -289,6 +456,8 @@ public static class ConsoleHost
             }
         }
 
+        hosts.AddRange(listed ?? []);
+
         return string.Join(';', hosts.Distinct(StringComparer.OrdinalIgnoreCase));
     }
 
@@ -301,10 +470,10 @@ public static class ConsoleHost
     /// spelling nobody anticipated produces a warning that is merely unnecessary rather than a
     /// silence that is wrong.
     /// </remarks>
-    private static bool IsLoopback(string address) =>
+    internal static bool IsLoopback(string address) =>
         address.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .All(one =>
-                one.Contains("127.0.0.1", StringComparison.Ordinal)
-                || one.Contains("[::1]", StringComparison.Ordinal)
-                || one.Contains("localhost", StringComparison.OrdinalIgnoreCase));
+                Uri.TryCreate(one, UriKind.Absolute, out var uri)
+                && (string.Equals(uri.IdnHost, "localhost", StringComparison.OrdinalIgnoreCase)
+                    || (System.Net.IPAddress.TryParse(uri.IdnHost.Trim('[', ']'), out var ip) && System.Net.IPAddress.IsLoopback(ip))));
 }

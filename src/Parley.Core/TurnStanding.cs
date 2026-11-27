@@ -9,6 +9,14 @@ namespace Parley.Core;
 /// <param name="LastEnded">When the most recent turn ended, or null before the first.</param>
 /// <param name="LastClean">Whether that turn finished cleanly.</param>
 /// <param name="LastPermissionDenials">How many tool calls that turn had refused for want of permission.</param>
+/// <param name="BackgroundTasks">
+/// How many background tasks the agent has running, as its node last said: sub-agents or commands it started and did not
+/// wait for. Its turn has ended, but it is not idle: it begins a turn of its own when one finishes.
+/// </param>
+/// <param name="Tasks">
+/// Each running task by name, as far as the node listed them (feature 043), or null when nobody named any. There may be
+/// fewer than <paramref name="BackgroundTasks"/>: the count is what the runner said, the list is bounded.
+/// </param>
 /// <remarks>
 /// <para>
 /// <b>Why it exists</b>: an agent that tried a command nobody was there to approve ends its turn without a
@@ -25,8 +33,13 @@ public sealed record TurnStanding(
     DateTimeOffset? RunningSince,
     DateTimeOffset? LastEnded,
     bool LastClean,
-    int LastPermissionDenials)
+    int LastPermissionDenials,
+    int BackgroundTasks = 0,
+    IReadOnlyList<BackgroundTask>? Tasks = null)
 {
+    /// <summary>Each running task by name; empty when none is listed.</summary>
+    public IReadOnlyList<BackgroundTask> Named => Tasks ?? [];
+
     /// <summary>Nobody reports this agent's turns.</summary>
     public static TurnStanding Unreported { get; } = new(false, null, null, false, 0);
 }

@@ -195,7 +195,8 @@ public sealed class BrokerLink : IAsyncDisposable
                 Owns = options.Owns ?? string.Empty,
                 ProtocolVersion = ProtocolVersion.Current,
                 LaunchToken = options.LaunchToken ?? string.Empty,
-                Identity = options.Identity.Known ? options.Identity.ToString() : string.Empty
+                Identity = options.Identity.Known ? options.Identity.ToString() : string.Empty,
+                ProcessId = HostProcess.Id() ?? 0
             };
 
             var stream = agents.Attach(request, cancellationToken: cancellationToken);
@@ -245,6 +246,7 @@ public sealed class BrokerLink : IAsyncDisposable
                 await foreach (var received in _stream.ResponseStream
                     .ReadAllAsync(_cancellation.Token).ConfigureAwait(false))
                 {
+                    // A rewrite of the store is read and left: a send's reply says whether it waited on one.
                     if (received.EventCase == Wire.Event.EventOneofCase.Notice)
                     {
                         Waiting = received.Notice;

@@ -3,8 +3,9 @@
 **Your coding agents can talk to each other. They just can't touch each other's stuff.**
 
 Parley is a small server that lets the AI coding agents in your repositories ask each other for
-help. One agent per repository. They send short messages back and forth. They never read each
-other's code, and they never edit each other's files.
+help. One agent per repository. They send short messages back and forth. Parley gives none of them a
+way to read another's code or edit another's files: what an agent can touch is still up to its own
+client's permissions, so keep each one to its own repository there.
 
 > **Status: early.** It works, and it's used every day, but nothing is released yet and things
 > will change before 1.0. Details in [Status](#status).
@@ -58,8 +59,9 @@ page.
 
 ## Why you'd want it
 
-- **Every agent stays in its lane.** An agent only ever works in its own repository. It can ask
-  for changes in other repositories. It can't make them.
+- **Every agent stays in its lane.** An agent works in its own repository. It can ask for changes
+  in other repositories; Parley gives it no way to make them, and its client's own permissions
+  decide what else it can touch.
 - **Contexts stay small.** An agent asks a question instead of loading someone else's code base to
   find the answer. Smaller context, cheaper turns, fewer confused agents.
 - **Nothing gets lost.** Messages are saved. If an agent isn't running, the request waits. If
@@ -92,12 +94,15 @@ cd Parley
 ./install.sh         # Linux and macOS
 ```
 
+On Linux and macOS the install leaves the terminal out unless you ask for it
+(`./install.sh --surfaces both`), and the web console does everything below.
+
 Then add your repositories. You can do this in the terminal or in the web console:
 
 1. Open the terminal with `parley`, or the web console at <http://127.0.0.1:5280>.
 2. Create a project. Naming it is the whole job.
 3. Register your repositories. In the terminal, choose **Enroll agents from folders** (`Alt+f`). In
-   the web console, open the project's Agents tab and choose **Register an agent**. Point it at one
+   the web console, open the project's Agents page and choose **Register an agent**. Point it at one
    repository, or at a folder that holds a lot of them.
 
 Before it writes anything, it shows you exactly what it's about to do. Then, for each repository,
@@ -109,6 +114,20 @@ read their configuration once.
 That Peers section is the step that matters. An agent that doesn't know it has peers will happily
 guess about everyone else's code, which is the exact thing we were trying to stop. The full
 walk-through is in [Getting started](docs/getting-started.md).
+
+## How an agent knows to use it
+
+An agent learns about Parley in two ways, and both happen without you.
+
+- **When its session starts,** Parley's adapter tells it what Parley is for. Peers own the other
+  repositories. Ask them instead of guessing at their code. Answer every request you are sent.
+  Check your inbox when you start work.
+- **Its repository's instructions** carry the Peers section. That names the other agents and what
+  each one owns, so the agent knows *who* to ask.
+
+So when an agent hits a question about code it doesn't own, it sends that repository's agent a
+request. When it has lost track of earlier work, after a restart for example, it can look up an
+old exchange by its number or search past messages for words. You can see every such lookup.
 
 If you use Claude Code, there is also a [plugin](docs/claude-code.md). It's optional. It adds
 commands such as `/parley:write-peers`, which names the real peers in each repository's Peers
@@ -123,7 +142,8 @@ section.
 | [Getting started](docs/getting-started.md) | Install, add your first two agents, send your first request |
 | [Using it with Claude Code](docs/claude-code.md) | The plugin, `.mcp.json`, standing instructions, and mail that arrives mid-session |
 | [Configuration](docs/configuration.md) | Projects, launch settings, ownership lines, unattended agents, other machines, retention |
-| [Running a deployment](docs/operating.md) | The web console, the terminal, your seat, roadmaps, files, health, and the commands |
+| [Your phone or tablet](docs/remote-access.md) | Opening the web console from another of your devices with Tailscale, step by step |
+| [Running a deployment](docs/operating.md) | The web console, the terminal, your seat, stopping and freezing agents, roadmaps, files, health, and the commands |
 | [Security](docs/security.md) | What Parley protects, what it doesn't, and why it only listens on loopback |
 | [FAQ](docs/faq.md) | Short answers to common questions |
 | [Contributing](docs/contributing.md) | Building from source, the layout, and how changes are made |
@@ -142,7 +162,20 @@ Parley is early. The specification is settling down, and the code is still movin
 - Conversations are saved, trimmed by a retention policy, and exportable.
 - A web console and a terminal show every project, agent and conversation, and let you join in.
 - Roadmaps: an agent can propose a list of work, and you decide what happens to it.
-- Agents can hand each other `.md` and `.txt` files, and the contents never enter anyone's context.
+- Agents can hand each other `.md`, `.txt` and image files. Parley never puts the contents into
+  anyone's context: a file goes from disk to disk, and an agent reads it only if it opens it.
+- An image an agent places shows in the web console's conversation, so you can see what it is
+  talking about. Each conversation has a Media view of its files.
+- The Inbox keeps track of what you answered: what is still in flight, and what closed. You can
+  send a follow-up from any row.
+- You can stop or restart an agent, and freeze one so nothing starts it. A freeze lasts until
+  you lift it or the broker next starts. You can ask for it to last through a broker restart too.
+- A graph, on every page of the web console, shows what is being worked on now: each working
+  agent, the work it holds, the work queued for it and its background tasks, each by name, with what the agent says it is doing. You can filter it by
+  project and agent.
+- An agent can read an old exchange by its number, or search past messages, to pick up where it
+  left off. You see every read.
+- Tidy up many conversations at once: archive, bring back, or end the ones you tick.
 - A Claude Code plugin.
 - Built and tested on Windows, Linux and macOS.
 
@@ -154,8 +187,8 @@ Parley is early. The specification is settling down, and the code is still movin
 - Authentication on the wire. [Security](docs/security.md) explains why that matters and what to do
   about it today.
 
-There will be a marketing site with more background, hosted on the HKGRP home site. It will say
-the same things with better photography.
+There will be a marketing site with more background. It will say the same things with better
+photography.
 
 Issues and discussion are welcome, especially on the open questions at the end of
 [SPEC.md](SPEC.md).

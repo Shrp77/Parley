@@ -29,6 +29,8 @@ namespace Parley.Terminal.Tests;
 /// thing that was wrong: <c>Said</c> held the underscore throughout.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class UnderscoresSurviveTests
 {
     [Fact]

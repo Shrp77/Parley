@@ -22,6 +22,8 @@ namespace Parley.Store.Tests;
 /// pattern built from it matches everything.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class OwnershipTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

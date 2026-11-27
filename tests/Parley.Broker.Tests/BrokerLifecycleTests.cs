@@ -21,6 +21,7 @@ namespace Parley.Broker.Tests;
 /// rather than taking it away.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class BrokerLifecycleTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

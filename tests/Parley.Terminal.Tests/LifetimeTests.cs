@@ -21,6 +21,7 @@ namespace Parley.Terminal.Tests;
 /// minutes instead of failing, so a follower abandoned mid-read is a shape worth pinning.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class LifetimeTests : IDisposable
 {
     private readonly string _directory =

@@ -24,6 +24,8 @@ namespace Parley.Terminal.Tests;
 /// piece of the screen nobody thinks of as content.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class StatusLineSafetyTests
 {
     /// <summary>A name that clears the screen and then writes over what was there.</summary>

@@ -1,4 +1,5 @@
-﻿using Grpc.Net.Client;
+﻿using Terminal.Gui.Input;
+using Grpc.Net.Client;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Tests;
 using Parley.Client;
@@ -32,6 +33,8 @@ namespace Parley.Terminal.Tests;
 /// appearing is the proof that no step asked.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class RegionTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");
@@ -200,12 +203,10 @@ public sealed class RegionTests : IAsyncDisposable
         // Enter opens the project, Tab reaches its conversations, Enter opens one. Three
         // keystrokes and no text, which is SC-001's claim: a specific transcript in three choices
         // or fewer.
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         driving.Tab();
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(Viewing.Conversation, shell.Place.Viewing);
         Assert.NotNull(shell.Transcript.Open);
@@ -229,14 +230,12 @@ public sealed class RegionTests : IAsyncDisposable
         await shell.RefreshAsync(TestContext.Current.CancellationToken);
         await shell.Settled;
 
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
         driving.Tab();
 
         var chosen = shell.Conversations.Selected?.Id;
 
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(Viewing.Conversation, shell.Place.Viewing);
 
@@ -311,8 +310,7 @@ public sealed class RegionTests : IAsyncDisposable
         await shell.RefreshAsync(TestContext.Current.CancellationToken);
         await shell.Settled;
 
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         shell.Conversations.OpenSelected();
         await shell.Settled;

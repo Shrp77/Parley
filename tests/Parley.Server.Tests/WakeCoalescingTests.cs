@@ -24,6 +24,8 @@ namespace Parley.Server.Tests;
 /// the bound alone; that a notification consults it is <c>NotifyWakesTests</c>.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class WakeCoalescingTests
 {
     private static readonly TimeSpan Settle = TimeSpan.FromMilliseconds(250);

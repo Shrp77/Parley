@@ -27,6 +27,7 @@ namespace Parley.Server.Tests;
 /// conversations around it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class PurgeBlastRadiusTests
 {
     [Fact]

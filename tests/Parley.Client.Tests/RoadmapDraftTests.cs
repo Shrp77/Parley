@@ -7,6 +7,7 @@ namespace Parley.Client.Tests;
 /// <summary>
 /// Editing a roadmap before it is confirmed or changed (SPEC.md §5.7).
 /// </summary>
+[Unit]
 public sealed class RoadmapDraftTests
 {
     private static readonly AgentName Billing = AgentName.Create("billing@here");

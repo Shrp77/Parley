@@ -25,6 +25,7 @@ namespace Parley.Terminal.Tests;
 /// test assume.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ConcludedUnderfootTests : IAsyncDisposable
 {
     private readonly SqliteConnection _connection = ParleyDatabase.OpenInMemory();

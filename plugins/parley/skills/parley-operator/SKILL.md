@@ -20,7 +20,7 @@ one of two places:
 
 - **The terminal.** Type `parley` (or `parley terminal`, the same thing spelled out). It needs a
   real terminal, not a script.
-- **The web UI.** `parley web-ui` opens it in a browser. It is on `127.0.0.1:5280` by default.
+- **The web UI.** The broker serves it, on `127.0.0.1:5280` by default; `parley web-ui --open` opens that in a browser. `parley web-ui` alone starts a second one by hand.
 
 The command line refuses those verbs. Each one exits with code 64, says it is not a command, and
 names the terminal. **Do not try to run them.** Tell the person where the action is, and
@@ -31,23 +31,37 @@ every action with its key. **F3** opens a project's configuration (Auto Accept a
 
 | What the person wants | Terminal | Web UI |
 |---|---|---|
-| Read a whole conversation | Open it from a project's conversations list. Alt+c copies all of it to the clipboard; Alt+m copies one message. | The conversation's page. "Take this away as text" saves it as a file. |
-| Close a conversation its participants have not closed | Conversations list, Alt+f (*Close this conversation now*). It asks for a reason, and each participant holding work is told. | Health page, "close it" beside the flag. |
-| Archive or unarchive a conversation | Conversations list, Alt+h. | The project page: *Archive* or *Bring back* beside each conversation. |
-| Destroy a conversation | Conversations list, Alt+d. It takes the conversation's identifier typed back. | The project page: *Destroy…* beside each conversation, which takes the identifier typed back. |
+| Read a whole conversation | Open it from a project's conversations list. Alt+c copies all of it to the clipboard; Alt+m copies one message. | The conversation's page. Export, then Export TXT, saves it as a file. |
+| Close a conversation its participants have not closed | Conversations list, Alt+f (*Close this conversation now*). It asks for a reason, and each participant holding work is told. | Health page, "close it" beside the flag; or tick it on the project's Conversations page and choose *End selected…*. |
+| Start a new conversation from one you are reading | In the conversation, Alt+b, on the message under the cursor. | *Spin off* on the message, or in the panel. |
+| Move entries to another conversation | In the conversation, Alt+v. It lists everything that would go first. | *Move entries* in the panel, then tick them. |
+| Go to a linked conversation | In the conversation, Alt+l. | The links in the panel. |
+| Archive or unarchive a conversation | Conversations list, Alt+h. | The project's *Conversations* page: *Archive* or *Bring back* beside each conversation. |
+| Archive, bring back or end many conversations at once | One at a time only. | The project's *Conversations* page: tick them, then *Archive selected*, *Bring back selected* or *End selected…* (which asks for a reason and `end` typed back). *Archive all closed* needs no ticks. |
+| Destroy a conversation | Conversations list, Alt+d. It takes the conversation's identifier typed back. | The project's *Conversations* page: *Destroy…* beside each conversation, which takes the identifier typed back. |
 | Retire or purge an agent | Agents list, Alt+r (*Remove this agent*). It describes the agent, offers keeping it first, and takes the agent's name typed back. | The agent's page: Retire, Purge. |
 | Reinstate a retired agent | Agents list, Alt+i. | The agent's page: Reinstate. |
+| Bring back an agent whose repository moved or was deleted | A node asked to start an agent whose folder is gone, on the disk that holds the person's home folder, while the folder above it is still there, holds other things and is not reached through a link, has the broker retire it and says so in its output. Put the repository back, then Agents list, Alt+i. Otherwise (another disk, the folder above missing or empty, a link on the way, or the repository at a drive's or mount's root) nothing is retired and the node tries again next time; a repository that was alone in its folder is left for the person to retire. | The agent's page: Reinstate. |
 | See or change what an agent is responsible for, or have it say it again | Agents list, Alt+n. | The agent's page: *What this agent is responsible for*. |
-| Start an agent | Agents list, Enter on its row. Alt+u starts every agent that has never registered. | The agent's page: *Start*. |
+| Start an agent | Agents list, Enter on its row, then *Start* in its menu. Alt+u starts every agent that has never registered. | The agent's page: *Start*. |
+| Stop or restart a running agent Parley started | Agents list, Enter on its row, then *Stop* or *Restart*. Its node waits for the current turn; what it owes stays owed, and the next work for it starts it again. | The agent's page: *Stop* or *Restart*. |
+| See what an agent is doing in the background | Agents list: the row names the first task and how many more; Alt+b lists them all. | The agent's page: *Background work*, twenty to a page. The graph shows up to five beside the agent. |
+| Keep an agent from starting (before a reboot, say) | Agents list, Enter on its row, then *Freeze*; the second Freeze entry keeps it frozen through a logon. *Unfreeze* in the same menu. | The agent's page: *Freeze*, *Unfreeze*. The graph's list offers them for a working agent. *Freeze all* and *Unfreeze all*, on a project's Agents page, act on the whole project. |
+| End an agent left running by a node that is gone | Agents list, Enter on its row, then *Kill process of*. | The agent's page: *Kill process*. |
 | Apply the retention policy now | Projects list, Alt+p. | Health page, "Apply the retention policy now". |
+| What agents asked the person, what the person sent that is still in flight, and what closed lately | Alt+i, from a conversations list or in a conversation's room: *Waiting on you*, *In flight*, *Closed*. Alt+u on a row sends a follow-up. | The *Inbox*, with the same three views, a follow-up box on each row, and *Ask to look now* on an in-flight row. |
 | What needs a person, and what the work came to | Alt+y (Health), from the projects list or a conversations list. It shows flags, who waits on whom, results, size refusals and clarifications. | The project's Health page. |
-| Create or remove a project | Projects list, Alt+c to create, Alt+r to remove. Destroying takes the project's name typed back. | Use the terminal: the web UI cannot name a project. |
+| Decide a roadmap an agent proposed | F4, or the project's *Proposed roadmaps* pane, Enter on one. Edit it, confirm it, or decline it. | The project's *Roadmaps* page lists the proposals waiting, each with its own page. |
+| Read a roadmap, see what is next, start an item | The project's *Roadmaps* pane, Enter. Alt+n goes to the next item; Enter on an item opens its conversation with its words in the box, and nothing is sent until the person sends it. Alt+e edits the roadmap. In an item's conversation, Alt+o in the transcript goes back to its roadmap. | The roadmap's page. Each item opens its conversation in place; an item's conversation page links back to it. |
+| Create or remove a project | Projects list, Alt+c to create, Alt+r to remove. Destroying takes the project's name typed back. | The projects page: *Create a project*. Removing or renaming one is the terminal's; a rename is removing it and naming the new one, then enrolling its repositories again. |
 
 ## The boundary
 
 Point the person to these when they ask for them. Do not suggest them as a way around the
 protocol.
 
+- **A roadmap is the person's.** An agent can only propose one, and work on an item reaches an
+  agent as a request the person sends. Do not offer to confirm, edit or start one on their behalf.
 - **Closing a conversation** ends one the participants have not agreed to end. It is not a way
   past something an agent is waiting on. If a request is blocked on an answer, the answer is to
   give it.
@@ -77,14 +91,17 @@ parley autostart install              start the broker whenever you log in, serv
 parley autostart remove               stop doing that
 parley autostart status               say whether it is set up, and what it serves
 parley up                             run this machine's node, so its agents can be started
-parley web-ui [<url>]                 the web UI in a browser; loopback by default
+parley web-ui --open [<url>]          open the web UI the broker serves in a browser
+                                      (answered by the broker's own tool; it starts nothing)
+parley web-ui                         run the web UI on its own, when the broker does not
                                       (its own tool: parley-web-ui, installed separately)
 parley                                the terminal; needs a real one
                                       (its own tool: parley-terminal, installed separately;
                                       parley terminal is the same thing, spelled out)
 
 parley project list                   what this machine is configured for
-                                      (creating, changing and removing one are in the terminal)
+                                      (creating one is in the terminal or the web UI; changing
+                                      and removing one are in the terminal)
 parley use [<name>] [--shell <name>]  the project this terminal's commands act on (--clear to stop)
 
 parley enroll <dir>                   find the repositories under a directory, tick the ones
@@ -95,14 +112,22 @@ parley enroll <dir> --describe        say what enrolling them would change, and 
 parley registry                       every registered agent, with its workspace
 parley open                           conversations with an exchange still open, and who is in
                                       them; what stopping the broker would interrupt
-parley waiting <agent|role>           how many messages and polls await an agent
-parley files list [--conversation <id>] [--full]  the files agents placed: size, sha256, who placed each
+parley waiting <agent|role> [--with-files]   how many messages and polls await an agent; --with-files adds its file notices
+parley files list [--conversation <id>] [--full]  the files placed: size, sha256, who placed each
+parley files place <path> --conversation <id> [--name <name>]  place a .md, .txt or image file from here, as the person
 parley files remove <name>... [--conversation <id>] [--yes]  remove files whoever placed them; describes them and asks
 parley files prune [--yes-remove-every-file]  REMOVE every file; asks for the project's name
-parley files open <name>... [--conversation <id>]  open files in their editor here, or say where they are
+parley files open <name>... [--conversation <id>]  open files to read: in place on the broker's machine, a checked copy elsewhere
 parley files folder [--conversation <id>] open a conversation's folder, or say where it is
+parley files problems [--all]         what checks of the location found: files changed on disk and moved to quarantine, and entries it could not read, move or delete
+parley files dismiss <id>             take a problem off the list; deletes nothing on disk
 parley --help                         the same list, on stdout, exiting zero
 ```
+
+`files place`, `files remove` and `files prune` act as the person. Run them only when the person asks for that file,
+or those files, themselves, never because an agent asked for it: an agent places its own files with
+`parley_file_place`, which refuses what is outside its repository, and a placement as the person reaches every agent in
+the project.
 
 `registry` is the whole roster, including the folder each agent works in. The roster agents see
 leaves that out on purpose. It is how you tell two similar names apart, and how you find the
@@ -114,7 +139,8 @@ or the web UI.
 
 ## The broker
 
-Every command except `serve`, `autostart` and `project` is a client. One process owns the store and
+Every command except `serve`, `autostart`, `project`, `use`, `enroll`, `terminal` and `web-ui` is a
+client (`enroll` asks each project's broker only when it writes). One process owns the store and
 everything else connects to it:
 
 ```
@@ -131,7 +157,7 @@ A machine can run several Parley deployments at once. Each is a *project*, with 
 own port and its own agents, and none can see the others. Nothing about a project crosses the wire,
 and the same agent name may appear in two projects without either knowing.
 
-A project is created in the terminal. Naming it is the whole of it: its store and its port are
+A project is created in the terminal or the web UI. Naming it is the whole of it: its store and its port are
 derived and claimed for you. After that, commands find it by name:
 
 ```
@@ -146,7 +172,8 @@ that, on the only project. With several and nothing choosing, **every command re
 them**, because picking silently would act on a deployment nobody asked for. On such a machine,
 each command says on standard error which project it acted on, and why.
 
-**Creating, changing and removing a project are done in the terminal, not on the command line.**
+**Creating a project is done in the terminal or the web UI, and changing or removing one in the
+terminal, never on the command line.**
 `parley project list` stays, because it reads and changes nothing.
 
 Removing a project **deletes nothing**: not the store, not any repository's launch configuration.
@@ -206,17 +233,19 @@ useful. Start it when the person asks.
 
 ## Retention
 
-Pruning brings the next sweep forward. It does not set the policy. The broker applies it on every
-sweep, using `PARLEY_RETENTION_IDLE_HOURS` and `PARLEY_RETENTION_MAX_AGE_HOURS` from the
+Pruning brings the next retention pass forward. It does not set the policy. The broker applies it on every
+retention pass, using `PARLEY_RETENTION_IDLE_HOURS` and `PARLEY_RETENTION_MAX_AGE_HOURS` from the
 environment the broker was started with: three days idle and thirty days maximum age if unset.
+A conversation that was closed waits out the same idle period as one that went quiet.
 
 **It removes text permanently.** If a discussion is worth keeping, the person should save it first
-(Alt+c in the terminal, or "Take this away as text" in the web UI). That copy is a file they own,
+(Alt+c in the terminal, or Export, then Export TXT, in the web UI). That copy is a file they own,
 and it is the only one that outlives the policy.
 
-A floor bounds it the other way, and is not configurable. Nothing deletes a message nobody has
-collected yet, anything on an exchange that is still open, the request a result nobody has
-collected yet carries back, or the recent rows deduplication still reads.
+A floor bounds it the other way, and is not configurable. Nothing on an exchange that is still
+open is deleted on a schedule. A message nobody has collected yet, and the request a result nobody
+has collected yet carries back, are kept until they pass the age cap (thirty days unless the broker
+is set otherwise), and then removed with the rest. Pruning says which numbers it applied.
 
 ## The health reports
 
@@ -228,7 +257,7 @@ a deployment did. None of it changes anything.
   nobody has touched for too long, work owed by a retired agent, or a conversation waiting only on
   a participant saying it is finished. The remedies are starting the agent, answering what it is
   waiting on, or closing the conversation with a reason.
-- **Results** say what came back, item by item: done, answered, acknowledged, or blocked, and on
+- **Results** say what each request came to: done, answered, acknowledged, or blocked, and on
   what (`missing_information`, `conflict` or `permission`). A blocker is not an agent behaving
   badly. It is the protocol handing a person the one thing no agent could settle. Read the blocked
   ones first.
@@ -236,7 +265,7 @@ a deployment did. None of it changes anything.
   length, the worst case and the average. No refused text is kept, only its length. If somebody
   wants the cap raised, this is what the argument should be made from.
 - **Clarifications** show how deep clarification goes and how often an exchange reached its limit.
-  By default there is no cap. Where a deployment has set one, read it beside the numbers, because a
+  There is no cap, and nothing sets one. Should one ever be set, read it beside the numbers, because a
   cap hides its own evidence: depths pile up at whatever limit was in force.
 
 ## Reporting back

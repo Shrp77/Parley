@@ -22,6 +22,7 @@ namespace Parley.Cli.Tests;
 /// choose.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProjectSetTests : IDisposable
 {
     private readonly string _directory =

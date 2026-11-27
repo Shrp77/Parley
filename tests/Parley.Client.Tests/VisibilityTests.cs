@@ -20,6 +20,7 @@ namespace Parley.Client.Tests;
 /// and nothing on the page says otherwise. That is the defect these exist for.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class VisibilityTests
 {
     private static AgentName Orders => AgentName.Create("orders@alpha");

@@ -19,6 +19,7 @@ namespace Parley.Core.Tests;
 /// default moves this test with it instead of leaving a test asserting a number nothing uses.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class ClarifyCapAtTheDefaultTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

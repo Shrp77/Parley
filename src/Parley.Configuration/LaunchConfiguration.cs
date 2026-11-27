@@ -79,14 +79,36 @@ public sealed record LaunchConfiguration
 
         var path = Path.Combine(workspace, FileName);
 
-        if (!File.Exists(path))
+        // **Never looked up off this machine** (lens 2 run 125): the node reads every catalogued repository's file on each
+        // join and each start, and one replaced by a link to a share made it sign in to that host, as the person, every
+        // time. Opened without following any link that leads elsewhere, however the path changes while it is opened
+        // (lens 2 round 13), and refused as unreadable, which a node reports, rather than read as saying nothing.
+        var (status, stream) = LocalOpen.File(path, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, followLink: true);
+
+        using var opened = stream;
+
+        switch (status)
         {
-            return true;
+            case LocalOpenStatus.Missing:
+                return true;
+            case LocalOpenStatus.OffThisMachine or LocalOpenStatus.Changed:
+                problem = $"{path} leads to another machine, and Parley does not look up a path there.";
+
+                return false;
+            case LocalOpenStatus.NotAFile:
+                // A pipe here waited for ever, and the node reads every repository's file in turn (review, lens 2, Linux).
+                problem = LocalOpen.NotAFileProblem(path);
+
+                return false;
+            case not LocalOpenStatus.Opened:
+                problem = $"{path} could not be read.";
+
+                return false;
         }
 
         try
         {
-            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            using var document = StrictJson.Document(StrictJson.Read(opened!));
             var root = document.RootElement;
 
             if (root.ValueKind != JsonValueKind.Object)

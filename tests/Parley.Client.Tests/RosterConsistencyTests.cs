@@ -18,6 +18,7 @@ namespace Parley.Client.Tests;
 /// the two that exist now.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RosterConsistencyTests
 {
     [Fact]
@@ -91,7 +92,7 @@ public sealed class RosterConsistencyTests
         // The rail is how you find an abandoned exchange in a long conversation. If the only
         // difference were the tint, a reader who cannot see it would have no rail at all.
         var layout = File.ReadAllText(
-            RepositoryPath("src/Parley.Web/Pages/Shared/_Layout.cshtml"));
+            RepositoryPath("src/Parley.Web/Brand/components.css"));
 
         var ghosted = layout[layout.IndexOf(".timeline .tick.ghosted", StringComparison.Ordinal)..];
 
@@ -122,7 +123,7 @@ public sealed class RosterConsistencyTests
         Assert.Contains("role=\"status\"", markup, StringComparison.Ordinal);
 
         var layout = File.ReadAllText(
-            RepositoryPath("src/Parley.Web/Pages/Shared/_Layout.cshtml"));
+            RepositoryPath("src/Parley.Web/Brand/components.css"));
 
         Assert.Contains(".timeline.focused .tick:not(.kin)", layout, StringComparison.Ordinal);
         Assert.Contains("outline", layout, StringComparison.Ordinal);

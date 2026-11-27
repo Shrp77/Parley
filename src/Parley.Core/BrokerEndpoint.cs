@@ -85,15 +85,27 @@ public static class BrokerEndpoint
             ? configured
             : $"http://{configured}";
 
+        // Anything more than a host and a port is refused, as well as being no use: an address is somebody's text, and it reaches a terminal and a supervisor's unit file. A path or a query could carry
+        // a control character or a quote through the parser. The refusal says the value with those neutralised.
         if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri)
-            || uri.Scheme is not ("http" or "https"))
+            || uri.Scheme is not ("http" or "https")
+            || uri.UserInfo.Length > 0
+            || uri.PathAndQuery != "/"
+            || uri.Fragment.Length > 0)
         {
+            var shown = new string([.. configured.Select(c => char.IsControl(c)
+                || char.GetUnicodeCategory(c) is System.Globalization.UnicodeCategory.Format
+                    or System.Globalization.UnicodeCategory.LineSeparator
+                    or System.Globalization.UnicodeCategory.ParagraphSeparator
+                        ? '?'
+                        : c)]);
+
             throw new InvalidOperationException(
-                $"{Variable} is set to '{configured}', which is not an address. Give it a host " +
+                $"{Variable} is set to '{shown}', which is not an address. Give it a host " +
                 $"and port, such as '{Default}' or 'broker.example:{DefaultPort}'.");
         }
 
-        return uri.ToString().TrimEnd('/');
+        return uri.GetLeftPart(UriPartial.Authority);
     }
 
     /// <summary>Whether nothing off this machine can address an endpoint.</summary>

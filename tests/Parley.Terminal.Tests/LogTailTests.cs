@@ -21,6 +21,7 @@ namespace Parley.Terminal.Tests;
 /// shut.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class LogTailTests : IDisposable
 {
     private readonly string _directory =

@@ -20,6 +20,7 @@ namespace Parley.Cli.Tests;
 /// controls whether the task appears in the Task Scheduler list, not whether a window appears.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class HiddenEntryTests
 {
     private const string Root = "/machine/parley";

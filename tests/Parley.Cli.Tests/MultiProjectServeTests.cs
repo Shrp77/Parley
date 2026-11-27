@@ -27,6 +27,7 @@ namespace Parley.Cli.Tests;
 /// does with the token once it has one.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class MultiProjectServeTests : IDisposable
 {
     private readonly string _directory =

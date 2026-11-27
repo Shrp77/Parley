@@ -143,7 +143,10 @@ public sealed class Facilitator(SqliteConnection connection, BrokerOptions optio
     /// <param name="facilitator">The facilitator's name in this store.</param>
     /// <param name="nowUtc">When.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
-    /// <returns>The answers that arrived since the last read, each now recorded as answered and waiting on a decision.</returns>
+    /// <returns>
+    /// The answers that arrived since the last read, and any an earlier pass recorded and never decided, each recorded as
+    /// answered and waiting on a decision.
+    /// </returns>
     /// <remarks>
     /// <para>
     /// <b>An answer is the agent's Result</b>, read from the exchange the facilitator opened and from nowhere else, so an
@@ -165,6 +168,20 @@ public sealed class Facilitator(SqliteConnection connection, BrokerOptions optio
         using var scope = WriteScope.Begin(_connection, ambient: null);
         var questions = Questions;
         var answers = new List<FacilitatorAnswer>();
+
+        // **An answer a stopped pass recorded and never decided is decided now** (lens 1 run 91): nothing else ever reads
+        // an answered question, and asking again and discarding both refuse one.
+        foreach (var left in await questions.UndecidedAsync(scope.Transaction, cancellationToken).ConfigureAwait(false))
+        {
+            answers.Add(new FacilitatorAnswer(
+                left.Id,
+                left.Agent,
+                left.Conversation,
+                left.Answer,
+                left.Flattened,
+                Blocked: PayloadShape.TryReadOutcomes(left.LastPayload ?? string.Empty, out var leftOutcomes)
+                         && leftOutcomes.Any(o => o.Outcome == Outcome.Blocked)));
+        }
 
         foreach (var open in await questions.OpenAsync(scope.Transaction, cancellationToken).ConfigureAwait(false))
         {

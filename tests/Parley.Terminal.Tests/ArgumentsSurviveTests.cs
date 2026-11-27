@@ -19,6 +19,7 @@ namespace Parley.Terminal.Tests;
 /// misnames the problem sends somebody to check the spelling of an option they spelled correctly.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ArgumentsSurviveTests
 {
     [Theory]

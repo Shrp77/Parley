@@ -20,6 +20,7 @@ namespace Parley.Client.Tests.Views;
 /// else, so every shape JSON permits is a shape this will be handed.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class RenderingEdgeTests
 {
     private static Message Message(string payload) =>

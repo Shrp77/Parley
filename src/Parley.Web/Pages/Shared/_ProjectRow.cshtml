@@ -22,9 +22,10 @@
         <span role="cell"><a class="project-name name" href="/Projects/Agents?project=@name">@name</a></span>
         <span role="cell">
             @* Absent rather than zero when the broker did not answer: zero would read as a project somebody has emptied. *@
+            @* Each count says what it counts where the column heads are not drawn (a phone's card): "4 agents", not "4". *@
             @if (summary is { Reachable: true })
             {
-                @(summary.Agents ?? 0)
+                @(summary.Agents ?? 0)<span class="unit"> @((summary.Agents ?? 0) == 1 ? "agent" : "agents")</span>
                 @if (summary.Running > 0)
                 {
                     <span class="faint">(@summary.Running running)</span>
@@ -38,12 +39,12 @@
         <span role="cell">
             @if (summary is { Reachable: true })
             {
-                @(summary.Conversations ?? 0)
+                @(summary.Conversations ?? 0)<span class="unit"> @((summary.Conversations ?? 0) == 1 ? "conversation" : "conversations")</span>
                 @if (summary.Archived > 0)
                 {
                     <span class="faint">(@summary.Archived archived)</span>
                 }
-                @if (ProposalCount.Says(summary.Proposals) is { Length: > 0 } proposed)
+                @if (WaitingProposals.Says(summary.Proposals) is { Length: > 0 } proposed)
                 {
                     <span class="faint">· @proposed</span>
                 }
@@ -52,11 +53,21 @@
             {
                 <span class="faint">@(state == "pending" ? "…" : "unknown")</span>
             }
+            @* Whatever else the broker could say: a count it gave is a count, and it is the person's to act on (SPEC.md §9.5).
+               This page does not wait for the frame, so the row carries what the banner carries elsewhere. *@
+            @if (Parley.Client.Files.FileProblemSaid.Says(Model.FileProblems) is { Length: > 0 } problems)
+            {
+                <span>· <a class="alarm" href="/Projects/FileProblems?project=@Uri.EscapeDataString(name)">@problems</a></span>
+            }
         </span>
         <span role="cell" class="status-cell">
             @if (state == "pending")
             {
                 <span class="faint" role="status">Checking…</span>
+            }
+            else if (state == "down" && health!.Undiallable)
+            {
+                <span class="alarm">Address not usable</span>
             }
             else if (state == "down")
             {

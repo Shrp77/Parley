@@ -21,6 +21,8 @@ namespace Parley.Terminal.Tests;
 /// can see — rather than checking a property that would be true whatever was drawn.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class ReadableSurfaceTests
 {
     private static BrokerDirectory Directory() =>

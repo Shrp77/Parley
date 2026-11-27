@@ -11,6 +11,8 @@ namespace Parley.Terminal.Tests;
 /// The owner's report of 2026-10-08: a long reply was lost to one stray Escape. Each test presses the key, because the
 /// property is what the key does and not what a method does.
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class EscapeWithAWrittenLineTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -23,14 +25,12 @@ public sealed class EscapeWithAWrittenLineTests
         var shell = seated.Shell;
 
         shell.Line.Written = "a long answer I have not sent";
-        seated.Session.Press(Key.Esc);
-        await shell.Settled;
+        await seated.Session.PressThenSettleAsync(Key.Esc, () => shell.Settled);
 
         var dialog = (ChoiceDialog)seated.Session.Find(Shell.DiscardTitle);
 
         seated.Session.Row(dialog.Choices, Shell.KeepWriting);
-        seated.Session.Enter();
-        await shell.Settled;
+        await seated.Session.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(Viewing.Conversation, shell.Place.Viewing);
         Assert.Equal("a long answer I have not sent", shell.Line.Written);
@@ -43,14 +43,12 @@ public sealed class EscapeWithAWrittenLineTests
         var shell = seated.Shell;
 
         shell.Line.Written = "nothing I mind losing";
-        seated.Session.Press(Key.Esc);
-        await shell.Settled;
+        await seated.Session.PressThenSettleAsync(Key.Esc, () => shell.Settled);
 
         var dialog = (ChoiceDialog)seated.Session.Find(Shell.DiscardTitle);
 
         seated.Session.Row(dialog.Choices, Shell.Discard);
-        seated.Session.Enter();
-        await shell.Settled;
+        await seated.Session.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(Viewing.Project, shell.Place.Viewing);
     }
@@ -61,8 +59,7 @@ public sealed class EscapeWithAWrittenLineTests
         await using var seated = await Seated.OpenAsync(Ct);
         var shell = seated.Shell;
 
-        seated.Session.Press(Key.Esc);
-        await shell.Settled;
+        await seated.Session.PressThenSettleAsync(Key.Esc, () => shell.Settled);
 
         Assert.Equal(Viewing.Project, shell.Place.Viewing);
     }

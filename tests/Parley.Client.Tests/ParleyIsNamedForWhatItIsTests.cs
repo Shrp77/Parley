@@ -13,6 +13,7 @@ namespace Parley.Client.Tests;
 /// both call <see cref="Speaker"/>; both reviews call <see cref="Provenance"/>. Each case was watched to fail with the
 /// attribution read from the registry name instead.
 /// </remarks>
+[Unit]
 public sealed class ParleyIsNamedForWhatItIsTests
 {
     private static readonly AgentName Parley = Facilitation.On(ProjectName.Create("test"));

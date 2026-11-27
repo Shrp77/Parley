@@ -23,6 +23,7 @@ namespace Parley.Terminal.Tests;
 /// nothing else on this machine would notice.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WritingBoundaryTests : IDisposable
 {
     private readonly string _root =

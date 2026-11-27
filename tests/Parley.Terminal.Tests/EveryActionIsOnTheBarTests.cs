@@ -25,6 +25,8 @@ namespace Parley.Terminal.Tests;
 /// defaulted.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class EveryActionIsOnTheBarTests
 {
     private static BrokerDirectory Directory() =>

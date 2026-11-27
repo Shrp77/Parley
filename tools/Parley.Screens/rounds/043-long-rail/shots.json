@@ -1,0 +1,65 @@
+// The minimap of a long conversation at phone, tablet and desktop sizes (the person's feedback on 043).
+{
+  "theme": "light",
+  "scale": 1,
+  "maximumBytes": 0,
+  "shots": [
+    {
+      "file": "long-phone.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=long-thread",
+      "shows": "A long conversation, read from the middle: the minimap stays one line that follows the reader.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "li.turn:nth-of-type(60)"
+        },
+        {
+          "pause": 600
+        }
+      ]
+    },
+    {
+      "file": "long-tablet.png",
+      "width": 820,
+      "height": 1180,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=long-thread",
+      "shows": "A long conversation, read from the middle: the minimap stays one line that follows the reader.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "li.turn:nth-of-type(60)"
+        },
+        {
+          "pause": 600
+        }
+      ]
+    },
+    {
+      "file": "long-desktop.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=long-thread",
+      "shows": "A long conversation, read from the middle: the minimap stays one line that follows the reader.",
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "scroll": "li.turn:nth-of-type(60)"
+        },
+        {
+          "pause": 600
+        }
+      ]
+    }
+  ]
+}

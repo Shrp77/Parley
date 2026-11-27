@@ -19,6 +19,7 @@ namespace Parley.Client.Tests.Views;
 /// is recoverable when nothing is.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class GoneTests
 {
     private static DestroyedConversation Record(int messages = 3, params string[] participants) =>

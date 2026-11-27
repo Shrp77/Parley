@@ -17,6 +17,7 @@ namespace Parley.Store.Tests;
 /// <b>Each refusal must fail against a schema without it</b>, where all four would be admitted.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FacilitatorRowTests : IDisposable
 {
     private readonly FacilitatorStore _store = new();

@@ -89,7 +89,7 @@ not a refinement added later.
 
 **A file is not text that crosses.** Its bytes are written to disk in the receiving agent's own
 repository and are never returned into a model's context by Parley. What an operation returns
-*about* files — names, sizes, hashes, lists, change notices — is text that crosses, and is
+*about* files — names, sizes, hashes, lists, gone and tampered notices — is text that crosses, and is
 bounded like any other: a name has a maximum length, and a list or a batch of notices has a
 maximum count per call.
 
@@ -101,8 +101,8 @@ roster entry breaking, hiding or reordering its own line is **not** relaxed.
 
 **This is a reduction in this principle's protection and is recorded as one.** A cap censors the
 evidence that would justify it, so none is set. The lengths agents propose and the lengths people
-accept are recorded, so a bound can later be chosen the way the message cap's 8,000 was — from
-`parley refusals` and SPEC.md §17 question 16 — rather than from judgement. **Until that evidence
+accept are recorded, so a bound can later be chosen from them and SPEC.md §17 question 16 rather
+than from judgement. **Until that evidence
 exists, a roster may be the largest thing an agent reads.** Move the number on that record, not
 because a statement did not fit.
 
@@ -145,8 +145,12 @@ moving on is not enough — the case is added so the next edit is checked too.
 **What crosses between agents is messages and placed files, never contexts.** Requests,
 Clarifies and Results cross as messages. Files cross only by being placed in a project's file
 location and fetched from it onto disk, each carrying a content hash the broker computed. Never
-conversation history, never another agent's context, and never a file's contents delivered into
-a model's context by Parley. An operation that returns more about a peer than a participant needs
+another agent's context poured into one, and never a file's contents delivered into a model's
+context by Parley. **An agent may read the project's exchange history, and only read it** (amended
+2026-11-17, the owner's decision): an exchange by number, or the matches of a search, each
+returned as a bounded record in an envelope that says it is a record and asks nothing, changing
+nothing a participant can observe, and shown to the person who runs the deployment. Nothing is
+pushed into an agent's context, and nothing of a roadmap, a file's bytes or a turn is in a reply. An operation that returns more about a peer than a participant needs
 to address it is a disclosure, and must be argued as one. The agent-facing roster withholds
 workspace paths for exactly this reason.
 
@@ -156,10 +160,28 @@ MCP client launches. A new operation is a decision about which side it belongs o
 
 **Credentials are references, never values** — `env:`, `keychain:`, `file:`. The broker
 resolves them at invocation and never persists or logs them. This is what makes a manifest
-safe to commit.
+safe to commit. **Not built yet**: nothing takes a credential today (SPEC §12); this is the rule for
+when something does.
 
 **The protocol is the product; the transport is disposable.** If a platform ships native
 cross-session messaging, Parley should run over it rather than compete with it.
+
+**No network bind; tunnel only.** All three gRPC services share one port, so a reachable port is the
+control plane with no authentication on the wire (SPEC.md §16). Brokers bind loopback; the
+supported remote path is an SSH port-forward.
+
+**A store has one broker.** The store lock is taken before anything else touches the store, and a
+second launcher says so and exits.
+
+**Nothing times out.** An exchange that stops moving is flagged to the person; a conversation ends
+by consensus of the participants asked, or by a person.
+
+**A person's line to an agent is a new Request, except a reply to a question the person chose to
+answer**, which is a Clarify on that question's exchange (SPEC.md §5.6). The agent, never the broker
+or a surface, decides a question is answered.
+
+**The plugin ships no MCP server configuration.** A bundled server would hand every repository the
+same agent name; the name comes from the launch environment, and the trust model rests on that.
 
 **`Parley.Core` has no I/O and no package dependencies.** A `using` that pulls I/O into the
 domain is a review finding, and its tests do not reference the storage assembly.
@@ -184,12 +206,17 @@ watching the check fail.
 
 **Review is three consecutive clean runs per lens.** Three lenses — correctness and
 concurrency; security and data integrity; API surface and maintainability — run after the last
-edit rather than alongside it. A finding above low severity resets that lens to zero; the lenses
-are independent and all three must reach three. Each run must probe something the previous runs
+edit rather than alongside it, all on one version of shipped code, and the smoke run must be
+green on the commit that merges. A finding above low severity in the pull request's own changes
+resets that lens to zero; one only in code the pull request did not change is recorded for later. A
+change only to tests, CI or docs keeps the counts. The lenses are independent and all three must
+reach three; `review/` holds the rules. Each run must probe something the previous runs
 did not, or it is one run repeated. The running count belongs in `REVIEW-LEDGER.md`, which is
 untracked because it is the state of one checkout's review rather than a fact about the
 protocol, and which logs clean runs as well as findings — a ledger of findings alone cannot
-distinguish an area that held from one nobody probed.
+distinguish an area that held from one nobody probed. Before the merge, the documentation says what
+the change does, and the Parley website's agent has been asked through Parley to say it too; the
+merge waits for its answer.
 
 **The repository is public and its history goes with it.** No trace of any originating
 private project may appear in any commit. Placeholder agents are `orders`, `billing` and
@@ -214,4 +241,4 @@ versioning: MAJOR for a principle or boundary removed or redefined, MINOR for on
 materially expanded, PATCH for wording. **An amendment that changes what a principle permits is
 MAJOR even when its title is unchanged.**
 
-**Version**: 6.0.0 | **Ratified**: 2026-08-22 | **Last Amended**: 2026-10-06
+**Version**: 7.0.0 | **Ratified**: 2026-08-22 | **Last Amended**: 2026-11-17 (an agent may read the exchange history)

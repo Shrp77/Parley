@@ -20,6 +20,7 @@ namespace Parley.Terminal.Tests;
 /// test can decide, and pretending otherwise would be worse than not checking.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class DocumentedTests
 {
     private static IEnumerable<FileInfo> Sources()

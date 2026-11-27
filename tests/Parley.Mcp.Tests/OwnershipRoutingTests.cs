@@ -13,6 +13,7 @@ namespace Parley.Mcp.Tests;
 /// field that is stored but not returned would satisfy every storage test while changing nothing
 /// an agent can act on.
 /// </remarks>
+[Integration]
 public sealed class OwnershipRoutingTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
@@ -269,9 +270,9 @@ public sealed class OwnershipRoutingTests
         var listing = (await orders.AgentsAsync(ct)).ToJsonString();
 
         Assert.True(
-            listing.Length > MessageLimits.MaxPayloadCharacters,
+            listing.Length > MessageLimits.SoftPayloadCharacters,
             $"a ten-agent roster of 2,000-character statements is {listing.Length} characters, " +
-            $"against a message cap of {MessageLimits.MaxPayloadCharacters}. If this is no longer " +
+            $"against a message's soft limit of {MessageLimits.SoftPayloadCharacters}. If this is no longer " +
             "true, a bound has been reinstated and this test has done its job and should go.");
     }
 }

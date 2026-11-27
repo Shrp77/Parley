@@ -1,0 +1,64 @@
+@page
+@model Parley.Web.Pages.Roadmaps.MergeModel
+@{
+    ViewData["Title"] = "Turn the agents' answers into a proposal";
+}
+
+<h1>Turn the agents' answers into a proposal</h1>
+
+@if (Model.Problem is { Length: > 0 } problem)
+{
+    <p class="unreachable" role="alert">@problem</p>
+}
+
+@if (Model.Roadmap is { } roadmap)
+{
+    <h2>#@roadmap.Number @roadmap.Title</h2>
+
+    @if (Model.Offered is not null)
+    {
+        @* Said before anything is sent, as every action on this console is: who, what, and what it changes. *@
+        <p>
+            This sends <strong>one agent</strong> a Request from you, in <strong>@Model.From</strong>, with the roadmap and
+            every answer quoted, as written below. It asks that agent to propose one revision of the roadmap. The proposal then waits for you
+            with the other proposals, where you confirm, change or decline it. Nothing in the roadmap changes until you
+            confirm.
+        </p>
+
+        <p>
+            Answered (@Model.Answered.Count): @string.Join(", ", Model.Answered.Select(a => a.Value)).
+            @if (Model.StillOpen > 0)
+            {
+                <strong>@Model.StillOpen @(Model.StillOpen == 1 ? "request is" : "requests are") still open in that conversation, so some agents have not answered yet. Their answers will not be in this.</strong>
+            }
+        </p>
+
+        <form method="post" class="move-form" enctype="multipart/form-data">
+            <p>
+                <partial name="_Composer" model="@(new Parley.Web.ComposerBox(
+                    "Says", Model.Says, Id: "says", Rows: 18, Label: "The message. Change it if you want to ask something else.", Attach: true,
+                    Draft: $"{Model.Project}/roadmap-merge/{Model.From}",
+                    Mentions: [.. Model.Agents.Select(agent => agent.Value)]))" />
+            </p>
+            <fieldset class="move-to">
+                <legend>Which agent merges them</legend>
+                @foreach (var agent in Model.Agents)
+                {
+                    <label><input type="radio" name="Merger" value="@agent.Value" checked="@(Model.Merger == agent.Value ? "checked" : null)" required /> @agent.Value</label>
+                }
+            </fieldset>
+            <p class="actions">
+                <button type="submit">Ask it to propose a revision</button>
+                <a class="button quiet" href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@roadmap.Id">Do not ask, and go back</a>
+            </p>
+        </form>
+    }
+    else
+    {
+        <nav class="page-links" aria-label="This project"><a href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@roadmap.Id">Back to the roadmap</a></nav>
+    }
+}
+else
+{
+    <nav class="page-links" aria-label="This project"><a href="/Roadmaps?project=@Model.Project">Back to the roadmaps in @Model.Project</a></nav>
+}

@@ -17,6 +17,7 @@ namespace Parley.Server.Tests;
 /// duplicated row, or a connection used from two threads shows up as a count that is not the count asked for.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ConcurrencyTests
 {
     [Fact]

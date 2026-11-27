@@ -111,7 +111,7 @@ else if (Model.FolderMode)
         <p>@Model.Entries.Count repositories under <code>@Model.Folder</code>. Tick the ones that should become agents of @Model.Project.</p>
 
         <table>
-            <thead><tr><th></th><th>Agent</th><th>Repository</th><th>Note</th></tr></thead>
+            <thead><tr><th scope="col">Enrol</th><th scope="col">Agent</th><th scope="col">Repository</th><th scope="col">Note</th></tr></thead>
             <tbody>
                 @foreach (var entry in Model.Entries)
                 {
@@ -128,7 +128,7 @@ else if (Model.FolderMode)
                                 </button>
                             }
                         </td>
-                        <td>@entry.Workspace</td>
+                        <td class="path">@entry.Workspace</td>
                         <td>@entry.Note</td>
                     </tr>
                 }
@@ -159,8 +159,10 @@ else if (Model.FolderMode)
         </script>
 
         <p>Enrolling writes into each repository you tick and adds a line for it to <code>@Model.Catalogue</code>, so a peer's request can start it with nobody watching. That spends what the agent costs to run. Each is started once to register, so expect one process each.</p>
-        <button type="submit">Enrol the ticked repositories</button>
-        <a class="button quiet" href="/?tab=agents&amp;project=@Model.Project">Not now</a>
+        <p class="actions">
+            <button type="submit">Enrol the ticked repositories</button>
+            <a class="button quiet" href="/?tab=agents&amp;project=@Model.Project">Not now</a>
+        </p>
     </form>
 }
 else
@@ -174,16 +176,18 @@ else
 
         <dl class="facts">
             <dt>Launch</dt>
-            <dd>@Enrolment.LaunchPath(Model.Workspace!.Trim()) — launches this repository as <code>@Model.Role</code> in @Model.Project.</dd>
+            <dd><span class="path">@Enrolment.LaunchPath(Model.Workspace!.Trim())</span><span class="why">Launches this repository as <code>@Model.Role</code> in @Model.Project.</span></dd>
             <dt>Instructions</dt>
-            <dd>@System.IO.Path.Combine(Model.Workspace!.Trim(), "CLAUDE.md") — a <code>@EnrollmentPlan.PeersHeading</code> section, if it has none.</dd>
+            <dd><span class="path">@EnrollCommand.InstructionsFile(Model.Workspace!.Trim())</span><span class="why">A <code>@EnrollmentPlan.PeersHeading</code> section, if it has none.</span></dd>
             <dt>Catalogue</dt>
-            <dd>@Model.Catalogue — lets this machine start it when a question arrives.</dd>
+            <dd><span class="path">@Model.Catalogue</span><span class="why">Lets this machine start it when a question arrives.</span></dd>
         </dl>
 
         <p>It is then started once to register. That runs the repository's own server on this machine and may take up to a minute.</p>
 
-        <button type="submit">Write them and start it</button>
-        <a class="button quiet" href="/?tab=agents&amp;project=@Model.Project">Not now</a>
+        <p class="actions">
+            <button type="submit">Write them and start it</button>
+            <a class="button quiet" href="/?tab=agents&amp;project=@Model.Project">Not now</a>
+        </p>
     </form>
 }

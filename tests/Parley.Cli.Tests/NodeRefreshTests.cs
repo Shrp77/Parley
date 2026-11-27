@@ -16,6 +16,7 @@ namespace Parley.Cli.Tests;
 /// next start. The waiting-for-the-turn half is <c>RefreshWaitsForTheTurnTests</c>, where a stand-in process can hold a
 /// turn open.
 /// </remarks>
+[Integration]
 public sealed class NodeRefreshTests : IDisposable
 {
     private readonly string _workspace = Directory.CreateTempSubdirectory("parley-node-refresh").FullName;

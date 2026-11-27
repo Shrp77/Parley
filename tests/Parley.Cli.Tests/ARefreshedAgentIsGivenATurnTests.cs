@@ -16,6 +16,7 @@ namespace Parley.Cli.Tests;
 /// claimed until a drain, so the mail sits uncollected with nothing to ask again. Driven with a stub agent that records
 /// every turn it is given and takes two seconds to exit.
 /// </remarks>
+[Integration]
 public sealed class ARefreshedAgentIsGivenATurnTests : IDisposable
 {
     private readonly string _workspace = Directory.CreateTempSubdirectory("parley-refresh-turn").FullName;
@@ -76,6 +77,109 @@ public sealed class ARefreshedAgentIsGivenATurnTests : IDisposable
         Assert.NotNull(current);
         Assert.NotSame(old, current);
         Assert.NotEmpty(lines);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task An_agent_whose_folder_became_a_link_to_a_share_is_not_restarted_there(bool denied)
+    {
+        // Denied: the agent also denies itself SYNCHRONIZE on the link, so the check reads Unreadable rather than off this
+        // machine, which the restart took as go-ahead (review, lens 2 round 17, lens 3 round 14).
+        // The agent's own answer asks for this restart, and its folder can be swapped for a link to a share while the old
+        // process exits: the restart started nothing-checked in that link, and Windows offered the person's sign-in to
+        // the host (review, lens 2 round 16). A TEST-NET host never answers, so a restart that went there waits on it.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "links to shares are a Windows sign-in");
+        var turns = Path.Combine(_workspace, "turns.txt");
+        var command = Stub(turns, exitDelaySeconds: 1);
+        var (catalogue, identity) = Catalogued("docs", command);
+        var running = Directory.CreateTempSubdirectory("parley-refresh-running").FullName;
+        var residents = new ConcurrentDictionary<AgentIdentity, ResidentAgent>();
+        var old = ResidentAgent.Start(
+            AgentName.Create("docs@alpha"), InvocationCommand.Parse(command), running, TimeProvider.System);
+        residents[identity] = old;
+        var aside = _workspace + "-aside";
+        var probe = _workspace + "-probe";
+
+        try
+        {
+            Directory.CreateSymbolicLink(probe, running);
+            Directory.Delete(probe);
+        }
+        catch (Exception refused) when (refused is IOException or UnauthorizedAccessException)
+        {
+            Assert.Skip("symbolic links need Developer Mode here");
+        }
+
+        var written = new StringWriter();
+        var said = TextWriter.Synchronized(written);
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+
+        string Said()
+        {
+            lock (said)
+            {
+                return written.ToString();
+            }
+        }
+
+        // The refresh reads the workspace to find the agent, then waits for the old process to end: the swap lands in
+        // that wait, as an agent's helper does it.
+        await NodeCommand.RefreshAsync(
+            new Wire.RefreshAgent { Agent = "docs@alpha", Because = "a new line" }, catalogue, "alpha", residents, said, Ct);
+
+        Directory.Move(_workspace, aside);
+        Directory.CreateSymbolicLink(_workspace, $@"\\192.0.2.{Random.Shared.Next(2, 254)}\share");
+
+        if (denied)
+        {
+            using var icacls = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                "icacls", [_workspace, "/L", "/deny", $"{Environment.UserDomainName}\\{Environment.UserName}:(S)"])
+            {
+                UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true,
+            })!;
+
+            await icacls.WaitForExitAsync(Ct);
+            Assert.Equal(0, icacls.ExitCode);
+        }
+
+        try
+        {
+            for (var waited = 0; waited < 150 && !Said().Contains("not restarted", StringComparison.Ordinal); waited++)
+            {
+                await Task.Delay(100, Ct);
+            }
+
+            Assert.Contains("could not be checked", Said(), StringComparison.Ordinal);
+            Assert.True(timer.Elapsed < TimeSpan.FromSeconds(15), $"took {timer.Elapsed}: the share was looked up");
+            Assert.False(residents.TryGetValue(identity, out var now) && !ReferenceEquals(now, old), "it was restarted");
+        }
+        finally
+        {
+            foreach (var resident in residents.Values)
+            {
+                await resident.DisposeAsync();
+            }
+
+            if (denied)
+            {
+                using var icacls = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                    "icacls", [_workspace, "/L", "/remove:d", $"{Environment.UserDomainName}\\{Environment.UserName}"])
+                {
+                    UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true,
+                })!;
+
+                await icacls.WaitForExitAsync(Ct);
+            }
+
+            if (new DirectoryInfo(_workspace).LinkTarget is not null)
+            {
+                Directory.Delete(_workspace);
+            }
+
+            Directory.Move(aside, _workspace);
+            Directory.Delete(running, recursive: true);
+        }
     }
 
     private static async Task<string[]> TurnsAsync(string path)

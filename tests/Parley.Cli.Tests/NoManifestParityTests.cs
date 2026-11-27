@@ -30,6 +30,7 @@ namespace Parley.Cli.Tests;
 /// this feature lived in exactly that gap.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class NoManifestParityTests : IDisposable
 {
     private static readonly Func<string, string?> NoVariables = _ => null;

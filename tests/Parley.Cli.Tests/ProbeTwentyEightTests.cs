@@ -20,6 +20,7 @@ namespace Parley.Cli.Tests;
 /// launch configuration — so this is the one refusal that necessarily arrives mid-list.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeTwentyEightTests : IDisposable
 {
     private readonly string _root =

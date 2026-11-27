@@ -19,6 +19,7 @@ namespace Parley.Client.Tests.Views;
 /// them uses the jargon. A future rewording that keeps those properties should keep these passing.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class AgentStandingTests
 {
     /// <summary>The machine these fixtures put their agents on.</summary>

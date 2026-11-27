@@ -21,6 +21,7 @@ namespace Parley.Store.Tests;
 /// exists to prevent: an orphaned exchange and an open one carry the same messages.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ConversationListingTests : IDisposable
 {
     private readonly SqliteConnection _connection;
@@ -125,6 +126,40 @@ public sealed class ConversationListingTests : IDisposable
         using var command = _connection.CreateCommand();
         command.CommandText = sql;
         return command.ExecuteScalar();
+    }
+
+    [Fact]
+    public async Task A_listing_says_when_an_exchange_in_it_last_closed_apart_from_its_last_message()
+    {
+        // A question asked at minute 0 and settled at minute 40 by a Request elsewhere: no message marks the close in its
+        // own conversation, so the Inbox needs the close itself to find it (review, lens 1 rounds 17 and 18).
+        var settled = Discussion("pricing", "orders@test", "billing@test", minute: 0, messages: 1);
+
+        Execute($"UPDATE exchanges SET closed_utc = '{Stamp(40)}' WHERE id = {settled};");
+        _ = Discussion("open-work", "orders@test", "inventory@test", minute: 5, messages: 1, state: "OPEN");
+
+        var listed = await _conversations.ListAsync(cancellationToken: Ct);
+        var pricing = Assert.Single(listed, c => c.Id == "pricing");
+
+        Assert.Equal(DateTimeOffset.Parse(Stamp(0), System.Globalization.CultureInfo.InvariantCulture), pricing.LastActivityUtc);
+        Assert.Equal(DateTimeOffset.Parse(Stamp(40), System.Globalization.CultureInfo.InvariantCulture), pricing.LastClosedUtc);
+        Assert.Null(Assert.Single(listed, c => c.Id == "open-work").LastClosedUtc);
+    }
+
+    [Fact]
+    public async Task Of_several_closes_the_listing_gives_the_newest()
+    {
+        // One exchange closed long ago, another just now with no message: the oldest close reported would drop the
+        // conversation from the Inbox's window (review, lens 3 round 17).
+        var old = Discussion("pricing", "orders@test", "billing@test", minute: 0, messages: 1);
+        var recent = Discussion("pricing", "orders@test", "inventory@test", minute: 2, messages: 1);
+
+        Execute($"UPDATE exchanges SET closed_utc = '{Stamp(10)}' WHERE id = {old};");
+        Execute($"UPDATE exchanges SET closed_utc = '{Stamp(50)}' WHERE id = {recent};");
+
+        var pricing = Assert.Single(await _conversations.ListAsync(cancellationToken: Ct), c => c.Id == "pricing");
+
+        Assert.Equal(DateTimeOffset.Parse(Stamp(50), System.Globalization.CultureInfo.InvariantCulture), pricing.LastClosedUtc);
     }
 
     [Fact]

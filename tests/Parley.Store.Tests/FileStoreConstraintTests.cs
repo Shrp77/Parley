@@ -18,6 +18,7 @@ namespace Parley.Store.Tests;
 /// every refusal test, so the neighbouring legal row is what shows the refusal is the rule and not an accident.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FileStoreConstraintTests : IDisposable
 {
     private const string Stamp = "2026-09-14T00:00:00.0000000Z";
@@ -94,6 +95,18 @@ public sealed class FileStoreConstraintTests : IDisposable
         Refused(() => File("pricing", name.ToUpperInvariant(), name));
     }
 
+    public static TheoryData<string> ReservedDeviceNames =>
+        [.. new[] { "CON", "PRN", "AUX", "NUL" }.Concat(Enumerable.Range(1, 9).SelectMany(i => new[] { $"COM{i}", $"LPT{i}" }))];
+
+    [Theory]
+    [MemberData(nameof(ReservedDeviceNames))]
+    public void Every_reserved_device_name_is_refused_whatever_its_extension(string stem)
+    {
+        // Review, quality lens (0.62.9): taking LPT9 out of the schema's list survived, so each name was held only by the code
+        // layer, and the schema's own check (a second wall) by two of them.
+        Refused(() => File("pricing", (stem + ".txt").ToUpperInvariant(), stem + ".txt"));
+    }
+
     [Fact]
     public void A_name_with_a_control_character_is_refused()
     {
@@ -157,7 +170,7 @@ public sealed class FileStoreConstraintTests : IDisposable
     }
 
     [Fact]
-    public void A_replacement_and_a_rename_in_place_are_admitted_and_keep_the_placer()
+    public void Schema_ones_update_in_place_and_rename_are_still_admitted_and_keep_the_placer()
     {
         File("pricing", "NOTES.MD", "notes.md");
 

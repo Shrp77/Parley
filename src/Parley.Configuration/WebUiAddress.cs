@@ -27,4 +27,23 @@ public static class WebUiAddress
 {
     /// <summary>The address the web UI listens on unless told otherwise.</summary>
     public const string Loopback = "http://127.0.0.1:5280";
+
+    /// <summary>
+    /// The start of the one line a web UI started by a broker writes to its standard output once it is serving,
+    /// followed by the addresses it bound, separated by <c>;</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Readiness comes from the child, not from the address.</b> A broker used to call its web UI ready when a
+    /// connection to the address was accepted. Another program that took the address after the broker looked and before
+    /// the web UI bound accepted that connection too, and the broker sent the person to it while its own web UI failed
+    /// to bind and exited. Only the web UI and the broker that started it hold its standard output. A program another
+    /// user runs cannot write there, but one the same person runs can (on Linux, through <c>/proc</c>), so the line is trusted as far as the person's own processes are, and no further.
+    /// </para>
+    /// <para>
+    /// Here because both ends read it: the web UI writes it and the broker's tool waits for it, and the two are in
+    /// packages that reference nothing of each other's.
+    /// </para>
+    /// </remarks>
+    public const string ServingMarker = "parley-web-ui serving ";
 }

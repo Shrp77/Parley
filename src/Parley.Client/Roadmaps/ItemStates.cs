@@ -17,13 +17,16 @@ public enum ItemStanding
     /// <summary>An agent has asked the person something in the item's conversation and is waiting for the answer.</summary>
     WaitingOnPerson,
 
-    /// <summary>The work ended blocked, with the blocker the agent gave.</summary>
+    /// <summary>The work ended blocked, with the blocker the agent gave, with nothing open in a conversation still open.</summary>
     Blocked,
 
-    /// <summary>Every exchange ended with a Result that did the work or answered it.</summary>
+    /// <summary>Work was done or answered, and no agent's latest answer on the person's requests was blocked.</summary>
     Done,
 
-    /// <summary>The conversation ended without a Result, closed by a person or destroyed. Never read as not started.</summary>
+    /// <summary>
+    /// The conversation was closed, or destroyed, without the work done: a request ended before its agent answered, or a
+    /// part was blocked, whose blocker is kept. Never read as not started.
+    /// </summary>
     Closed,
 
     /// <summary>The state could not be read. Never shown as not started.</summary>
@@ -39,7 +42,7 @@ public enum NextKind
     /// <summary>Every live item is done.</summary>
     Complete,
 
-    /// <summary>Nothing is ready: what remains is waiting, blocked, or needs something that is not done.</summary>
+    /// <summary>Nothing is ready: no item left is both not started and free of needs that are not done.</summary>
     NothingReady,
 
     /// <summary>The roadmap holds no live item.</summary>
@@ -50,8 +53,11 @@ public enum NextKind
 /// <param name="Item">The item as the broker returned it.</param>
 /// <param name="Standing">Where it stands.</param>
 /// <param name="Holders">The agents with something owed on it, when there are any.</param>
-/// <param name="Blocker">The blocker an agent gave, when the item is blocked.</param>
-/// <param name="TextChanged">Whether the item's text differs from the words first sent for it.</param>
+/// <param name="Blocker">
+/// The blocker an agent gave, while any agent's part is blocked: on a blocked item, on a closed one, and beside open work.
+/// Not on an item that could not be read, or was destroyed, since neither says where its work stands.
+/// </param>
+/// <param name="TextChanged">Whether the item's text was edited after its conversation began.</param>
 /// <param name="IsNext">Whether it is the roadmap's next item.</param>
 public sealed record ItemState(
     RoadmapItem Item,
@@ -78,8 +84,8 @@ public sealed record RoadmapStanding(
 /// <remarks>
 /// <para>
 /// <b>Derived here and stored nowhere, and read by every surface.</b> The broker returns facts about each live item's
-/// conversation (<see cref="ItemFacts"/>) and this turns them into a state, so the terminal, the web console and the
-/// command line cannot disagree about it, and no column exists that could disagree with it. Two surfaces implementing
+/// conversation (<see cref="ItemFacts"/>) and this turns them into a state, so the terminal and the web console
+/// cannot disagree about it, and no column exists that could disagree with it. Two surfaces implementing
 /// this separately is how they would come to differ about what a person has seen.
 /// </para>
 /// <para>
@@ -141,8 +147,8 @@ public static class ItemStates
             return new ItemState(item, ItemStanding.CouldNotBeRead, [], null, false, false);
         }
 
-        var changed = facts.FirstSentText is { Length: > 0 } sent
-            && !sent.Contains(item.Text, StringComparison.Ordinal);
+        // From the item's edit record, never by comparing words: the person may change the words before sending them.
+        var changed = facts.TextEditedSinceStarted;
 
         if (facts.Destroyed)
         {
@@ -154,8 +160,14 @@ public static class ItemStates
             return new ItemState(item, ItemStanding.NotStarted, [], null, false, false);
         }
 
+        // Named whatever else the item is doing, so open work beside a blocked part never hides the block.
+        var blocker = facts.BlockedExchanges > 0 ? facts.Blocker : null;
+
         if (facts.OpenExchanges > 0)
         {
+            // Open work outranks a blocked part: asking the blocked agent again reads as that request, not as the block
+            // it may clear, and an item sent to two agents reads as the one still working. The blocker stays named.
+            //
             // The graph is the only thing that says whose move an open exchange is. Without it the item is not known to
             // be anything: working, waiting on somebody, and waiting on the person all look the same from the facts.
             if (waiting is null)
@@ -170,7 +182,7 @@ public static class ItemStates
             {
                 return new ItemState(
                     item, ItemStanding.WaitingOnPerson, [.. edges.Where(e => e.WaitedOn == me).Select(e => e.Waiter).Distinct()],
-                    null, changed, false);
+                    blocker, changed, false);
             }
 
             var owing = edges.Select(e => e.WaitedOn).Distinct().OrderBy(a => a.Value, StringComparer.Ordinal).ToList();
@@ -179,12 +191,16 @@ public static class ItemStates
             var onAgent = edges.Any(e => e.Waiter != me) || !facts.Collected;
 
             return new ItemState(
-                item, onAgent ? ItemStanding.WaitingOnAgent : ItemStanding.InProgress, owing, null, changed, false);
+                item, onAgent ? ItemStanding.WaitingOnAgent : ItemStanding.InProgress, owing, blocker, changed, false);
         }
 
+        // With nothing open, a blocked part decides the item, so it is never done. Blocked while the conversation is open,
+        // because asking again is what clears it; once the person has closed it nobody can ask again, so it reads closed,
+        // still naming the blocker, because a close that dropped the blocker would hide it from the person.
         if (facts.BlockedExchanges > 0)
         {
-            return new ItemState(item, ItemStanding.Blocked, [], facts.Blocker, changed, false);
+            return new ItemState(
+                item, facts.ClosedBy is null ? ItemStanding.Blocked : ItemStanding.Closed, [], facts.Blocker, changed, false);
         }
 
         if (facts.CompleteExchanges > 0 && facts.ClosedExchanges == 0)
@@ -192,7 +208,8 @@ public static class ItemStates
             return new ItemState(item, ItemStanding.Done, [], null, changed, false);
         }
 
-        // Closed with no Result for some of it: ended by a person or by the broker, which is not the work done.
+        // A request ended before its agent answered (closed by a person or by the broker), or a conversation closed or
+        // destroyed with nothing done: not the work done.
         return facts.CompleteExchanges + facts.ClosedExchanges > 0 || facts.ClosedBy is not null
             ? new ItemState(item, ItemStanding.Closed, [], null, changed, false)
             : new ItemState(item, ItemStanding.NotStarted, [], null, false, false);

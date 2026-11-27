@@ -23,6 +23,7 @@ namespace Parley.Cli.Tests;
 /// might have rendered them is gone.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class StartupBannerTests
 {
     /// <summary>One project at a chosen endpoint, in a throwaway root.</summary>

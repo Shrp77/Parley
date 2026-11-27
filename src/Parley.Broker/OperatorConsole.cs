@@ -32,10 +32,13 @@ public sealed class OperatorConsole
     private readonly ExchangeRepository _exchanges;
     private readonly Pruner _pruner;
     private readonly SizeRefusalRepository _refusals;
+    private readonly MessageLengthRepository _lengths;
     private readonly ClarifyReportRepository _clarify;
     private readonly ResultsReportRepository _results;
     private readonly FlagRepository _flags;
     private readonly RoadmapRepository _roadmaps;
+    private readonly HistoryRepository _history;
+    private readonly ConversationMoveRepository _moves;
 
     /// <summary>Creates a console over an open connection.</summary>
     /// <param name="connection">An open, already-migrated connection. Borrowed, never closed.</param>
@@ -47,12 +50,15 @@ public sealed class OperatorConsole
         _agents = new AgentRepository(connection);
         _messages = new MessageRepository(connection);
         _exchanges = new ExchangeRepository(connection);
+        _moves = new ConversationMoveRepository(connection);
         _pruner = new Pruner(connection);
         _refusals = new SizeRefusalRepository(connection);
+        _lengths = new MessageLengthRepository(connection);
         _clarify = new ClarifyReportRepository(connection);
         _results = new ResultsReportRepository(connection);
         _flags = new FlagRepository(connection);
         _roadmaps = new RoadmapRepository(connection);
+        _history = new HistoryRepository(connection);
     }
 
     /// <summary>Closes a conversation on the person's word, regardless of its participants' votes (§5.0).</summary>
@@ -86,6 +92,62 @@ public sealed class OperatorConsole
             conversationId, reason, nowUtc, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Closes one open Request the person is a party to, without an answer (§10.2).</summary>
+    /// <param name="exchange">The exchange.</param>
+    /// <param name="reason">Why, if the person said. The other side is told it.</param>
+    /// <param name="nowUtc">The instant of closure.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>The exchange, if this call closed it.</returns>
+    public async Task<Exchange?> CloseRequestAsync(
+        long exchange,
+        string? reason,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default) =>
+        await _conversations.CloseRequestAsync(exchange, reason, nowUtc, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+    /// <summary>Opens a new conversation with a parent, sending nothing (§10.2's <c>spin_off</c>).</summary>
+    /// <param name="parent">The conversation it comes from.</param>
+    /// <param name="child">The new conversation's name.</param>
+    /// <param name="nowUtc">The instant.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Why it was refused, or <see langword="null"/>.</returns>
+    public Task<string?> SpinOffAsync(string parent, string child, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) =>
+        _moves.SpinOffAsync(parent, child, nowUtc, cancellationToken);
+
+    /// <summary>Takes back a link whose first Request reached nobody (§10.2's <c>abandon_spin_off</c>).</summary>
+    /// <param name="parent">The conversation it came from.</param>
+    /// <param name="child">The conversation that was to be started.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Whether anything was taken back.</returns>
+    public Task<bool> AbandonSpinOffAsync(string parent, string child, CancellationToken cancellationToken = default) =>
+        _moves.AbandonSpinOffAsync(parent, child, cancellationToken);
+
+    /// <summary>Says what moving some exchanges would take (§10.2's <c>preview_move</c>).</summary>
+    /// <param name="source">The conversation they are in.</param>
+    /// <param name="exchanges">The exchanges picked.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Every exchange that would go, and the files that stay.</returns>
+    public Task<MovePreview> PreviewMoveAsync(string source, IReadOnlyCollection<long> exchanges, CancellationToken cancellationToken = default) =>
+        _moves.PreviewAsync(source, exchanges, cancellationToken);
+
+    /// <summary>Moves whole exchanges to another conversation, all or none (§10.2's <c>move_exchanges</c>).</summary>
+    /// <param name="source">The conversation they are in.</param>
+    /// <param name="destination">Where they go.</param>
+    /// <param name="isNew">Whether the destination must not exist yet.</param>
+    /// <param name="exchanges">Every exchange that goes.</param>
+    /// <param name="nowUtc">The instant.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>How many moved, or why none did.</returns>
+    public Task<MoveOutcome> MoveExchangesAsync(
+        string source,
+        string destination,
+        bool isNew,
+        IReadOnlyCollection<long> exchanges,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default) =>
+        _moves.MoveAsync(source, destination, isNew, exchanges, nowUtc, cancellationToken);
+
     /// <summary>Withdraws an agent's registration (§10.2).</summary>
     /// <param name="agent">The agent to retire.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
@@ -97,6 +159,28 @@ public sealed class OperatorConsole
     /// </remarks>
     public async Task<bool> RetireAsync(AgentName agent, CancellationToken cancellationToken = default) =>
         await _agents.RetireAsync(agent, cancellationToken).ConfigureAwait(false) > 0;
+
+    /// <summary>Freezes an agent: nothing starts it until a person unfreezes it, or the broker next starts unless the freeze is kept (§10.2, §14).</summary>
+    /// <param name="agent">The agent to freeze.</param>
+    /// <param name="nowUtc">When it was frozen.</param>
+    /// <param name="run">The run of the broker freezing it, kept with the freeze so a later start can tell it is an earlier run's.</param>
+    /// <param name="keepFrozen">Whether the freeze outlasts a start of the broker.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns><see langword="true"/> if it was not frozen before.</returns>
+    /// <remarks>
+    /// Closes, moves and answers nothing: what the agent owes stays open. Refused for the person's seat and the
+    /// facilitator by storage, so the count is zero for them. Freezing ends no process here; the runtime asks the node.
+    /// </remarks>
+    public async Task<bool> FreezeAgentAsync(
+        AgentName agent, DateTimeOffset nowUtc, string run, bool keepFrozen, CancellationToken cancellationToken = default) =>
+        await _agents.FreezeAsync(agent, nowUtc, run, keepFrozen, cancellationToken).ConfigureAwait(false) > 0;
+
+    /// <summary>Clears an agent's freeze (§10.2).</summary>
+    /// <param name="agent">The agent to unfreeze.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns><see langword="true"/> if it was frozen.</returns>
+    public async Task<bool> UnfreezeAgentAsync(AgentName agent, CancellationToken cancellationToken = default) =>
+        await _agents.UnfreezeAsync(agent, cancellationToken).ConfigureAwait(false) > 0;
 
     /// <summary>Records that a person accepted a statement of what an agent owns (§10.2).</summary>
     /// <param name="agent">Whose line it is.</param>
@@ -208,6 +292,12 @@ public sealed class OperatorConsole
     public async Task<IReadOnlyList<SizeRefusal>> DescribeRefusalsAsync(CancellationToken cancellationToken = default) =>
         await _refusals.GetAllAsync(cancellationToken).ConfigureAwait(false);
 
+    /// <summary>Reports how long messages have been (§10.2).</summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The report. Lengths only: the record it reads holds no words.</returns>
+    public async Task<MessageLengthReport> DescribeMessageLengthsAsync(CancellationToken cancellationToken = default) =>
+        await _lengths.ReadAsync(cancellationToken).ConfigureAwait(false);
+
     /// <summary>Reports what clarification cost (§10.2).</summary>
     /// <param name="cancellationToken">Cancels the reads.</param>
     /// <returns>The depth distribution and the caps in force.</returns>
@@ -250,9 +340,21 @@ public sealed class OperatorConsole
         return [.. open.Select(e => new WaitingEdge(e.Waiting, e.OwedBy, e.Id))];
     }
 
+    /// <summary>Says which conversation an exchange is in now (§10.2's <c>locate_exchange()</c>).</summary>
+    /// <param name="exchangeId">The exchange.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The conversation, or <see langword="null"/> when there is no such exchange.</returns>
+    /// <remarks>
+    /// So a surface can open an exchange a message names (§5.6, a reference). An operator operation because it finds any
+    /// exchange in the store by number, across pairs, which §10.1 withholds from a participant.
+    /// </remarks>
+    public async Task<string?> LocateExchangeAsync(long exchangeId, CancellationToken cancellationToken = default) =>
+        await _exchanges.GetConversationOfAsync(exchangeId, cancellationToken).ConfigureAwait(false);
+
     /// <summary>Emits every message in a conversation and the state of its exchanges (§10.2's <c>export()</c>).</summary>
     /// <param name="conversationId">The conversation.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
+    /// <param name="latestOnly">Only the newest message each sender wrote in each exchange, its newest Result, and the exchange states.</param>
     /// <returns>The messages, the exchange states, or the record of a destroyed conversation.</returns>
     /// <exception cref="ArgumentException"><paramref name="conversationId"/> is null or empty.</exception>
     /// <remarks>
@@ -265,8 +367,20 @@ public sealed class OperatorConsole
     /// another agent's context, and a person reading their own deployment's log is not being asked to obey it.
     /// </para>
     /// </remarks>
-    public async Task<ConversationExport> ExportAsync(string conversationId, CancellationToken cancellationToken = default)
+    public async Task<ConversationExport> ExportAsync(
+        string conversationId, CancellationToken cancellationToken = default, bool latestOnly = false)
     {
+        if (latestOnly)
+        {
+            // A summary: what the Inbox reads of a conversation, and nothing it does not (SPEC.md 10.2).
+            var snapshots = await _exchanges.GetSnapshotsAsync(conversationId, cancellationToken).ConfigureAwait(false);
+            var latest = await _messages
+                .GetLatestOfExchangesAsync(conversationId, snapshots.Select(e => e.ExchangeId), cancellationToken)
+                .ConfigureAwait(false);
+
+            return new ConversationExport(latest, snapshots);
+        }
+
         var messages = await _messages.GetConversationAsync(conversationId, cancellationToken).ConfigureAwait(false);
         var exchanges = await _exchanges.GetSnapshotsAsync(conversationId, cancellationToken).ConfigureAwait(false);
 
@@ -283,7 +397,12 @@ public sealed class OperatorConsole
             messages,
             exchanges,
             destroyed,
-            reserved is { } r ? new RoadmapItemRef(r.RoadmapId, r.RoadmapNumber, r.Title, r.ItemNumber, r.Removed) : null);
+            reserved is { } r ? new RoadmapItemRef(r.RoadmapId, r.RoadmapNumber, r.Title, r.ItemNumber, r.Removed) : null,
+            await _moves.GetLinksAsync(conversationId, cancellationToken).ConfigureAwait(false),
+            await _moves.GetMovesAsync(conversationId, cancellationToken).ConfigureAwait(false),
+            await _moves.GetSettledElsewhereAsync(conversationId, cancellationToken).ConfigureAwait(false),
+            await _moves.GetWroteElsewhereAsync(conversationId, cancellationToken).ConfigureAwait(false),
+            await _history.ReadsInConversationAsync(conversationId, cancellationToken).ConfigureAwait(false));
     }
 
     /// <summary>Lists the project's roadmaps (§10.2's <c>roadmaps()</c>).</summary>
@@ -312,12 +431,37 @@ public sealed class OperatorConsole
         ProposalState? state, CancellationToken cancellationToken = default) =>
         _roadmaps.ListProposalsAsync(state, cancellationToken);
 
+    /// <summary>Reads the headings of the proposals agents have made, and none of their items (§10.2's <c>proposals</c>).</summary>
+    /// <param name="state">Which to read, or <see langword="null"/> for every state.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The proposals, newest first, as headings.</returns>
+    public Task<IReadOnlyList<RoadmapProposal>> ListProposalHeadingsAsync(
+        ProposalState? state, CancellationToken cancellationToken = default) =>
+        _roadmaps.ListProposalHeadingsAsync(state, cancellationToken);
+
+    /// <summary>Counts the proposals agents have made (§10.2's <c>proposal_count</c>).</summary>
+    /// <param name="state">Which to count, or <see langword="null"/> for every state.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>How many there are.</returns>
+    public Task<int> CountProposalsAsync(ProposalState? state, CancellationToken cancellationToken = default) =>
+        _roadmaps.CountProposalsAsync(state, cancellationToken);
+
+    /// <summary>Reads one proposal whole (§10.2's <c>proposal</c>).</summary>
+    /// <param name="id">The proposal.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The proposal, or <see langword="null"/>.</returns>
+    public Task<RoadmapProposal?> GetProposalAsync(long id, CancellationToken cancellationToken = default) =>
+        _roadmaps.GetProposalAsync(id, cancellationToken);
+
     /// <summary>Turns a proposal into a roadmap, or a revision of one (§10.2's <c>confirm_proposal</c>).</summary>
     /// <param name="id">The proposal.</param>
     /// <param name="content">The person's final content.</param>
     /// <param name="targetRoadmap">The roadmap it revises, or <see langword="null"/> for a new one.</param>
     /// <param name="nowUtc">The instant.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
+    /// <param name="targetRevision">
+    /// The revision of that roadmap the person was shown: required with a target, and refused when it has moved.
+    /// </param>
     /// <returns>What it came to.</returns>
     /// <remarks>
     /// Where a roadmap comes to exist. Only this and <see cref="EditRoadmapAsync"/> write one, and both are a
@@ -328,8 +472,10 @@ public sealed class OperatorConsole
         RoadmapContent content,
         long? targetRoadmap,
         DateTimeOffset nowUtc,
-        CancellationToken cancellationToken = default) =>
-        _roadmaps.ConfirmAsync(id, content, targetRoadmap, nowUtc, cancellationToken: cancellationToken);
+        CancellationToken cancellationToken = default,
+        int? targetRevision = null) =>
+        _roadmaps.ConfirmAsync(
+            id, content, targetRoadmap, nowUtc, cancellationToken: cancellationToken, expectedRevision: targetRevision);
 
     /// <summary>Declines a waiting proposal (§10.2's <c>decline_proposal</c>).</summary>
     /// <param name="id">The proposal.</param>

@@ -1,0 +1,760 @@
+// One conversation of about 120 messages, to photograph the minimap on narrow screens. Invented names.
+{
+  "project": "shop",
+  "machine": "devbox",
+  "description": "A sample shop with one very long conversation.",
+  "agents": [
+    {
+      "role": "orders",
+      "owns": "Order flow.",
+      "started": "node",
+      "model": "claude-opus-5-5"
+    },
+    {
+      "role": "billing",
+      "owns": "Invoices and tax.",
+      "started": "node",
+      "model": "claude-opus-5-5"
+    },
+    {
+      "role": "inventory",
+      "owns": "Stock levels.",
+      "started": "node",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "steps": [
+    {
+      "do": "request",
+      "from": "orders",
+      "to": "billing",
+      "conversation": "long-thread",
+      "label": "q0",
+      "text": "Question 1: which rounding rule applies to line 1 of a mixed-rate basket?"
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q0",
+      "text": "Point 1 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q0",
+      "text": "Point 2 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q0",
+      "text": "Point 3 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q0",
+      "text": "Point 4 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q0",
+      "text": "Point 5 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q0",
+      "text": "Point 6 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q0",
+      "text": "Point 7 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q0",
+      "text": "Point 8 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q0",
+      "text": "Point 9 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q0",
+      "text": "Point 10 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q0",
+      "text": "Point 11 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q0",
+      "text": "Point 12 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q0",
+      "text": "Point 13 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q0",
+      "text": "Point 14 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q0",
+      "text": "Point 15 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q0",
+      "text": "Point 16 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q0",
+      "text": "Point 17 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q0",
+      "text": "Point 18 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q0",
+      "text": "Point 19 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q0",
+      "text": "Point 20 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q0",
+      "text": "Point 21 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q0",
+      "text": "Point 22 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q0",
+      "text": "Point 23 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q0",
+      "text": "Point 24 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q0",
+      "text": "Point 25 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q0",
+      "text": "Point 26 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q0",
+      "text": "Point 27 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q0",
+      "text": "Point 28 on question 1: a short note so the conversation runs long."
+    },
+    {
+      "do": "result",
+      "from": "billing",
+      "exchange": "q0",
+      "outcome": "answered",
+      "text": "Question 1 settled: round each line half up."
+    },
+    {
+      "do": "request",
+      "from": "billing",
+      "to": "inventory",
+      "conversation": "long-thread",
+      "label": "q1",
+      "text": "Question 2: which rounding rule applies to line 2 of a mixed-rate basket?"
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q1",
+      "text": "Point 1 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q1",
+      "text": "Point 2 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q1",
+      "text": "Point 3 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q1",
+      "text": "Point 4 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q1",
+      "text": "Point 5 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q1",
+      "text": "Point 6 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q1",
+      "text": "Point 7 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q1",
+      "text": "Point 8 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q1",
+      "text": "Point 9 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q1",
+      "text": "Point 10 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q1",
+      "text": "Point 11 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q1",
+      "text": "Point 12 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q1",
+      "text": "Point 13 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q1",
+      "text": "Point 14 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q1",
+      "text": "Point 15 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q1",
+      "text": "Point 16 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q1",
+      "text": "Point 17 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q1",
+      "text": "Point 18 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q1",
+      "text": "Point 19 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q1",
+      "text": "Point 20 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q1",
+      "text": "Point 21 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q1",
+      "text": "Point 22 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q1",
+      "text": "Point 23 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q1",
+      "text": "Point 24 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q1",
+      "text": "Point 25 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q1",
+      "text": "Point 26 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q1",
+      "text": "Point 27 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q1",
+      "text": "Point 28 on question 2: a short note so the conversation runs long."
+    },
+    {
+      "do": "result",
+      "from": "inventory",
+      "exchange": "q1",
+      "outcome": "answered",
+      "text": "Question 2 settled: round each line half up."
+    },
+    {
+      "do": "request",
+      "from": "orders",
+      "to": "billing",
+      "conversation": "long-thread",
+      "label": "q2",
+      "text": "Question 3: which rounding rule applies to line 3 of a mixed-rate basket?"
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q2",
+      "text": "Point 1 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q2",
+      "text": "Point 2 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q2",
+      "text": "Point 3 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q2",
+      "text": "Point 4 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q2",
+      "text": "Point 5 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q2",
+      "text": "Point 6 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q2",
+      "text": "Point 7 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q2",
+      "text": "Point 8 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q2",
+      "text": "Point 9 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q2",
+      "text": "Point 10 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q2",
+      "text": "Point 11 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q2",
+      "text": "Point 12 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q2",
+      "text": "Point 13 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q2",
+      "text": "Point 14 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q2",
+      "text": "Point 15 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q2",
+      "text": "Point 16 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q2",
+      "text": "Point 17 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q2",
+      "text": "Point 18 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q2",
+      "text": "Point 19 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q2",
+      "text": "Point 20 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q2",
+      "text": "Point 21 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q2",
+      "text": "Point 22 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q2",
+      "text": "Point 23 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q2",
+      "text": "Point 24 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q2",
+      "text": "Point 25 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q2",
+      "text": "Point 26 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q2",
+      "text": "Point 27 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "orders",
+      "exchange": "q2",
+      "text": "Point 28 on question 3: a short note so the conversation runs long."
+    },
+    {
+      "do": "result",
+      "from": "billing",
+      "exchange": "q2",
+      "outcome": "answered",
+      "text": "Question 3 settled: round each line half up."
+    },
+    {
+      "do": "request",
+      "from": "billing",
+      "to": "inventory",
+      "conversation": "long-thread",
+      "label": "q3",
+      "text": "Question 4: which rounding rule applies to line 4 of a mixed-rate basket?"
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q3",
+      "text": "Point 1 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q3",
+      "text": "Point 2 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q3",
+      "text": "Point 3 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q3",
+      "text": "Point 4 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q3",
+      "text": "Point 5 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q3",
+      "text": "Point 6 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q3",
+      "text": "Point 7 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q3",
+      "text": "Point 8 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q3",
+      "text": "Point 9 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q3",
+      "text": "Point 10 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q3",
+      "text": "Point 11 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q3",
+      "text": "Point 12 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q3",
+      "text": "Point 13 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q3",
+      "text": "Point 14 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q3",
+      "text": "Point 15 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q3",
+      "text": "Point 16 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q3",
+      "text": "Point 17 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q3",
+      "text": "Point 18 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q3",
+      "text": "Point 19 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q3",
+      "text": "Point 20 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q3",
+      "text": "Point 21 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q3",
+      "text": "Point 22 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q3",
+      "text": "Point 23 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q3",
+      "text": "Point 24 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q3",
+      "text": "Point 25 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q3",
+      "text": "Point 26 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "inventory",
+      "exchange": "q3",
+      "text": "Point 27 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "clarify",
+      "from": "billing",
+      "exchange": "q3",
+      "text": "Point 28 on question 4: a short note so the conversation runs long."
+    },
+    {
+      "do": "result",
+      "from": "inventory",
+      "exchange": "q3",
+      "outcome": "answered",
+      "text": "Question 4 settled: round each line half up."
+    }
+  ]
+}

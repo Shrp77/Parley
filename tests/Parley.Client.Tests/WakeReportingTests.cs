@@ -21,6 +21,7 @@ namespace Parley.Client.Tests;
 /// Two implementations of a report about the same send would disagree about what was sent.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class WakeReportingTests
 {
     private static AgentName Orders => AgentName.Create("orders@test");
@@ -33,6 +34,40 @@ public sealed class WakeReportingTests
             Wire.WakeOutcome.AlreadyComing,
             Wire.WakeOutcome.Unreachable,
         };
+
+    [Theory]
+    [InlineData(Wire.WakeOutcome.Started, true)]
+    [InlineData(Wire.WakeOutcome.AlreadyRunning, true)]
+    [InlineData(Wire.WakeOutcome.AlreadyComing, true)]
+    [InlineData(Wire.WakeOutcome.Unreachable, false)]
+    [InlineData(Wire.WakeOutcome.OpenOutside, false)]
+    public void A_send_goes_on_unaided_unless_nothing_can_give_its_receiver_a_turn(Wire.WakeOutcome outcome, bool unaided)
+    {
+        Assert.Equal(unaided, SeatVoice.GoesOnUnaided("Sent. Exchange 1 is open. " + SeatVoice.Waking(outcome, Orders)));
+    }
+
+    [Theory]
+    [InlineData(Wire.WakeOutcome.Started)]
+    [InlineData(Wire.WakeOutcome.AlreadyComing)]
+    [InlineData(Wire.WakeOutcome.Unreachable)]
+    [InlineData(Wire.WakeOutcome.OpenOutside)]
+    [InlineData(Wire.WakeOutcome.WithThePerson)]
+    public void Only_an_agent_already_running_is_listed_as_running(Wire.WakeOutcome outcome)
+    {
+        // Without a word of its own for each outcome in Reached, the Inbox's list of agents asked said "Running" of an
+        // agent that could not be started, or was only being started, and the person waited on nothing (review, lens 3
+        // round 32).
+        var said = SeatVoice.Reached(outcome);
+
+        Assert.DoesNotContain("Running", said, StringComparison.OrdinalIgnoreCase);
+        Assert.NotEqual(SeatVoice.Reached(Wire.WakeOutcome.Unspecified), said);
+    }
+
+    [Fact]
+    public void A_refused_send_does_not_go_on_unaided()
+    {
+        Assert.False(SeatVoice.GoesOnUnaided("That was refused."));
+    }
 
     [Theory]
     [MemberData(nameof(Outcomes))]
@@ -86,6 +121,18 @@ public sealed class WakeReportingTests
         Assert.Contains("collects this when it next runs", said, StringComparison.Ordinal);
         Assert.Contains(Orders.Value, said, StringComparison.Ordinal);
         Assert.DoesNotContain("failed", said, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void An_agent_open_outside_Parley_is_not_blamed_on_an_editor()
+    {
+        // The broker answers OpenOutside for a session somebody opened, and LeftRunning for a process a node that is gone
+        // left running (SPEC.md sections 11.1 and 11.7), so this sentence is about an editor's session alone.
+        var said = SeatVoice.Waking(Wire.WakeOutcome.OpenOutside, Orders);
+
+        Assert.Contains(Orders.Value + " is open outside Parley, so Parley cannot give it a turn", said, StringComparison.Ordinal);
+        Assert.Contains("prompts it where it is open", said, StringComparison.Ordinal);
+        Assert.DoesNotContain("editor", said, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

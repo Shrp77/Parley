@@ -76,6 +76,9 @@ public sealed class ScriptedOwnership : HttpMessageHandler
     /// <summary>What was recorded, in the order it arrived.</summary>
     public List<Wire.RecordOwnershipRequest> Recorded { get; } = [];
 
+    /// <summary>Runs while a record is being answered, as the serve pass could between a surface's write and record.</summary>
+    public Action? DuringRecord { get; set; }
+
     /// <inheritdoc/>
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request, CancellationToken cancellationToken)
@@ -151,6 +154,7 @@ public sealed class ScriptedOwnership : HttpMessageHandler
             : new Wire.RecordOwnershipRequest();
 
         Recorded.Add(asked);
+        DuringRecord?.Invoke();
 
         return new Wire.RecordOwnershipReply
         {

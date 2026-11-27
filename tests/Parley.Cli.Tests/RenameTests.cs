@@ -19,6 +19,7 @@ namespace Parley.Cli.Tests;
 /// exists. Checked mechanically because prose is exactly where a rename gets left half-done.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RenameTests
 {
     /// <summary>Files that describe the surfaces to a person.</summary>

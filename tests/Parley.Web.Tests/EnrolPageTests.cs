@@ -4,6 +4,7 @@ using Xunit;
 namespace Parley.Web.Tests;
 
 /// <summary>That agents can be registered from the console, that nothing is written before it is confirmed, and that a refusal says why.</summary>
+[Integration]
 public sealed class EnrolPageTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "parley-enrol-" + Guid.NewGuid().ToString("N"));
@@ -111,6 +112,22 @@ public sealed class EnrolPageTests : IDisposable
         Assert.Contains("name=\"Chosen\"", page, StringComparison.Ordinal);
         Assert.DoesNotContain(" checked", page[page.IndexOf("name=\"Chosen\"", StringComparison.Ordinal)..], StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(">notes<", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_folder_that_is_not_there_says_there_is_no_directory()
+    {
+        // Without the guard a folder that does not exist was answered as though it held no repositories, so a mistyped
+        // path read as an empty folder (review, lens 3 round 35).
+        var missing = Path.Combine(_root, "nowhere");
+
+        using var console = new TranscriptConsole();
+        using var client = console.CreateClient();
+
+        var page = await GetAsync(client, $"/Projects/Enrol?project=alpha&folder={Uri.EscapeDataString(missing)}");
+
+        Assert.Contains("There is no directory at ", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("No git repositories directly under", page, StringComparison.Ordinal);
     }
 
     [Fact]

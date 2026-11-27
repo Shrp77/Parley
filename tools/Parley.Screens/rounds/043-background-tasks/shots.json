@@ -1,0 +1,58 @@
+// Feature 043: each background task by name, with the agent's own words and links, on the graph, the agent's page and
+// at phone size.
+{
+  "theme": "light",
+  "scale": 1,
+  "maximumBytes": 0,
+  "shots": [
+    {
+      "file": "graph-desktop-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "The graph: orders' tasks by name, five of seven, the rest counted in a box that opens its page.",
+      "graph": true,
+      "storage": { "parley-convo-composer": "closed" },
+      "actions": [ { "pause": 1200 } ]
+    },
+    {
+      "file": "graph-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "The same on a phone, billing folded so orders' tasks come up.",
+      "graph": false,
+      "storage": {
+        "parley-convo-composer": "closed",
+        "parley.graph": "{\"open\":false,\"pinned\":false,\"projects\":[],\"agents\":[],\"folded\":[\"billing@devbox\"],\"tools\":null}"
+      },
+      "actions": [
+        { "click": ".rail-more > summary" },
+        { "click": "[data-pg-open]" },
+        { "pause": 1200 }
+      ]
+    },
+    {
+      "file": "agent-page-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Projects/Agent?project={project}&agent={agent:orders}",
+      "shows": "orders' page: Background work lists every task, the agent's words and links, and a stand-in for the one not named.",
+      "graph": false,
+      "actions": [ { "scroll": "#background-work" }, { "pause": 600 } ]
+    },
+    {
+      "file": "agent-page-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Projects/Agent?project={project}&agent={agent:orders}",
+      "shows": "orders' page on a phone.",
+      "graph": false,
+      "actions": [ { "scroll": "#background-work" }, { "pause": 600 } ]
+    }
+  ]
+}

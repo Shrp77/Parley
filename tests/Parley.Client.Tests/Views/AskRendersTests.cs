@@ -11,6 +11,7 @@ namespace Parley.Client.Tests.Views;
 /// A reader that had not learned <c>ask</c> would fall through to the raw document, which looks almost right on a
 /// screen and which nobody can read, so the complement is asserted too.
 /// </remarks>
+[Unit]
 public sealed class AskRendersTests
 {
     private static Message Message(MessageType type, string payload) =>

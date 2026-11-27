@@ -4,6 +4,7 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>What the node's log says about the label of a turn that failed.</summary>
+[Integration]
 public sealed class FailedTurnReasonTests
 {
     private static TurnOutcome Ended(bool error, string? stop) =>

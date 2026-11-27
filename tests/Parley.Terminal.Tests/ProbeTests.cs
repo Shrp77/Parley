@@ -22,6 +22,7 @@ namespace Parley.Terminal.Tests;
 /// because a probe that fails for the wrong reason proves as little as one that passes vacuously.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeTests
 {
     /// <summary>Lens 1: the reader behaves identically after the move.</summary>

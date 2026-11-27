@@ -11,6 +11,7 @@ namespace Parley.Web.Tests;
 /// the person <c>here</c> for ever, where §14 says a tab nobody is looking at is not somebody at a desk. The reload now
 /// carries a marker, and a render carrying it keeps the seat's stream without counting as the person.
 /// </remarks>
+[Integration]
 public sealed class AReloadIsNotAPersonTests
 {
     [Fact]
@@ -19,7 +20,9 @@ public sealed class AReloadIsNotAPersonTests
         using var console = new DeadBrokerConsole();
         using var client = console.CreateStubbornClient();
 
-        var body = await client.GetStringAsync(new Uri("/", UriKind.Relative), TestContext.Current.CancellationToken);
+        // A list view that still reloads itself. The projects and agents views refresh in place instead (CurrencyTests).
+        var body = await client.GetStringAsync(
+            new Uri($"/Projects/Agents?project={DeadBrokerConsole.Project}", UriKind.Relative), TestContext.Current.CancellationToken);
 
         Assert.Contains("http-equiv=\"refresh\"", body, StringComparison.Ordinal);
         Assert.Contains("reloaded=1", body, StringComparison.Ordinal);

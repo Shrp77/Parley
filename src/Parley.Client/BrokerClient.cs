@@ -54,9 +54,14 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
                 Read(row.TurnRunningSinceUtc),
                 Read(row.LastTurnEndedUtc),
                 row.LastTurnClean,
-                row.LastTurnPermissionDenials),
+                row.LastTurnPermissionDenials,
+                Math.Clamp(row.BackgroundTasks, 0, MostBackgroundTasks),
+                [.. row.RunningTasks.Select(Task)]),
             row.OpenOutside,
-            AgentIdentity.TryRead(row.Identity, out var identity) ? identity : default))];
+            AgentIdentity.TryRead(row.Identity, out var identity) ? identity : default,
+            row.Unsupervised,
+            Read(row.FrozenUtc),
+            row.KeepFrozen))];
     }
 
     /// <summary>Reads how an accepted line was arrived at, off a registry row.</summary>
@@ -103,7 +108,10 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             Read(row.LastActivityUtc) ?? DateTimeOffset.MinValue,
             row.HasOpenExchange,
             row.Archived,
-            ItemOf(row.Item)));
+            ItemOf(row.Item),
+            string.IsNullOrEmpty(row.Parent) ? null : row.Parent,
+            row.Closed,
+            Read(row.LastClosedUtc)));
 
         return new ConversationPage(
             [.. conversations],
@@ -151,10 +159,66 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     }
 
     /// <inheritdoc/>
-    public async Task<ConversationExport> ExportAsync(string conversationId, CancellationToken cancellationToken = default)
+    public async Task<bool> StopAsync(AgentName agent, string because, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.StopAsync(
+            new Wire.StopRequest { Agent = agent.Value, Because = because ?? string.Empty },
+            cancellationToken: cancellationToken);
+
+        return reply.Changed;
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> RestartAsync(AgentName agent, string because, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.RestartAsync(
+            new Wire.StopRequest { Agent = agent.Value, Because = because ?? string.Empty },
+            cancellationToken: cancellationToken);
+
+        return reply.Changed;
+    }
+
+    /// <inheritdoc/>
+    public async Task<FreezeResult> FreezeAsync(AgentName agent, bool keepFrozen = false, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.FreezeAsync(
+            new Wire.FreezeRequest { Agent = agent.Value, KeepFrozen = keepFrozen }, cancellationToken: cancellationToken);
+
+        return new FreezeResult(reply.Changed, reply.Process switch
+        {
+            "stopping" => FreezeProcess.Stopping,
+            "open_outside" => FreezeProcess.OpenOutside,
+            "left_running" => FreezeProcess.LeftRunning,
+            "no_node" => FreezeProcess.NoNode,
+            _ => FreezeProcess.NotRunning
+        });
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> UnfreezeAsync(AgentName agent, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.UnfreezeAsync(
+            new Wire.AgentRequest { Agent = agent.Value }, cancellationToken: cancellationToken);
+
+        return reply.Changed;
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> KillAsync(AgentName agent, string because, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.KillAsync(
+            new Wire.StopRequest { Agent = agent.Value, Because = because ?? string.Empty },
+            cancellationToken: cancellationToken);
+
+        return reply.Changed;
+    }
+
+    /// <inheritdoc/>
+    public async Task<ConversationExport> ExportAsync(
+        string conversationId, CancellationToken cancellationToken = default, bool latestOnly = false)
     {
         var reply = await _operators.ExportAsync(
-            new Wire.ExportRequest { ConversationId = conversationId }, cancellationToken: cancellationToken);
+            new Wire.ExportRequest { ConversationId = conversationId, LatestOnly = latestOnly }, cancellationToken: cancellationToken);
 
         var destroyed = reply.Destroyed is { } gone
             ? new DestroyedConversation(
@@ -189,9 +253,47 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
                 Wire.ExchangeOutcome.Settled => ExchangeOutcome.Settled,
                 _ => null
             },
-            e.SettledBy == 0 ? null : e.SettledBy));
+            e.SettledBy == 0 ? null : e.SettledBy,
+            string.IsNullOrEmpty(e.RequestGroup) ? null : e.RequestGroup));
 
-        return new ConversationExport([.. messages], [.. exchanges], destroyed, ItemOf(reply.Item));
+        var links = new ConversationLinks(
+            string.IsNullOrEmpty(reply.Parent) ? null : reply.Parent,
+            string.IsNullOrEmpty(reply.Parent) ? null : reply.ParentByMove ? ConversationLinkKind.Move : ConversationLinkKind.SpinOff,
+            [.. reply.Children]);
+
+        var moves = reply.Moves.Select(m => new MoveRecord(
+            m.Id,
+            m.Source,
+            m.Destination,
+            m.MovedBy,
+            Read(m.MovedUtc) ?? DateTimeOffset.MinValue,
+            m.FirstMessage == 0 ? null : m.FirstMessage,
+            m.Messages,
+            [.. m.Exchanges]));
+
+        var settled = reply.SettledElsewhere.Select(s => new SettledElsewhere(s.ExchangeId, s.SettledBy, s.ConversationId));
+
+        var wrote = reply.WroteElsewhere.Select(w => new WroteElsewhere(
+            w.Message, w.AfterMessage, AgentName.Create(w.From), AgentName.Create(w.To), w.ConversationId));
+
+        return new ConversationExport(
+            [.. messages], [.. exchanges], destroyed, ItemOf(reply.Item), links, [.. moves], [.. settled], [.. wrote],
+            [.. reply.Reads.Select(r => new HistoryRead(
+                AgentName.Create(r.Reader),
+                r.ExchangeId == 0 ? null : r.ExchangeId,
+                r.Words.Length == 0 ? null : r.Words,
+                r.ExchangeId == 0 ? r.Matches : null,
+                DateTimeOffset.Parse(r.CreatedUtc, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+                Math.Max(1, r.Count)))]);
+    }
+
+    /// <inheritdoc/>
+    public async Task<string?> LocateExchangeAsync(long exchangeId, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.LocateExchangeAsync(
+            new Wire.LocateExchangeRequest { ExchangeId = exchangeId }, cancellationToken: cancellationToken);
+
+        return reply.ConversationId is { Length: > 0 } conversation ? conversation : null;
     }
 
     /// <inheritdoc/>
@@ -216,6 +318,22 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             r.Total,
             r.Cap,
             Read(r.LastUtc) ?? DateTimeOffset.MinValue))];
+    }
+
+    /// <inheritdoc/>
+    public async Task<MessageLengthReport> MessageLengthsAsync(CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.DescribeMessageLengthsAsync(new Wire.Empty(), cancellationToken: cancellationToken);
+
+        static MessageLengthGroup Group(Wire.MessageLengthGroup group) =>
+            new(group.Name, group.Messages, group.Median, group.Longest, group.OverSoftLimit);
+
+        return new MessageLengthReport(
+            Group(reply.Overall),
+            [.. reply.ByType.Select(Group)],
+            [.. reply.ByPosition.Select(Group)],
+            [.. reply.ByAgent.Select(a => new AgentMessageLengths(
+                AgentName.Create(a.Agent), a.Sent, a.Received, a.Longest, a.OverSoftLimit))]);
     }
 
     /// <inheritdoc/>
@@ -394,11 +512,127 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     }
 
     /// <inheritdoc/>
+    public async Task<string?> SpinOffAsync(string parent, string child, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.SpinOffAsync(
+            new Wire.SpinOffRequest { Parent = parent, Child = child }, cancellationToken: cancellationToken);
+
+        return string.IsNullOrEmpty(reply.Refused) ? null : reply.Refused;
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> AbandonSpinOffAsync(string parent, string child, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.AbandonSpinOffAsync(
+            new Wire.SpinOffRequest { Parent = parent, Child = child }, cancellationToken: cancellationToken);
+
+        return reply.Changed;
+    }
+
+    /// <inheritdoc/>
+    public async Task<MovePreview> PreviewMoveAsync(
+        string source, IReadOnlyCollection<long> exchanges, CancellationToken cancellationToken = default)
+    {
+        var request = new Wire.PreviewMoveRequest { Source = source };
+        request.Exchanges.AddRange(exchanges);
+
+        var reply = await _operators.PreviewMoveAsync(request, cancellationToken: cancellationToken);
+
+        return new MovePreview(
+            [
+                .. reply.Exchanges.Select(e => new MovePreviewExchange(
+                    e.ExchangeId,
+                    e.Open,
+                    AgentName.Create(e.Requester),
+                    AgentName.Create(e.Receiver),
+                    e.Messages,
+                    e.FirstWords,
+                    string.IsNullOrEmpty(e.AddedBecause) ? null : e.AddedBecause)),
+            ],
+            [.. reply.FilesStaying],
+            string.IsNullOrEmpty(reply.Refused) ? null : reply.Refused);
+    }
+
+    /// <inheritdoc/>
+    public async Task<MoveOutcome> MoveExchangesAsync(
+        string source, string destination, bool isNew, IReadOnlyCollection<long> exchanges, CancellationToken cancellationToken = default)
+    {
+        var request = new Wire.MoveExchangesRequest { Source = source, Destination = destination, NewConversation = isNew };
+        request.Exchanges.AddRange(exchanges);
+
+        var reply = await _operators.MoveExchangesAsync(request, cancellationToken: cancellationToken);
+
+        return new MoveOutcome(string.IsNullOrEmpty(reply.Refused) ? null : reply.Refused, reply.Exchanges, reply.Messages);
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> CloseRequestAsync(long exchangeId, string? reason = null, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.CloseRequestAsync(
+            new Wire.CloseRequestRequest { ExchangeId = exchangeId, Reason = reason ?? string.Empty },
+            cancellationToken: cancellationToken);
+
+        return reply.Changed;
+    }
+
+    /// <inheritdoc/>
     public async Task<PruneResult> PruneAsync(CancellationToken cancellationToken = default)
     {
         var reply = await _operators.PruneAsync(new Wire.Empty(), cancellationToken: cancellationToken);
 
-        return new PruneResult(reply.Removed, reply.HeldByFloor, reply.Contended, reply.Capped);
+        return new PruneResult(
+            reply.Removed,
+            reply.HeldByFloor,
+            reply.Contended,
+            reply.Capped,
+            reply.IdleSeconds > 0 && reply.MaxAgeSeconds > 0
+                ? new RetentionPolicy(TimeSpan.FromSeconds(reply.IdleSeconds), TimeSpan.FromSeconds(reply.MaxAgeSeconds))
+                : null);
+    }
+
+    /// <inheritdoc/>
+    public async Task<PersonPlacement> PlacePersonsFileAsync(
+        string conversationId, string name, Stream content, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(conversationId);
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(content);
+
+        using var call = _operators.PlacePersonsFile(cancellationToken: cancellationToken);
+
+        Wire.PlaceFileReply reply;
+
+        try
+        {
+            reply = await call.PlaceAsync(
+                new Wire.PlaceFileHeader { ConversationId = conversationId, Name = name },
+                content,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (FilePlacement.DroppedException dropped)
+        {
+            // Never an IOException, which every surface says as the person's file being unreadable.
+            throw new Grpc.Core.RpcException(
+                new Grpc.Core.Status(Grpc.Core.StatusCode.Unavailable, Files.PlacementSaid.Dropped(dropped.SentWhole)),
+                dropped.Message);
+        }
+
+        return new PersonPlacement(
+            reply.Outcome switch
+            {
+                Wire.PlaceOutcome.Placed => PlaceOutcome.Placed,
+                Wire.PlaceOutcome.AlreadyCurrent => PlaceOutcome.AlreadyCurrent,
+                Wire.PlaceOutcome.PlacedByAnother => PlaceOutcome.PlacedByAnother,
+                Wire.PlaceOutcome.DoesNotFit => PlaceOutcome.DoesNotFit,
+                Wire.PlaceOutcome.HoldsOtherContent => PlaceOutcome.HoldsOtherContent,
+                _ => null,
+            },
+            RejectionOf(reply.Rejection),
+            reply.ConversationId,
+            reply.Name,
+            reply.SizeBytes,
+            ContentHash.TryParse(reply.Sha256, out var hash) ? hash : null,
+            Blank(reply.Detail));
     }
 
     /// <inheritdoc/>
@@ -470,6 +704,121 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             : new FileLocationAnswer(null, RefusalOf(reply.Refusal ?? new Wire.FileRefusal()));
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Buffered whole, because the only reader is a surface showing an image to the person and the limit bounds it. The
+    /// call is ended at a header that says more than the limit, so a large file costs one frame. The bytes are hashed as
+    /// they arrive and must be what the header named, or they are refused as tampered, as an agent's fetch would be.
+    /// </remarks>
+    public async Task<SharedFileRead> ReadSharedFileAsync(
+        string conversationId,
+        string name,
+        ContentHash? expected,
+        long limitBytes,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(conversationId);
+        ArgumentNullException.ThrowIfNull(name);
+
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var call = _operators.ReadSharedFile(
+            new Wire.ReadSharedFileRequest
+            {
+                ConversationId = conversationId,
+                Name = name,
+                ExpectSha256 = expected?.Value ?? string.Empty,
+            },
+            cancellationToken: stop.Token);
+
+        SharedFile? file = null;
+        using var bytes = new MemoryStream();
+        using var hash = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
+
+        while (await call.ResponseStream.MoveNext(stop.Token).ConfigureAwait(false))
+        {
+            var frame = call.ResponseStream.Current;
+
+            switch (frame.FrameCase)
+            {
+                case Wire.FetchFileFrame.FrameOneofCase.Refusal:
+                    return new SharedFileRead(file, null, false, RefusalOf(frame.Refusal));
+
+                case Wire.FetchFileFrame.FrameOneofCase.Header:
+                    file = SharedFileOf(frame.Header);
+
+                    if (file.SizeBytes > limitBytes)
+                    {
+                        await stop.CancelAsync().ConfigureAwait(false);
+
+                        return new SharedFileRead(file, null, true, null);
+                    }
+
+                    break;
+
+                case Wire.FetchFileFrame.FrameOneofCase.Chunk:
+                    if (file is null || bytes.Length + frame.Chunk.Length > file.SizeBytes)
+                    {
+                        // More than the header said: whatever this is, it is not the file that was named.
+                        return new SharedFileRead(file, null, false, FileRefusal.Of(new FileRef(conversationId, name), FileRejection.Changed));
+                    }
+
+                    hash.AppendData(frame.Chunk.Span);
+                    bytes.Write(frame.Chunk.Span);
+
+                    break;
+            }
+        }
+
+        if (file is null)
+        {
+            return new SharedFileRead(null, null, false, FileRefusal.Of(new FileRef(conversationId, name), FileRejection.NoSuchFile));
+        }
+
+        if (ContentHash.FromDigest(hash.GetHashAndReset()) != file.Sha256)
+        {
+            return new SharedFileRead(file, null, false, FileRefusal.Of(new FileRef(conversationId, name), FileRejection.Changed));
+        }
+
+        return new SharedFileRead(file, bytes.ToArray(), false, null);
+    }
+
+    /// <inheritdoc/>
+    public async Task<FileProblemsReport> ListFileProblemsAsync(bool includeDismissed = false, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.ListFileProblemsAsync(
+            new Wire.ListFileProblemsRequest { IncludeDismissed = includeDismissed },
+            cancellationToken: cancellationToken);
+
+        return new FileProblemsReport(
+            [.. reply.Problems.Select(ProblemOf)],
+            new FileLocation(reply.Machine, reply.QuarantinePath));
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> DismissFileProblemAsync(long id, CancellationToken cancellationToken = default) =>
+        (await _operators.DismissFileProblemAsync(new Wire.DismissFileProblemRequest { Id = id }, cancellationToken: cancellationToken))
+            .Changed;
+
+    private static FileProblem ProblemOf(Wire.FileProblemView view) => new(
+        view.Id,
+        view.Kind switch
+        {
+            Wire.FileProblemKind.Quarantined => FileProblemKind.Quarantined,
+            Wire.FileProblemKind.Locked => FileProblemKind.Locked,
+            _ => throw new InvalidOperationException(
+                $"The broker reported a file problem of a kind this build does not know ({view.Kind}). It speaks a different protocol."),
+        },
+        Blank(view.ConversationId),
+        view.Path,
+        HashOrNone(view.Sha256Placed),
+        HashOrNone(view.Sha256Found),
+        Blank(view.MovedTo),
+        view.Detail,
+        DateTimeOffset.Parse(view.RaisedUtc, System.Globalization.CultureInfo.InvariantCulture),
+        string.IsNullOrEmpty(view.DismissedUtc) ? null : DateTimeOffset.Parse(view.DismissedUtc, System.Globalization.CultureInfo.InvariantCulture));
+
+    private static ContentHash? HashOrNone(string text) => string.IsNullOrEmpty(text) ? null : ContentHash.Parse(text);
+
     /// <summary>Reads a shared file from the wire.</summary>
     /// <param name="view">The wire view.</param>
     /// <returns>The file.</returns>
@@ -490,8 +839,7 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
                 ? hash
                 : throw new InvalidOperationException("The broker listed a file with a hash that is not one."),
             string.IsNullOrEmpty(view.PlacedBy) ? null : AgentName.Create(view.PlacedBy),
-            Read(view.PlacedUtc) ?? DateTimeOffset.MinValue,
-            Read(view.ChangedUtc) ?? DateTimeOffset.MinValue);
+            Read(view.PlacedUtc) ?? DateTimeOffset.MinValue);
 
     private static FileRefusal RefusalOf(Wire.FileRefusal refusal) =>
         new(
@@ -517,11 +865,30 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
         Wire.FileRejection.NotFetched => FileRejection.NotFetched,
         Wire.FileRejection.TooManyNames => FileRejection.TooManyNames,
         Wire.FileRejection.SafeNameTaken => FileRejection.SafeNameTaken,
+        Wire.FileRejection.NameHoldsOtherContent => FileRejection.NameHoldsOtherContent,
+        Wire.FileRejection.Tampered => FileRejection.Tampered,
         _ => throw new InvalidOperationException(
             $"The broker refused a file operation for a reason this build does not know ({rejection}). It speaks a different protocol.")
     };
 
+    // The broker's own bound on a count; held here too, so a broker that is not this one cannot make a surface list any number.
+    private const int MostBackgroundTasks = 10_000;
+
     private static string? Blank(string? value) => string.IsNullOrEmpty(value) ? null : value;
+
+    // Held to the same rules the broker held it to: a surface draws only what they let through, whichever broker sent it.
+    private static BackgroundTask Task(Wire.BackgroundTaskRow row) => new(
+        BackgroundTaskText.IsTaskId(row.Id) ? row.Id : string.Empty,
+        row.Kind switch
+        {
+            Wire.TaskKind.Agent => TaskKind.Agent,
+            Wire.TaskKind.Command => TaskKind.Command,
+            _ => TaskKind.Other,
+        },
+        BackgroundTaskText.Name(row.Name).Text,
+        BackgroundTaskText.Description(row.Description).Text,
+        BackgroundTaskText.Link(row.Link),
+        row.Said);
 
     private static string Render(DateTimeOffset? instant) =>
         instant?.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture) ?? string.Empty;
@@ -635,20 +1002,49 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
                         string.IsNullOrEmpty(facts.Blocker) ? null : facts.Blocker,
                         string.IsNullOrEmpty(facts.ClosedBy) ? null : facts.ClosedBy,
                         facts.Destroyed,
-                        string.IsNullOrEmpty(facts.FirstSentText) ? null : facts.FirstSentText,
+                        facts.TextEditedSinceStarted,
                         [.. facts.OpenExchangeIds])
                     : null))]);
     }
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<RoadmapProposal>> ProposalsAsync(
-        ProposalState? state = ProposalState.Waiting, CancellationToken cancellationToken = default)
+        ProposalState? state = ProposalState.Waiting, bool headings = false, CancellationToken cancellationToken = default)
     {
         var reply = await _operators.ProposalsAsync(
-            new Wire.ProposalsRequest { State = state is { } s ? ProposalStateOut(s) : Wire.ProposalState.Unspecified },
+            new Wire.ProposalsRequest
+            {
+                State = state is { } s ? ProposalStateOut(s) : Wire.ProposalState.Unspecified,
+                Headings = headings,
+            },
             cancellationToken: cancellationToken);
 
-        return [.. reply.Proposals.Select(p => new RoadmapProposal(
+        return [.. reply.Proposals.Select(p => ProposalIn(p, headings))];
+    }
+
+    /// <inheritdoc/>
+    public async Task<int> ProposalCountAsync(
+        ProposalState? state = ProposalState.Waiting, CancellationToken cancellationToken = default) =>
+        (await _operators.ProposalCountAsync(
+            new Wire.ProposalsRequest { State = state is { } s ? ProposalStateOut(s) : Wire.ProposalState.Unspecified },
+            cancellationToken: cancellationToken)).Count;
+
+    /// <inheritdoc/>
+    public async Task<RoadmapProposal?> ProposalAsync(long id, CancellationToken cancellationToken = default)
+    {
+        // No identifier names no proposal: a page reached without one must not read, and then decide, any proposal.
+        if (id <= 0)
+        {
+            return null;
+        }
+
+        var reply = await _operators.ProposalAsync(new Wire.ProposalRequest { Id = id }, cancellationToken: cancellationToken);
+
+        return reply.Proposals.Count == 0 ? null : ProposalIn(reply.Proposals[0], headings: false);
+    }
+
+    private static RoadmapProposal ProposalIn(Wire.ProposalDetail p, bool headings) =>
+        new(
             p.Id,
             AgentName.Create(p.Proposer),
             string.IsNullOrEmpty(p.SourceConversation) ? null : p.SourceConversation,
@@ -657,15 +1053,27 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             p.Size,
             ProposalStateIn(p.State),
             Read(p.CreatedUtc) ?? DateTimeOffset.MinValue,
-            Read(p.DecidedUtc)))];
-    }
+            Read(p.DecidedUtc))
+        {
+            ItemCount = headings ? p.ItemCount : null,
+        };
 
     /// <inheritdoc/>
     public async Task<RoadmapChange> ConfirmProposalAsync(
-        long id, RoadmapContent content, long? targetRoadmap, CancellationToken cancellationToken = default)
+        long id,
+        RoadmapContent content,
+        long? targetRoadmap,
+        int? targetRevision,
+        CancellationToken cancellationToken = default)
     {
         var reply = await _operators.ConfirmProposalAsync(
-            new Wire.ConfirmProposalRequest { Id = id, Content = ContentOut(content), TargetRoadmap = targetRoadmap ?? 0 },
+            new Wire.ConfirmProposalRequest
+            {
+                Id = id,
+                Content = ContentOut(content),
+                TargetRoadmap = targetRoadmap ?? 0,
+                TargetRevision = targetRevision ?? 0,
+            },
             cancellationToken: cancellationToken);
 
         return ChangeIn(reply);

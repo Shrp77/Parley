@@ -13,6 +13,7 @@ namespace Parley.Mcp.Tests;
 /// something was actually asked.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RequestFramingTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 3, 1, 9, 0, 0, TimeSpan.Zero);

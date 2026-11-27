@@ -95,6 +95,199 @@ internal static class StubRunner
             ["while ($null -ne ($line = [Console]::In.ReadLine())) { }"],
             ["while IFS= read -r line; do :; done"]);
 
+    /// <summary>
+    /// Writes a stub that answers each prompt after a delay with a result whose cost is the prompt's number, and returns
+    /// its command template.
+    /// </summary>
+    /// <param name="directory">Where to put the script.</param>
+    /// <param name="delaySeconds">How long to think before answering.</param>
+    /// <returns>The template.</returns>
+    /// <remarks>
+    /// The cost is the one number a turn's outcome carries from the reply, so it says which prompt a turn's reply
+    /// answered: a turn that read the reply to the one before it shows that one's number.
+    /// </remarks>
+    internal static string Numbering(string directory, int delaySeconds)
+    {
+        var seconds = delaySeconds.ToString(CultureInfo.InvariantCulture);
+        const string Before = "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"ok\",\"num_turns\":1,\"total_cost_usd\":";
+        const string After = ",\"session_id\":\"stub-session\",\"permission_denials\":[]}";
+
+        var windows = new List<string>
+        {
+            Emit(Init),
+            "$n = 0",
+            "while ($null -ne ($line = [Console]::In.ReadLine())) {",
+            "  $n++",
+            "  Start-Sleep -Seconds " + seconds,
+            "  [Console]::Out.WriteLine('" + Before + "' + $n + '" + After + "'); [Console]::Out.Flush()",
+            "}",
+        };
+
+        var unix = new List<string>
+        {
+            Print(Init),
+            "n=0",
+            "while IFS= read -r line; do",
+            "  n=$((n+1))",
+            "  sleep " + seconds,
+            "  printf '%s%s%s\n' '" + Before + "' \"$n\" '" + After + "'",
+            "done",
+        };
+
+        return Write(directory, windows, unix);
+    }
+
+    /// <summary>
+    /// Writes a stub that answers each prompt at once with a result whose cost is the number the prompt's text is, and
+    /// returns its command template.
+    /// </summary>
+    /// <param name="directory">Where to put the script.</param>
+    /// <returns>The template.</returns>
+    /// <remarks>
+    /// Unlike <see cref="Numbering"/>, the number is the asker's, so a turn can tell its own reply without knowing how
+    /// many prompts the stub has read: a test that cannot say whether a cancelled turn's prompt went still can.
+    /// </remarks>
+    internal static string Echoing(string directory)
+    {
+        const string Before = "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"ok\",\"num_turns\":1,\"total_cost_usd\":";
+        const string After = ",\"session_id\":\"stub-session\",\"permission_denials\":[]}";
+
+        var windows = new List<string>
+        {
+            Emit(Init),
+            "while ($null -ne ($line = [Console]::In.ReadLine())) {",
+            "  $n = [regex]::Match($line, '\"text\":\"(\\d+)\"').Groups[1].Value",
+            "  [Console]::Out.WriteLine('" + Before + "' + $n + '" + After + "'); [Console]::Out.Flush()",
+            "}",
+        };
+
+        var unix = new List<string>
+        {
+            Print(Init),
+            "while IFS= read -r line; do",
+            "  n=$(printf '%s' \"$line\" | sed -n 's/.*\"text\":\"\\([0-9]*\\)\".*/\\1/p')",
+            "  printf '%s%s%s\\n' '" + Before + "' \"$n\" '" + After + "'",
+            "done",
+        };
+
+        return Write(directory, windows, unix);
+    }
+
+    /// <summary>
+    /// Writes a stub that answers its nth prompt with the nth group of lines, verbatim, and returns its command template.
+    /// </summary>
+    /// <param name="directory">Where to put the script.</param>
+    /// <param name="turns">
+    /// The lines to write for each prompt, in order. None may hold a single quote. A line made with <see cref="Pause"/>
+    /// waits instead of writing, and one made with <see cref="Until"/> waits until a file exists.
+    /// </param>
+    /// <returns>The template.</returns>
+    internal static string Scripted(string directory, params string[][] turns) => Opening(directory, [], turns);
+
+    /// <summary>
+    /// Writes a stub like <see cref="Scripted"/> that also writes some lines after its init line and before it reads any
+    /// prompt, and returns its command template.
+    /// </summary>
+    /// <param name="directory">Where to put the script.</param>
+    /// <param name="opening">
+    /// The lines written at start, after the init line: what a runner says on its own before anybody asks it anything,
+    /// such as a background task carried over from a resumed session. As for a turn's lines, none may hold a single quote.
+    /// </param>
+    /// <param name="turns">The lines to write for each prompt, as for <see cref="Scripted"/>.</param>
+    /// <returns>The template.</returns>
+    internal static string Opening(string directory, IReadOnlyList<string> opening, params string[][] turns)
+    {
+        ArgumentNullException.ThrowIfNull(opening);
+
+        static string Emit(string line) =>
+            line.StartsWith(PauseMark, StringComparison.Ordinal)
+                ? "Start-Sleep -Seconds " + line[PauseMark.Length..]
+                : line.StartsWith(UntilMark, StringComparison.Ordinal)
+                    ? "while (-not (Test-Path -LiteralPath '" + line[UntilMark.Length..] + "')) { Start-Sleep -Milliseconds 50 }"
+                    : StubRunner.Emit(line);
+
+        static string Print(string line) =>
+            line.StartsWith(PauseMark, StringComparison.Ordinal)
+                ? "sleep " + line[PauseMark.Length..]
+                : line.StartsWith(UntilMark, StringComparison.Ordinal)
+                    ? "while [ ! -e '" + line[UntilMark.Length..] + "' ]; do sleep 0.05; done"
+                    : StubRunner.Print(line);
+
+        var windows = new List<string> { Emit(Init) };
+        var unix = new List<string> { Print(Init) };
+
+        windows.AddRange(opening.Select(Emit));
+        unix.AddRange(opening.Select(Print));
+
+        windows.AddRange(["$n = 0", "while ($null -ne ($line = [Console]::In.ReadLine())) {", "  $n++"]);
+        unix.AddRange(["n=0", "while IFS= read -r line; do", "  n=$((n+1))"]);
+
+        for (var turn = 0; turn < turns.Length; turn++)
+        {
+            var number = (turn + 1).ToString(CultureInfo.InvariantCulture);
+
+            windows.Add("  if ($n -eq " + number + ") {");
+            windows.AddRange(turns[turn].Select(line => "    " + Emit(line)));
+            windows.Add("  }");
+
+            unix.Add("  if [ \"$n\" -eq " + number + " ]; then");
+            unix.AddRange(turns[turn].Select(line => "    " + Print(line)));
+
+            // An empty then-branch is a syntax error in sh, which then runs nothing at all: a turn that writes nothing
+            // (a prompt the runner folds into a turn of its own) would fail every turn on Linux and macOS. PowerShell
+            // takes an empty block, so Windows never showed it.
+            unix.Add("    :");
+            unix.Add("  fi");
+        }
+
+        windows.Add("}");
+        unix.Add("done");
+
+        return Write(directory, windows, unix);
+    }
+
+    /// <summary>A line for <see cref="Scripted"/> that waits rather than writes.</summary>
+    /// <param name="seconds">How long.</param>
+    /// <returns>The line.</returns>
+    internal static string Pause(int seconds) => PauseMark + seconds.ToString(CultureInfo.InvariantCulture);
+
+    private const string PauseMark = "pause:";
+
+    /// <summary>A line for <see cref="Scripted"/> that waits until a file exists, so a test holds the runner in a state until
+    /// it has read it.</summary>
+    /// <param name="path">The file; it may not hold a single quote.</param>
+    /// <returns>The line.</returns>
+    /// <remarks>
+    /// A <see cref="Pause"/> gives a state a fixed time to be seen in, which a slow runner spends before anybody looks: the
+    /// node reads two lines a pause apart at once, and what lay between them lasts no time at all.
+    /// </remarks>
+    internal static string Until(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+
+        return path.Contains('\'', StringComparison.Ordinal)
+            ? throw new ArgumentException("A single quote would end the script's string.", nameof(path))
+            : UntilMark + path;
+    }
+
+    private const string UntilMark = "until:";
+
+    /// <summary>Writes a stub that never reads its input, and returns its command template.</summary>
+    /// <param name="directory">Where to put the script.</param>
+    /// <returns>The template.</returns>
+    internal static string NotReading(string directory) =>
+        Write(directory, [Emit(Init), "Start-Sleep -Seconds 600"], [Print(Init), "sleep 600"]);
+
+    /// <summary>Writes a stub that reads one prompt, thinks, and exits without answering, and returns its template.</summary>
+    /// <param name="directory">Where to put the script.</param>
+    /// <param name="delaySeconds">How long it lives after reading the prompt.</param>
+    /// <returns>The template.</returns>
+    internal static string DyingAfterOnePrompt(string directory, int delaySeconds) =>
+        Write(
+            directory,
+            [Emit(Init), "$null = [Console]::In.ReadLine()", "Start-Sleep -Seconds " + delaySeconds.ToString(CultureInfo.InvariantCulture)],
+            [Print(Init), "IFS= read -r line", "sleep " + delaySeconds.ToString(CultureInfo.InvariantCulture)]);
+
     /// <summary>Emits one line from PowerShell and flushes it.</summary>
     /// <param name="json">The line.</param>
     /// <returns>The statement.</returns>

@@ -21,6 +21,7 @@ namespace Parley.Terminal.Tests;
 /// Through a real broker over the wire rather than a stub, so the server's mapping and the client's are held together.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FlagsOverTheWireTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

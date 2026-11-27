@@ -21,40 +21,36 @@ namespace Parley.Core;
 public static class MessageLimits
 {
     /// <summary>
-    /// The most characters one message's payload may carry.
+    /// The most characters one message's payload may carry. Past this it is refused.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// A context-poisoning defence rather than a style preference: what a peer sends lands in
-    /// another agent's context, so an unbounded message is an unbounded claim on somebody else's
-    /// working memory. §8 makes terseness a rule for the same reason, and this is the part of it
-    /// that does not depend on a model having read the rule.
+    /// A context-poisoning defence rather than a buffer size: what a peer sends lands in another agent's
+    /// context, so an unbounded message is an unbounded claim on somebody else's working memory. §8 makes
+    /// terseness a rule for the same reason, and this is the part of it that does not depend on a model
+    /// having read the rule.
     /// </para>
     /// <para>
-    /// <b>The number is set from measurement.</b> It comes from <c>refusals</c>, which is what that record
-    /// is instrumented for: the recorded refusals fit under it with room left, and most were on
-    /// <em>answers</em> — Results — which is the direction that costs the requester something it had
-    /// already decided it needed.
+    /// <b>The number is the owner's decision (2026-11-02), and a recorded reduction in that control.</b> People
+    /// and agents were being stopped from saying what they needed to at 8,000. Message lengths are now recorded
+    /// so that this and <see cref="SoftPayloadCharacters"/> can be judged from what happens (§17 question 16).
     /// </para>
     /// <para>
-    /// What it buys is editorial. A bounded Result forces the receiver
-    /// to decide what matters; an unbounded one hands that job to the requester, which is the
-    /// shared-context problem arriving by another route. Nothing else bounds volume by default —
-    /// the per-pair and clarification caps are both off unless a deployment sets them — so this is
-    /// the one control on that risk that always applies.
-    /// </para>
-    /// <para>
-    /// <b>It bounds a message, not an exchange.</b> With no clarification cap by default, an
-    /// exchange that goes back and forth fifty times can carry fifty messages of this size in each
-    /// direction, and SPEC.md rule 8.4 says so. Moving this number moves the size of every one of
-    /// them, which is the thing to reason about before moving it again.
-    /// </para>
-    /// <para>
-    /// Refusals keep being counted, so the next move can be argued the same way. A limit nobody
-    /// measures is a limit that moves whenever somebody complains.
+    /// <b>It bounds a message, not an exchange.</b> With no clarification cap by default, an exchange that goes
+    /// back and forth fifty times can carry fifty messages of this size in each direction, and SPEC.md rule 8.4
+    /// says so. Storage holds its own copy of this number, in the <c>CHECK</c> on <c>payload_json</c>.
     /// </para>
     /// </remarks>
-    public const int MaxPayloadCharacters = 8000;
+    public const int MaxPayloadCharacters = 512_000;
+
+    /// <summary>
+    /// The length past which a message counts as long. It is still delivered whole.
+    /// </summary>
+    /// <remarks>
+    /// Passing it refuses nothing, delays nothing and changes nothing. The sender is told, and the length report
+    /// counts it. It keeps a line where a message stops being ordinary, which the hard limit no longer does.
+    /// </remarks>
+    public const int SoftPayloadCharacters = 16_000;
 
     /// <summary>The longest item id a Result can carry (SPEC.md §5.3).</summary>
     /// <remarks>

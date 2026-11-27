@@ -21,6 +21,7 @@ namespace Parley.Terminal.Tests;
 /// <c>RegionTests</c> proves the region draws; this proves it draws the right thing.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class CatalogueJoinTests : IDisposable
 {
     private readonly List<Catalogued> _machines = [];

@@ -47,6 +47,7 @@ internal static class Walking
         {
             Viewing.Project => ViewPlace.Into(Alpha),
             Viewing.Conversation => ViewPlace.Into(Alpha).Into(conversation),
+            Viewing.Configuration => ViewPlace.Configure(Alpha),
             _ => ViewPlace.Top,
         };
 
@@ -54,7 +55,7 @@ internal static class Walking
         await shell.Settled;
     }
 
-    /// <summary>Every pane of every view, in the order a person would meet them.</summary>
+    /// <summary>Every pane of every view, the project's settings included, in the order a person would meet them.</summary>
     /// <param name="shell">The surface.</param>
     /// <returns>The panes, with the surface left on the last of them.</returns>
     /// <remarks>
@@ -64,7 +65,7 @@ internal static class Walking
     /// </remarks>
     internal static async IAsyncEnumerable<int> EveryPaneAsync(Shell shell)
     {
-        foreach (var viewing in new[] { Viewing.Projects, Viewing.Project, Viewing.Conversation })
+        foreach (var viewing in new[] { Viewing.Projects, Viewing.Project, Viewing.Conversation, Viewing.Configuration })
         {
             await GoAsync(shell, viewing);
 

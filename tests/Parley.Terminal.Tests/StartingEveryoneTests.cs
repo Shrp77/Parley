@@ -29,6 +29,8 @@ namespace Parley.Terminal.Tests;
 /// launched nothing, or launched something that never attached, read exactly like one that worked.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class StartingEveryoneTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

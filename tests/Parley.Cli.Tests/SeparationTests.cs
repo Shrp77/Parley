@@ -20,6 +20,7 @@ namespace Parley.Cli.Tests;
 /// their names cannot be confused in a launch configuration.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SeparationTests
 {
     private static IEnumerable<string> PublicMethodsOf(Type type) =>

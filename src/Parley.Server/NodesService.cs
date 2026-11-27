@@ -45,7 +45,7 @@ public sealed class NodesService : Wire.Nodes.NodesBase
     }
 
     /// <inheritdoc/>
-    public override Task<Wire.Empty> ReportLaunch(Wire.LaunchReport request, ServerCallContext context)
+    public override async Task<Wire.Empty> ReportLaunch(Wire.LaunchReport request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
@@ -54,10 +54,45 @@ public sealed class NodesService : Wire.Nodes.NodesBase
         // report, so a refusal would tell it nothing it could act on (SPEC.md §11.7).
         if (AgentName.TryCreate(request.Agent, out var agent))
         {
-            _ = _runtime.LaunchReported(Machine(request.Machine), agent, request.Token);
+            var machine = Machine(request.Machine);
+
+            // **Filed under the name the repository is registered as now** (lens 1 run 105): an agent renamed since its
+            // node launched it is still known to the node by the old name, and a token filed there after a broker
+            // restart left the renamed process open outside Parley.
+            //
+            // **And never under a name another checkout holds** (lens 2 run 111): one claiming another's name in this
+            // project, by an edited or copied launch key, would otherwise leave the agent the name belongs to open
+            // outside Parley.
+            var named = AgentIdentity.TryRead(request.Identity, out var identity)
+                ? await _runtime.NameOfAsync(identity, machine, agent, request.Workspace, context.CancellationToken)
+                    .ConfigureAwait(false)
+                : agent;
+
+            if (named is { } filed)
+            {
+                _ = _runtime.LaunchReported(machine, filed, request.Token, request.Sequence);
+            }
         }
 
-        return Task.FromResult(new Wire.Empty());
+        return new Wire.Empty();
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Answered with whether it retired anybody rather than refused when it does not check out, as a launch report is:
+    /// the node says what it did in its own output either way (SPEC.md §14).
+    /// </remarks>
+    public override async Task<Wire.WorkspaceGoneReply> ReportWorkspaceGone(
+        Wire.WorkspaceGoneReport request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var retired = AgentName.TryCreate(request.Agent, out var agent)
+            && await _runtime.WorkspaceGoneAsync(Machine(request.Machine), agent, context.CancellationToken)
+                .ConfigureAwait(false);
+
+        return new Wire.WorkspaceGoneReply { Retired = retired };
     }
 
     /// <inheritdoc/>
@@ -105,6 +140,16 @@ public sealed class NodesService : Wire.Nodes.NodesBase
                         Math.Max(0, ended.ModelTurns)),
                     context.CancellationToken).ConfigureAwait(false);
                 break;
+
+            case Wire.TurnReport.PhaseOneofCase.Background:
+                _ = await _runtime.BackgroundReportedAsync(
+                    machine,
+                    agent,
+                    request.Background.Tasks,
+                    request.Background.Running.Select(task => new BackgroundTask(task.Id, Conversions.In(task.Kind), task.Label)),
+                    request.Background.Sequence,
+                    context.CancellationToken).ConfigureAwait(false);
+                break;
         }
 
         return new Wire.Empty();
@@ -140,6 +185,17 @@ public sealed class NodesService : Wire.Nodes.NodesBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(responseStream);
         ArgumentNullException.ThrowIfNull(context);
+
+        // Held as an adapter is (SPEC.md §4.0): machines are not one build, and a node half-understanding a broker starts
+        // agents that are then refused.
+        if (!string.Equals(request.ProtocolVersion, ProtocolVersion.Current, StringComparison.Ordinal))
+        {
+            throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"This broker speaks Parley protocol {ProtocolVersion.Current} and that node speaks " +
+                $"{(request.ProtocolVersion is { Length: > 0 } said && PrintableLine.IsReportable("protocol", said, out _) ? said : "an older version that did not say")}. " +
+                "Install on both machines from the same build."));
+        }
 
         var machine = Machine(request.Machine);
 
@@ -420,6 +476,47 @@ public sealed class JoinedNode : IAsyncDisposable
             Refresh = new Wire.RefreshAgent { Agent = agent.Value, Because = because, Identity = IdentityText(identity) }
         });
     }
+
+    /// <summary>Asks the node to stop an agent it started, or restart it, once its turn is over (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="identity">Its identity when the broker knows one, so the node can find the checkout by it.</param>
+    /// <param name="restart">Whether to start it again once it has stopped.</param>
+    /// <param name="because">Why, for the operator's benefit.</param>
+    /// <returns><see langword="true"/> if the command was queued.</returns>
+    /// <remarks>
+    /// A person's act, where a refresh is the broker's. The node waits for the turn lock, as for a refresh, because only
+    /// the node knows whether a turn is in progress, and a turn is bounded by the node's patience.
+    /// </remarks>
+    internal bool RequestStop(AgentName agent, AgentIdentity identity, bool restart, string because)
+    {
+        if (!Can(agent, identity))
+        {
+            return false;
+        }
+
+        return _commands.Writer.TryWrite(new Wire.NodeCommand
+        {
+            Stop = new Wire.StopAgent
+            {
+                Agent = agent.Value, Because = because, Identity = IdentityText(identity), Restart = restart,
+            }
+        });
+    }
+
+    /// <summary>Tells the node to end a process a node that is gone left running (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent it belongs to.</param>
+    /// <param name="processId">What the agent's adapter said hosts it.</param>
+    /// <param name="because">Why, for the node's log.</param>
+    /// <returns>Whether the command was queued.</returns>
+    /// <remarks>
+    /// Not through <c>Can</c>: this node did not start the process and cannot start the agent from it, which is why it is
+    /// being ended. Only for a machine this node is joined for.
+    /// </remarks>
+    internal bool RequestKill(AgentName agent, long processId, string because) =>
+        _commands.Writer.TryWrite(new Wire.NodeCommand
+        {
+            Kill = new Wire.KillProcess { Agent = agent.Value, ProcessId = processId, Because = because },
+        });
 
     private static string IdentityText(AgentIdentity identity) => identity.Known ? identity.ToString() : string.Empty;
 

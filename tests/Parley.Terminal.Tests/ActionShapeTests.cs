@@ -22,6 +22,8 @@ namespace Parley.Terminal.Tests;
 /// is a test and not a review note.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class ActionShapeTests
 {
     [Fact]

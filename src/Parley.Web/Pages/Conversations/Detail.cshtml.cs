@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Parley.Core;
+using Parley.Client.Files;
 using Parley.Client.Rendering;
 using Parley.Client.Seating;
 using Parley.Client;
@@ -21,6 +22,8 @@ namespace Parley.Web.Pages.Conversations;
 /// <param name="directory">The projects and their brokers.</param>
 /// <param name="seats">The seats this console is holding, for the composer's voice.</param>
 /// <param name="notices">What the console tells the person, which the bell lists.</param>
+[RequestSizeLimit(Parley.Web.Pages.Projects.FilesModel.PlaceLimitBytes)]
+[RequestFormLimits(MultipartBodyLengthLimit = Parley.Web.Pages.Projects.FilesModel.PlaceLimitBytes)]
 public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parley.Web.Notifications.NotificationLog notices) : PageModel
 {
     /// <summary>Which project this conversation belongs to.</summary>
@@ -33,6 +36,9 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
 
     /// <summary>The messages, in the order the broker recorded them.</summary>
     public IReadOnlyList<Message> Messages { get; private set; } = [];
+
+    /// <summary>The files placed in it, oldest first, which the transcript draws where they were placed (SPEC.md §9.5).</summary>
+    public IReadOnlyList<SharedFile> Files { get; private set; } = [];
 
     /// <summary>What is left of it, when an operator destroyed it.</summary>
     /// <remarks>
@@ -51,6 +57,10 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// the room cannot disagree about who is offered. Ticking one and sending addresses them, which brings them in.
     /// </remarks>
     public IReadOnlyList<AgentName> NotInIt { get; private set; } = [];
+
+    /// <summary>The agents typing <c>@</c> offers in the box: everyone the recipients tree offers, the person aside.</summary>
+    public IReadOnlyList<string> Mentionable =>
+        [.. Participants.Concat(NotInIt).Where(agent => !PersonSeat.Is(agent)).Select(agent => agent.Value).Distinct(StringComparer.Ordinal)];
 
     /// <summary>Where each exchange stands, by identifier.</summary>
     public IReadOnlyDictionary<long, ExchangeSnapshot> Exchanges { get; private set; } =
@@ -73,6 +83,67 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// </remarks>
     public IReadOnlyList<WaitingOn> WaitingOnYou { get; private set; } = [];
 
+    /// <summary>This conversation's parent and children (SPEC.md §5.0).</summary>
+    public ConversationLinks Links { get; private set; } = ConversationLinks.None;
+
+    /// <summary>Every move in or out of this conversation, oldest first (SPEC.md §5.0).</summary>
+    public IReadOnlyList<MoveRecord> Moves { get; private set; } = [];
+
+    /// <summary>Settled pairs split across this and another conversation (SPEC.md §5.6).</summary>
+    public IReadOnlyList<SettledElsewhere> SettledAcross { get; private set; } = [];
+
+    /// <summary>Where an agent's next message went instead of here (SPEC.md §5.0).</summary>
+    public IReadOnlyList<WroteElsewhere> WroteAcross { get; private set; } = [];
+
+    /// <summary>Every read an agent made of an exchange here, and the project's newest searches (SPEC.md §5.8).</summary>
+    public IReadOnlyList<HistoryRead> Reads { get; private set; } = [];
+
+    /// <summary>One line for each agent that searched the history lately: how many searches and its newest.</summary>
+    public IReadOnlyList<string> SearchLines => Reading.SearchLines(Reads);
+
+    /// <summary>Says who read an exchange, for the line under its first message.</summary>
+    /// <param name="exchangeId">The exchange.</param>
+    /// <returns>For example <c>Read by billing@acme at 09:30</c>, or empty when nobody read it.</returns>
+    /// <remarks>The one wording the terminal and the text export use (<c>Reading.ReadLine</c>).</remarks>
+    public string ReadsOf(long exchangeId) =>
+        Reading.ReadLine((_readsBy ??= Reads.Where(r => r.ExchangeId is not null).ToLookup(r => r.ExchangeId!.Value))[exchangeId].ToList(), null) ?? string.Empty;
+
+    private ILookup<long, HistoryRead>? _readsBy;
+
+    /// <summary>What is waiting on the person in this project's other conversations, oldest first.</summary>
+    public IReadOnlyList<Delivered> Elsewhere { get; private set; } = [];
+
+    /// <summary>What is waiting on the person in the project's other conversations, for a page to show beside this one.</summary>
+    /// <returns>The list, 503 when the broker could not be read, or 404 for a project this console does not know.</returns>
+    /// <remarks>
+    /// Its own handler, read far less often than <see cref="OnGetFollowAsync"/>: it exports every open conversation the
+    /// person is in. A partial with no frame, so it keeps no seat, and it reads what is owed without collecting anything,
+    /// so unlike opening the Inbox it marks nothing delivered.
+    /// </remarks>
+    public async Task<IActionResult> OnGetWaitingElsewhereAsync()
+    {
+        if (directory.Find(Project) is not { } project || string.IsNullOrWhiteSpace(Id))
+        {
+            return NotFound();
+        }
+
+        var read = await BrokerDirectory.ReadAsync(async () =>
+            await PersonOwes.ReadAsync(
+                new BrokerClient(directory.ClientFor(project)), PersonSeat.On(project.Name), HttpContext.RequestAborted)
+                .ConfigureAwait(false)).ConfigureAwait(false);
+
+        if (read.Value is not { } owed)
+        {
+            return Unavailable(read.Problem);
+        }
+
+        Elsewhere = [.. owed.Where(item => !string.Equals(item.Message.ConversationId, Id, StringComparison.Ordinal))];
+
+        Response.Headers.CacheControl = "no-store";
+
+        return Partial("_WaitingElsewhere", this);
+    }
+
     /// <summary>The start of a question, short enough for one line of the list.</summary>
     /// <param name="question">The question.</param>
     /// <returns>Up to a hundred characters, on one line, with an ellipsis when cut.</returns>
@@ -80,7 +151,17 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     {
         ArgumentNullException.ThrowIfNull(question);
 
-        var flat = string.Join(' ', question.Asked.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return Start(question.Asked);
+    }
+
+    /// <summary>The start of something an agent said, short enough for one line of a list.</summary>
+    /// <param name="asked">What it said.</param>
+    /// <returns>Up to a hundred characters, on one line, with an ellipsis when cut.</returns>
+    public static string Start(string asked)
+    {
+        ArgumentNullException.ThrowIfNull(asked);
+
+        var flat = string.Join(' ', asked.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
         return flat.Length <= 100
             ? flat
@@ -90,6 +171,23 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// <summary>What each participant is doing, as the terminal's room says it.</summary>
     public IReadOnlyDictionary<AgentName, Activity> ParticipantActivity { get; private set; } =
         new Dictionary<AgentName, Activity>();
+
+    /// <summary>Who owes an answer here and has a turn running, drawn at the end of the transcript until the answer comes.</summary>
+    public IReadOnlyList<WorkingHere> WorkingNow { get; private set; } = [];
+
+    /// <summary>When an agent's turn started and how long it has run, on the reader's clock.</summary>
+    /// <param name="working">The agent.</param>
+    /// <returns>For example <c>started 08:14:03, running 3m</c>.</returns>
+    /// <remarks>
+    /// Whole minutes, so this region's digest moves once a minute rather than on every read, and a following page is not
+    /// rebuilt under its reader every few seconds.
+    /// </remarks>
+    public static string WorkingFor(WorkingHere working)
+    {
+        ArgumentNullException.ThrowIfNull(working);
+
+        return $"started {LocalTime.Clock(working.Since)}, running {Activities.For(working.Since, DateTimeOffset.UtcNow)}";
+    }
 
     /// <summary>What a participant is doing, in the words and mark both surfaces use, or null when there is nothing to say.</summary>
     /// <param name="who">The participant.</param>
@@ -106,7 +204,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     public DateTimeOffset AsOf { get; private set; }
 
     /// <summary>Who the operator is writing to.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public IList<string> Targets { get; set; } = [];
 
     /// <summary>Whether to write to everybody in this conversation instead of a chosen few.</summary>
@@ -116,42 +214,87 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// conversations rather than from inside one. The two surfaces are not disagreeing: each offers
     /// everybody in the thing it is looking at.
     /// </remarks>
-    [BindProperty]
+    [BindProperty, FromForm]
     public bool Everyone { get; set; }
 
     /// <summary>What the operator wrote.</summary>
     /// <remarks>
-    /// Bound on a POST only, so a link carrying <c>Says=</c> opens an empty box: what is in the box is only
-    /// ever what the person typed.
+    /// Bound on a POST only, so a link carrying <c>Says=</c> opens an empty box: what is in the box is what the person
+    /// typed, or the words of the roadmap item the broker's reservation names, never anything a link supplied.
     /// </remarks>
-    [BindProperty]
+    [BindProperty, FromForm]
     public string? Says { get; set; }
+
+    /// <summary>What the person pasted or dropped into the box, to place and name in the message.</summary>
+    [BindProperty, FromForm]
+    public IList<IFormFile> Attachments { get; set; } = [];
+
+    /// <summary>Files an earlier press placed before its send failed, each as its name and hash, so they are not uploaded again.</summary>
+    /// <remarks>Only ever words in a message the person is sending: nothing is opened or fetched from these.</remarks>
+    [BindProperty, FromForm]
+    public IList<string> Attached { get; set; } = [];
 
     /// <summary>The exchange this is an answer to, when the person chose to reply to an agent's question.</summary>
     /// <remarks>
     /// Chosen by the person, never inferred (SPEC.md 5.6): the button is on the question being answered. Without it the
     /// words are a new Request, as everything else a person writes is.
     /// </remarks>
-    [BindProperty]
+    [BindProperty, FromForm]
     public long? ReplyTo { get; set; }
 
     /// <summary>Whether a message is an agent's question back to the person that is still waiting on them.</summary>
     /// <param name="message">The message.</param>
-    /// <returns><see langword="true"/> for a Clarify to the person, on an open exchange, with nothing after it there.</returns>
+    /// <returns><see langword="true"/> for the latest thing said to the person on an exchange the person owes the next move on.</returns>
+    /// <remarks>
+    /// Who owes comes from the wait-for graph and never from the transcript's last message. An agent may settle its question
+    /// by handing the turn back (SPEC.md §5.6), which writes no message, so the transcript would go on saying the person owes
+    /// what they do not.
+    /// </remarks>
     public bool AwaitsReply(Message message) =>
-        message.Type == MessageType.Clarify
+        message.Type is MessageType.Clarify or MessageType.Request
         && message.To.Role == "human-user"
-        && Exchanges.TryGetValue(message.ExchangeId, out var snapshot)
-        && snapshot.State == ExchangeState.Open
+        && WaitingOnYou.Any(on => on.Questions.Any(question => question.Exchange == message.ExchangeId))
         && Messages.Last(m => m.ExchangeId == message.ExchangeId).Id == message.Id;
 
-    /// <summary>Words a link suggests, shown as the box's hint and never put in it.</summary>
-    /// <remarks>
-    /// A roadmap item opens its conversation with its own text as the hint, so the person sees what the item is and
-    /// writes their own words. A hint is not something they have said: the box stays empty until they type.
-    /// </remarks>
-    [BindProperty(SupportsGet = true)]
-    public string? Hint { get; set; }
+    /// <summary>The outcome the person chose, when their words close an agent's Request as well as answer it.</summary>
+    /// <remarks>Empty means a reply that leaves it open, which is a Clarify (SPEC.md 5.6).</remarks>
+    [BindProperty, FromForm]
+    public string? Outcome { get; set; }
+
+    /// <summary>The exchange the person is closing without answering.</summary>
+    [BindProperty, FromForm]
+    public long Closing { get; set; }
+
+    /// <summary>Closes one Request waiting on the person, without answering it (SPEC.md 10.2, <c>close_request</c>).</summary>
+    /// <returns>The page, saying what happened.</returns>
+    public async Task<IActionResult> OnPostCloseRequestAsync()
+    {
+        if (directory.Find(Project) is not { } project)
+        {
+            return RedirectToPage("/Index");
+        }
+
+        var read = await BrokerDirectory.ReadAsync(async () =>
+            await new BrokerClient(directory.ClientFor(project))
+                .CloseRequestAsync(Closing, cancellationToken: HttpContext.RequestAborted)
+                .ConfigureAwait(false)).ConfigureAwait(false);
+
+        if (read is { Reachable: true, Value: true })
+        {
+            seats.Held(project.Name.Value)?.Forget(Closing);
+        }
+
+        var said = !read.Reachable
+            ? read.Problem ?? "Its broker did not answer."
+            : read.Value ? "Closed, and they have been told." : "That request is not open, so nothing changed.";
+
+        Sent = [("Close", said)];
+        Tell(project.Name.Value, "Close", said);
+
+        await OnGetAsync().ConfigureAwait(false);
+
+        return Page();
+    }
 
     /// <summary>The agents a link ticked for the person, so they can untick before sending.</summary>
     /// <remarks>Only a head start on <see cref="Targets"/>: it is read on a GET and nothing is addressed until Send.</remarks>
@@ -169,41 +312,49 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// <summary>What became of each message, once any were sent.</summary>
     public IReadOnlyList<(string Agent, string Outcome)> Sent { get; private set; } = [];
 
+    /// <summary>Whether everything went as asked, so what became of it is there to look up rather than to read.</summary>
+    /// <remarks>
+    /// Anything else stays in plain view: a refused send, or one whose receiver nothing can start, is something the person
+    /// has to act on.
+    /// </remarks>
+    public bool SentAsAsked => Sent.Count > 0 && Sent.All(result => Parley.Client.Seating.SeatVoice.GoesOnUnaided(result.Outcome));
+
     /// <summary>Why nothing could be sent, when nothing could.</summary>
     public string? SendProblem { get; private set; }
 
     /// <summary>The messages as the page draws them: a send to several agents is one turn, not one per agent.</summary>
     /// <returns>Each turn, in the order the broker recorded its first message.</returns>
-    /// <remarks>
-    /// A send to several agents is recorded as one Request each, because a refusal is per agent. The words, the sender
-    /// and the conversation are the same, and the recipients are what the "to" line is for, so adjacent Requests that
-    /// match are drawn once with every recipient named. Only adjacent ones: reordering messages to join them would
-    /// misstate the order the broker recorded.
-    /// </remarks>
-    public IReadOnlyList<IReadOnlyList<Message>> Turns()
+    public IReadOnlyList<IReadOnlyList<Message>> Turns() => MovePicking.Turns(Messages);
+
+    /// <summary>The message that opened the exchange a message belongs to, as far as this conversation holds it.</summary>
+    /// <param name="message">A message in the conversation.</param>
+    /// <returns>The first of its exchange's messages here, which is the message itself when it opened the exchange.</returns>
+    public Message ThreadStart(Message message) => Threads[message.ExchangeId][0];
+
+    /// <summary>How many messages belong to the exchanges of one entry in the transcript.</summary>
+    /// <param name="turn">The entry: one message, or a Request sent to several, each its own exchange.</param>
+    /// <returns>The count.</returns>
+    public int ThreadSize(IReadOnlyList<Message> turn) => turn.Sum(message => Threads[message.ExchangeId].Count);
+
+    /// <summary>A few words of a message on one line, for saying which thread another message continues.</summary>
+    /// <param name="message">The message.</param>
+    /// <returns>The words, shortened. Razor encodes them, as it does every peer's words.</returns>
+    public static string ThreadExcerpt(Message message)
     {
-        var turns = new List<List<Message>>();
+        ArgumentNullException.ThrowIfNull(message);
 
-        foreach (var message in Messages)
-        {
-            if (turns.Count > 0
-                && turns[^1][0] is { Type: MessageType.Request } first
-                && message.Type == MessageType.Request
-                && first.From == message.From
-                && first.To != message.To
-                && string.Equals(first.PayloadJson, message.PayloadJson, StringComparison.Ordinal)
-                && turns[^1].All(m => m.To != message.To))
-            {
-                turns[^1].Add(message);
-            }
-            else
-            {
-                turns.Add([message]);
-            }
-        }
+        const int Longest = 90;
 
-        return [.. turns.Select(turn => (IReadOnlyList<Message>)turn)];
+        var words = string.Join(' ', PayloadShape.Spoken(message.PayloadJson).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+        return words.Length <= Longest ? words : words[..Longest] + "…";
     }
+
+    private Dictionary<long, List<Message>> Threads => _threads ??= Messages
+        .GroupBy(message => message.ExchangeId)
+        .ToDictionary(thread => thread.Key, thread => thread.ToList());
+
+    private Dictionary<long, List<Message>>? _threads;
 
     /// <summary>Says where the exchange a message belongs to stands.</summary>
     /// <param name="message">The message.</param>
@@ -223,6 +374,11 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// <returns>The sentence, or empty when it settled nothing.</returns>
     public string SettledBy(Message message) =>
         Reading.Settled(message, Whole) is { Count: > 0 } settled ? Reading.SettledLine(settled) : string.Empty;
+
+    /// <summary>Where a Request to a role stands, beneath its first Request (SPEC.md §5.5).</summary>
+    /// <param name="message">The message.</param>
+    /// <returns>The sentence, or empty for any other message.</returns>
+    public string RoleRequestOf(Message message) => Reading.RoleRequest(message, Whole) ?? string.Empty;
 
     /// <summary>The conversation as one export, for the derivations that read messages and exchanges together.</summary>
     private ConversationExport Whole => _whole ??= new ConversationExport([.. Messages], [.. Exchanges.Values], null);
@@ -258,7 +414,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// </returns>
     /// <remarks>
     /// <para>
-    /// <b>The transcript follows its conversation.</b> A transcript grows only at its end, and
+    /// <b>The transcript follows its conversation.</b> A move can change its middle, and
     /// the page keeps the message a reader is looking at where it was, so a page never changes under a reader
     /// mid-sentence, and a reader at the bottom sees an answer arrive without reloading.
     /// </para>
@@ -294,7 +450,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
 
         Response.Headers.CacheControl = "no-store";
 
-        return Problem is null ? Partial("_Followed", this) : Unavailable(Problem);
+        return Problem is null ? Partial("_Follow", this) : Unavailable(Problem);
     }
 
     /// <summary>The transcript as text, with its annotations intact.</summary>
@@ -331,12 +487,20 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
             return Unavailable(read.Problem);
         }
 
-        return File(
-            System.Text.Encoding.UTF8.GetBytes(
-                Transcript.Write(Id, Project, export.Messages, export.Exchanges)),
-            "text/plain; charset=utf-8",
-            $"{Id}.txt");
+        return File(TextExport(Id, Project, export), "text/plain; charset=utf-8", $"{Id}.txt");
     }
+
+    /// <summary>The text file the Export TXT link downloads.</summary>
+    /// <param name="id">The conversation.</param>
+    /// <param name="project">The project it was read from.</param>
+    /// <param name="export">What the broker exported.</param>
+    /// <returns>The file's bytes.</returns>
+    /// <remarks>
+    /// The whole export, as <see cref="RawExport"/> writes it: a destroyed conversation's file says it was destroyed
+    /// rather than reading as one that never had a message, and an item's names the item (SPEC.md §10.2).
+    /// </remarks>
+    public static byte[] TextExport(string id, string? project, ConversationExport export) =>
+        System.Text.Encoding.UTF8.GetBytes(Transcript.Write(id, project, export));
 
     /// <summary>The messages as the operator surface returned them, for machine use.</summary>
     /// <returns>A file the operator can take away.</returns>
@@ -365,16 +529,53 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
         }
 
         // A file and not a page: a JSON body answered to a link replaced the console in the tab, with no way back.
-        return File(
-            System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
-                new { conversation = Id, messages = export.Messages, exchanges = export.Exchanges },
-                new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)
-                {
-                    WriteIndented = true
-                }),
-            "application/json",
-            $"{Id}.json");
+        return File(RawExport(Id, export), "application/json", $"{Id}.json");
     }
+
+    /// <summary>The JSON file the Export JSON link downloads.</summary>
+    /// <param name="id">The conversation.</param>
+    /// <param name="export">What the broker exported.</param>
+    /// <returns>The file's bytes.</returns>
+    /// <remarks>
+    /// Everything SPEC.md §10.2 says export returns, not only the messages and exchanges. For a destroyed
+    /// conversation those are two empty arrays, which is the answer a store that lost something would give;
+    /// the destroyed record is what tells the two apart, so leaving it out made the file say the wrong thing.
+    /// </remarks>
+    public static byte[] RawExport(string id, ConversationExport export) =>
+        System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+            new
+            {
+                conversation = id,
+                messages = export.Messages,
+                exchanges = export.Exchanges,
+                parent = export.Links?.Parent,
+                parentBy = export.Links?.How?.ToString(),
+                children = export.Links?.Children ?? [],
+                moves = export.Moves ?? [],
+                settledElsewhere = export.SettledElsewhere ?? [],
+                wroteElsewhere = (export.WroteElsewhere ?? []).Select(w => new
+                {
+                    message = w.Message,
+                    afterMessage = w.AfterMessage,
+                    from = w.From.Value,
+                    to = w.To.Value,
+                    conversation = w.Conversation,
+                }).ToArray(),
+                destroyed = export.Destroyed is { } gone
+                    ? new
+                    {
+                        id = gone.Id,
+                        destroyedUtc = gone.DestroyedUtc,
+                        messages = gone.Messages,
+                        participants = gone.Participants.Select(p => p.Value).ToArray()
+                    }
+                    : null,
+                item = export.Item
+            },
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)
+            {
+                WriteIndented = true
+            });
 
     /// <summary>Keys exchange snapshots by their identifier, tolerating a repeated one.</summary>
     /// <param name="exchanges">What the export returned.</param>
@@ -418,6 +619,10 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
             return RedirectToPage("/Index");
         }
 
+        // **The page this returns ticks what the person sent to**, never what the link it was opened from named: the form
+        // posts back to that link, and `With=` there would otherwise tick an agent the person had not chosen.
+        With = [.. Targets];
+
         // **Everybody, resolved here rather than by checking boxes in a browser.** The alternative
         // is script that ticks them, which would make the one composer that sends to several
         // agents stop working without script.
@@ -433,7 +638,9 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
             Targets = [.. Participants.Select(who => who.Value)];
         }
 
-        if ((ReplyTo is null && Targets.Count == 0) || string.IsNullOrWhiteSpace(Says))
+        var hasFiles = Attachments.Count > 0 || Attached.Count > 0;
+
+        if ((ReplyTo is null && Targets.Count == 0) || (string.IsNullOrWhiteSpace(Says) && !hasFiles))
         {
             SendProblem = ReplyTo is null && Targets.Count == 0
                 ? "Nobody was picked, so nothing was sent."
@@ -460,23 +667,53 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
             return Page();
         }
 
+        // **Placed before anything is sent**, so a message never names a file that is not there. The one exception is a
+        // conversation that does not exist yet: the person places only into one that does, so its first words start it
+        // and the files follow in a second message.
+        var broker = new BrokerClient(directory.ClientFor(project));
+        var placing = await PlaceAttachmentsAsync(broker, Id, token).ConfigureAwait(false);
+
+        if (placing.Problem is { } placeProblem)
+        {
+            SendProblem = placeProblem;
+
+            await OnGetAsync().ConfigureAwait(false);
+
+            return Page();
+        }
+
+        var words = Attaching.Message(Says, Attached);
+        var followWithFiles = placing.ConversationNotStarted;
+
+        if (followWithFiles)
+        {
+            words = string.IsNullOrWhiteSpace(Says) ? Attaching.FilesFollow : Says;
+        }
+
         // **A reply the person chose to give to a question**, on that exchange, so it answers the question rather than
         // standing beside it as a new Request that leaves the question open. The broker checks the exchange is theirs to
         // answer.
         if (ReplyTo is { } exchange)
         {
-            var answered = await new SeatVoice(directory.AgentsFor(project), hold.Seat)
-                .ClarifyAsync(hold, exchange, Says, token).ConfigureAwait(false);
+            var speaking = new SeatVoice(directory.AgentsFor(project), hold.Seat);
+
+            var answered = string.IsNullOrEmpty(Outcome)
+                ? await speaking.ClarifyAsync(hold, exchange, words, token).ConfigureAwait(false)
+                : await speaking.ResultAsync(hold, exchange, [(PayloadShape.WholeRequest, words, Outcome)], token)
+                    .ConfigureAwait(false);
 
             Sent = [("Reply", answered.Says)];
-            Tell(project.Name.Value, "Reply", answered.Says);
+            // The flag, not the words: a Result that went says "Sent, and…", which Tell's match on "Sent." reads as refused.
+            notices.Add(project.Name.Value, Id, "Reply", answered.Says, answered.Closed);
 
+            // Refused, the words and what they answer stay, so that fixing them does not turn them into a new Request.
             if (answered.Closed)
             {
                 Says = null;
+                Attached = [];
+                ReplyTo = null;
+                Outcome = null;
             }
-
-            ReplyTo = null;
 
             await OnGetAsync().ConfigureAwait(false);
 
@@ -500,11 +737,9 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
 
         var voice = new SeatVoice(directory.AgentsFor(project), hold.Seat);
 
-        // **The first words on a roadmap item say what it is about.** The agent was never in the roadmap and cannot see it,
-        // so a bare "go ahead" on rm1-3 means nothing to it. Only when the conversation is new and was read cleanly: a
-        // conversation that already has messages has given the agent its context, and a failed read must not be taken
-        // for an empty conversation.
-        var said = await OpeningAsync(project, Id, Says).ConfigureAwait(false);
+        // Sent as written. An item's words reach the agent because they were in the box when its conversation opened,
+        // where the person could change them, never as text added here that the person cannot see or shorten.
+        var said = words;
 
         foreach (var target in Targets)
         {
@@ -531,11 +766,69 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
         if (sent.All(result => result.Item2.StartsWith("Sent.", StringComparison.Ordinal)))
         {
             Says = null;
+
+            if (!followWithFiles)
+            {
+                Attached = [];
+            }
+        }
+
+        var reached = sent
+            .Where(result => result.Item2.StartsWith("Sent.", StringComparison.Ordinal))
+            .Select(result => result.Item1)
+            .ToList();
+
+        // **Nobody took the words, so the files were never placed**: in a conversation not started yet they follow the
+        // first words, and a browser cannot fill a file field again. Said, so a retry is not the words alone (review,
+        // lens 1 round 22).
+        if (followWithFiles && reached.Count == 0 && Attachments.Count > 0)
+        {
+            SendProblem = "Nobody took your words, so the files you attached were not placed. Attach them again when you send.";
+        }
+
+        if (followWithFiles && reached.Count > 0)
+        {
+            await SendFilesAfterTheFirstWordsAsync(broker, voice, reached, reached.Count == sent.Count, token).ConfigureAwait(false);
         }
 
         await OnGetAsync().ConfigureAwait(false);
 
         return Page();
+    }
+
+    private Task<(string? Problem, bool ConversationNotStarted)> PlaceAttachmentsAsync(
+        BrokerClient broker, string conversation, CancellationToken token) =>
+        ComposerFiles.PlaceAsync(broker, conversation, Attachments, Attached, token);
+
+    private async Task SendFilesAfterTheFirstWordsAsync(
+        BrokerClient broker, SeatVoice voice, List<string> reached, bool everybody, CancellationToken token)
+    {
+        var named = await ComposerFiles
+            .PlaceAndNameAsync(
+                broker, voice, Id!, Attachments, Attached,
+                ComposerFiles.AgentsNamed(reached), token)
+            .ConfigureAwait(false);
+
+        if (named.Problem is { } problem)
+        {
+            SendProblem = $"Your words went, and the files did not. {problem}";
+            return;
+        }
+
+        var refused = named.Told.Any(t => !t.Sent);
+
+        if (refused)
+        {
+            SendProblem = "Your words went, and the message naming the files did not reach everybody. Press Send to try again.";
+            return;
+        }
+
+        // Kept while anybody the words were meant for has not had them: a retry sends the words again to those, and they
+        // need the files named with them. Cleared here, the retry gave them the words alone (review, lens 1 round 21).
+        if (everybody)
+        {
+            Attached = [];
+        }
     }
 
     /// <summary>Keeps what the broker answered, for the bell.</summary>
@@ -544,30 +837,6 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// <param name="outcome">What the broker said.</param>
     private void Tell(string project, string who, string outcome) =>
         notices.Add(project, Id, who, outcome, outcome.StartsWith("Sent.", StringComparison.Ordinal));
-
-    /// <summary>The person's words, led by the roadmap item they are about when this opens the work on it.</summary>
-    /// <param name="project">The project.</param>
-    /// <param name="id">The conversation.</param>
-    /// <param name="words">What the person typed.</param>
-    /// <returns>The words to send.</returns>
-    private async Task<string> OpeningAsync(ProjectSettings project, string id, string words)
-    {
-        await ReadAsync(project, id).ConfigureAwait(false);
-        await ReadItemTitleAsync(project, id).ConfigureAwait(false);
-
-        return Problem is null && Messages.Count == 0 && ItemTitle is { Length: > 0 } item
-            ? Lead(item, RoadmapTitle, words)
-            : words;
-    }
-
-    /// <summary>The first words of a message that opens the work on a roadmap item.</summary>
-    /// <param name="item">The item's words.</param>
-    /// <param name="roadmap">The roadmap's title.</param>
-    /// <param name="words">What the person typed.</param>
-    /// <returns>The words led by what they are about.</returns>
-    /// <remarks>Plain text, because a payload is inert data and the agent reads it as the person's own line.</remarks>
-    public static string Lead(string item, string? roadmap, string words) =>
-        $"This is about \"{item}\" in the roadmap \"{roadmap}\": {words}";
 
     /// <summary>Says the project could not be read, rather than producing an empty export.</summary>
     /// <param name="problem">What the read reported.</param>
@@ -593,52 +862,94 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
         Seat = seats.Held(project.Name.Value);
 
         await ReadAsync(project, Id).ConfigureAwait(false);
-        await ReadItemTitleAsync(project, Id).ConfigureAwait(false);
+        await ReadItemTitleAsync(project).ConfigureAwait(false);
+
+        // **An item not yet started opens with its words in the box** (SPEC.md §5.7), as the terminal does, for the person
+        // to change and send. Only while the broker says the item has not started, the read was clean, and the box holds
+        // nothing the person typed: words a refused send kept are theirs and stay. Only when the page is opened, never
+        // after a send, so a box the person emptied is not filled again behind them.
+        if (HttpMethods.IsGet(Request.Method) && Says is null && Problem is null && Destroyed is null && _itemNotStarted
+            && Item is { Removed: false })
+        {
+            Says = ItemTitle;
+
+            // **The item's own agent is ticked, and no other**, whatever a link asks, as in the terminal. A link an agent
+            // wrote in a message is live on this page, and `With=` naming another agent would hand that agent the item's
+            // words on one press of Send. Ticking nobody instead would let the page's own default choose.
+            With = ItemAgent is { } agent && !PersonSeat.Is(agent) ? [agent.Value] : [];
+        }
+        else if (HttpMethods.IsGet(Request.Method) && With.Count == 0 && !Request.Query.ContainsKey(nameof(With)) && Says is null
+            && Problem is null && Destroyed is null && Item is null && Messages.Count > 0)
+        {
+            // **A conversation with one agent in it ticks that agent**, so an answer back does not start by finding who to
+            // pick: a spin-off, or any conversation with one other party, is a conversation with them. Only when it is
+            // unambiguous (two or more agents tick nobody) and only as a start the person can untick; nothing is addressed
+            // until Send, and a link's own `with` or what the person ticked before is left as it was.
+            var others = Participants.Where(who => !PersonSeat.Is(who)).ToList();
+
+            if (others.Count == 1)
+            {
+                With = [others[0].Value];
+            }
+        }
 
         return Page();
     }
 
-    /// <summary>The words of the roadmap item this conversation is the work on, or <see langword="null"/>.</summary>
+    /// <summary>The broker's record that this conversation is a roadmap item's, or <see langword="null"/>.</summary>
     /// <remarks>
-    /// So a person who is inside <c>rm1-3</c> is told what rm1-3 is. Taken from the roadmap by the conversation name the
-    /// item carries, never parsed out of a message.
+    /// From the reservation the export carries, never from the conversation's name or a message (SPEC.md §5.7), so an
+    /// agent cannot make a conversation look like an item's. A removed item's conversation keeps it, marked removed.
     /// </remarks>
+    public RoadmapItemRef? Item { get; private set; }
+
+    /// <summary>The words of the roadmap item this conversation is the work on, or <see langword="null"/>.</summary>
+    /// <remarks>So a person who is inside <c>rm1-3</c> is told what rm1-3 is.</remarks>
     public string? ItemTitle { get; private set; }
 
     /// <summary>The title of the roadmap that item is in, or <see langword="null"/>.</summary>
     public string? RoadmapTitle { get; private set; }
 
-    /// <summary>Finds the roadmap item whose conversation this is, when its name is a roadmap item's.</summary>
-    /// <param name="project">The project.</param>
-    /// <param name="id">The conversation.</param>
-    /// <returns>When it has been looked for. A broker that cannot answer leaves the title out and costs nothing else.</returns>
-    private async Task ReadItemTitleAsync(ProjectSettings project, string id)
-    {
-        var match = System.Text.RegularExpressions.Regex.Match(
-            id, @"\Arm(\d+)-\d+\z", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    /// <summary>Where the roadmap this conversation's item belongs to is, opened on that item; null for an ordinary one.</summary>
+    /// <remarks>Null for a removed item's conversation too, which belongs to no item (SPEC.md §5.7), as in the terminal.</remarks>
+    public string? RoadmapPath => Item is { Removed: false } item
+        ? string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"/Roadmaps/Roadmap?project={Uri.EscapeDataString(Project ?? string.Empty)}&id={item.RoadmapId}&item={item.ItemNumber}#item-{item.ItemNumber}")
+        : null;
 
-        if (!match.Success || !int.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.None,
-                System.Globalization.CultureInfo.InvariantCulture, out var number))
+    /// <summary>Reads the words of the item this conversation's reservation names.</summary>
+    /// <param name="project">The project.</param>
+    /// <returns>When it has been looked for. A broker that cannot answer leaves the words out and costs nothing else.</returns>
+    /// <remarks>Read after <see cref="ReadAsync"/>, whose export says whether the conversation is an item's at all.</remarks>
+    private async Task ReadItemTitleAsync(ProjectSettings project)
+    {
+        if (Item is not { } item)
         {
             return;
         }
 
+        RoadmapTitle = item.Title;
+
         var broker = new BrokerClient(directory.ClientFor(project));
 
         var found = await BrokerDirectory.ReadAsync(async () =>
-        {
-            var list = await broker.RoadmapsAsync(HttpContext.RequestAborted).ConfigureAwait(false);
-            var which = list.FirstOrDefault(r => r.Number == number);
+            await broker.RoadmapAsync(item.RoadmapId, HttpContext.RequestAborted).ConfigureAwait(false)).ConfigureAwait(false);
 
-            return which is null
-                ? null
-                : await broker.RoadmapAsync(which.Id, HttpContext.RequestAborted).ConfigureAwait(false);
-        }).ConfigureAwait(false);
+        var reserved = found.Value?.Items.FirstOrDefault(i => i.Number == item.ItemNumber);
 
-        RoadmapTitle = found.Value?.Title;
-        ItemTitle = found.Value?.Items
-            .FirstOrDefault(i => !i.Removed && string.Equals(i.ConversationName, id, StringComparison.Ordinal))?.Text;
+        ItemTitle = reserved?.Text;
+        ItemAgent = reserved?.IntendedAgent;
+        _itemNotStarted = reserved is { Facts: { ConversationExists: false } };
     }
+
+    // **Started is the broker's fact about the item, never this page's messages**, as in the terminal: retention removes
+    // a finished conversation's messages and keeps its exchanges, so counting messages would offer done work as a new
+    // start, one press of Send from being asked again. A roadmap read that failed says nothing, so nothing is filled.
+    private bool _itemNotStarted;
+
+    /// <summary>The agent the roadmap item this conversation is the work on is for, or <see langword="null"/>.</summary>
+    public AgentName? ItemAgent { get; private set; }
 
     /// <summary>Reads the conversation and its participants' standing, for the page or for a follow.</summary>
     /// <param name="project">The project it belongs to.</param>
@@ -653,6 +964,12 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
 
         Messages = read.Value?.Messages ?? [];
         Destroyed = read.Value?.Destroyed;
+        Item = read.Value?.Item;
+        Links = read.Value?.Links ?? ConversationLinks.None;
+        Moves = read.Value?.Moves ?? [];
+        SettledAcross = read.Value?.SettledElsewhere ?? [];
+        WroteAcross = read.Value?.WroteElsewhere ?? [];
+        Reads = read.Value?.Reads ?? [];
         Participants = Visibility.Participants(Messages);
         Exchanges = Snapshots(read.Value?.Exchanges ?? []);
         Problem = read.Problem;
@@ -674,6 +991,14 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
             }
 
             Roll = known;
+
+            // Contained like the registry: files that could not be read cost their place in the transcript, never the
+            // conversation.
+            var placed = await BrokerDirectory.ReadAsync(
+                () => Placements.EveryAsync(new BrokerClient(directory.ClientFor(project)), id, HttpContext.RequestAborted))
+                .ConfigureAwait(false);
+
+            Files = read.Value.Destroyed is null ? placed.Value ?? [] : [];
             NotInIt = Parley.Client.Rendering.RoomRoster.NotInIt(roll.Value, Participants, PersonSeat.On(project.Name));
 
             // **What each participant is doing, from the same derivation as the terminal's room**:
@@ -685,6 +1010,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
                 .ConfigureAwait(false);
 
             ParticipantActivity = Activities.Of(read.Value, waiting.Value ?? [], roll.Value);
+            WorkingNow = Activities.WorkingOn(read.Value, waiting.Value ?? [], ParticipantActivity);
             WaitingOnYou = Parley.Client.Seating.WaitingOnYou.From(
                 read.Value, waiting.Value ?? [], PersonSeat.On(project.Name));
         }

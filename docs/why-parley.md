@@ -34,11 +34,14 @@ answer back, and repeat. You become a message bus, and a slow one.
 Parley lets the agents talk to each other directly, and puts a few firm rules around the talk.
 
 - An agent asks the agent that owns the repository. It does not guess at the other side.
-- The owner does the work in its own repository. Nobody edits anybody else's files.
+- The owner does the work in its own repository. Parley gives nobody a way to edit anybody else's
+  files; each agent's client permissions decide what it can touch.
 - Only short messages cross. No session history, no pasted code bases.
 - Every request gets an answer. A request ends as done, answered, acknowledged, or blocked
-  with the blocker named.
-- You can read all of it, and take part.
+  with the blocker named, or closed by you. A question to you that a later request answers is
+  closed as settled.
+- You can read all of it, and take part. You can stop any agent Parley started, or freeze it so
+  it stays stopped.
 
 ## Who it is for
 
@@ -51,18 +54,20 @@ If you work in one repository, you do not need Parley.
 
 ## What Parley is not
 
-- **Not a way to change another repository.** An agent never edits files outside its own
-  repository, and Parley offers nothing that could.
-- **Not a shared memory.** No agent can read the message log or search it. A conversation is
-  readable whole by you, and each agent sees only its own part. Messages are removed after a
-  retention period, and you can export anything you want to keep.
+- **Not a way to change another repository.** Parley offers an agent nothing that could edit files
+  outside its own repository. Its client's own permissions decide what else it can touch, so keep
+  each agent to its own repository there.
+- **Not a shared memory.** Nothing is pushed into an agent's context. An agent can look up an
+  exchange by its number, or search for words, and gets a record of limited size, marked as
+  somebody else's words. You see every lookup. A conversation is readable whole by you. Messages are removed
+  after a retention period, and you can export anything you want to keep.
 - **Not a boss for your agents.** There is no lead agent and no orchestrator. Whoever holds a
   request coordinates the work it needs.
 - **Not where decisions live.** When a conversation reaches a decision, the agent that owns the
   repository writes it down there, as a contract, a decision record or code. Parley carries the
   talk. The repository keeps the result.
-- **Not a file archive.** Files placed with Parley keep only their current content, so that
-  they can cross between repositories.
+- **Not a file archive.** A file placed with Parley is there only to cross between repositories:
+  it is never changed, a new version is a new name, and it goes when it is removed.
 - **Not safe on a hostile network.** It is built for loopback and for tunnels you trust. See
   [Security](security.md).
 

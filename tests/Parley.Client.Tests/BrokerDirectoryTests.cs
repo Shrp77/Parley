@@ -8,6 +8,7 @@ namespace Parley.Client.Tests;
 /// <summary>
 /// The console's multi-project handling: one project's failure is that project's failure.
 /// </summary>
+[Integration]
 public sealed class BrokerDirectoryTests
 {
     private static ProjectSettings Project(string name, string endpoint) =>
@@ -36,6 +37,21 @@ public sealed class BrokerDirectoryTests
         Assert.False(down.Reachable);
         Assert.True(up.Reachable);
         Assert.Equal("roster", up.Value);
+    }
+
+    [Theory]
+    [InlineData(false, "nothing was placed")]
+    [InlineData(true, "may or may not have been placed")]
+    public async Task A_placement_that_lost_its_connection_says_so_and_never_that_the_broker_is_not_answering(
+        bool sentWhole, string said)
+    {
+        // Lens 1 run 124: a dropped placement reached the person as their file being unreadable, or not at all.
+        var outcome = await BrokerDirectory.ReadAsync<int>(
+            () => throw new RpcException(new Status(StatusCode.Unavailable, Files.PlacementSaid.Dropped(sentWhole))));
+
+        Assert.False(outcome.Reachable);
+        Assert.Contains(said, outcome.Problem, StringComparison.Ordinal);
+        Assert.DoesNotContain("not answering", outcome.Problem, StringComparison.Ordinal);
     }
 
     [Fact]

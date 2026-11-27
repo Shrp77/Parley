@@ -26,6 +26,7 @@ namespace Parley.Terminal.Tests;
 /// fails against 0.40.1, where the line became a Result on one of the three.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class LineIsARequestOverTheWireTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

@@ -20,6 +20,7 @@ namespace Parley.Cli.Tests;
 /// deprecated console flag.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class KeyRuleTests
 {
     private static readonly string Root =
@@ -73,17 +74,19 @@ public sealed class KeyRuleTests
     [Fact]
     public void The_key_is_spelled_in_exactly_one_file()
     {
-        // **Two other things wear this word and neither is a key.** `AutostartPlan` names the
-        // *executable* — what to run, not what a server sits under — and `Shell` sets the terminal's
-        // window *title*. Both are allowed by name rather than by pattern, so that a fourth meaning is
-        // a decision somebody makes in this list rather than a check that quietly stops applying.
+        // **Three other things wear this word and none is a key.** `AutostartPlan` names the
+        // *executable* — what to run, not what a server sits under — `Shell` sets the terminal's
+        // window *title*, and `LocalLauncher` names the *folder* copies of placed files go in. Each is
+        // allowed by name rather than by pattern, so that another meaning is a decision somebody makes
+        // in this list rather than a check that quietly stops applying.
         var offenders = new List<string>();
 
         foreach (var (path, text) in Sources())
         {
             if (path.EndsWith("LaunchKey.cs", StringComparison.Ordinal)
                 || path.EndsWith("AutostartPlan.cs", StringComparison.Ordinal)
-                || path.EndsWith("Shell.cs", StringComparison.Ordinal))
+                || path.EndsWith("Shell.cs", StringComparison.Ordinal)
+                || path.EndsWith("LocalLauncher.cs", StringComparison.Ordinal))
             {
                 continue;
             }

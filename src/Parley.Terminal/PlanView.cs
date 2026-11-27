@@ -24,20 +24,39 @@ namespace Parley.Terminal;
 /// A list of one line per item, with the full text of the one under the cursor below it: an item is one line by the
 /// proposal's own rule, but a line can be longer than the room, and a list cuts what does not fit.
 /// </para>
+/// <para>
+/// <b>The cursor starts on the next item</b>, the one a person came to act on, or on the item whose conversation they came
+/// from. On a long roadmap the next item can be far down, so a key goes back to it from anywhere.
+/// </para>
 /// </remarks>
-internal sealed class PlanView : Dialog
+internal sealed class PlanView : TableDialog<PlanView>, IKeyTable<PlanView>
 {
-    /// <summary>Said on the button that opens an item.</summary>
-    private const string OpenLabel = "Open item (Enter)";
-
-    /// <summary>Said on the button that edits the roadmap; its key is Alt plus <see cref="EditKey"/>.</summary>
-    internal const string EditLabel = "Edit roadmap (Alt+e)";
+    /// <summary>Said on the button that opens an item: the list's own Enter, which is no command of this table's.</summary>
+    private static readonly string OpenLabel = KeyCommand.Label("Open item", Key.Enter.ToString());
 
     /// <summary>The letter, with Alt, that edits the roadmap.</summary>
     internal const char EditKey = 'e';
 
-    /// <summary>Said on the button that leaves the view.</summary>
-    internal const string CloseLabel = "Close (Esc)";
+    /// <summary>The letter, with Alt, that puts the cursor on the next item.</summary>
+    internal const char NextKey = 'n';
+
+    /// <summary>What the command and the button that edit the roadmap are called.</summary>
+    private const string EditName = "Edit roadmap";
+
+    /// <summary>What the command and the button that go to the next item are called.</summary>
+    private const string NextName = "Next item";
+
+    /// <summary>What the command and the button that leave the view are called.</summary>
+    private const string CloseName = "Close";
+
+    /// <summary>Said on the button that edits the roadmap, with its key from the table.</summary>
+    internal static string EditLabel => Labelled(EditName);
+
+    /// <summary>Said on the button that goes to the next item, with its key from the table.</summary>
+    private static string NextLabel => Labelled(NextName);
+
+    /// <summary>Said on the button that leaves the view, with its key from the table.</summary>
+    internal static string CloseLabel => Labelled(CloseName);
 
     /// <summary>What is said above the buttons.</summary>
     internal const string Hint =
@@ -52,8 +71,10 @@ internal sealed class PlanView : Dialog
     /// <summary>Creates the view.</summary>
     /// <param name="roadmap">The roadmap.</param>
     /// <param name="standing">Where each of its items stands.</param>
-    internal PlanView(Roadmap roadmap, RoadmapStanding standing)
+    /// <param name="itemNumber">The item to start on, when reached from its conversation; otherwise the next item.</param>
+    internal PlanView(Roadmap roadmap, RoadmapStanding standing, int? itemNumber = null)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         ArgumentNullException.ThrowIfNull(roadmap);
         ArgumentNullException.ThrowIfNull(standing);
 
@@ -63,6 +84,15 @@ internal sealed class PlanView : Dialog
         Title = PlansRegion.RegionTitle;
         Width = Dim.Percent(92);
         Height = Dim.Percent(92);
+
+        var open = new PlainButton { Title = OpenLabel };
+        var next = new PlainButton { Title = NextLabel };
+        var edit = new PlainButton { Title = EditLabel };
+        var close = new PlainButton { Title = CloseLabel };
+        var buttons = new ButtonRows(this, open, next, edit, close);
+
+        // What is kept below the item's text: a blank row, the hint, and the buttons in as many rows as the width needs.
+        int Footer() => 1 + HintRows + buttons.Height;
 
         var heading = new Plain
         {
@@ -80,15 +110,16 @@ internal sealed class PlanView : Dialog
 
         _items = new ListView
         {
+            HotKeySpecifier = Plain.NoHotKey,
             X = 1,
             Y = Pos.Bottom(itemsLabel),
             Width = Dim.Fill(2),
-            Height = Dim.Fill(Reserved + DetailRows + 1),
+            Height = Dim.Fill(Dim.Func(_ => Footer() + DetailRows + 1)),
             KeystrokeNavigator = null,
         };
 
         _items.SetSource(new System.Collections.ObjectModel.ObservableCollection<string>([.. Rows(standing)]));
-        _items.SelectedItem = standing.Items.Count > 0 ? 0 : null;
+        _items.SelectedItem = Starting(standing, itemNumber);
         _items.Accepting += (_, args) =>
         {
             args.Handled = true;
@@ -96,32 +127,30 @@ internal sealed class PlanView : Dialog
         };
         _items.ValueChanged += (_, _) => ShowDetail();
 
-        var detailHeading = new Plain { Text = "The item", X = 1, Y = Pos.AnchorEnd(Reserved + DetailRows + 1), Width = Dim.Fill(2), Height = 1 };
+        var detailHeading = new Plain { Text = "The item", X = 1, Y = Pos.Func(_ => Viewport.Height - Footer() - DetailRows - 1), Width = Dim.Fill(2), Height = 1 };
 
-        _detail = Entry.Reader(string.Empty, Choose);
+        _detail = Entry.Reader(string.Empty, this);
         _detail.X = 1;
-        _detail.Y = Pos.AnchorEnd(Reserved + DetailRows);
+        _detail.Y = Pos.Func(_ => Viewport.Height - Footer() - DetailRows);
         _detail.Width = Dim.Fill(2);
         _detail.Height = DetailRows;
 
-        var hint = new Plain { Text = Hint, X = 1, Y = Pos.AnchorEnd(Reserved - 1), Width = Dim.Fill(2), Height = 2 };
+        var hint = new Plain { Text = Hint, X = 1, Y = Pos.Func(_ => Viewport.Height - buttons.Height - HintRows), Width = Dim.Fill(2), Height = HintRows };
 
         hint.TextFormatter.WordWrap = true;
 
-        var open = new Button { Title = OpenLabel, X = 1, Y = Pos.AnchorEnd(2) };
-        var edit = new Button { Title = EditLabel, X = Pos.Right(open) + 1, Y = Pos.AnchorEnd(2) };
-        var close = new Button { Title = CloseLabel, X = Pos.Right(edit) + 1, Y = Pos.AnchorEnd(2) };
-
         open.Accepting += (_, args) => { args.Handled = true; OpenSelected(); };
+        next.Accepting += (_, args) => { args.Handled = true; GoToNext(); };
         edit.Accepting += (_, args) => { args.Handled = true; Edit(); };
         close.Accepting += (_, args) => { args.Handled = true; Closed?.Invoke(this, EventArgs.Empty); };
 
-        Add(heading, itemsLabel, _items, detailHeading, _detail, hint, open, edit, close);
+        Add(heading, itemsLabel, _items, detailHeading, _detail, hint, open, next, edit, close);
 
         ShowDetail();
     }
 
-    private const int Reserved = 5;
+    /// <summary>Rows kept for the hint above the buttons.</summary>
+    private const int HintRows = 2;
 
     private const int DetailRows = 5;
 
@@ -189,30 +218,69 @@ internal sealed class PlanView : Dialog
     }
 
     /// <inheritdoc/>
-    protected override bool OnKeyDown(Key key)
-    {
-        ArgumentNullException.ThrowIfNull(key);
+    /// <remarks>
+    /// What each button is labelled with, and Escape; and what the items, the item's text and the buttons take before
+    /// this view is offered a key.
+    /// </remarks>
+    static CommandManager<PlanView> IKeyTable<PlanView>.BuildTable() => new(
+        [new(KeyContext.RoadmapDialog, [])],
+        [
+            new(KeyContext.RoadmapDialog, NextKey, NextName, KeyCommand.Doing<PlanView>(view => view.GoToNext()), KeyCommand.Always),
+            new(KeyContext.RoadmapDialog, EditKey, EditName, KeyCommand.Doing<PlanView>(view => view.Edit()), KeyCommand.Always),
+            new(KeyContext.RoadmapDialog, default, CloseName, KeyCommand.Doing<PlanView>(view => view.Close()), KeyCommand.Always, Chord: Key.Esc),
+        ],
+        [
+            .. ReservedKey.Pressing(KeyContext.RoadmapDialog, "open the item, or the focused button"),
+            .. ReservedKey.Moving(KeyContext.RoadmapDialog),
+            .. ReservedKey.TakenBy(KeyContext.RoadmapDialog, () => new ListView { HotKeySpecifier = Plain.NoHotKey, KeystrokeNavigator = null }, "the items"),
+            .. ReservedKey.TakenBy(KeyContext.RoadmapDialog, () => Entry.Reader(string.Empty), "the item's text"),
+        ]);
 
-        return Choose(key) || base.OnKeyDown(key);
+    /// <summary>A button's label: the command's name and the key the table gives it.</summary>
+    /// <param name="name">The command.</param>
+    /// <returns>The label.</returns>
+    private static string Labelled(string name) => CommandTables.Of<PlanView>().Label(name);
+
+    /// <summary>Leaves the view without choosing.</summary>
+    private void Close() => Closed?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>Where the cursor starts: the item asked for, else the next item, else the first.</summary>
+    /// <param name="standing">The derived standing.</param>
+    /// <param name="itemNumber">The item asked for, or null.</param>
+    /// <returns>The row, or null when there are no items.</returns>
+    private static int? Starting(RoadmapStanding standing, int? itemNumber)
+    {
+        if (standing.Items.Count == 0)
+        {
+            return null;
+        }
+
+        var asked = itemNumber is { } number ? Row(standing, state => state.Item.Number == number) : null;
+
+        return asked ?? Row(standing, state => state.IsNext) ?? 0;
     }
 
-    private bool Choose(Key key)
+    private static int? Row(RoadmapStanding standing, Func<ItemState, bool> which)
     {
-        if (Shell.Typed(key, EditKey))
+        for (var at = 0; at < standing.Items.Count; at++)
         {
-            Edit();
-
-            return true;
+            if (which(standing.Items[at]))
+            {
+                return at;
+            }
         }
 
-        if (key != Key.Esc)
+        return null;
+    }
+
+    /// <summary>Puts the cursor on the next item, as Alt+n does; nothing moves when the roadmap names none.</summary>
+    private void GoToNext()
+    {
+        if (Row(_standing, state => state.IsNext) is { } at)
         {
-            return false;
+            _items.SelectedItem = at;
+            ShowDetail();
         }
-
-        Closed?.Invoke(this, EventArgs.Empty);
-
-        return true;
     }
 
     /// <summary>Asks to change the roadmap, as Alt+e does.</summary>

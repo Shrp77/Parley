@@ -12,6 +12,7 @@ namespace Parley.Server.Tests;
 /// else's machine spend money — so the question is not whether the bound is written correctly but
 /// whether it can be got round.
 /// </remarks>
+[Integration]
 public sealed class WakeProbeTests
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(5);

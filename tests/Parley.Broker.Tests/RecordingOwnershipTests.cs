@@ -22,6 +22,7 @@ namespace Parley.Broker.Tests;
 /// repository has recorded more often than any other.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RecordingOwnershipTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

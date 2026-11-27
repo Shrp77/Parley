@@ -20,6 +20,7 @@ namespace Parley.Web.Tests;
 /// "no raw output on a message payload", which is greppable.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RenderingTests : IClassFixture<WebApplicationFactory<Program>>
 {
     private readonly WebApplicationFactory<Program> _console;
@@ -101,6 +102,20 @@ public sealed class RenderingTests : IClassFixture<WebApplicationFactory<Program
             raw.Count == 0,
             "a page emits raw output, which for a message payload is the injection this console "
             + "must not permit: " + string.Join(", ", raw));
+    }
+
+    [Fact]
+    public void Only_the_markdown_renderer_makes_raw_markup()
+    {
+        var makers = Directory.GetFiles(RepositoryPath("src/Parley.Web"), "*.*", SearchOption.AllDirectories)
+            .Where(p => p.EndsWith(".cs", StringComparison.Ordinal) || p.EndsWith(".cshtml", StringComparison.Ordinal))
+            .Where(p => !p.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !p.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .Where(p => File.ReadAllText(p).Contains("new HtmlString", StringComparison.Ordinal))
+            .Select(Path.GetFileName)
+            .ToList();
+
+        Assert.Equal(["MarkdownText.cs"], makers);
     }
 
     [Fact]

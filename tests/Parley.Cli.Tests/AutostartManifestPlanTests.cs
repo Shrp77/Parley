@@ -21,6 +21,7 @@ namespace Parley.Cli.Tests;
 /// what stops a path with a space in it coming apart on the way back.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class AutostartManifestPlanTests
 {
     // **The root rather than the manifest file.** `--config` names the directory this machine keeps its

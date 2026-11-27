@@ -38,6 +38,7 @@ namespace Parley.Client.Tests;
 /// than relocated: moving a passing test is a change with no evidence behind it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ManifestStampTests : IDisposable
 {
     private readonly string _root =

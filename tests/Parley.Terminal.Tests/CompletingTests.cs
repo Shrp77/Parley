@@ -26,6 +26,8 @@ namespace Parley.Terminal.Tests;
 /// <c>Lists</c> records why: <i>a key tested only in the negative is a key nobody has pressed.</i>
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class CompletingTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");
@@ -377,6 +379,74 @@ public sealed class CompletingTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_message_at_the_hard_limit_is_drawn_in_good_time()
+    {
+        // Lines are drawn by the toolkit's text view, and a message can now be 64 times what it was. One long line and many
+        // short ones are the two shapes a command's output takes.
+        var ct = TestContext.Current.CancellationToken;
+        var (shell, driving) = await SeatedAsync(ct);
+
+        using var held = shell;
+
+        var broker = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await broker.StartAsync(Orders, T0, ct);
+
+        foreach (var (minutes, text) in new[]
+        {
+            (2, new string('x', MessageLimits.MaxPayloadCharacters - 16)),
+            (3, string.Concat(Enumerable.Repeat("x\\n", (MessageLimits.MaxPayloadCharacters / 3) - 16))),
+        })
+        {
+            var sent = await broker.RequestAsync(
+                Orders, shell.Held!.Seat.Name, "model-a", $$"""{"ask":"{{text}}"}""", T0.AddMinutes(minutes), Conversation, ct);
+
+            Assert.True(sent.Exchange is not null, "the fixture's long request was refused");
+        }
+
+        var export = await new BrokerClient(_broker.Operators).ExportAsync(Conversation, ct);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        shell.Transcript.Show(Conversation, shell.Transcript.OpenIn!, export, null);
+        driving.App.LayoutAndDraw(true);
+
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(10), $"Took {clock.Elapsed}.");
+    }
+
+    [Fact]
+    public async Task The_key_goes_to_each_message_waiting_on_the_person_and_round_again()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (shell, driving) = await SeatedAsync(ct);
+
+        using var held = shell;
+
+        var broker = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await broker.StartAsync(Orders, T0, ct);
+
+        var second = await broker.RequestAsync(
+            Orders, shell.Held!.Seat.Name, "model-a", """{"ask":"and which rate?"}""", T0.AddMinutes(2), Conversation, ct);
+
+        Assert.NotNull(second.Exchange);
+
+        await Walking.GoAsync(shell, Viewing.Conversation, Conversation);
+        await shell.Settled;
+        driving.App.LayoutAndDraw(true);
+
+        var waiting = shell.Room.Outstanding.SelectMany(item => item.Questions).Select(q => q.At!.Value).Order().ToArray();
+
+        Assert.Equal(2, waiting.Length);
+
+        foreach (var expected in new[] { waiting[0], waiting[1], waiting[0] })
+        {
+            await shell.NextWaiting();
+
+            Assert.Equal(shell.Transcript.Rows.ToList().IndexOf(expected), shell.Transcript.List.SelectedItem);
+        }
+    }
+
+    [Fact]
     public async Task Sending_is_offered_where_a_person_would_look_for_it()
     {
         // `contracts/views.md`: no action exists only as a key, and whatever a key does a pointer reaches too. This was
@@ -477,9 +547,7 @@ public sealed class CompletingTests : IAsyncDisposable
         Assert.Contains("is the build green?", entry, StringComparison.Ordinal);
 
         driving.Row(listing.Choices, "is the build green?");
-        driving.Enter();
-
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         // **The cursor is on the message itself, not on the row used to scroll to it.** Reaching selects a
         // couple of rows earlier first, so the list scrolls those into view and the message sits below them

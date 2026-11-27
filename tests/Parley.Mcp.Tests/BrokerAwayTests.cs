@@ -18,6 +18,7 @@ namespace Parley.Mcp.Tests;
 /// silent abandonment. "An error occurred invoking 'parley_request'" is exactly that refusal.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class BrokerAwayTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 4, 1, 9, 0, 0, TimeSpan.Zero);
@@ -42,6 +43,10 @@ public sealed class BrokerAwayTests
             ("parley_request", () => tools.RequestAsync(
                 to: "billing@test",
                 ask: "Is the tax rate gross or net?",
+                cancellationToken: ct)),
+            ("parley_describe_background", () => tools.DescribeBackgroundAsync(
+                task_id: "a1",
+                name: "Checking VAT on gift cards",
                 cancellationToken: ct)),
         })
         {

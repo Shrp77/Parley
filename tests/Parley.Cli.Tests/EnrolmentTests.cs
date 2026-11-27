@@ -27,6 +27,7 @@ namespace Parley.Cli.Tests;
 /// malicious case, never by reading the code.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class EnrolmentTests : IDisposable
 {
     private readonly string _root =
@@ -147,6 +148,92 @@ public sealed class EnrolmentTests : IDisposable
         Assert.True(File.Exists(LaunchFile), "the launch configuration was deleted rather than edited");
         Assert.False(servers.ContainsKey("parley"));
         Assert.True(servers.ContainsKey("other"), "another repository's MCP server was removed with ours");
+    }
+
+    [Fact]
+    public async Task Withdrawing_for_another_identity_leaves_the_repository_and_its_catalogue_line_alone()
+    {
+        // A registry row naming this repository's role and path, but registered with another identity: an agent attached
+        // under a name it does not own, or one that wrote another's identity into its own file. The entry names only the
+        // role, so without the identity this repository's entry and catalogue line went for it.
+        await Enrolment.AddAsync(
+            Entry("orders", Workspace), "acme", CatalogueFile, InstructionsFile, TestContext.Current.CancellationToken);
+
+        var launch = JsonNode.Parse(await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!;
+        var own = AgentIdentity.Read(launch[LaunchConfiguration.IdentityMember]!.GetValue<string>());
+
+        var refused = await Enrolment.WithdrawAsync(
+            Workspace, "orders@test", "acme", CatalogueFile, AgentIdentity.Mint(), TestContext.Current.CancellationToken);
+
+        Assert.Contains(refused.Notes, note => note.Contains("another agent's repository", StringComparison.Ordinal));
+        Assert.Contains("parley-acme", await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+        Assert.Contains(own.ToString(), await File.ReadAllTextAsync(CatalogueFile, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+
+        // The agent the registry knows by this repository's own identity is withdrawn as before.
+        await Enrolment.WithdrawAsync(
+            Workspace, "orders@test", "acme", CatalogueFile, own, TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain("parley-acme", await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+        Assert.DoesNotContain(own.ToString(), await File.ReadAllTextAsync(CatalogueFile, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Withdrawing_for_another_identity_leaves_the_catalogue_line_of_a_repository_with_no_entry()
+    {
+        // The repository's file keeps its identity but no longer has an entry for this project, so nothing says it still
+        // answers somewhere. The registry knows the agent by another identity: the line is still not this agent's to take.
+        await Enrolment.AddAsync(
+            Entry("orders", Workspace), "acme", CatalogueFile, InstructionsFile, TestContext.Current.CancellationToken);
+
+        var launch = JsonNode.Parse(await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!;
+        var own = launch[LaunchConfiguration.IdentityMember]!.GetValue<string>();
+
+        Assert.True(launch["mcpServers"]!.AsObject().Remove("parley-acme"));
+        await File.WriteAllTextAsync(LaunchFile, launch.ToJsonString(), TestContext.Current.CancellationToken);
+
+        var refused = await Enrolment.WithdrawAsync(
+            Workspace, "orders@test", "acme", CatalogueFile, AgentIdentity.Mint(), TestContext.Current.CancellationToken);
+
+        Assert.Contains(refused.Notes, note => note.Contains("the repository is another agent's", StringComparison.Ordinal));
+        Assert.Contains(own, await File.ReadAllTextAsync(CatalogueFile, TestContext.Current.CancellationToken), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_workspace_that_leads_off_this_machine_is_never_looked_up()
+    {
+        // The workspace is what the agent reported, and the agent can make it a link to a share after it attached. Looking
+        // for its .mcp.json there offers the person's sign-in to that host (review, lens 2 round 12).
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "A share path is a Windows path.");
+
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var outcome = await Enrolment.WithdrawAsync(
+            @"\\192.0.2.77\zz\orders", "orders", "acme", CatalogueFile, TestContext.Current.CancellationToken);
+
+        Assert.Contains(outcome.Notes, note => note.Contains("not a folder on this machine", StringComparison.Ordinal));
+        Assert.True(started.Elapsed < TimeSpan.FromSeconds(5), $"took {started.Elapsed}: it went looking");
+    }
+
+    [Fact]
+    public async Task A_catalogue_line_naming_another_repository_is_never_taken_by_a_withdrawal()
+    {
+        // This repository's file carries an identity whose catalogue line is another checkout's: an agent copied it into
+        // its own file. Withdrawing this repository must not take that line.
+        await Enrolment.AddAsync(
+            Entry("orders", Workspace), "acme", CatalogueFile, InstructionsFile, TestContext.Current.CancellationToken);
+
+        var launch = JsonNode.Parse(await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!;
+        var identity = launch[LaunchConfiguration.IdentityMember]!.GetValue<string>();
+        var catalogue = JsonNode.Parse(await File.ReadAllTextAsync(CatalogueFile, TestContext.Current.CancellationToken))!;
+        var elsewhere = Path.Combine(Path.GetTempPath(), "parley-another-checkout");
+
+        catalogue["agents"]![identity]!["workspace"] = elsewhere;
+        await File.WriteAllTextAsync(CatalogueFile, catalogue.ToJsonString(), TestContext.Current.CancellationToken);
+
+        var outcome = await Enrolment.WithdrawAsync(
+            Workspace, "orders", "acme", CatalogueFile, TestContext.Current.CancellationToken);
+
+        Assert.Contains(outcome.Notes, note => note.Contains("another repository's", StringComparison.Ordinal));
+        Assert.Contains(identity, await File.ReadAllTextAsync(CatalogueFile, TestContext.Current.CancellationToken), StringComparison.Ordinal);
     }
 
     [Fact]

@@ -24,6 +24,7 @@ namespace Parley.Terminal.Tests;
 /// colour, a pipe, or a CI log would lose.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ColourSaysNothingNewTests
 {
     [Fact]

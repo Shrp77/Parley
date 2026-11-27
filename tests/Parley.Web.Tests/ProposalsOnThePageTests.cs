@@ -14,6 +14,7 @@ namespace Parley.Web.Tests;
 /// would show up as a confirmation nobody asked for.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProposalsOnThePageTests
 {
     private static readonly Uri IndexUri = new($"/Roadmaps?project={RoadmapConsole.Project}", UriKind.Relative);
@@ -165,12 +166,13 @@ public sealed class ProposalsOnThePageTests
     {
         using var console = new RoadmapConsole();
         console.Broker.Roadmaps.Add(new Wire.RoadmapSummary { Id = 3, Number = 1, Title = "Billing export", Revision = 1, LiveItems = 2 });
+        console.Broker.Details[3] = Revisable(open: false);
         console.Broker.Propose(8, "orders@test", "Billing export v2", ["One"], target: "billing EXPORT");
         using var client = console.CreateClient();
 
         var page = await client.GetStringAsync(ProposalUri(8), TestContext.Current.CancellationToken);
 
-        Assert.Contains("matches the roadmap <strong>Billing export</strong>", page, StringComparison.Ordinal);
+        Assert.Contains("<strong>Billing export</strong></a>, which has", page, StringComparison.Ordinal);
         Assert.Matches(new Regex("name=\"Target\" value=\"new\" checked", RegexOptions.None, TimeSpan.FromSeconds(2)), page);
         Assert.Contains("value=\"3\"", page, StringComparison.Ordinal);
 
@@ -180,6 +182,82 @@ public sealed class ProposalsOnThePageTests
             new Dictionary<string, string> { ["Text"] = "title: Billing export v2\n1. One", ["Target"] = "3" });
 
         Assert.Equal(3, Assert.Single(console.Broker.Confirmed).TargetRoadmap);
+    }
+
+    [Fact]
+    public async Task A_revision_whose_roadmap_no_longer_matches_is_never_confirmed_as_a_new_one()
+    {
+        // The roadmap was renamed between the page and the submit, so the hint no longer matches it. Must fail against
+        // dropping the person's choice and confirming a new roadmap, which spends the proposal and makes a duplicate.
+        using var console = new RoadmapConsole();
+        console.Broker.Roadmaps.Add(new Wire.RoadmapSummary { Id = 3, Number = 1, Title = "Billing export, renamed", Revision = 2, LiveItems = 1 });
+        console.Broker.Details[3] = Revisable(open: false);
+        console.Broker.Propose(8, "orders@test", "Billing export", ["One"], target: "billing export");
+        using var client = console.CreateClient();
+
+        var page = await (await PostAsync(client, ProposalUri(8), new Dictionary<string, string> { ["Text"] = "title: Billing export\n1. One", ["Target"] = "3" }))
+            .Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(console.Broker.Confirmed);
+        Assert.Contains("nothing was confirmed", page, StringComparison.Ordinal);
+    }
+
+    /// <summary>Roadmap 3, whose first item's conversation has an open request when <paramref name="open"/> is set.</summary>
+    private static Wire.RoadmapDetail Revisable(bool open)
+    {
+        var detail = new Wire.RoadmapDetail { Id = 3, Number = 1, Title = "Billing export", Revision = 1 };
+
+        detail.Items.Add(new Wire.RoadmapItemDetail
+        {
+            Id = 1, Number = 1, Position = 1, Text = "Add CSV export", IntendedAgent = "billing@test", ConversationName = "rm1-1",
+            Facts = new Wire.ItemFacts { ConversationExists = open, OpenExchanges = open ? 1 : 0 },
+        });
+
+        return detail;
+    }
+
+    [Fact]
+    public async Task A_revision_that_removes_open_work_is_described_and_confirmed_only_on_a_second_submit()
+    {
+        // A proposal's items carry no item numbers, so confirming it as a revision replaces every item, and item 1's open
+        // request would lose its place with its agent not told. Must fail against confirming on the first submit, and
+        // against a second submit that comes back as a new roadmap rather than the revision chosen.
+        using var console = new RoadmapConsole();
+        console.Broker.Roadmaps.Add(new Wire.RoadmapSummary { Id = 3, Number = 1, Title = "Billing export", Revision = 1, LiveItems = 1 });
+        console.Broker.Details[3] = Revisable(open: true);
+        console.Broker.Propose(8, "orders@test", "Billing export", ["One"], target: "billing export");
+        using var client = console.CreateClient();
+        const string Text = "title: Billing export\n1. One";
+
+        var first = await (await PostAsync(client, ProposalUri(8), new Dictionary<string, string> { ["Text"] = Text, ["Target"] = "3" }))
+            .Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(console.Broker.Confirmed);
+        Assert.Contains("item 1, &quot;Add CSV export&quot;, in rm1-1", first, StringComparison.Ordinal);
+        Assert.Matches(new Regex("name=\"Target\" value=\"3\" checked", RegexOptions.None, TimeSpan.FromSeconds(2)), first);
+
+        await PostAsync(
+            client,
+            ProposalUri(8),
+            new Dictionary<string, string> { ["Text"] = Text, ["Target"] = "3", ["ConfirmRemoval"] = "true", ["Removing"] = "1" });
+
+        Assert.Equal(3, Assert.Single(console.Broker.Confirmed).TargetRoadmap);
+    }
+
+    [Fact]
+    public async Task A_decline_that_names_no_proposal_declines_nothing()
+    {
+        // On the wire an id of 0 asks for the list, whose first row is the newest proposal. Must fail against a page with
+        // no id that describes, and then declines, whichever proposal happens to be newest.
+        using var console = Proposed();
+        using var client = console.CreateClient();
+        var none = new Uri($"/Roadmaps/Decline?project={RoadmapConsole.Project}", UriKind.Relative);
+
+        var page = await client.GetStringAsync(none, TestContext.Current.CancellationToken);
+        await PostAsync(client, none, [], tokenFrom: DeclineUri(7));
+
+        Assert.Empty(console.Broker.Declined);
+        Assert.Contains("not awaiting your decision", page, StringComparison.Ordinal);
     }
 
     [Fact]

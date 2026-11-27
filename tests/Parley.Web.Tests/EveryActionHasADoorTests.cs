@@ -28,6 +28,7 @@ namespace Parley.Web.Tests;
 /// followed it, which reads as a broken console rather than as a link nobody finished.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class EveryActionHasADoorTests
 {
     private static string Root()
@@ -64,12 +65,22 @@ public sealed class EveryActionHasADoorTests
     /// grew three arms and whatever named them all would have had to be remembered.
     /// </remarks>
     private static IEnumerable<string> Performed() =>
+        Arms(Model()).Order(StringComparer.Ordinal);
+
+    /// <summary>Every action name a switch arm in this text matches, each name of an <c>or</c> arm included.</summary>
+    /// <param name="text">Source holding the arms.</param>
+    /// <returns>Each name once.</returns>
+    /// <remarks>
+    /// <c>"retire" or "reinstate" or "purge" =&gt; Withdraw(...)</c> is one arm with three names. Read as arms of one name,
+    /// it matched nothing, so the POST check never saw the three withdrawals, and a GET that stopped describing one of
+    /// them passed.
+    /// </remarks>
+    private static IEnumerable<string> Arms(string text) =>
         System.Text.RegularExpressions.Regex
-            .Matches(Model(), """^\s*"(?<action>[a-z]+)" =>""",
+            .Matches(text, """^\s*"(?<action>[a-z]+)"(?:\s+or\s+"(?<action>[a-z]+)")*\s*=>""",
                 System.Text.RegularExpressions.RegexOptions.Multiline)
-            .Select(match => match.Groups["action"].Value)
-            .Distinct(StringComparer.Ordinal)
-            .Order(StringComparer.Ordinal);
+            .SelectMany(match => match.Groups["action"].Captures.Select(capture => capture.Value))
+            .Distinct(StringComparer.Ordinal);
 
     private static IEnumerable<string> Offered() =>
         System.Text.RegularExpressions.Regex
@@ -133,18 +144,26 @@ public sealed class EveryActionHasADoorTests
 
         var post = model[model.IndexOf("public async Task<IActionResult> OnPostAsync()", StringComparison.Ordinal)..];
 
-        static IEnumerable<string> Arms(string text) =>
-            System.Text.RegularExpressions.Regex
-                .Matches(text, """^\s*"(?<action>[a-z]+)" =>""",
-                    System.Text.RegularExpressions.RegexOptions.Multiline)
-                .Select(match => match.Groups["action"].Value)
-                .Distinct(StringComparer.Ordinal);
-
         var described = Arms(get).ToHashSet(StringComparer.Ordinal);
         var silent = Arms(post).Where(action => !described.Contains(action)).ToList();
 
         Assert.True(
             silent.Count == 0,
             "these are done on a POST and described on no GET: " + string.Join(", ", silent));
+    }
+
+    [Fact]
+    public void The_post_arms_read_include_every_name_of_an_or_arm()
+    {
+        // The withdrawals share one arm on the POST. A reading that took only arms of one name made the check above hold
+        // for them by never seeing them.
+        var model = Model();
+        var post = model[model.IndexOf("public async Task<IActionResult> OnPostAsync()", StringComparison.Ordinal)..];
+
+        var performed = Arms(post).ToList();
+
+        Assert.Contains("retire", performed);
+        Assert.Contains("reinstate", performed);
+        Assert.Contains("purge", performed);
     }
 }

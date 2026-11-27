@@ -1,0 +1,93 @@
+using System.Text.RegularExpressions;
+using Xunit;
+using Wire = Parley.Transport;
+
+namespace Parley.Web.Tests;
+
+/// <summary>What a browser asks for from inside a roadmap item's frame: a send there stays in the frame.</summary>
+[Integration]
+public sealed class ItemFrameStaysFramedTests
+{
+    private static readonly Uri Framed =
+        new($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1&With=billing%40test&embed=1", UriKind.Relative);
+
+    private static RoadmapConsole Confirmed(bool started)
+    {
+        var console = new RoadmapConsole();
+        var item = new Wire.RoadmapItemDetail
+        {
+            Id = 1, Number = 1, Position = 1, Text = "Add CSV export", IntendedAgent = "billing@test", ConversationName = "rm1-1",
+            Facts = new Wire.ItemFacts { ConversationExists = started },
+        };
+        var detail = new Wire.RoadmapDetail { Id = 1, Number = 1, Title = "Billing export", Revision = 1 };
+
+        detail.Items.Add(item);
+        console.Broker.Details[1] = detail;
+        console.Broker.Roadmaps.Add(new Wire.RoadmapSummary { Id = 1, Number = 1, Title = "Billing export", Revision = 1, LiveItems = 1 });
+        console.Broker.Registry.Add(new Wire.RegistryRow
+        {
+            Name = "billing@test", Adapter = "claude-code", Tier = Wire.AgentTier.Full, Status = Wire.AgentStatus.Active,
+        });
+
+        return console;
+    }
+
+    private static HttpRequestMessage FromTheFrame(HttpMethod method, Uri path)
+    {
+        var request = new HttpRequestMessage(method, path);
+
+        // What a browser sends for a navigation of a nested browsing context: a link followed or a form submitted in it.
+        request.Headers.Add("Sec-Fetch-Dest", "iframe");
+        request.Headers.Add("Sec-Fetch-Mode", "navigate");
+        request.Headers.Add("Sec-Fetch-Site", "same-origin");
+
+        return request;
+    }
+
+    [Fact]
+    public async Task A_send_from_inside_the_frame_returns_a_page_the_frame_may_show_without_the_consoles_chrome()
+    {
+        // The person's seat held and the Request accepted, so the send reaches its successful end (lens 3 run 125:
+        // without a seat it stopped at the refusal, and the page a sent message returns was never drawn).
+        using var console = Confirmed(started: false);
+        console.Broker.Seats = true;
+        console.Broker.Registry.Add(new Wire.RegistryRow
+        {
+            Name = "human-user@" + RoadmapConsole.Project, Adapter = "parley-console", Tier = Wire.AgentTier.Pull,
+            Status = Wire.AgentStatus.Active,
+        });
+        using var client = console.CreateClient();
+        var token = TestContext.Current.CancellationToken;
+
+        using var get = FromTheFrame(HttpMethod.Get, Framed);
+        using var first = await client.SendAsync(get, token);
+        var html = await first.Content.ReadAsStringAsync(token);
+        var antiforgery = Regex.Match(html, """name="__RequestVerificationToken"[^>]*value="([^"]+)""", RegexOptions.None, TimeSpan.FromSeconds(2)).Groups[1].Value;
+
+        Assert.NotEmpty(antiforgery);
+
+        // **Posted where the frame's own form posts** (lens 3 run 127): a form with no action posts back to the page's
+        // address, embed included, and one given an action that drops embed would be answered with a page the frame
+        // refuses. The address a browser would use, not one the test chose.
+        var form = Regex.Match(html, """<form method="post" id="composer"[^>]*>""", RegexOptions.None, TimeSpan.FromSeconds(2)).Value;
+        Assert.NotEmpty(form);
+        var action = Regex.Match(form, "\\baction=\"([^\"]*)\"", RegexOptions.None, TimeSpan.FromSeconds(2));
+        var target = action.Success
+            ? new Uri(System.Net.WebUtility.HtmlDecode(action.Groups[1].Value), UriKind.Relative)
+            : Framed;
+
+        using var post = FromTheFrame(HttpMethod.Post, target);
+        post.Content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["__RequestVerificationToken"] = antiforgery, ["Says"] = "Add CSV export", ["Targets"] = "billing@test",
+        });
+        using var sent = await client.SendAsync(post, token);
+        var after = await sent.Content.ReadAsStringAsync(token);
+
+        Assert.Equal("billing@test", Assert.Single(console.Broker.Requested).To);
+        Assert.Contains("Sent.", after, StringComparison.Ordinal);
+        Assert.Contains("frame-ancestors 'self'", sent.Headers.GetValues("Content-Security-Policy").Single(), StringComparison.Ordinal);
+        Assert.Equal("SAMEORIGIN", sent.Headers.GetValues("X-Frame-Options").Single());
+        Assert.Matches("<body class=\"[^\"]* embed", after);
+    }
+}

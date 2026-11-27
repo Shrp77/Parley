@@ -1,0 +1,2808 @@
+/* The web console's components and pages, built only from the tokens in tokens.css. Served at
+   /brand/components.css, after tokens.css. */
+
+
+/* Room for the scrollbar on every page, so a short page and a long one lay out alike and nothing shifts sideways */
+/* when one gains or loses it. */
+html { scrollbar-gutter: stable; }
+* { box-sizing: border-box; }
+
+body {
+    font: var(--md-sys-typescale-body-medium);
+    font-optical-sizing: auto;
+    color: var(--ink);
+    background: var(--page);
+    margin: 0;
+    padding: 0;
+}
+
+/* The whole width of the window. What reads best at a measure (a bubble, a lede, a settings section) is capped where
+   it is drawn, so a wide window goes to the columns that can use it: the conversation's panel, tables and lists. */
+header, main { margin: 0; max-width: none; }
+
+/* Navigation, as Material 3 draws it: a navigation drawer the full height of the window, fixed to its left edge, that
+   collapses to a navigation rail. Each destination is a 56px item at the full corner; the current one sits in an
+   active indicator of the secondary container. Collapsed, each icon keeps its place and the labels go. The choice is
+   the browser's alone (localStorage, guarded) and the page is complete without it; expanded is the default so that
+   nothing is hidden from somebody with no script. */
+:root { --rail-w: 16rem; }
+html[data-nav="collapsed"] { --rail-w: 5rem; }
+
+.rail {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 30;
+    width: var(--rail-w);
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 0.75rem;
+    background: var(--md-sys-color-surface-container-low);
+    border-right: 0;
+    box-shadow: none;
+}
+
+.page { margin-left: var(--rail-w); padding: 0 clamp(1rem, 2vw, 1.5rem) 4rem; min-width: 0; }
+
+/* The conversation page ends in its composer, which is pinned to the bottom of the window. Padding under it is a
+   strip of page showing between the box and the edge of the window. */
+.page:has(.convo-page) { padding-bottom: 0; }
+
+.rail .brand { min-height: 3.5rem; padding: 0 0.75rem 0.5rem 0.875rem; margin-bottom: 0.25rem; white-space: nowrap; font: var(--md-sys-typescale-title-medium); }
+.rail .brand img { flex: none; }
+.rail .brand .rail-label { color: var(--md-sys-color-on-surface); }
+.rail .brand .rail-label span { color: var(--md-sys-color-on-surface-variant); font-weight: 400; }
+
+.rail nav { display: flex; flex-direction: column; flex-wrap: nowrap; gap: 0; margin: 0; align-items: stretch; }
+/* The rail's own items: its direct links. Lists opened from it (More, the project's places) style their own links. */
+.rail nav > a {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 3.5rem;
+    padding: 0 1rem;
+    border: 0;
+    border-radius: var(--md-sys-shape-corner-full);
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-large);
+    white-space: nowrap;
+    text-decoration: none;
+}
+.rail nav > a:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); color: var(--md-sys-color-on-surface); border: 0; }
+.rail nav > a:focus-visible { outline-offset: -3px; }
+.rail nav > a[aria-current] { color: var(--md-sys-color-on-secondary-container); background: var(--md-sys-color-secondary-container); font-weight: 700; }
+.rail nav > a[aria-current]:hover { background-image: linear-gradient(color-mix(in srgb, var(--md-sys-color-on-secondary-container) var(--md-sys-state-hover), transparent) 0 0); }
+.rail .icon { font-size: 1.5rem; }
+.rail a[aria-current] .icon { font-variation-settings: "FILL" 1; }
+.rail-label { overflow: hidden; text-overflow: ellipsis; }
+
+/* The foot, always at the bottom: Parley's settings. */
+.rail nav.rail-foot { margin-top: auto; padding-top: 0.5rem; border-top: 1px solid var(--md-sys-color-outline-variant); }
+
+/* A section's name, the same height in both states so nothing below it moves when the bar collapses: collapsed, the
+   name goes and a divider stays in its place. */
+.rail-heading { height: 3.5rem; line-height: 3.5rem; margin: 0.5rem 1rem 0; border-top: 1px solid var(--md-sys-color-outline-variant); font: var(--md-sys-typescale-title-small); line-height: 3.5rem; color: var(--md-sys-color-on-surface-variant); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rail .seat-waiting { margin-left: auto; }
+
+/* Folded: a rail. Every item (a place, a page action, a conversation's command) is its icon in an indicator with its
+   name in small type under it, as Material 3 draws a rail (the person's feedback on feature 042: an icon alone, such as
+   the folded project's initial, did not say what it was). A desktop is
+   folded by the person (data-nav="collapsed"); below 1200px the page keeps a rail's width whatever the toggle says, as
+   Material 3 keeps a docked drawer for large windows, and the handle unfolds the whole menu over the page instead
+   (data-rail-open, never remembered). Both stand down while it is unfolded. */
+html[data-nav="collapsed"]:not([data-rail-open]) :is(.rail nav > a, .rail-act > summary, .rail-actions .strip-button, .rail-actions .rail-link, .rail-project > summary) { flex-direction: column; justify-content: center; gap: 0.25rem; width: 100%; min-height: 3.5rem; margin: 0.125rem 0; padding: 0.25rem 0; background: none; box-shadow: none; }
+html[data-nav="collapsed"]:not([data-rail-open]) .rail .brand span { position: absolute; left: -100rem; }
+html[data-nav="collapsed"]:not([data-rail-open]) :is(.rail nav > a, .rail-act > summary, .rail-actions .strip-button, .rail-actions .rail-link, .rail-project > summary) .rail-label { position: static; max-width: 100%; font: var(--md-sys-typescale-label-small); letter-spacing: 0; white-space: nowrap; }
+html[data-nav="collapsed"]:not([data-rail-open]) :is(.rail nav > a, .rail-act > summary, .rail-actions .strip-button, .rail-actions .rail-link, .rail-project > summary) :is(.icon, .strip-glyph, .project-mark) { box-sizing: content-box; padding: 0.25rem 1rem; border-radius: var(--md-sys-shape-corner-full); }
+html[data-nav="collapsed"]:not([data-rail-open]) .rail nav > a[aria-current] { background: none; }
+html[data-nav="collapsed"]:not([data-rail-open]) .rail nav > a[aria-current] .icon { background: var(--md-sys-color-secondary-container); }
+html[data-nav="collapsed"]:not([data-rail-open]) .rail-act-main > summary .icon { color: var(--md-sys-color-on-primary-container); background: var(--md-sys-color-primary-container); }
+html[data-nav="collapsed"]:not([data-rail-open]) .rail .brand { padding: 0 0 0.5rem; justify-content: center; }
+html[data-nav="collapsed"]:not([data-rail-open]) .rail-heading { color: transparent; margin: 0.5rem 0.5rem 0; height: 1rem; }
+html[data-nav="collapsed"]:not([data-rail-open]) .rail .seat-waiting { position: absolute; top: 0; right: 0.25rem; margin: 0; }
+
+@media (min-width: 37.5rem) and (max-width: 74.99rem) {
+    :root { --rail-w: 5rem; }
+    html:not([data-rail-open]) :is(.rail nav > a, .rail-act > summary, .rail-actions .strip-button, .rail-actions .rail-link, .rail-project > summary) { flex-direction: column; justify-content: center; gap: 0.25rem; width: 100%; min-height: 3.5rem; margin: 0.125rem 0; padding: 0.25rem 0; background: none; box-shadow: none; }
+    html:not([data-rail-open]) .rail .brand span { position: absolute; left: -100rem; }
+    html:not([data-rail-open]) :is(.rail nav > a, .rail-act > summary, .rail-actions .strip-button, .rail-actions .rail-link, .rail-project > summary) .rail-label { position: static; max-width: 100%; font: var(--md-sys-typescale-label-small); letter-spacing: 0; white-space: nowrap; }
+    html:not([data-rail-open]) :is(.rail nav > a, .rail-act > summary, .rail-actions .strip-button, .rail-actions .rail-link, .rail-project > summary) :is(.icon, .strip-glyph, .project-mark) { box-sizing: content-box; padding: 0.25rem 1rem; border-radius: var(--md-sys-shape-corner-full); }
+    html:not([data-rail-open]) .rail nav > a[aria-current] { background: none; }
+    html:not([data-rail-open]) .rail nav > a[aria-current] .icon { background: var(--md-sys-color-secondary-container); }
+    html:not([data-rail-open]) .rail-act-main > summary .icon { color: var(--md-sys-color-on-primary-container); background: var(--md-sys-color-primary-container); }
+    html:not([data-rail-open]) .rail .brand { padding: 0 0 0.5rem; justify-content: center; }
+    html:not([data-rail-open]) .rail-heading { color: transparent; margin: 0.5rem 0.5rem 0; height: 1rem; }
+    html:not([data-rail-open]) .rail .seat-waiting { position: absolute; top: 0; right: 0.25rem; margin: 0; }
+    html[data-rail-open] .rail { width: 16rem; box-shadow: var(--md-sys-elevation-3); }
+}
+
+/* Skipping is for somebody navigating by keyboard, so it has to become visible when it
+   is focused rather than merely exist. */
+.skip {
+    position: absolute;
+    left: -100rem;
+}
+
+.skip:focus {
+    position: static;
+    display: inline-block;
+    margin: 0.5rem 0;
+    padding: 0.5rem 0.75rem;
+    background: var(--accent);
+    color: var(--on-accent);
+    border-radius: var(--radius);
+}
+
+/* The frame stays put. Everything in it is navigation or the seat you are holding, and
+   both are things you want to reach from halfway down a long transcript without
+   scrolling back to the top to find them.
+
+   --frame is what it occupies, and three other things are positioned against it: the
+   roster, the minimap, and where an anchor lands. A sticky header over sticky children
+   with no offset puts them underneath it, and a tick that scrolls its message under the
+   header is a link that appears not to work. */
+header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    min-height: 4rem;
+    padding: 0.5rem 0;
+    background: var(--page);
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+    margin-bottom: 1.5rem;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    text-decoration: none;
+}
+
+.brand span { color: var(--ink-faint); font-weight: 400; }
+
+.crumb {
+    font: var(--md-sys-typescale-title-large);
+    font-weight: 700;
+    color: var(--ink);
+    text-decoration: none;
+    overflow-wrap: anywhere;
+}
+
+/* A hint beside the name, not part of it: faint and italic so it reads as a gloss and not as the heading. */
+h1 .item-title { font-size: 0.7em; font-weight: 400; font-style: italic; color: var(--ink-faint); margin-left: 0.6rem; }
+
+/* Drawn in black on transparency, so on a dark ground it is inverted rather than
+   swapped for a second file. One asset, and it cannot fall out of step with itself. */
+.brand img {
+    width: 1.9rem;
+    height: 1.9rem;
+    display: block;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .brand img { filter: invert(1); }
+}
+
+:root[data-theme="dark"] .brand img { filter: invert(1); }
+
+/* One delivered message, in the inbox. Bordered rather than bubbled: these arrive out of
+   whatever conversation they belong to, and dressing them as a transcript would suggest
+   an order and a context they do not have here. */
+.letter {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    padding: 0.9rem 1.1rem;
+    margin: 0.75rem 0;
+}
+
+/* A debt, not a decoration. The word "question" is in the tag beside the name and the
+   reply form is inside it, so the edge is the reminder rather than the statement. */
+.letter.owed { border-left: 3px solid var(--alarm); }
+
+.letter .attribution {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.5rem;
+}
+
+.reply label {
+    display: block;
+    margin: 0.6rem 0 0.2rem;
+    font-weight: 600;
+    color: var(--ink);
+}
+
+/* Set apart from the name beside it, because one of them is attested and the other is
+   only claimed. Quiet, italic and prefixed with "says" -- it is evidence about what a
+   peer reports, not a fact about who wrote the words. */
+.claims {
+    font-size: 0.8rem;
+    font-style: italic;
+    color: var(--ink-faint);
+}
+
+.reply textarea { width: 100%; }
+.reply select { font: inherit; margin-top: 0.4rem; }
+
+nav { display: flex; flex-wrap: wrap; gap: 1rem; }
+
+nav a {
+    color: var(--ink-soft);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    padding-bottom: 1px;
+}
+
+nav a:hover, nav a:focus { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* The seat, in the frame. It is on every page because being present is a fact about the
+   deployment rather than about whatever page happens to be open, and a person who cannot
+   see that they are still joined has no way to know the roster is showing them. */
+nav { margin-left: auto; align-items: center; }
+
+.seat-who {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 600;
+    color: var(--ink);
+}
+
+/* The dot repeats what the name already says -- it is beside your own name, not beside a
+   list of others -- so nothing here is carried by colour alone. */
+.seat-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--md-ext-color-present);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--md-ext-color-present) 25%, transparent);
+}
+
+.seat-waiting[hidden] { display: none; }
+
+/* Material 3's large badge: a count in label-small, on the error colour, 16px tall at the full corner. */
+.seat-waiting, .strip-count, .waiting-count {
+    display: inline-grid;
+    place-items: center;
+    min-width: 1rem;
+    height: 1rem;
+    padding: 0 0.25rem;
+    font: var(--md-sys-typescale-label-small);
+    color: var(--md-sys-color-on-error);
+    background: var(--md-sys-color-error);
+    border-radius: var(--md-sys-shape-corner-full);
+}
+
+/* Headings on the type scale: a page title is headline-small, a section title-large, a sub-section title-medium. */
+h1 {
+    font: var(--md-sys-typescale-headline-small);
+    margin: 0 0 0.5rem;
+}
+
+h2 {
+    font: var(--md-sys-typescale-title-large);
+    margin: 2rem 0 0.75rem;
+    color: var(--ink);
+}
+
+h3 { font: var(--md-sys-typescale-title-medium); margin: 1.5rem 0 0.5rem; color: var(--ink); }
+
+a { color: var(--accent); }
+
+p { margin: 0.5rem 0; }
+
+/* Said on every list view, so it has to be readable and unobtrusive at once: a reader
+   needs to be able to find it when they wonder how old the page is, and never to trip
+   over it when they do not. */
+.as-of {
+    color: var(--ink-faint);
+    font-size: 0.85rem;
+    margin: 0 0 1.25rem;
+}
+/* The frame's stamp sits at the right of the page's first line, where the data-grid views put theirs. */
+main > .as-of { float: right; margin: 0.6rem 0 0 1rem; }
+
+section { margin-bottom: 2rem; }
+
+/* What a sweep found, on every page until it is dismissed. The words say it; the rule beside them only draws
+   the eye. */
+.file-problems-banner {
+    margin: 0 0 1rem;
+    padding: 0.5rem 0.75rem;
+    border-left: 3px solid var(--alarm);
+    background: var(--card);
+    overflow-wrap: anywhere;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin: 0.5rem 0 1rem;
+}
+
+caption {
+    text-align: left;
+    color: var(--ink-faint);
+    font-size: 0.85rem;
+    padding: 0 0 0.5rem;
+}
+
+th, td {
+    text-align: left;
+    padding: 0.6rem 0.85rem;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+}
+
+th {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-faint);
+    font-weight: 600;
+    background: var(--quiet-wash);
+}
+
+tbody tr:last-child td { border-bottom: none; }
+
+/* The project and agent lists. A card each, so a row is a thing rather than a line of
+   text, and the link is the whole name rather than a word inside a sentence. */
+main > ul, section > ul {
+    list-style: none;
+    padding: 0;
+    margin: 0.5rem 0 1rem;
+    display: grid;
+    gap: 0.6rem;
+}
+
+main > ul > li, section > ul > li {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    padding: 0.85rem 1rem;
+}
+
+main > ul > li > a, section > ul > li > a { font-weight: 600; }
+
+/* A project or a broker that did not answer. Bordered and washed, and the sentence
+   inside says what happened -- the colour is the third way of noticing, never the
+   first. */
+.unreachable {
+    border-left: 3px solid var(--alarm);
+    background: var(--alarm-wash);
+    color: var(--ink);
+    padding: 0.7rem 0.9rem;
+    border-radius: 0 var(--radius) var(--radius) 0;
+    margin: 0.75rem 0;
+}
+
+form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    padding: 0.85rem 1rem;
+    margin: 0.75rem 0 1.25rem;
+}
+
+/* The display above would otherwise draw a form that is only ever submitted by a script as an empty card. */
+form[hidden] { display: none; }
+
+label { color: var(--ink-soft); font-size: 0.9rem; }
+
+/* ---- Controls, Material style --------------------------------------------------------------------------------
+   One place, at the element, so a page that adds a bare <input> or <select> looks like the rest without having
+   to know a class. Everything below reads the same tokens as the rest of the frame, so dark mode needs nothing
+   of its own beyond --on-accent. A page that wants something different says so with a more specific rule.
+
+   Glyphs are a font (Material Symbols Outlined, Apache License 2.0), cut down to the icons this console names and
+   served from the assembly at /brand/material-symbols.woff2. They are written as ligatures: the icon's name is the
+   text. A glyph is decoration, so a pseudo-element's gets an empty alternative (`/ ""`) and an element's is
+   aria-hidden; the words beside it carry the meaning, as they did before. */
+@font-face {
+    font-family: "Material Symbols Outlined";
+    font-style: normal;
+    font-weight: 400;
+    font-display: block;
+    src: url("/brand/material-symbols.woff2") format("woff2");
+}
+
+/* Clipped to one em, so a browser that never loads the font shows an empty square and not the icon's name. */
+.icon {
+    display: inline-block;
+    flex: none;
+    width: 1em;
+    height: 1em;
+    overflow: hidden;
+    font-family: "Material Symbols Outlined";
+    font-size: 1.25rem;
+    font-style: normal;
+    font-weight: normal;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    white-space: nowrap;
+    direction: ltr;
+    font-feature-settings: "liga";
+    font-variation-settings: "FILL" 0;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+}
+
+.icon.filled { font-variation-settings: "FILL" 1; }
+
+/* Material 3's outlined text field: a 1px outline at the extra-small corner, the label above it as its own <label>,
+   the outline turning on-surface on hover and becoming 2px of the primary colour when the field has focus. 48px tall
+   rather than 56, the system's density step for a desktop console. */
+input:not([type="checkbox"], [type="radio"], [type="range"], [type="hidden"], [type="file"]), textarea, select {
+    font: var(--md-sys-typescale-body-large);
+    min-height: 3rem;
+    color: var(--md-sys-color-on-surface);
+    background-color: transparent;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-extra-small);
+    padding: 0.6875rem 1rem;
+    accent-color: var(--md-sys-color-primary);
+    caret-color: var(--md-sys-color-primary);
+    transition: border-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard), box-shadow var(--md-sys-motion-duration-short);
+}
+
+input:not([type="checkbox"], [type="radio"], [type="range"], [type="hidden"], [type="file"]):hover, textarea:hover, select:hover { border-color: var(--md-sys-color-on-surface); }
+
+/* Focus is the outline thickening to 2px of the primary colour, drawn inside so the field does not move. */
+input:not([type="checkbox"], [type="radio"], [type="range"], [type="hidden"], [type="file"]):focus-visible, textarea:focus-visible, select:focus-visible,
+input:not([type="checkbox"], [type="radio"], [type="range"], [type="hidden"], [type="file"]):focus, textarea:focus, select:focus {
+    outline: none;
+    border-color: var(--md-sys-color-primary);
+    box-shadow: inset 0 0 0 1px var(--md-sys-color-primary);
+}
+
+input:user-invalid, textarea:user-invalid { border-color: var(--md-sys-color-error); }
+input::placeholder, textarea::placeholder { color: var(--md-sys-color-on-surface-variant); opacity: 1; }
+input:disabled, textarea:disabled, select:disabled { color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent); border-color: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent); cursor: not-allowed; }
+input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1) opacity(0.6); cursor: pointer; }
+input[type="date"], input[type="datetime-local"], input[type="time"] { min-height: 2.4rem; }
+::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.65; }
+
+textarea { width: 100%; min-height: 8rem; resize: vertical; }
+
+/* A combo box. The chevron is the expand_more glyph drawn as an image, because a <select> has no element to put a
+   font in; a browser that can restyle the control itself (appearance: base-select) is given the real glyph and a
+   menu that matches, below. */
+select {
+    appearance: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+    padding-right: 2.4rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath fill='%23878e9c' d='M480-345 240-585l56-56 184 184 184-184 56 56-240 240Z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.6rem center;
+    background-size: 1.4rem;
+}
+
+@supports (appearance: base-select) {
+    select, ::picker(select) { appearance: base-select; }
+    select { background-image: none; padding-right: 0.6rem; display: inline-flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+    select::picker-icon {
+        font-family: "Material Symbols Outlined";
+        font-size: 1.4rem;
+        line-height: 1;
+        color: var(--ink-faint);
+        content: "expand_more";
+        content: "expand_more" / "";
+        transition: rotate 0.15s;
+    }
+    select:open::picker-icon { rotate: 180deg; }
+    ::picker(select) {
+        margin-top: 0.25rem;
+        padding: 0.5rem 0;
+        color: var(--md-sys-color-on-surface);
+        background: var(--md-sys-color-surface-container);
+        border: 0;
+        border-radius: var(--md-sys-shape-corner-extra-small);
+        box-shadow: var(--md-sys-elevation-2);
+    }
+    option { display: flex; align-items: center; gap: 0.75rem; min-height: 3rem; padding: 0 0.75rem; border-radius: 0; cursor: pointer; font: var(--md-sys-typescale-label-large); }
+    option:hover, option:focus-visible { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); outline: none; }
+    option:checked { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+    option::checkmark {
+        order: 1;
+        margin-left: auto;
+        font-family: "Material Symbols Outlined";
+        font-size: 1.15rem;
+        color: var(--accent);
+        content: "check";
+        content: "check" / "";
+    }
+}
+
+/* Material 3's checkbox and radio: an 18px box (20px radio) at a 2px corner, outlined in on-surface-variant, filled with
+   the primary colour when chosen, the tick a glyph in on-primary. The state layer is a 40px circle behind it. */
+input[type="checkbox"], input[type="radio"] {
+    appearance: none;
+    -webkit-appearance: none;
+    position: relative;
+    flex: none;
+    display: inline-grid;
+    place-content: center;
+    width: 1.125rem;
+    height: 1.125rem;
+    margin: 0;
+    padding: 0;
+    vertical-align: middle;
+    color: var(--md-sys-color-on-primary);
+    background: transparent;
+    border: 2px solid var(--md-sys-color-on-surface-variant);
+    border-radius: 2px;
+    cursor: pointer;
+    transition: background-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard), border-color var(--md-sys-motion-duration-short), box-shadow var(--md-sys-motion-duration-short);
+}
+
+input[type="checkbox"]:hover, input[type="radio"]:hover { box-shadow: 0 0 0 0.6875rem color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
+input[type="checkbox"]:active, input[type="radio"]:active { box-shadow: 0 0 0 0.6875rem color-mix(in srgb, var(--md-sys-color-primary) var(--md-sys-state-pressed), transparent); }
+input[type="checkbox"]:disabled, input[type="radio"]:disabled { border-color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent); cursor: not-allowed; box-shadow: none; }
+
+input[type="checkbox"]::before {
+    font-family: "Material Symbols Outlined";
+    font-size: 1rem;
+    line-height: 1;
+    content: "check";
+    content: "check" / "";
+    opacity: 0;
+    transform: scale(0.5);
+    transition: opacity 0.12s, transform 0.12s;
+}
+
+input[type="checkbox"]:checked, input[type="checkbox"]:indeterminate { background: var(--accent); border-color: var(--accent); }
+input[type="checkbox"]:checked::before, input[type="checkbox"]:indeterminate::before { opacity: 1; transform: none; }
+input[type="checkbox"]:indeterminate::before { content: "remove"; content: "remove" / ""; }
+
+input[type="radio"] { width: 1.25rem; height: 1.25rem; border-radius: 50%; }
+
+input[type="radio"]::before {
+    content: "";
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 50%;
+    background: var(--accent);
+    transform: scale(0);
+    transition: transform 0.12s;
+}
+
+input[type="radio"]:checked { border-color: var(--accent); }
+input[type="radio"]:checked::before { transform: scale(1); }
+
+input[type="range"] { accent-color: var(--accent); }
+
+input[type="file"] { font: inherit; color: var(--ink-soft); max-width: 100%; }
+
+input[type="file"]::file-selector-button {
+    font: var(--md-sys-typescale-label-large);
+    height: 2.5rem;
+    margin-right: 0.75rem;
+    padding: 0 1.5rem;
+    color: var(--md-sys-color-primary);
+    background: none;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-full);
+    cursor: pointer;
+}
+
+input[type="file"]::file-selector-button:hover { background: color-mix(in srgb, var(--md-sys-color-primary) var(--md-sys-state-hover), transparent); }
+
+/* ---- Buttons, as Material 3 draws them ---------------------------------------------------------------------------
+   40px tall, the full corner, label-large. A <button> is a filled button, the page's main action; .tonal is the
+   filled-tonal one; .quiet is the outlined one; .text is the text button; .danger takes the error role. A link
+   styled as a button (.button) takes the same shapes. Hover, focus and press are state layers: the content colour
+   laid over the container at 8, 10 and 10 percent, never a change of the colour itself. */
+button, .button {
+    --md-btn-container: var(--md-sys-color-primary);
+    --md-btn-content: var(--md-sys-color-on-primary);
+    --md-btn-outline: transparent;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 2.5rem;
+    font: var(--md-sys-typescale-label-large);
+    color: var(--md-btn-content);
+    background-color: var(--md-btn-container);
+    border: 1px solid var(--md-btn-outline);
+    border-radius: var(--md-sys-shape-corner-full);
+    padding: 0 1.5rem;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard), box-shadow var(--md-sys-motion-duration-short);
+}
+
+button:hover:not(:disabled), .button:hover { background-image: linear-gradient(color-mix(in srgb, currentColor var(--md-sys-state-hover), transparent) 0 0); box-shadow: var(--md-btn-hover-shadow, none); }
+button:focus-visible, .button:focus-visible { background-image: linear-gradient(color-mix(in srgb, currentColor var(--md-sys-state-focus), transparent) 0 0); }
+button:active:not(:disabled), .button:active { background-image: linear-gradient(color-mix(in srgb, currentColor var(--md-sys-state-pressed), transparent) 0 0); }
+button:disabled { color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent); background-color: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent); border-color: transparent; cursor: not-allowed; }
+button > .icon, .button > .icon { font-size: 1.125rem; }
+
+button.tonal, .button.tonal { --md-btn-container: var(--md-sys-color-secondary-container); --md-btn-content: var(--md-sys-color-on-secondary-container); }
+button.quiet, .button.quiet { --md-btn-container: transparent; --md-btn-content: var(--md-sys-color-primary); --md-btn-outline: var(--md-sys-color-outline); }
+button.text, .button.text { --md-btn-container: transparent; --md-btn-content: var(--md-sys-color-primary); padding: 0 0.75rem; }
+button.quiet:disabled, button.text:disabled { background-color: transparent; border-color: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent); }
+
+/* A button that destroys something: outlined in the error colour where it opens a confirmation, filled in it where it
+   is the act itself (.danger.act), so neither is ever the most inviting thing on the page by accident. */
+button.danger, .button.danger { --md-btn-container: transparent; --md-btn-content: var(--md-sys-color-error); --md-btn-outline: var(--md-sys-color-error); }
+button.danger.act, .button.danger.act { --md-btn-container: var(--md-sys-color-error); --md-btn-content: var(--md-sys-color-on-error); --md-btn-outline: transparent; }
+
+/* An icon button: 40px round, the glyph in on-surface-variant, a state layer and no container. */
+
+/* Material 3's focus indicator: 3px of the secondary colour, 2px out, on everything that takes focus. */
+:focus-visible { outline: 3px solid var(--md-sys-color-secondary); outline-offset: 2px; }
+
+/* A glyph in front of a summary's words, turning when it opens. Left to the summaries that have no marker of their
+   own: the rows and menus below draw theirs. */
+.disclosure > summary { display: flex; align-items: center; gap: 0.4rem; cursor: pointer; list-style: none; }
+.disclosure > summary::-webkit-details-marker { display: none; }
+
+.disclosure > summary::before {
+    font-family: "Material Symbols Outlined";
+    font-size: 1.3rem;
+    line-height: 1;
+    color: var(--ink-faint);
+    content: "chevron_right";
+    content: "chevron_right" / "";
+    transition: transform 0.15s;
+}
+
+.disclosure[open] > summary::before { transform: rotate(90deg); }
+
+/* The transcript, as a conversation. The chat shape is a presentation choice and a
+   deliberate one: it is the easiest way to watch agents talk. What it must never do is
+   imply a room -- these are pairwise exchanges (SPEC.md 5.0), so every bubble names its
+   recipient and the notes between them say who was not there. */
+ol.transcript {
+    list-style: none;
+    padding: 0;
+    margin: 1.25rem 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+li.turn {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.65rem;
+    max-width: 100%;
+}
+
+/* A message continuing an exchange sits in from the one that opened it, with a rule showing what it hangs from. */
+li.turn.in-thread { margin-left: 2.75rem; padding-left: 0.75rem; border-left: 2px solid var(--rule); max-width: calc(100% - 2.75rem); }
+.thread-of { display: block; margin: 0 0 0.4rem; overflow: hidden; font-size: 0.78rem; color: var(--ink-soft); text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+.thread-of:hover { color: var(--ink); text-decoration: underline; }
+.thread-focus { padding: 0; font: inherit; color: var(--accent); text-decoration: underline; cursor: pointer; background: none; border: none; }
+
+/* Initials rather than a picture, and hidden from a screen reader: it repeats the name
+   written directly beside it, so announcing it twice is noise. */
+.who {
+    flex: 0 0 auto;
+    width: 2.1rem;
+    height: 2.1rem;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--md-ext-on-slot);
+    background: var(--agent);
+    margin-top: 0.2rem;
+}
+
+.bubble {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--agent);
+    border-radius: 4px 12px 12px 12px;
+    padding: 0.7rem 0.95rem;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.attribution {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.4rem;
+    margin: 0 0 0.4rem;
+    font-size: 0.88rem;
+    color: var(--ink);
+}
+
+.attribution strong { font-weight: 650; letter-spacing: -0.01em; }
+.attribution .arrow { color: var(--ink-faint); font-weight: 400; }
+.attribution .stamp { margin-left: auto; color: var(--ink-faint); font-size: 0.78rem; }
+
+/* What the agent said, at reading size. The rest of the document is context around it. */
+.said { margin: 0; overflow-wrap: anywhere; }
+
+/* An agent's Markdown. Headings stay near reading size, so a message cannot look like the console's own. */
+.said > :first-child { margin-top: 0; }
+.said > :last-child { margin-bottom: 0; }
+.said p, .said ul, .said ol, .said blockquote, .said pre, .said table { margin: 0.45rem 0; }
+.said h1, .said h2, .said h3, .said h4, .said h5, .said h6 { margin: 0.6rem 0 0.3rem; font-size: 1em; font-weight: 650; }
+.said h1 { font-size: 1.12em; }
+.said h2 { font-size: 1.06em; }
+.said ul, .said ol { padding-left: 1.4rem; }
+.said blockquote { padding-left: 0.7rem; border-left: 3px solid var(--ink-faint); color: var(--ink-soft); }
+.said pre { padding: 0.5rem 0.75rem; overflow-x: auto; background: var(--md-sys-color-surface-container-highest); border-radius: var(--md-sys-shape-corner-small); }
+.said code { font-family: var(--md-ref-typeface-mono); font-size: 0.92em; background: var(--md-sys-color-surface-container-highest); border-radius: var(--md-sys-shape-corner-extra-small); padding: 0.05em 0.25em; }
+.said pre code { background: none; padding: 0; }
+.said table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+.said th, .said td { padding: 0.2rem 0.55rem; border: 1px solid var(--ink-faint); text-align: left; }
+
+/* An agent working on an answer: drawn as an entry, quieter than one, and replaced by the answer. */
+.turn.working .bubble { opacity: 0.75; border-style: dashed; }
+.turn.working .arrow { font-style: italic; }
+
+.because, .field {
+    margin: 0.45rem 0 0;
+    font-size: 0.86rem;
+    color: var(--ink-soft);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.because span, .field span {
+    display: inline-block;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    font-weight: 700;
+    color: var(--ink-faint);
+    margin-right: 0.35rem;
+}
+
+/* Rule 8.1 numbers its sub-questions, and an answer resolves them one for one. Shown
+   as the numbered thing it is, so a reader can match q2 to its resolution without
+   counting paragraphs. */
+ol.points {
+    list-style: none;
+    margin: 0.55rem 0 0;
+    padding: 0;
+    display: grid;
+    /* One column no wider than the bubble. An automatic column grows to its widest content, such as a table meant to
+       scroll inside the point, and on a phone that widened the page. */
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.4rem;
+}
+
+ol.points > li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.45rem;
+    font-size: 0.9rem;
+    padding-left: 0.7rem;
+    border-left: 2px solid var(--rule);
+}
+
+ol.points .label {
+    flex: 0 0 auto;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--agent);
+}
+
+ol.points .point-text {
+    flex: 1 1 12rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+/* The chips sit on a line below the text, so the text keeps the bubble's full width however many there are. */
+ol.points .chits {
+    flex: 0 0 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+/* The receiver's own word for the outcome. "blocked" and "done" are different
+   results and only one of them is finished.
+   It may shrink and wrap: "relied on" names every source by its whole name, and a chip that kept its one line made
+   the page wider than a phone, pushing the bottom bar's More off the screen. */
+ol.points .verdict {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    padding: 0.05rem 0.5rem;
+}
+
+/* Payloads are JSON written by a peer, and the setup pages carry commands with long
+   paths in them. Both wrap rather than scroll: a horizontal scrollbar inside a block is
+   a place text hides, and on a phone it is the page itself that runs off the side. */
+pre {
+    background: var(--quiet-wash);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 0.7rem 0.85rem;
+    margin: 0.5rem 0;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.meta {
+    margin: 0.55rem 0 0;
+    font-size: 0.75rem;
+    color: var(--ink-faint);
+}
+
+/* Eight slots, assigned from a hash of the agent's name so it never moves. Decoration:
+   every fact these tint is also written in words beside them. */
+.slot-0 { --agent: var(--md-ext-slot-0); }
+.slot-1 { --agent: var(--md-ext-slot-1); }
+.slot-2 { --agent: var(--md-ext-slot-2); }
+.slot-3 { --agent: var(--md-ext-slot-3); }
+.slot-4 { --agent: var(--md-ext-slot-4); }
+.slot-5 { --agent: var(--md-ext-slot-5); }
+.slot-6 { --agent: var(--md-ext-slot-6); }
+.slot-7 { --agent: var(--md-ext-slot-7); }
+
+/* The conversation page: a panel that stays on screen, and the conversation beside it. The panel is what sticks, its
+   height is capped, and its tools stay put while what is below them scrolls inside it.
+
+   The cap leaves room for the page's own bottom padding as well as the frame. A sticky box cannot leave its
+   container, so a taller one is pushed up under the frame at the end of the page, which is where this page opens. */
+.convo-page {
+    display: grid;
+    grid-template-columns: clamp(18rem, 20vw, 30rem) minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: start;
+}
+
+.convo-main { min-width: 0; }
+
+.convo-panel {
+    position: sticky;
+    top: calc(var(--frame) + 1rem);
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    max-height: calc(100vh - var(--frame) - 5.5rem);
+    min-width: 0;
+}
+
+/* Above what scrolls beneath it, so its menus are not drawn under the list. */
+.panel-tools { position: relative; z-index: 3; flex: none; display: grid; gap: 0.5rem; min-width: 0; }
+.panel-tools .filter-title { display: none; }
+
+.side {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    align-content: start;
+    gap: 0.8rem;
+    overflow-y: auto;
+}
+
+.side > * { min-width: 0; margin: 0; }
+#elsewhere:empty { display: none; }
+
+.history-searches { background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); padding: 0.7rem 0.8rem; font-size: 0.85rem; overflow-wrap: anywhere; }
+.history-searches h2 { margin: 0 0 0.3rem; font-size: 0.85rem; }
+.history-searches ul { margin: 0; padding-left: 1.1rem; }
+.history-read { color: var(--ink-faint); }
+.waiting-on-you, .waiting-elsewhere { background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); padding: 0.7rem 0.8rem; font-size: 0.85rem; overflow-wrap: anywhere; }
+.waiting-on-you { border-left: 3px solid var(--accent); }
+.waiting-elsewhere:not(:has(details)) { display: none; }
+.waiting-on-you h2, .waiting-elsewhere h2 { margin: 0; font-size: 0.85rem; }
+.waiting-elsewhere summary { cursor: pointer; }
+.waiting-elsewhere summary h2 { display: inline; }
+.waiting-count { display: inline-block; min-width: 1.4rem; padding: 0 0.4rem; border-radius: 999px; text-align: center; font-size: 0.75rem; color: var(--on-accent); background: var(--accent); }
+/* Stays in reach while the list scrolls inside the panel. */
+.waiting-step { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0; padding: 0.4rem 0; background: var(--card); }
+.waiting-step button { min-height: 2rem; padding: 0 1rem; }
+.waiting-where { font-size: 0.78rem; color: var(--ink-faint); }
+.waiting-on-you ul, .waiting-elsewhere ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+.waiting-elsewhere ul { margin-top: 0.5rem; max-height: 16rem; overflow-y: auto; }
+.waiting-on-you ol, .waiting-elsewhere ol { margin: 0.2rem 0 0; padding-left: 1.2rem; display: grid; gap: 0.25rem; }
+.waiting-on-you a[aria-current] { font-weight: 700; }
+
+.convo-links { font-size: 0.85rem; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); padding: 0.5rem 0.8rem; overflow-wrap: anywhere; }
+.convo-links p { margin: 0.1rem 0; }
+.convo-links ul { margin: 0.1rem 0 0; padding-left: 1.1rem; }
+.convo-links a { color: var(--accent); text-decoration: underline; }
+
+/* The console speaking about the conversation, so quiet and centred like a day marker. */
+.moved-note, .moved-notes li { align-self: center; list-style: none; margin: 0.6rem 0; padding: 0.3rem 0.9rem; font-size: 0.8rem; color: var(--ink-soft); background: var(--quiet-wash); border-radius: 999px; overflow-wrap: anywhere; }
+.moved-notes { margin: 0; padding: 0; }
+
+/* Told apart from the name it follows, so it reads as what the console says about it. */
+.spinoff-of { font-weight: 400; color: var(--ink-soft); }
+
+.move-pick { display: none; align-items: center; gap: 0.25rem; margin-left: 0.5rem; }
+.picking .move-pick { display: inline-flex; }
+.picking .spin-off { display: none; }
+.move-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.5rem 0.8rem; background: var(--card); border: 1px solid var(--accent); border-radius: var(--radius); font-size: 0.85rem; }
+.move-bar[hidden] { display: none; }
+.move-form { display: block; max-width: 60rem; }
+.move-form textarea { width: 100%; }
+.move-form input[type="text"] { width: min(30rem, 100%); }
+.move-to { display: grid; gap: 0.4rem; border: 1px solid var(--rule); border-radius: var(--radius); padding: 0.8rem 1rem; justify-items: start; }
+.move-list { padding-left: 1.2rem; display: grid; gap: 0.5rem; overflow-wrap: anywhere; }
+.move-actions { display: flex; align-items: center; gap: 1rem; }
+
+/* A closed panel: a narrow strip of icons, with the name running down it, at every width. A narrow window starts
+   with it closed (the page's script). The panel's boxes stay where they are in the page, because forms and the
+   followed region find them there, and their wrapper, laid out as if absent while the panel is open, becomes the
+   box an icon brings out, beside the strip and over the conversation, holding only that icon's part. */
+.panel-strip { display: none; }
+.panel-body { display: contents; }
+
+.convo-page.panel-closed { grid-template-columns: 3rem minmax(0, 1fr); }
+.panel-closed .panel-strip { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; padding: 0.5rem 0; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); overflow: hidden; }
+.panel-closed .panel-body { display: none; }
+.strip-glyph { width: 1.25rem; height: 1.25rem; }
+.strip-count:empty { display: none; }
+.panel-closed .strip-button[aria-expanded="true"] { --md-btn-container: var(--md-sys-color-secondary-container); --md-btn-content: var(--md-sys-color-on-secondary-container); }
+
+.panel-closed[data-pop] .panel-body,
+.panel-closed .panel-body:has(.move-bar:not([hidden])) {
+    position: absolute;
+    top: 0;
+    left: 3.6rem;
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    width: min(24rem, calc(100vw - 7rem));
+    max-height: calc(100vh - var(--frame) - 5.5rem);
+    overflow-y: auto;
+    padding: 0.6rem;
+    background: var(--md-sys-color-surface-container, var(--page));
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-medium);
+    box-shadow: var(--md-sys-elevation-3);
+}
+
+/* Its parts flow in the box, which scrolls as one. */
+.panel-closed .panel-body > .panel-tools, .panel-closed .panel-body > .side { display: contents; }
+
+/* Only the icon's part, and the bar that says what is picked to move, which stays out while picking. */
+.panel-closed:not([data-pop]) .panel-body :is(.panel-tools, .side) > :not(.move-bar),
+.panel-closed[data-pop="about"] .panel-body :is(.panel-tools, .side) > :not(.convo-head, .convo-links, .move-bar),
+.panel-closed[data-pop="find"] .panel-body :is(.panel-tools, .side) > :not(.find, .move-bar),
+.panel-closed[data-pop="filter"] .panel-body :is(.panel-tools, .side) > :not(.filter, .move-bar),
+.panel-closed[data-pop="waiting"] .panel-body :is(.panel-tools, .side) > :not(.waiting-on-you, #elsewhere, .move-bar),
+.panel-closed[data-pop="to"] .panel-body :is(.panel-tools, .side) > :not(.recipients, .roster-legend, .move-bar) {
+    display: none;
+}
+
+/* The box is the panel now, so the close button that would close it again has nothing to do. */
+.panel-closed #panel-close { display: none; }
+.panel-closed .panel-tools .filter-title { display: inline; }
+
+.strip-button { --md-btn-container: transparent; --md-btn-content: var(--md-sys-color-on-surface-variant); --md-btn-outline: var(--md-sys-color-outline); position: relative; display: inline-grid; place-items: center; width: 2.5rem; min-width: 2.5rem; height: 2.5rem; padding: 0; }
+.strip-button[hidden], .strip-note[hidden] { display: none; }
+.strip-count { position: absolute; top: -0.35rem; right: -0.35rem; min-width: 1.1rem; padding: 0 0.2rem; border-radius: 999px; font-size: 0.68rem; line-height: 1.1rem; color: var(--on-accent); background: var(--accent); }
+.strip-note { writing-mode: vertical-rl; white-space: nowrap; }
+.strip-note { font-size: 0.72rem; color: var(--ink-faint); }
+
+/* The messages and the minimap of them. */
+.conversation {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 4rem;
+    gap: 1.5rem;
+    align-items: start;
+}
+
+/* A day marker. Centred and quiet, like the visibility note, because both are the
+   console speaking about the conversation rather than anybody speaking in it. */
+li.day {
+    align-self: center;
+    margin: 0.9rem 0 0.25rem;
+    padding: 0.2rem 0.8rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    background: var(--quiet-wash);
+    border-radius: 999px;
+}
+
+/* An exchange a person closed. Tinted and outlined, and the bubble also carries the
+   words "closed by a person" -- the colour is how you find it while scrolling, never how
+   you know what it means. */
+li.turn.ghosted .bubble {
+    border-color: var(--alarm);
+    background: var(--alarm-wash);
+}
+
+.tag {
+    display: inline-block;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--alarm);
+    border: 1px solid var(--alarm);
+    border-radius: 999px;
+    padding: 0 0.45rem;
+    margin-right: 0.35rem;
+}
+
+.settings-section { margin: 0 0 2rem; max-width: 52rem; }
+.settings-section fieldset { border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); padding: 0.8rem 1rem 1rem; }
+.settings-section legend { font-size: 0.8rem; font-weight: 600; padding: 0 0.4rem; }
+.settings-section .toolbar { margin: 0 0 0.6rem; }
+.settings-tree .tree { list-style: none; margin: 0; padding: 0; }
+.settings-tree .tree ul { list-style: none; }
+.settings-tree .tree details > ul { margin: 0.2rem 0 0.5rem 0.55rem; padding-left: 0.6rem; border-left: 1px solid var(--rule); display: grid; gap: 0.4rem; }
+.settings-tree .tree summary { display: flex; align-items: center; gap: 0.45rem; cursor: pointer; font-size: 0.85rem; font-weight: 600; }
+.settings-tree .tree .count { margin-left: auto; font-weight: 400; font-size: 0.72rem; color: var(--ink-faint); }
+.settings-tree .tree li.group { display: block; }
+.settings-tree .tree li[class*="slot-"] { display: flex; align-items: center; gap: 0.5rem; }
+.settings-tree .pick-name { display: inline-flex; align-items: center; gap: 0.45rem; cursor: pointer; }
+.settings-tree .who { width: 1.5rem; height: 1.5rem; border-radius: 50%; display: grid; place-items: center; font-size: 0.55rem; font-weight: 700; color: var(--md-ext-on-slot); background: var(--agent); }
+.settings-tree .name { font-size: 0.85rem; font-weight: 600; }
+.settings-tree .state { font-size: 0.72rem; color: var(--ink-faint); }
+.settings-tree input[type="checkbox"] { width: 1.1rem; height: 1.1rem; }
+/* The form only holds the pieces; the expander is the box. */
+form.default-agent { display: block; background: none; border: 0; padding: 0; margin: 0; box-shadow: none; }
+.default-expander { border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); padding: 0.6rem 1rem; }
+.default-expander > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; cursor: pointer; }
+.default-title { font-weight: 650; }
+.default-expander .count { font-size: 0.75rem; color: var(--ink-faint); }
+.select-agents { margin-left: auto; }
+.chips { list-style: none; margin: 0.7rem 0 0.2rem; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.chips:empty::before { content: "None chosen."; font-size: 0.85rem; color: var(--ink-faint); }
+.chip { display: inline-flex; align-items: center; gap: 0.3rem; background: var(--quiet-wash); border: 1px solid var(--rule); border-radius: 999px; padding: 0.1rem 0.2rem 0.1rem 0.7rem; font-size: 0.85rem; }
+.chip-x { border: 0; background: transparent; color: var(--ink-soft); cursor: pointer; border-radius: 50%; width: 1.5rem; height: 1.5rem; padding: 0; line-height: 1; font-size: 1rem; }
+.chip-x:hover, .chip-x:focus { color: var(--alarm); background: var(--alarm-wash); }
+.chip-x .icon { font-size: 1.05rem; }
+.default-dialog { position: fixed; inset: 0; margin: auto; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); color: var(--ink); padding: 1rem 1.2rem; width: min(30rem, 92vw); max-height: 80vh; overflow-y: auto; }
+.default-dialog::backdrop { background: var(--md-ext-scrim); }
+.default-dialog h3 { margin: 0 0 0.6rem; }
+.dialog-actions { text-align: right; margin: 0.8rem 0 0; }
+.act-cards { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; gap: 0.7rem; grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr)); }
+.act-cards li { background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); padding: 0.8rem 1rem; }
+.act-cards li.costly { background: var(--alarm-wash); }
+.act-cards .act-title { font-weight: 650; }
+.act-cards li.idle { color: var(--ink-soft); }
+
+/* The links a project page opens with, laid out as a row rather than a run of words. */
+nav.page-links { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0 0 1.25rem; margin-left: 0; }
+/* Each one an assist chip: an outlined 32px pill, so a place to go reads as something to press, not a run of words. */
+main nav.page-links a { display: inline-flex; align-items: center; min-height: 2rem; padding: 0 0.9rem; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); color: var(--md-sys-color-on-surface); font: var(--md-sys-typescale-label-large); text-decoration: none; }
+main nav.page-links a:hover, main nav.page-links a:focus-visible { color: var(--md-sys-color-on-surface); border-color: var(--md-sys-color-outline-variant); background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
+
+/* A row of buttons under a form or a section: wraps, never runs into the text above it. */
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 1rem 0 0; }
+.actions + .scope-note { margin: 0.6rem 0 1rem; max-width: 48rem; }
+
+/* A label and its value, side by side, wherever a page lists facts (Enrol, Ownership, Settings). */
+main dl.facts, main dl.about { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.55rem 1.5rem; margin: 0.75rem 0; }
+main dl.facts dt, main dl.about dt { font: var(--md-sys-typescale-label-large); color: var(--md-sys-color-on-surface-variant); }
+main dl.facts dd, main dl.about dd { margin: 0; overflow-wrap: anywhere; }
+main dl.facts dd .path { display: block; font-family: var(--md-ref-typeface-mono); font-size: 0.85rem; overflow-wrap: anywhere; }
+main dl.facts dd .why { display: block; color: var(--md-sys-color-on-surface-variant); }
+
+/* A long path in a table cell wraps rather than pushing the table off the side. */
+td code, td.path { overflow-wrap: anywhere; }
+
+/* A section drawn as a card: Ownership's agents, Register's steps. */
+.card-section { background: var(--card); border: 1px solid var(--rule); border-radius: var(--md-sys-shape-corner-large); padding: 1rem 1.25rem; margin: 0 0 1rem; }
+.card-section > h2 { margin-top: 0; }
+.card-section > :last-child { margin-bottom: 0; }
+
+.act-cards p { margin: 0.35rem 0 0; font-size: 0.85rem; color: var(--ink-soft); }
+
+/* The data-grid views (Projects, Agents, Inbox): a title, then Create, Filters and the grid as one stack that fills
+   the window. The first three never scroll away; the grid is the only thing that scrolls, and its header row sticks
+   to its top. Each grid names its columns once, in --cols, and the header and every row read the same value, so
+   they cannot disagree about where a column is. */
+.view { display: flex; flex-direction: column; gap: 0.75rem; height: calc(100vh - var(--frame) - 3rem); min-height: 26rem; }
+.view > * { margin: 0; }
+.view-title { display: flex; align-items: baseline; gap: 1rem; flex: none; }
+.view-title h1 { margin: 0; }
+.view-title .as-of { margin: 0 0 0 auto; }
+.view-card { flex: none; background: var(--card); border: 1px solid var(--rule); border-radius: var(--md-sys-shape-corner-large); box-shadow: var(--md-sys-elevation-1); }
+.view-card .composer-note { margin: 0; }
+
+
+.view-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; padding: 0.7rem 1.1rem; margin: 0; }
+/* Level with the fields and buttons beside it, not with their labels: the same height and bottom margin as a button. */
+.view-filters .tally { margin: 0 0 0.25rem auto; align-self: flex-end; display: inline-flex; align-items: center; min-height: 2.5rem; font-size: 0.85rem; color: var(--ink-faint); }
+.still-open-asked { padding: 0.7rem 1.1rem; max-height: 14rem; overflow: auto; }
+.still-open-asked h2 { margin: 0 0 0.4rem; font: var(--md-sys-typescale-title-small); }
+.still-open-asked table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.still-open-asked th { text-align: left; font-weight: 600; color: var(--ink-faint); }
+.still-open-asked th, .still-open-asked td { padding: 0.3rem 0.5rem 0.3rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; overflow-wrap: anywhere; }
+.still-open-asked .asked-state { font-weight: 600; }
+/* A reference to an exchange (spec 036): reads as a link, opens a panel under its line. */
+.exchange-ref { display: inline; padding: 0 0.15em; margin: 0; font: inherit; color: var(--md-sys-color-primary); background: none; border: 0; border-bottom: 1px dashed currentColor; border-radius: 0; cursor: pointer; min-height: 0; }
+.exchange-ref[aria-expanded="true"] { border-bottom-style: solid; font-weight: 600; }
+.exchange-panel { margin: 0.4rem 0 0.8rem; padding: 0.6rem 0.9rem; border-left: 3px solid var(--md-sys-color-primary); border-radius: var(--radius); background: var(--md-sys-color-surface-container); font-size: 0.92rem; overflow-wrap: anywhere; }
+.exchange-panel-state { display: flex; flex-wrap: wrap; gap: 0.25rem 0.6rem; margin: 0 0 0.4rem; }
+.exchange-panel-messages { list-style: none; margin: 0; padding: 0; }
+.exchange-panel-messages > li { padding: 0.4rem 0; border-top: 1px solid var(--rule); }
+/* The Inbox's views (spec 036). */
+.inbox-views { display: flex; flex-wrap: wrap; gap: 0.4rem; padding: 0.5rem 1.1rem; margin: 0; list-style: none; }
+.inbox-views a { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.3rem 0.9rem; border-radius: 999px; border: 1px solid var(--rule); color: inherit; text-decoration: none; }
+.inbox-views a[aria-current="page"] { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); border-color: transparent; font-weight: 600; }
+.chip-state { display: inline-block; padding: 0 0.55rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; background: var(--md-sys-color-surface-container-high); }
+.chip-state.state-working, .chip-state.state-background { background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); }
+.chip-state.state-cannotstart, .chip-state.flag { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
+.inbox-window { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.inbox-window input { width: 6rem; }
+.inbox-changed { margin: 0; padding: 0.5rem 1.1rem; border-radius: var(--radius); background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+.inbox-changed[hidden] { display: none; }
+
+:is(.view, .act-panel) .field { display: flex; flex-direction: column; gap: 0.2rem; flex: 1 1 11rem; min-width: 0; }
+:is(.view, .act-panel) .field.wide { flex-grow: 3; }
+/* Pill-shaped here; the base rules own everything else about a field, the chevron included. */
+/* Not stretched by the column they stand in: a narrow screen's rule gives an input a flex size, which in a column is its height. */
+:is(.view, .act-panel) .field input, :is(.view, .act-panel) .field select, dialog .field input { width: 100%; flex: none; }
+.view .view-filters button, .view .view-filters .button { align-self: flex-end; margin-bottom: 0.25rem; }
+.conversations { display: flex; flex-direction: column; gap: 0.75rem; }
+/* A switch, as Material 3 draws one: a 52 by 32 track, outlined while off with a small handle, filled with the primary
+   colour while on with a larger handle in its "on" colour. The words beside it say what it switches. */
+.view .view-filters .toggle { display: inline-flex; align-items: center; gap: 0.75rem; align-self: flex-end; min-height: 2.5rem; padding: 0 0.25rem; color: var(--ink); font: var(--md-sys-typescale-body-medium); cursor: pointer; white-space: nowrap; }
+.view .view-filters .toggle input { appearance: none; -webkit-appearance: none; position: relative; flex: none; width: 3.25rem; height: 2rem; margin: 0; border: 2px solid var(--md-sys-color-outline); border-radius: var(--md-sys-shape-corner-full); background: var(--md-sys-color-surface-container-highest); cursor: pointer; transition: background-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard), border-color var(--md-sys-motion-duration-short); }
+.view .view-filters .toggle input::before { content: ""; position: absolute; top: 50%; left: 0.375rem; width: 1rem; height: 1rem; border-radius: 50%; background: var(--md-sys-color-outline); opacity: 1; transform: translateY(-50%); transition: transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard), width var(--md-sys-motion-duration-short), height var(--md-sys-motion-duration-short), left var(--md-sys-motion-duration-short); }
+.view .view-filters .toggle input:checked { background: var(--md-sys-color-primary); border-color: var(--md-sys-color-primary); }
+.view .view-filters .toggle input:checked::before { left: 1.375rem; width: 1.5rem; height: 1.5rem; background: var(--md-sys-color-on-primary); }
+.view .view-filters .toggle input:hover { box-shadow: 0 0 0 0.5rem color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
+.view .view-filters .toggle:has(input:focus-visible) input { outline: 3px solid var(--md-sys-color-secondary); outline-offset: 2px; }
+
+/* On these pages the grid is the scroller, so the page itself must not be: the window is divided between the
+   frame and the view. */
+.grid-page .page { padding-bottom: 0.5rem; }
+.grid-page .view { height: calc(100vh - var(--frame) - 1.5rem - 5.2rem); }
+
+.dgrid { flex: 1 1 auto; min-height: 0; overflow: auto; border-radius: 20px; }
+.dgrid-inner { min-width: var(--min, 40rem); }
+.dgrid-head, .dgrid-line { display: grid; grid-template-columns: var(--cols); gap: 0.8rem; align-items: baseline; padding: 0.6rem 1.1rem; }
+.dgrid-head { position: sticky; top: 0; z-index: 2; background: var(--quiet-wash); border-bottom: 1px solid var(--rule); font-size: 0.76rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-faint); }
+.dgrid-row + .dgrid-row { border-top: 1px solid var(--rule); }
+.dgrid-line > * { min-width: 0; overflow-wrap: anywhere; }
+details.dgrid-row > summary { list-style: none; cursor: pointer; }
+details.dgrid-row > summary::-webkit-details-marker { display: none; }
+details.dgrid-row[open] > summary { background: var(--quiet-wash); }
+/* An open row's line stays just under the header while what is in it scrolls, so who it is with, the project and
+   the conversation stay in sight and a press closes it from anywhere in it (owner, 2026-11-13). Its background is
+   opaque, or the text scrolling under it shows through. The frame's script measures the header into
+   --dgrid-head-h; the value here is its usual height, for a page with no script. */
+.dgrid { --dgrid-head-h: 2.75rem; }
+details.dgrid-row[open] > summary { position: sticky; top: var(--dgrid-head-h); z-index: 1; border-bottom: 1px solid var(--rule); }
+.dgrid-detail { padding: 0.4rem 1.1rem 1rem; border-top: 1px solid var(--rule); }
+.dgrid-detail .letter { margin-top: 0; }
+.dgrid-detail .facts { display: grid; grid-template-columns: 7rem minmax(0, 1fr); gap: 0.3rem 1rem; margin: 0.6rem 0 0; }
+.dgrid-detail .facts dt { font-size: 0.76rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-faint); padding-top: 0.15rem; }
+.dgrid-detail .facts dd { margin: 0; overflow-wrap: anywhere; }
+.dgrid-detail .note { margin: 0.6rem 0 0; }
+.dgrid .status-cell .alarm + .alarm, .dgrid .status-cell span + .alarm { margin-left: 0.5rem; }
+.dgrid .name { font-weight: 650; }
+.dgrid .faint { color: var(--ink-faint); font-size: 0.85rem; }
+.dgrid .alarm { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--alarm); font-weight: 600; }
+.dgrid .alarm .icon { font-size: 1.1rem; }
+.dgrid .note { display: block; margin: 0.25rem 0 0; font-size: 0.82rem; }
+.dgrid-empty { padding: 1.4rem 1.1rem; color: var(--ink-soft); }
+
+/* The conversations as a grid: name, messages, last active. A row opens to show who is in it and the acts. */
+.grid { margin: 0.5rem 0 1rem; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); }
+.grid-head, .grid-row > summary { display: grid; grid-template-columns: minmax(0, 1fr) 5.5rem minmax(10rem, 14rem); gap: 0.8rem; align-items: baseline; padding: 0.55rem 1rem; }
+.grid-head { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-faint); border-bottom: 1px solid var(--rule); }
+.roadmap-grid .grid-head, .roadmap-grid .grid-row > summary { grid-template-columns: minmax(0, 1fr) 5.5rem 5.5rem; }
+.roadmap-grid .grid-head span:not(:first-child) { text-align: right; }
+.items-grid .grid-head, .items-grid .grid-row > summary { grid-template-columns: 3.5rem minmax(0, 1fr) minmax(10rem, 16rem); }
+.select-grid .grid-head, .select-grid .grid-row > summary { grid-template-columns: 1.6rem minmax(0, 1fr) 5.5rem minmax(10rem, 14rem) 6.5rem; }
+/* The graph panel (spec 041): a tab at the edge of every page that is not framed, opening a panel the person can pin. */
+.pg-tab { position: fixed; right: 0; top: 40%; z-index: 40; writing-mode: vertical-rl; padding: 0.7rem 0.35rem; border-radius: 10px 0 0 10px; border: 1px solid var(--rule); border-right: 0; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; font-size: 0.85rem; }
+.pg-panel { position: fixed; right: 0; top: 0; bottom: 0; z-index: 41; width: min(46rem, 100vw); display: flex; flex-direction: column; background: var(--page); border-left: 1px solid var(--rule); box-shadow: var(--md-sys-elevation-3); }
+.pg-panel[hidden] { display: none; }
+/* Open, the tab rides the panel's edge, above it, and closes it. */
+.pg-tab.pg-tab-open { right: min(46rem, 100vw); z-index: 42; }
+/* Narrower than the panel and its tab, the panel fills the window and the tab would sit past its edge: its Close does it. */
+@media (max-width: 48rem) { .pg-tab.pg-tab-open { display: none; } }
+/* Wider, the tab on the panel's edge opens and closes it, pinned or not, so the panel has no Close of its own. */
+@media not all and (max-width: 48rem) { #pg-close { display: none; } }
+.pg-panel.pg-pinned { box-shadow: none; }
+body.pg-docked { padding-right: min(46rem, 100vw); }
+.pg-bar { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; padding: 0.6rem 1rem; border-bottom: 1px solid var(--rule); }
+.pg-bar h2 { margin: 0; font-size: 1rem; flex: 1 1 auto; }
+.pg-bar [hidden] { display: none; }
+.pg-body { flex: 1 1 auto; overflow: auto; padding: 0.6rem 1rem 1rem; }
+/* The picture of what is being worked on now (feature 042): a canvas the person moves and zooms, filled top to bottom. */
+.pg-filters { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 0.6rem; }
+.pg-filters .filter-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.pg-filters button.chip { cursor: pointer; }
+.pg-filter > summary { list-style: none; display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer; }
+.pg-filter > summary::-webkit-details-marker { display: none; }
+.pg-filter-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); gap: 0.6rem 1rem; margin-top: 0.5rem; padding: 0.6rem 0.8rem; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container-low); }
+.pg-filter-body fieldset { margin: 0; padding: 0; border: 0; display: grid; gap: 0.25rem; max-height: 14rem; overflow: auto; }
+.pg-filter-body legend { font: var(--md-sys-typescale-title-small); margin-bottom: 0.3rem; }
+.pg-canvas { height: min(70vh, 40rem); overflow: hidden; touch-action: none; cursor: grab; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container-lowest); }
+.pg-canvas:active { cursor: grabbing; }
+.pg-canvas:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
+.pg-canvas .pg-svg { display: block; width: 100%; height: 100%; }
+/* The zoom buttons lie over the picture, stacked, in its lower right corner until the person moves them by the handle. */
+.pg-stage { position: relative; }
+.pg-tools { position: absolute; bottom: 0.6rem; right: 0.6rem; z-index: 1; display: flex; flex-direction: column; gap: 0.15rem; padding: 0.25rem; border-radius: var(--md-sys-shape-corner-large); background: var(--md-sys-color-surface-container-high); box-shadow: var(--md-sys-elevation-2); }
+.pg-tools button { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; min-height: 0; padding: 0; border: 0; border-radius: var(--md-sys-shape-corner-full); background: transparent; color: var(--md-sys-color-on-surface-variant); box-shadow: none; cursor: pointer; }
+.pg-tools button:hover { background: var(--md-sys-color-surface-container-highest); color: var(--md-sys-color-on-surface); }
+.pg-tools button:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 1px; }
+.pg-tools svg { width: 1.35rem; height: 1.35rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.pg-tools .pg-grip { height: 1.75rem; cursor: grab; touch-action: none; }
+.pg-tools .pg-grip:active { cursor: grabbing; }
+.pg-tools .pg-grip svg { stroke: none; transform: rotate(90deg); }
+.pg-hidden-count { margin: 0.4rem 0 0.6rem; text-align: right; font-size: 0.85rem; color: var(--md-sys-color-on-surface-variant); }
+.pg-node rect { fill: var(--md-sys-color-surface); stroke: var(--md-sys-color-outline-variant); stroke-width: 1.2; }
+.pg-root rect { fill: var(--md-sys-color-secondary-container); stroke: none; }
+.pg-agent rect { fill: var(--md-sys-color-primary-container); stroke: none; }
+.pg-agent.pg-frozen rect { stroke: var(--md-sys-color-error); stroke-width: 2; stroke-dasharray: 5 3; }
+.pg-now rect { stroke: var(--md-sys-color-primary); stroke-width: 1.6; }
+.pg-queued rect { fill: var(--md-sys-color-surface-container); stroke-dasharray: 5 4; }
+.pg-task rect { fill: var(--md-sys-color-tertiary-container); stroke: none; }
+.pg-more rect { fill: none; stroke-dasharray: 3 3; }
+.pg-title { font-size: 13px; font-weight: 650; fill: var(--md-sys-color-on-surface); }
+.pg-agent .pg-title, .pg-agent .pg-sub { fill: var(--md-sys-color-on-primary-container); }
+.pg-task .pg-title, .pg-task .pg-tag { fill: var(--md-sys-color-on-tertiary-container); }
+.pg-sub { font-size: 11px; font-weight: 400; fill: var(--md-sys-color-on-surface-variant); }
+.pg-tag { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; fill: var(--md-sys-color-primary); }
+.pg-queued .pg-tag { fill: var(--md-sys-color-on-surface-variant); }
+.pg-node a text { text-decoration: underline; cursor: pointer; }
+/* An agent's fold button, on its box. */
+.pg-agent .pg-fold { cursor: pointer; outline: none; }
+.pg-agent .pg-fold rect, .pg-agent.pg-frozen .pg-fold rect { fill: var(--md-sys-color-surface-container-lowest); fill-opacity: 0.55; stroke: none; }
+.pg-agent .pg-fold:hover rect { fill-opacity: 0.9; }
+.pg-agent .pg-fold:focus-visible rect { stroke: var(--md-sys-color-primary); stroke-width: 2; stroke-dasharray: none; }
+.pg-fold path { fill: none; stroke: var(--md-sys-color-on-primary-container); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.pg-edge { fill: none; stroke: var(--md-sys-color-outline); stroke-width: 1.5; }
+.pg-edge-now { stroke: var(--md-sys-color-primary); stroke-width: 2.2; }
+.pg-edge-task { stroke: var(--md-sys-color-tertiary); }
+.pg-empty { margin: 1rem 0; color: var(--md-sys-color-on-surface-variant); }
+.pg-note { font-size: 0.85rem; }
+.pg-acts { display: flex; flex-wrap: wrap; gap: 0.8rem; font-size: 0.9rem; }
+/* The list is the picture in words, for a screen reader and the keyboard: drawn only while the focus is in it. */
+.pg-list:not(:focus-within) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.pg-list-head { font-size: 1rem; margin: 1rem 0 0.2rem; }
+.pg-list h3 { font-size: 0.95rem; margin: 0.8rem 0 0.2rem; }
+.select-grid .row-act, .dgrid-line .row-act { margin: 0; padding: 0; border: 0; background: none; box-shadow: none; }
+.select-grid input[type=checkbox] { margin: 0; align-self: center; }
+.bulk-bar { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin: 0.5rem 0; }
+.bulk-bar .count { color: var(--ink-faint); font-size: 0.85rem; }
+.items-grid .num { text-align: left; white-space: nowrap; }
+.grid.items-grid .name { font-weight: 400; }
+.chev { color: var(--ink-faint); font-size: 1.25rem; vertical-align: -0.3em; transition: transform 0.12s; }
+details[open] > summary .chev { transform: rotate(90deg); }
+.items-grid .grid-row.next { background: var(--quiet-wash); }
+.grid-row + .grid-row { border-top: 1px solid var(--rule); }
+.grid-row > summary { cursor: pointer; list-style: none; }
+.grid-row > summary::-webkit-details-marker { display: none; }
+.grid .name { font-weight: 650; overflow-wrap: anywhere; }
+.grid .num { text-align: right; font-variant-numeric: tabular-nums; }
+.grid .when { font-size: 0.82rem; color: var(--ink-soft); }
+/* A page shown inside another (a roadmap item's conversation) drops the console's frame and keeps its content. */
+html:has(body.embed) { --frame: 0px; }
+body.embed .rail, body.embed header, body.embed .as-of, body.embed .skip { display: none !important; }
+body.embed .page { margin-left: 0; padding: 0 0.75rem 0.75rem; }
+.item-bar { flex: 1 1 100%; display: flex; align-items: center; gap: 0.8rem; }
+.item-bar .between { flex: 1; }
+.item-bar .button { flex: none; white-space: nowrap; }
+.item-frame { flex: 1 1 100%; width: 100%; height: 70vh; min-height: 24rem; border: 1px solid var(--rule); border-radius: 14px; background: var(--page); }
+.grid-detail { padding: 0.2rem 1rem 0.8rem; display: flex; flex-wrap: wrap; gap: 0.6rem 1rem; align-items: center; }
+.grid-detail .between { flex: 1 1 100%; margin: 0; font-size: 0.85rem; color: var(--ink-soft); }
+.grid-detail form { margin: 0; }
+@media (max-width: 37.49rem) {
+    /* A grid whose last column is a date gives the date a row of its own; one of short numbers keeps them in line. */
+    .grid-head, .grid-row > summary { grid-template-columns: minmax(0, 1fr) 3.5rem; }
+    .grid:has(.when) .grid-head :last-child, .grid .when { grid-column: 1 / -1; }
+    .grid:not(:has(.when)) :is(.grid-head, .grid-row > summary) { grid-template-columns: minmax(0, 1fr) 3.5rem 3.5rem; }
+    /* The conversations list: its tick, name, count and Archive on one line, when it was last active under the name. */
+    .select-grid .grid-head, .select-grid .grid-row > summary { grid-template-columns: 1.6rem minmax(0, 1fr) auto auto; }
+    .select-grid .grid-head :last-child { grid-column: 4; }
+    .select-grid .when { grid-column: 2 / -1; grid-row: 2; }
+    .select-grid .grid-row > summary .row-act { grid-column: 4; grid-row: 1; }
+    .select-grid .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+[data-needs-ticks][hidden] { display: none; }
+
+/* A conversation somebody still owes an answer to. Said in words beside the tint. */
+.tag.open {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+h1 .who {
+    display: inline-grid;
+    vertical-align: middle;
+    margin-right: 0.5rem;
+}
+
+.lede { font-size: 1rem; color: var(--ink-soft); margin: 0 0 1.25rem; max-width: 44rem; }
+
+table th[scope="row"] {
+    width: 10rem;
+    background: transparent;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 0.85rem;
+    color: var(--ink-faint);
+}
+
+/* Anchored jumps land with a little air above them rather than flush to the edge. */
+li.turn { scroll-margin-top: calc(var(--frame) + var(--cmd-h, 0px) + 1rem); }
+
+@media (prefers-reduced-motion: no-preference) {
+    html { scroll-behavior: smooth; }
+}
+
+/* Text for a screen reader where the page uses shape or colour to aim the eye. */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+/* The minimap. One tick per message in the order the broker recorded them, tinted by
+   who spoke -- so a long conversation shows its shape: who dominated it, where it
+   changed hands, and where a person closed something. */
+/* The note and the rail together are the grid's second column. Sticky as one, so the note travels with the
+   rail it describes. Not `.rail`, which is the navigation rail. */
+.minimap {
+    position: sticky;
+    top: calc(var(--frame) + 1rem);
+    min-width: 0;
+}
+
+/* One column, however long: the rail is a nav, and the console's nav rule wraps, which once a long conversation
+   filled the rail's height started a second column of ticks. The narrow layout's rail is one row, and does not wrap either. */
+/* No scrollbar, and still scrollable: by wheel, touch and keys, and by the page itself, which keeps the tick of the
+   message being read in view. A bar beside a column of ticks only drew the eye to the wrong thing. */
+.timeline::-webkit-scrollbar { display: none; }
+
+.timeline {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+    align-items: stretch;
+    gap: 2px;
+    padding: 0.5rem 0.4rem;
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+}
+
+/* Scrolls in the room the composer leaves it, rather than running on underneath it. */
+@media (min-width: 60.01rem) {
+    .timeline { max-height: calc(100vh - var(--frame) - var(--composer-h, 0px) - 2rem); overflow-y: auto; }
+    .timeline > * { flex: none; }
+}
+
+.timeline .tick {
+    display: block;
+    height: 0.5rem;
+    border-radius: 2px;
+    background: var(--agent);
+    opacity: 0.65;
+}
+
+.timeline .tick:hover, .timeline .tick:focus-visible { opacity: 1; }
+
+/* The message being read. A ring, so it still shows when the tint does not, and it outranks what dims the others. */
+.timeline .tick.here, .timeline.focused .tick.here:not(.kin) {
+    opacity: 1;
+    box-shadow: 0 0 0 2px var(--md-sys-color-primary, var(--ink));
+}
+
+/* An exchange a person closed, marked by shape as well as tint: it is taller and outlined,
+   so it is findable on a screen where the colours are not. */
+.timeline .tick.ghosted {
+    height: 0.85rem;
+    background: var(--alarm-wash);
+    border: 2px solid var(--alarm);
+    opacity: 1;
+}
+
+.timeline .rail-day {
+    font-size: 0.6rem;
+    letter-spacing: 0.03em;
+    color: var(--ink-faint);
+    text-align: center;
+    margin-top: 0.4rem;
+}
+
+.timeline .rail-day:first-child { margin-top: 0; }
+
+/* Selecting a message marks the rest from that agent. Every signal here is one that
+   survives colour blindness: what does not match is dimmed, what does is outlined and
+   made taller, and a sentence beside the rail says how many and whose. The tint stays,
+   but nothing depends on it. */
+.timeline.focused .tick:not(.kin) { opacity: 0.15; }
+
+.timeline .tick.kin {
+    opacity: 1;
+    outline: 2px solid var(--ink);
+    outline-offset: 1px;
+}
+
+li.turn.kin .bubble { border-left-width: 7px; }
+
+/* The message actually chosen, told apart from its kin. */
+li.turn:target .bubble {
+    border-color: var(--ink-soft);
+    box-shadow: 0 0 0 3px var(--quiet-wash);
+}
+
+.kin-note {
+    margin: 0 0 0.4rem;
+    font-size: 0.7rem;
+    line-height: 1.35;
+    color: var(--ink-soft);
+    text-align: center;
+}
+
+.kin-note:empty { display: none; }
+
+header .build { margin-left: 0.8rem; font-size: 0.8rem; color: var(--ink-faint); white-space: nowrap; }
+
+/* Find within a conversation. */
+.find {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    padding: 0.6rem 0.8rem;
+    margin: 0;
+    min-width: 0;
+}
+
+.find label { flex: 1 1 100%; font-size: 0.85rem; }
+.find input { flex: 1 1 8rem; min-width: 0; }
+
+.found {
+    flex: 1 1 100%;
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+}
+
+.found:empty { display: none; }
+
+/* A message that matched, and the words in it. Outlined rather than only tinted, for
+   the same reason the rest of this page is: a mark nobody can see is not a mark. */
+li.turn.hit .bubble {
+    border-color: var(--ink-soft);
+    box-shadow: 0 0 0 2px var(--quiet-wash);
+}
+
+mark[data-found] {
+    background: var(--agent);
+    color: var(--md-ext-on-slot);
+    border-radius: var(--md-sys-shape-corner-extra-small);
+    padding: 0 0.15em;
+}
+
+.timeline.searching .tick:not(.hit) { opacity: 0.12; }
+
+.timeline .tick.hit {
+    opacity: 1;
+    outline: 2px solid var(--ink);
+    outline-offset: 1px;
+}
+
+/* The composer, pinned so it is reachable from anywhere in a long transcript. It is a
+   form, and what it sends is a message into the conversation, from the person's seat. */
+.composer {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    display: block;
+    margin: 1.5rem 0 0;
+    padding: 0.85rem 1rem;
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-bottom: none;
+    border-radius: var(--radius) var(--radius) 0 0;
+    box-shadow: var(--md-sys-elevation-2);
+}
+
+/* Hidden to read: the bar alone stays, saying who it would go to, with the button that brings the rest back. */
+.composer-bar { display: flex; align-items: center; gap: 0.8rem; margin: 0 0 0.6rem; }
+.composer-bar .composer-to { flex: 1 1 auto; min-width: 0; margin: 0; }
+.composer-closed { padding-block: 0.4rem; }
+.composer-closed > .composer-bar { margin: 0; }
+.composer-closed > :not(.composer-bar) { display: none; }
+
+/* What is attached: a thumbnail, or a tile saying the kind of file, each with its name and a way to take it off. */
+.attachments { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0 0 0.6rem; padding: 0; list-style: none; }
+.attachments:not(:has(.attachment)) { display: none; }
+.attachment { position: relative; width: 4.5rem; }
+.attachment-tile { display: grid; place-items: center; width: 4.5rem; height: 4.5rem; object-fit: cover; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.05em; color: var(--ink-soft); background: var(--quiet-wash); border: 1px solid var(--rule); border-radius: 8px; }
+.attachment-name { display: block; margin-top: 0.15rem; overflow: hidden; font-size: 0.68rem; color: var(--ink-faint); text-overflow: ellipsis; white-space: nowrap; }
+.attachment-remove { position: absolute; top: -0.4rem; right: -0.4rem; display: grid; place-items: center; width: 1.3rem; height: 1.3rem; padding: 0; color: var(--ink); background: var(--card); border: 1px solid var(--rule); border-radius: 50%; }
+.attachment-remove .icon { font-size: 0.9rem; }
+.attach-note { margin: 0 0 0.6rem; font-size: 0.8rem; color: var(--ink-soft); }
+.attach-note[hidden] { display: none; }
+.attach-pick { display: inline-flex; align-items: center; gap: 0.35rem; margin: 0 0 0.4rem; min-height: 2.5rem; padding: 0 0.75rem; font: var(--md-sys-typescale-label-large); }
+.attach-pick[hidden] { display: none; }
+.attach-pick .icon { font-size: 1.15rem; }
+form.dropping { outline: 2px dashed var(--accent); outline-offset: -4px; }
+/* The composer partial's holder lays out as if it were not there, so each page's own layout of the box holds. */
+.composer-box { display: contents; }
+/* The agents typing @ offers, just above the box it was typed in; the frame's script places it. */
+.mention-list { position: absolute; margin: 0; padding: 0.25rem; list-style: none; max-height: 14rem; overflow: auto; background: var(--md-sys-color-surface-container); border: 0; border-radius: var(--md-sys-shape-corner-extra-small); box-shadow: var(--md-sys-elevation-2); z-index: 20; }
+.mention-list[hidden] { display: none; }
+.mention-list li { padding: 0.35rem 0.6rem; border-radius: 6px; cursor: pointer; overflow-wrap: anywhere; }
+.mention-list li[aria-selected="true"], .mention-list li:hover { background: var(--quiet-wash); }
+
+/* Keyboard focus and jumps stop short of the box rather than underneath it. A margin on everything but the box,
+   never padding on the page: the browser keeps the caret clear of the page's padding as the person types, and the
+   box is pinned inside that padding, so every keystroke scrolled the page a line and the box never got clear. */
+.page :not(.composer, .composer *) { scroll-margin-bottom: calc(var(--composer-h, 0px) + 1rem); }
+
+.composer-note {
+    margin: 0 0 0.6rem;
+    font-size: 0.85rem;
+    line-height: 1.45;
+    color: var(--ink-soft);
+}
+
+.composer-to {
+    margin: 0 0 0.6rem;
+    font-size: 0.8rem;
+    color: var(--ink-soft);
+    overflow-wrap: anywhere;
+}
+
+/* Who to talk to: one group per machine, the person's first. A name is the role alone, so a row
+   is a box, a badge, a name and a state and does not wrap. */
+.recipients {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    padding: 0.9rem 1rem;
+}
+
+.recipients h2 {
+    margin: 0 0 0.6rem;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--ink-faint);
+}
+
+.recipients ul { list-style: none; margin: 0; padding: 0; }
+.recipients .everyone { display: flex; gap: 0.4rem; align-items: center; font-size: 0.8rem; margin: 0 0 0.6rem; }
+
+.recipients summary {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding: 0.2rem 0;
+}
+
+.recipients .count { margin-left: auto; font-weight: 400; font-size: 0.72rem; color: var(--ink-faint); }
+
+/* A summary laid out as a row loses the browser's own marker, so nothing would say a heading folds. */
+.recipients summary .chev, .settings-tree summary .chev { flex: none; font-size: 1.05rem; vertical-align: baseline; }
+
+.recipients details > ul {
+    margin: 0.2rem 0 0.5rem 0.55rem;
+    padding-left: 0.6rem;
+    border-left: 1px solid var(--rule);
+    display: grid;
+    gap: 0.5rem;
+}
+
+.recipients li.divider {
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--ink-faint);
+}
+
+.recipients li[class*="slot-"] {
+    display: grid;
+    grid-template-columns: auto auto 1.5rem minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    column-gap: 0.4rem;
+    align-items: center;
+}
+
+.recipients li.not-in-it { grid-template-columns: auto 1.5rem minmax(0, 1fr) auto; }
+
+.recipients li .to-box { grid-row: 1 / span 2; }
+
+.recipients .who {
+    grid-row: 1 / span 2;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 0.55rem;
+    font-weight: 700;
+    color: var(--md-ext-on-slot);
+    background: var(--agent);
+}
+
+.recipients .mark { grid-row: 1 / span 2; font-size: 0.7rem; color: var(--agent); }
+.recipients .name { font-size: 0.82rem; font-weight: 600; overflow-wrap: anywhere; }
+.recipients .state { font-size: 0.72rem; color: var(--ink-faint); }
+.recipients li.subgroup > details > summary { font-weight: 500; font-size: 0.78rem; color: var(--ink-soft); }
+.recipients li.subgroup > details > ul { margin-left: 0.3rem; padding-left: 0.5rem; gap: 0.35rem; }
+.recipients .msgs { grid-column: -1; grid-row: 1 / span 2; font-size: 0.72rem; font-weight: 600; color: var(--ink-soft); background: var(--page); border: 1px solid var(--rule); border-radius: 999px; padding: 0 0.5rem; min-width: 1.4rem; text-align: center; }
+.reply-line { margin: 0.5rem 0 0; }
+.reply-to { cursor: pointer; border-radius: 999px; padding: 0.25rem 0.9rem; font-size: 0.85rem; font-weight: 600; color: var(--ink); background: none; border: 1px solid var(--accent); }
+.composer-replying { display: flex; align-items: center; gap: 0.8rem; margin: 0.4rem 0; padding: 0.4rem 0.8rem; border-left: 3px solid var(--accent); background: var(--quiet-wash); }
+.composer-replying[hidden] { display: none; }
+.bell { position: relative; }
+.bell > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 0.2rem; padding: 0.2rem 0.4rem; border-radius: 999px; color: var(--ink-soft); }
+.bell > summary::-webkit-details-marker { display: none; }
+.bell > summary:hover, .bell[open] > summary { color: var(--ink); background: var(--quiet-wash); }
+.bell .icon { font-size: 1.4rem; }
+.bell-list { position: absolute; right: 0; top: 100%; z-index: 30; width: min(26rem, 90vw); max-height: 70vh; overflow-y: auto; margin-top: 0.4rem; padding: 0.5rem 0.8rem; background: var(--card); border: 1px solid var(--rule); border-radius: var(--md-sys-shape-corner-extra-small); box-shadow: var(--md-sys-elevation-2); }
+.bell-list ul, .notices-all { list-style: none; margin: 0; padding: 0; }
+.notice { margin: 0; padding: 0.5rem 0; border-bottom: 1px solid var(--rule); font-size: 0.88rem; overflow-wrap: anywhere; }
+.notice:last-child { border-bottom: 0; }
+.notice p { margin: 0.2rem 0; }
+.notice-bad { border-left: 3px solid var(--alarm); padding-left: 0.6rem; }
+.notice-new { margin-left: 0.4rem; font-size: 0.75rem; font-weight: 600; color: var(--accent); }
+.bell-empty { margin: 0.4rem 0; color: var(--ink-soft); }
+.bell-all { display: block; padding-top: 0.5rem; font-weight: 600; font-size: 0.88rem; }
+.convo-head { position: relative; display: grid; gap: 0.4rem; min-width: 0; background: var(--card); border: 1px solid var(--rule); border-radius: 0.9rem; padding: 0.5rem 0.8rem; }
+.convo-frame { min-width: 0; }
+.convo-frame summary { cursor: pointer; list-style: none; display: flex; align-items: center; min-height: 2rem; }
+.convo-frame summary::-webkit-details-marker { display: none; }
+.convo-frame summary::before { content: "chevron_right"; content: "chevron_right" / ""; font-family: "Material Symbols Outlined"; margin-right: 0.5rem; font-size: 1.5rem; line-height: 1; color: var(--ink); transition: transform 0.15s; }
+.convo-frame[open] summary::before { transform: rotate(90deg); }
+.convo-frame h1 { margin: 0; flex: 1; min-width: 0; font-size: 1.15rem; overflow-wrap: anywhere; }
+.convo-frame .item-title { margin: 0.5rem 0 0; font-size: 1rem; font-style: normal; color: var(--ink); }
+.convo-frame .as-of { margin: 0.4rem 0 0.2rem; }
+.convo-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+#panel-close { margin-left: auto; }
+#panel-close[hidden] { display: none; }
+/* The panel's tools are tonal buttons: lower emphasis than Send, which is the page's main action. A <summary> or a
+   link drawn as one takes the same shape. */
+.convo-actions .file-button { --md-btn-content: var(--md-sys-color-on-secondary-container); display: inline-flex; align-items: center; gap: 0.5rem; min-height: 2.5rem; padding: 0 1rem; border-radius: var(--md-sys-shape-corner-full); font: var(--md-sys-typescale-label-large); text-decoration: none; color: var(--md-sys-color-on-secondary-container); background-color: var(--md-sys-color-secondary-container); border: 0; cursor: pointer; list-style: none; }
+.convo-actions .file-button::-webkit-details-marker { display: none; }
+.convo-actions .file-button:hover { background-image: linear-gradient(color-mix(in srgb, var(--md-sys-color-on-secondary-container) var(--md-sys-state-hover), transparent) 0 0); }
+.convo-actions .file-button .icon { font-size: 1.125rem; }
+/* Offered when a message arrived further down than following may carry the page (see the script in the conversation
+   page). Centred over the page rather than the window, clear of the composer pinned to the bottom. */
+.new-below { position: fixed; z-index: 25; left: calc(var(--rail-w) + (100vw - var(--rail-w)) / 2); bottom: calc(var(--composer-h, 9rem) + 1rem); transform: translateX(-50%); color: var(--on-accent); background: var(--accent); box-shadow: var(--md-sys-elevation-3); }
+.new-below:active { transform: translateX(-50%) scale(0.98); }
+.new-below[hidden] { display: none; }
+.export-menu { position: relative; }
+.export-list { position: absolute; left: 0; top: calc(100% + 0.3rem); z-index: 5; display: flex; flex-direction: column; min-width: 9rem; background: var(--card); border: 1px solid var(--rule); border-radius: var(--md-sys-shape-corner-extra-small); box-shadow: var(--md-sys-elevation-2); overflow: hidden; }
+.export-list a { padding: 0.5rem 0.9rem; color: var(--ink); text-decoration: none; white-space: nowrap; }
+.export-list a:hover { background: var(--rule); }
+
+/* Filtering the transcript. Hidden rather than removed, so following can replace the transcript and the
+   choice is simply applied again. */
+.filtered-out { display: none !important; }
+
+.filter {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 1rem;
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    padding: 0.6rem 0.8rem;
+    margin: 0;
+    font-size: 0.85rem;
+}
+
+.filter[hidden] { display: none; }
+#filter-clear[hidden] { display: none; }
+.filter-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-faint); }
+.only-me { display: inline-flex; align-items: center; gap: 0.4rem; }
+
+.pick { position: relative; }
+
+/* Looks like the combo box it stands in for: the same field, the same chevron, turning when it opens. */
+.pick summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    list-style: none;
+    cursor: pointer;
+    background: var(--page);
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    padding: 0.3rem 0.5rem 0.3rem 0.9rem;
+    min-width: 8rem;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.pick summary::-webkit-details-marker { display: none; }
+.pick summary:hover { border-color: var(--ink-faint); }
+.pick[open] summary { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+
+.pick summary::after {
+    font-family: "Material Symbols Outlined";
+    font-size: 1.4rem;
+    line-height: 1;
+    color: var(--ink-faint);
+    content: "expand_more";
+    content: "expand_more" / "";
+    transition: transform 0.15s;
+}
+
+.pick[open] summary::after { transform: rotate(180deg); }
+
+.pick .menu {
+    position: absolute;
+    z-index: 5;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 100%;
+    max-height: 16rem;
+    overflow-y: auto;
+    display: grid;
+    gap: 0.3rem;
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: 14px;
+    padding: 0.6rem 0.8rem;
+    box-shadow: var(--md-sys-elevation-2);
+    white-space: nowrap;
+}
+
+.pick .menu label { display: flex; align-items: center; gap: 0.6rem; padding: 0.15rem 0; cursor: pointer; color: var(--ink); }
+
+.composer textarea { width: 100%; min-height: 4.5rem; max-height: 40vh; }
+
+.composer-send {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.6rem;
+    margin-top: 0.6rem;
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+}
+
+ul.sent {
+    list-style: none;
+    margin: 0 0 0.6rem;
+    padding: 0;
+    display: grid;
+    gap: 0.3rem;
+    font-size: 0.82rem;
+}
+
+ul.sent > li {
+    padding: 0.4rem 0.6rem;
+    background: var(--quiet-wash);
+    border-radius: 6px;
+}
+
+/* A send that went as asked: an icon in the composer's bar, opening above the box rather than pushing it about. */
+.sent-info { flex: none; }
+.sent-info > summary { display: grid; place-items: center; width: 1.8rem; height: 1.8rem; list-style: none; cursor: pointer; border-radius: 50%; color: var(--ink-faint); }
+.sent-info > summary::-webkit-details-marker { display: none; }
+.sent-info > summary:hover, .sent-info[open] > summary { color: var(--ink); background: var(--quiet-wash); }
+.sent-info > summary .icon { font-size: 1.2rem; }
+.sent-info > ul.sent { position: absolute; left: 0; right: 0; bottom: 100%; z-index: 20; margin: 0 0 0.4rem; padding: 0.5rem; background: var(--card); border: 1px solid var(--rule); border-radius: var(--md-sys-shape-corner-extra-small); box-shadow: var(--md-sys-elevation-2); overflow-wrap: anywhere; }
+
+/* ---- Material 3 components --------------------------------------------------------------------------------------
+   Last on purpose: each rule here takes a control the console drew its own way, above, and gives it the Material 3
+   form named in specs/035-material-3-web-ui/audit.md. Labels are in sentence case and on the type scale. */
+
+/* Labels and headers: sentence case, label-medium or title-small, never letter-spaced capitals. */
+th, .dgrid-head, .grid-head, .dgrid-detail .facts dt, .filter-title, .recipients h2, .recipients li.divider,
+.because span, .field span, ol.points .label, ol.points .verdict, li.day, .tag, .rail-day {
+    text-transform: none;
+    letter-spacing: normal;
+}
+th, .dgrid-head, .grid-head { font: var(--md-sys-typescale-title-small); color: var(--md-sys-color-on-surface-variant); background: var(--md-sys-color-surface-container); }
+.dgrid-detail .facts dt, .filter-title, .recipients h2, .because span, .field span { font: var(--md-sys-typescale-label-medium); color: var(--md-sys-color-on-surface-variant); }
+.recipients h2 { font: var(--md-sys-typescale-title-small); color: var(--md-sys-color-on-surface); }
+
+/* Tables and lists: rows on the surface, a hover state layer on a row that opens. */
+table { border-radius: var(--md-sys-shape-corner-medium); border-color: var(--md-sys-color-outline-variant); background: var(--md-ext-color-card); }
+th, td { padding: 0.75rem 1rem; }
+details.dgrid-row > summary:hover, .grid-row > summary:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
+details.dgrid-row[open] > summary, details.dgrid-row[open] > summary:hover {
+    background: linear-gradient(color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent) 0 0), var(--card);
+}
+.dgrid { border-radius: var(--md-sys-shape-corner-large); }
+
+/* Cards: outlined, at the medium corner, on the card surface. */
+.letter, .find, .filter, .recipients, .convo-head, .convo-links, .waiting-on-you, .waiting-elsewhere, .timeline,
+.settings-section fieldset, .default-expander, .act-cards li, .move-to, .grid, .panel-closed .panel-strip {
+    border-radius: var(--md-sys-shape-corner-medium);
+    border-color: var(--md-sys-color-outline-variant);
+}
+.act-cards li.costly { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
+.act-cards li.costly a, .act-cards li.costly p { color: inherit; }
+
+/* Transcript entries: outlined cards with the agent's colour on the leading edge; the avatar is the initials. */
+.bubble { border-radius: var(--md-sys-shape-corner-extra-small) var(--md-sys-shape-corner-medium) var(--md-sys-shape-corner-medium) var(--md-sys-shape-corner-medium); border-color: var(--md-sys-color-outline-variant); padding: 0.75rem 1rem; }
+.attribution { font: var(--md-sys-typescale-title-small); }
+.attribution strong { font-weight: 500; letter-spacing: normal; }
+.attribution .stamp, .meta, .as-of, .waiting-where, .found, .kin-note { font: var(--md-sys-typescale-body-small); color: var(--md-sys-color-on-surface-variant); }
+.said { font: var(--md-sys-typescale-body-large); }
+.who { font: var(--md-sys-typescale-label-medium); }
+
+/* Chips. An input chip (removable, as the default agents are) and assist chips for facts the console states. */
+.chip { min-height: 2rem; gap: 0.5rem; padding: 0 0.25rem 0 0.75rem; font: var(--md-sys-typescale-label-large); color: var(--md-sys-color-on-surface-variant); background: transparent; border: 1px solid var(--md-sys-color-outline); border-radius: var(--md-sys-shape-corner-small); }
+.chip-x { min-height: 0; width: 1.5rem; height: 1.5rem; padding: 0; border-radius: 50%; color: var(--md-sys-color-on-surface-variant); background: transparent; }
+.chip-x:hover, .chip-x:focus-visible { color: var(--md-sys-color-on-surface); background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
+
+/* Who a message goes to, one input chip each, on the composer's To line. */
+.composer-to .to-chip { margin: 0.1rem 0.25rem 0.1rem 0; min-height: 1.75rem; }
+
+/* A placed file, in the transcript where it was placed and in Media (SPEC.md 9.5). The browser scales the
+   original; nothing here makes a smaller copy. */
+.transcript li.placed { list-style: none; margin: 0.5rem 0 0.5rem 2.75rem; }
+.placed-card { margin: 0; display: inline-flex; flex-direction: column; gap: 0.35rem; max-width: min(100%, 22rem); }
+.placed-card .thumb { display: block; border-radius: var(--md-sys-shape-corner-medium); overflow: hidden; border: 1px solid var(--md-sys-color-outline-variant); background: var(--md-sys-color-surface-container); }
+.placed-card .thumb img { display: block; max-width: 100%; max-height: 14rem; object-fit: contain; }
+.placed-card .thumb:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
+.placed-card figcaption { font: var(--md-sys-typescale-body-small); color: var(--md-sys-color-on-surface-variant); overflow-wrap: anywhere; }
+.thumb-tile, .file-tile { display: inline-flex; align-items: center; gap: 0.5rem; margin: 0; padding: 0.6rem 0.8rem; border-radius: var(--md-sys-shape-corner-medium); border: 1px solid var(--md-sys-color-outline-variant); background: var(--md-sys-color-surface-container-low); color: var(--md-sys-color-on-surface); font: var(--md-sys-typescale-body-medium); overflow-wrap: anywhere; }
+.file-tile { text-decoration: none; }
+.media-grid { list-style: none; margin: 0 0 1.5rem; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(11rem, 100%), 1fr)); gap: 1rem; }
+.media-grid .placed-card { max-width: 100%; }
+.media-grid .thumb img { width: 100%; height: 10rem; object-fit: cover; }
+.media-list { list-style: none; margin: 0 0 1.5rem; padding: 0; display: grid; gap: 0.75rem; }
+
+/* The full view of an image, over the page. */
+.viewer { max-width: min(96vw, 80rem); max-height: 94vh; padding: 0; border: 0; border-radius: var(--md-sys-shape-corner-extra-large); background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface); }
+.viewer::backdrop { background: var(--md-ext-scrim); }
+.viewer-bar { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.5rem 0.5rem 1rem; }
+.viewer-caption { flex: 1 1 auto; margin: 0; font: var(--md-sys-typescale-body-medium); overflow-wrap: anywhere; }
+.viewer img { display: block; max-width: min(96vw, 80rem); max-height: calc(94vh - 3.5rem); margin: 0 auto; object-fit: contain; }
+ol.points .verdict, .tag, .msgs, .moved-note, .moved-notes li, li.day {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.5rem;
+    padding: 0 0.5rem;
+    font: var(--md-sys-typescale-label-medium);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-small);
+}
+ol.points .verdict { color: var(--md-sys-color-on-surface-variant); }
+.tag { color: var(--md-sys-color-error); border-color: var(--md-sys-color-error); }
+.tag.open { color: var(--md-sys-color-primary); border-color: var(--md-sys-color-primary); }
+.moved-note, .moved-notes li, li.day { color: var(--md-sys-color-on-surface-variant); background: var(--md-sys-color-surface-container-low); }
+.moved-note, .moved-notes li { padding: 0.25rem 0.75rem; }
+ol.points .label { font: var(--md-sys-typescale-label-medium); }
+
+/* Menus: the surface container, extra-small corner, level 2, 48px items. */
+.pick .menu, .bell-list, .export-list, .sent-info > ul.sent, .mention-list {
+    background: var(--md-sys-color-surface-container);
+    border: 0;
+    border-radius: var(--md-sys-shape-corner-extra-small);
+    box-shadow: var(--md-sys-elevation-2);
+}
+.pick .menu { padding: 0.5rem 0; gap: 0; }
+.pick .menu label { min-height: 3rem; padding: 0 1rem; gap: 0.75rem; font: var(--md-sys-typescale-label-large); }
+.pick .menu label:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
+.export-list { padding: 0.5rem 0; }
+.export-list a { display: flex; align-items: center; min-height: 3rem; padding: 0 1rem; font: var(--md-sys-typescale-label-large); color: var(--md-sys-color-on-surface); }
+.export-list a:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
+.bell-list { padding: 0.5rem 1rem; }
+.mention-list li { min-height: 3rem; display: flex; align-items: center; padding: 0 1rem; border-radius: 0; }
+
+/* The agent filter looks like the outlined select it stands in for. */
+.pick summary { min-height: 2.5rem; border: 1px solid var(--md-sys-color-outline); border-radius: var(--md-sys-shape-corner-extra-small); background: transparent; padding: 0 0.5rem 0 1rem; font: var(--md-sys-typescale-body-large); }
+.pick summary:hover { border-color: var(--md-sys-color-on-surface); }
+.pick[open] summary { border-color: var(--md-sys-color-primary); box-shadow: inset 0 0 0 1px var(--md-sys-color-primary); }
+
+/* Dialogs: surface-container-high at the extra-large corner, 24px in, a headline, actions to the right. */
+.default-dialog, dialog {
+    border: 0;
+    border-radius: var(--md-sys-shape-corner-extra-large);
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface);
+    padding: 1.5rem;
+    box-shadow: var(--md-sys-elevation-3);
+}
+dialog::backdrop { background: var(--md-ext-scrim); }
+.default-dialog h3, dialog h2, dialog h3 { font: var(--md-sys-typescale-headline-small); margin: 0 0 1rem; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin: 1.5rem 0 0; }
+
+/* Banners: a message that stays, with its colour role, at the medium corner. */
+.unreachable { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); border: 0; border-radius: var(--md-sys-shape-corner-medium); padding: 1rem; }
+.unreachable a { color: inherit; }
+.file-problems-banner { background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface); border: 0; border-left: 4px solid var(--md-sys-color-error); border-radius: var(--md-sys-shape-corner-medium); padding: 0.75rem 1rem; }
+ul.sent > li { border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-high); }
+
+/* Small buttons that sit inside text or on another control. */
+.thread-focus { min-height: 0; padding: 0; border: 0; border-radius: var(--md-sys-shape-corner-extra-small); background: none; color: var(--md-sys-color-primary); font: inherit; text-decoration: underline; }
+.thread-focus:hover { background: none; text-decoration-thickness: 2px; }
+.reply-to { --md-btn-container: transparent; --md-btn-content: var(--md-sys-color-primary); --md-btn-outline: var(--md-sys-color-outline); min-height: 2rem; padding: 0 1rem; font: var(--md-sys-typescale-label-large); }
+.attachment-remove { --md-btn-container: var(--md-sys-color-surface-container-highest); --md-btn-content: var(--md-sys-color-on-surface); --md-btn-outline: var(--md-sys-color-outline-variant); min-height: 0; width: 1.5rem; height: 1.5rem; padding: 0; }
+.attachment-tile { border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-high); border-color: var(--md-sys-color-outline-variant); font: var(--md-sys-typescale-label-large); }
+.sent-info > summary { width: 2.5rem; height: 2.5rem; }
+
+/* An extended FAB for the one floating action: primary container, the large corner, level 3. */
+.new-below { --md-btn-container: var(--md-sys-color-primary-container); --md-btn-content: var(--md-sys-color-on-primary-container); min-height: 3.5rem; padding: 0 1.25rem; border-radius: var(--md-sys-shape-corner-large); color: var(--md-sys-color-on-primary-container); background-color: var(--md-sys-color-primary-container); box-shadow: var(--md-sys-elevation-3); }
+
+
+/* The composer is a raised surface pinned to the bottom. */
+.composer { background: var(--md-sys-color-surface-container-low); border-color: var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-large) 0 0; }
+.composer-replying { border-left-color: var(--md-sys-color-primary); background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); border-radius: var(--md-sys-shape-corner-small); }
+
+/* The minimap's ticks take focus like anything else. */
+.timeline .tick { border-radius: 2px; }
+.timeline .tick:focus-visible { outline: 3px solid var(--md-sys-color-secondary); outline-offset: 1px; }
+
+/* Forms are cards; their labels are body-medium in on-surface-variant above the field. */
+form { border-color: var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); padding: 1rem; }
+label { font: var(--md-sys-typescale-body-medium); color: var(--md-sys-color-on-surface-variant); }
+.lede { font: var(--md-sys-typescale-body-large); color: var(--md-sys-color-on-surface-variant); }
+
+/* The frame's bell is a standard icon button. */
+.bell > summary { min-width: 2.5rem; min-height: 2.5rem; justify-content: center; border-radius: var(--md-sys-shape-corner-full); }
+.seat-who { font: var(--md-sys-typescale-label-large); }
+header .build { font: var(--md-sys-typescale-body-small); }
+
+/* Compact density, chosen on the Settings page: Material 3's density step of 8px off fields, buttons, menu rows and
+   table rows, and a smaller gap. Targets stay at least 32px, so nothing becomes too small to press. */
+:root[data-density="compact"] { --gap: 1rem; }
+:root[data-density="compact"] input:not([type="checkbox"], [type="radio"], [type="range"], [type="hidden"], [type="file"]),
+:root[data-density="compact"] textarea, :root[data-density="compact"] select { min-height: 2.5rem; padding: 0.4375rem 0.875rem; }
+:root[data-density="compact"] button, :root[data-density="compact"] .button,
+:root[data-density="compact"] .convo-actions .file-button { min-height: 2rem; }
+:root[data-density="compact"] th, :root[data-density="compact"] td { padding: 0.5rem 0.75rem; }
+:root[data-density="compact"] option, :root[data-density="compact"] .pick .menu label,
+:root[data-density="compact"] .export-list a, :root[data-density="compact"] .mention-list li { min-height: 2.5rem; }
+
+/* The Parley-wide Settings page: each choice a group of radio buttons, each one a row with its words. */
+.choice label { display: flex; align-items: center; gap: 0.75rem; min-height: 2.5rem; color: var(--md-sys-color-on-surface); font: var(--md-sys-typescale-body-large); cursor: pointer; }
+.about dt { font: var(--md-sys-typescale-title-small); color: var(--md-sys-color-on-surface); margin-top: 0.75rem; }
+.about dd { margin: 0.25rem 0 0; font: var(--md-sys-typescale-body-medium); color: var(--md-sys-color-on-surface-variant); overflow-wrap: anywhere; }
+
+/* ---- Sizes -------------------------------------------------------------
+
+   One set of breakpoints, so every column folds at the same widths.
+
+   The shell takes the whole window, and so does a bubble: the conversation runs
+   from the panel to the rail, however wide the window. Below 1200px the navigation is a
+   rail; below 60rem the three columns stop fitting and the page becomes one;
+   below 600px it is a phone, and the rail is a bar along the bottom (the size classes at the end). */
+
+@media (min-width: 90rem) {
+    .conversation { gap: 2rem; }
+}
+
+@media (max-width: 60rem) {
+    .convo-page, .conversation { grid-template-columns: minmax(0, 1fr); }
+    .convo-page.panel-closed { grid-template-columns: 3rem minmax(0, 1fr); }
+
+    /* Open, the panel sits above the conversation. Closed, its strip stays beside it, in reach as the page scrolls. */
+    .convo-page:not(.panel-closed) .convo-panel { position: static; max-height: none; }
+    .convo-page:not(.panel-closed) .side { overflow-y: visible; }
+
+    /* Horizontal above the conversation, where a vertical rail beside it
+       would have nowhere to be. */
+    /* Pinned under the top bar while the transcript scrolls, so where the reader is in the conversation stays in sight
+       (the person's feedback on feature 042). Solid, as it lies over the messages. */
+    .minimap { top: calc(var(--frame) + 0.5rem); z-index: 2; order: -1; }
+    .minimap .timeline { background: var(--md-sys-color-surface-container-low); box-shadow: var(--md-sys-elevation-1); }
+
+    /* One line, however long, scrolled sideways by touch and by the page as the reader moves through the conversation.
+       It wrapped once, and a long conversation's rows, pinned to the top, filled a phone's screen (the person's
+       feedback on feature 043). Positioned, so each tick's text kept for a screen reader is held in the scroller
+       rather than widening the page by the length of the rail. */
+    .timeline {
+        flex-direction: row;
+        align-items: center;
+        overflow-x: auto;
+        overflow-y: hidden;
+        position: relative;
+    }
+
+    .timeline > * { flex: none; }
+    .timeline .tick { width: 0.5rem; height: 1.1rem; }
+    .timeline .tick.ghosted { width: 0.85rem; }
+    .timeline .rail-day { margin: 0 0.2rem; white-space: nowrap; }
+
+    /* The health page carries six columns and there is no longer width for
+       them. Scrolled inside its own box rather than squeezed, because a
+       figure shrunk to fit is a figure nobody reads. */
+    /* Positioned, so text kept for a screen reader inside it is held in the scroller rather than widening the page. */
+    table { display: block; overflow-x: auto; position: relative; }
+}
+
+@media (max-width: 37.49rem) {
+    body { font-size: 14px; }
+
+    /* Kept as one row here. A sticky frame that stacks costs
+       five rem of a phone screen on every page, and the frame is worth having only for
+       as long as it costs less than what it is covering. The word "console" goes
+       instead: the mark and the page say it. */
+    header { gap: 0.6rem; padding: 0.6rem 0 0.55rem; }
+    .brand span { display: none; }
+
+    h1 { font-size: 1.35rem; }
+    th, td { padding: 0.5rem 0.6rem; }
+
+    li.turn { gap: 0.5rem; }
+    .bubble { padding: 0.6rem 0.75rem; }
+    li.turn > .who { width: 1.8rem; height: 1.8rem; font-size: 0.62rem; }
+    form { padding: 0.7rem 0.8rem; }
+    input { flex: 1 1 8rem; min-width: 0; }
+}
+
+/* Nothing may run off the side at 320px, which is the narrowest thing
+   anybody will hold this on. */
+@media (max-width: 26rem) {
+    /* The mark alone. At this width the frame is competing with the page for the only
+       thing in short supply, and the word "Parley" is in the title bar anyway. */
+    .brand { font-size: 0; gap: 0; }
+    .brand img { width: 1.7rem; height: 1.7rem; }
+
+    .attribution .stamp { margin-left: 0; }
+    nav { gap: 0.6rem; }
+    ol.points > li { padding-left: 0.5rem; }
+}
+
+/* ---- Frost (feature 042) ---------------------------------------------------------------------------------------------
+   The look the person chose: depth from surfaces and soft shadows instead of lines. The page carries a mist of the
+   tertiary colour; cards, the side menu and the top bar are frosted surfaces lifted off it; controls sit a little
+   above what they are on. Colour is left to what needs attention. Every colour here is a token. */
+
+body { background: var(--md-ext-page-background); background-attachment: fixed; }
+
+.page { padding-inline: var(--page-pad); }
+
+/* The top bar runs the whole width of the page, from the side menu to the window's edge, rather than stopping at the
+   page's padding: it spans the padding and puts it back inside. */
+header {
+    margin-inline: calc(-1 * var(--page-pad));
+    padding-inline: var(--page-pad);
+    background: var(--md-ext-frame);
+    border-bottom: 0;
+}
+
+/* The side menu and the top bar are one surface, the frame, and the page sits inset in it as a sheet whose top corner
+   by the menu is rounded rather than square (the person's feedback on feature 042). The corner is the frame's colour
+   drawn as a quarter circle cut away, just below the bar's left end; the bar is sticky, so it travels with it. */
+.rail { background: var(--md-ext-frame); }
+
+header::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 100%;
+    width: var(--md-sys-shape-corner-extra-large);
+    height: var(--md-sys-shape-corner-extra-large);
+    background: radial-gradient(circle at 100% 100%, transparent calc(var(--md-sys-shape-corner-extra-large) - 0.5px), var(--md-ext-frame) var(--md-sys-shape-corner-extra-large));
+    pointer-events: none;
+}
+
+/* Cards: nearly opaque, lifted by a soft shadow, with only a glint for an edge. A message keeps its agent's colour down
+   its leading edge, which is how a reader tells the speakers apart at a glance. No blur here: on the conversation page a
+   blurred card inside the scrolling transcript drew as a blank block in Chromium, and at 88% opacity a card's blur
+   barely shows. The frosted glass is the top bar's and the side menu's. */
+.bubble, .letter, .card-section, .view-card, .grid, .convo-head, .act-cards li, .settings-section fieldset,
+.history-searches, .waiting-on-you, .waiting-elsewhere, .convo-links, .default-expander {
+    border-color: var(--rule);
+    border-radius: var(--md-sys-shape-corner-large);
+    box-shadow: var(--md-sys-elevation-1);
+}
+
+.bubble { border-left-width: 3px; border-left-color: var(--agent); }
+
+/* Controls stand a little above the surface they are on. */
+button, .button, .chip, main nav.page-links a, .inbox-views a { box-shadow: var(--md-sys-elevation-1); }
+button.quiet, .button.quiet, .rail button, .rail-toggle { box-shadow: none; }
+
+/* When the page was read sits in the top bar beside the build, so the page below keeps its whole width. */
+header .as-of { float: none; margin: 0; white-space: nowrap; }
+
+/* The colour choice on the Settings page: each palette as a strip of its main colour, its accent and its card surface. */
+.palettes { display: grid; gap: 0.6rem; }
+.swatch { display: inline-flex; overflow: hidden; border-radius: var(--md-sys-shape-corner-small); box-shadow: var(--md-sys-elevation-1); }
+.palette-own { display: flex; flex-wrap: wrap; gap: 0.8rem 1.4rem; align-items: center; margin-top: 0.75rem; padding: 0.4rem 0 0.2rem; }
+.palette-own input[type="color"] { width: 3rem; height: 2.2rem; padding: 0; border: 0; background: none; vertical-align: middle; }
+.palette-own[hidden] { display: none; }
+
+/* ---- The frame, round 2 (feature 042, the person's feedback) ----------------------------------------------------------
+   The top bar says where the page is (the project, and on a conversation's page the conversation) at its left, and which
+   build is running and when the page was read stacked at its right, beside the bell and the seat. */
+header .where { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; }
+.crumb-sep { flex: none; font: var(--md-sys-typescale-title-large); font-weight: 300; color: var(--ink-faint); }
+.crumb-here { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: var(--md-sys-typescale-title-large); color: var(--ink-soft); }
+header .stamps { flex: none; display: flex; flex-direction: column; align-items: flex-end; margin-left: auto; line-height: 1.25; }
+header .stamps .build { margin-left: 0; }
+header .stamps .as-of { font: var(--md-sys-typescale-body-small); color: var(--ink-faint); }
+header > nav { margin-left: 0; }
+
+/* The top bar's tint lets what scrolls beneath it through; blurred, it reads as frosted glass rather than as text under
+   text. */
+header { -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blur(16px) saturate(1.2); }
+
+/* The menu's expand and fold is a narrow handle on the line between the menu and the page, half on each (the person's
+   choice on feature 042, option A). Pressed, it folds or unfolds the menu; dragged, it moves up or down out of the way,
+   and stays where it is left (--handle-top, kept in this browser by the frame's script). Its touch area is wider than
+   it is drawn. A phone has no side menu, so no handle. */
+:root { --rail-drawn: var(--rail-w); }
+html[data-rail-open] { --rail-drawn: 16rem; }
+
+@media (min-width: 37.5rem) {
+    html .rail > .rail-toggle {
+        position: fixed;
+        top: var(--handle-top, 45%);
+        left: calc(var(--rail-drawn) - 0.4375rem);
+        z-index: 31;
+        width: 0.875rem;
+        min-height: 3.75rem;
+        height: 3.75rem;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        border-radius: var(--md-sys-shape-corner-full);
+        background: color-mix(in srgb, var(--md-sys-color-outline) 75%, transparent);
+        box-shadow: var(--md-sys-elevation-1);
+        cursor: grab;
+        touch-action: none;
+        transition: left var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard), background-color var(--md-sys-motion-duration-short);
+    }
+
+    /* Drawn 14px wide; touched across 48px, as Material 3 asks of a target. */
+    html .rail > .rail-toggle::before { content: ""; position: absolute; inset: -0.5rem -1.0625rem; }
+    html .rail > .rail-toggle::after { content: ""; position: absolute; left: 50%; top: 50%; width: 0.25rem; height: 1rem; transform: translate(-50%, -50%); border-inline: 1px solid var(--md-sys-color-surface); }
+    html .rail > .rail-toggle:hover, html .rail > .rail-toggle:focus-visible { background: var(--md-sys-color-on-surface-variant); }
+    html .rail > .rail-toggle.dragging { cursor: grabbing; transition: none; }
+    html .rail > .rail-toggle .icon { display: none; }
+    html .rail > .rail-toggle .rail-label { position: absolute; left: -100rem; }
+}
+/* Drawn by the frame's script, which is what makes it work: with no script there is nothing to press. */
+.rail-toggle[hidden] { display: none; }
+
+/* ---- Page actions in the rail (feature 042, the person's feedback) ----------------------------------------------------
+   A page's commands come after the rail's navigation, under a heading with the page's name: the main one filled, as
+   Material 3's rail action button (a rounded square with its icon, and its label while the menu is unfolded), the others
+   as quieter items under it. Each opens its panel beside the rail, over the page, as a menu does. */
+.rail-actions { display: flex; flex-direction: column; gap: 0.25rem; margin: 0; }
+/* The rail is a stacking context, so its open panel is drawn at the rail's level: raised while one is open, so the graph's
+   tab and the menu's handle do not draw over it. */
+.rail:has(.rail-actions details[open]) { z-index: 45; }
+/* Every command in the rail is one kind of item, whatever it is made of: a panel that opens (a summary), one of a
+   conversation's tools (a button), or a link or a single press. One look, in the primary color that marks a command. */
+:is(.rail-act > summary, .rail-actions .strip-button, .rail-actions .rail-link) {
+    --md-btn-container: transparent;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.75rem;
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    min-height: 3rem;
+    margin: 0;
+    padding: 0 1rem;
+    border: 0;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: none;
+    box-shadow: none;
+    color: var(--md-sys-color-primary);
+    font: var(--md-sys-typescale-label-large);
+    text-align: start;
+    text-decoration: none;
+    white-space: nowrap;
+    list-style: none;
+    cursor: pointer;
+}
+.rail-act > summary::-webkit-details-marker { display: none; }
+:is(.rail-act > summary, .rail-actions .strip-button, .rail-actions .rail-link) :is(.icon, .strip-glyph) { width: 1.5rem; height: 1.5rem; font-size: 1.5rem; }
+:is(.rail-act > summary:hover, .rail-act[open] > summary, .rail-actions .strip-button:hover, .rail-actions .strip-button[aria-expanded="true"], .rail-actions .rail-link:hover) { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); border: 0; }
+.rail-actions .rail-act-main > summary {
+    min-height: 3.5rem;
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+    box-shadow: var(--md-sys-elevation-1);
+}
+.rail-actions .rail-act-main > summary:hover, .rail-actions .rail-act-main[open] > summary {
+    background: var(--md-sys-color-primary-container);
+    background-image: linear-gradient(color-mix(in srgb, var(--md-sys-color-on-primary-container) var(--md-sys-state-hover), transparent) 0 0);
+    color: var(--md-sys-color-on-primary-container);
+    box-shadow: var(--md-sys-elevation-2);
+}
+
+
+/* The panel: fixed beside the rail, so the rail's own scrolling does not clip it. */
+.act-panel {
+    position: fixed;
+    z-index: 35;
+    top: calc(var(--frame) + 0.5rem);
+    left: calc(var(--rail-drawn) + 1.75rem);
+    width: min(34rem, calc(100vw - var(--rail-drawn) - 2.5rem));
+    max-height: calc(100vh - var(--frame) - 1.5rem);
+    overflow-y: auto;
+    padding: 1rem 1.25rem;
+    white-space: normal;
+    color: var(--md-sys-color-on-surface);
+    /* A little of the palette's color, so a panel reads as the command that opened it (the person's feedback on feature
+       042): its primary along the top, and a tint of its container fading into the panel's surface. */
+    background: linear-gradient(180deg, color-mix(in srgb, var(--md-sys-color-primary-container) 70%, var(--md-sys-color-surface-container-high)) 0, var(--md-sys-color-surface-container-high) 6rem);
+    border-top: 4px solid var(--md-sys-color-primary);
+    border-radius: var(--md-sys-shape-corner-large);
+    box-shadow: var(--md-sys-elevation-3);
+}
+.act-panel form { display: flex; flex-wrap: wrap; gap: 0.75rem 1rem; align-items: flex-end; margin: 0; padding: 0; background: none; border: 0; box-shadow: none; }
+.act-panel form + form { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--md-sys-color-outline-variant); }
+.act-panel .field.wide { flex-basis: 100%; }
+/* A 40px button beside a 48px field: centred on it, as the filter row's buttons are. */
+.act-panel form > button { margin-bottom: 0.25rem; }
+.act-panel .composer-note, .act-panel form > p, .act-panel form > details { flex-basis: 100%; margin: 0; }
+
+/* Filters fold behind one button while nothing is filtered; what is filtered stays in sight as chips that take it off. */
+.filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
+.filters-fold { flex: none; }
+.filters-fold > summary { display: inline-flex; align-items: center; gap: 0.4rem; list-style: none; cursor: pointer; }
+.filters-fold > summary::-webkit-details-marker { display: none; }
+.filters-fold[open] { flex: 1 1 100%; }
+.filters-fold[open] > summary { margin-bottom: 0.5rem; }
+.filter-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+.filter-chips .chip { display: inline-flex; align-items: center; gap: 0.3rem; min-height: 2rem; padding: 0 0.5rem 0 0.75rem; text-decoration: none; }
+.filter-chips .chip .icon { font-size: 1.1rem; }
+.filter-bar .tally { margin-left: auto; }
+
+/* ---- The project's places, folded (feature 042) ------------------------------------------------------------------------
+   A folded menu (a tablet's, or a desktop's the person folded) has no height for the project's six places and a page's
+   commands too, so the places fold into one item, the project's initial, which opens them as a list beside the rail. */
+.rail-project { display: none; }
+
+@media (min-width: 37.5rem) and (max-width: 74.99rem) {
+    html:not([data-rail-open]) .rail-project { display: block; }
+    html:not([data-rail-open]) .rail nav > a.in-project { display: none; }
+}
+@media (min-width: 75rem) {
+    html[data-nav="collapsed"] .rail-project { display: block; }
+    html[data-nav="collapsed"] .rail nav > a.in-project { display: none; }
+}
+
+.rail-project > summary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 3.5rem;
+    min-height: 3rem;
+    margin: 0.25rem auto;
+    list-style: none;
+    cursor: pointer;
+    border-radius: var(--md-sys-shape-corner-full);
+}
+.rail-project > summary::-webkit-details-marker { display: none; }
+.rail-project > summary:hover, .rail-project[open] > summary { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
+.project-mark { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: var(--md-sys-shape-corner-small); font: var(--md-sys-typescale-title-small); color: var(--md-sys-color-on-surface-variant); background: var(--md-sys-color-surface-container-high); }
+.rail-project > summary[aria-current] .project-mark { color: var(--md-sys-color-on-secondary-container); background: var(--md-sys-color-secondary-container); }
+.rail-project-list {
+    position: fixed;
+    z-index: 35;
+    top: calc(var(--frame) + 0.5rem);
+    left: calc(var(--rail-w) + 0.75rem);
+    display: grid;
+    min-width: 15rem;
+    padding: 0.5rem 0;
+    background: var(--md-sys-color-surface-container);
+    border-radius: var(--md-sys-shape-corner-large);
+    box-shadow: var(--md-sys-elevation-3);
+}
+.rail-project-list a { display: flex; align-items: center; gap: 0.9rem; min-height: 3rem; padding: 0 1.25rem; color: var(--md-sys-color-on-surface); font: var(--md-sys-typescale-label-large); text-decoration: none; border: 0; }
+.rail-project-list a:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); border: 0; }
+.rail-project-list a[aria-current] { color: var(--md-sys-color-on-secondary-container); background: var(--md-sys-color-secondary-container); font-weight: 700; }
+.rail-project-list .icon { font-size: 1.5rem; color: var(--md-sys-color-on-surface-variant); }
+.rail:has(.rail-project[open]) { z-index: 45; }
+
+/* ---- A conversation's commands in the rail (feature 042) --------------------------------------------------------------
+   The closed panel's strip is drawn in the rail's page commands, like every page's commands: an item per box, its icon
+   and, in the unfolded menu, its name. What an item brings out lies beside the rail, over the page. While the panel is
+   kept open as a column it holds the same boxes, so the rail's items give way. The strip in a framed page, which has no
+   rail, keeps its own look above. */
+.rail-actions .panel-strip { display: flex; flex-direction: column; gap: 0.25rem; }
+.rail-actions .strip-button[hidden] { display: none; }
+.rail-actions .strip-count { top: 0.25rem; right: auto; left: 2rem; }
+.rail-actions .strip-note { writing-mode: horizontal-tb; padding: 0 1rem; font: var(--md-sys-typescale-label-small); color: var(--ink-faint); }
+.panel-strip .rail-label { white-space: nowrap; }
+.convo-page .panel-strip .rail-label { position: absolute; left: -100rem; }
+body:has(.convo-page:not(.panel-closed)) .rail-actions { display: none; }
+
+
+/* With its commands in the rail, a closed panel leaves the conversation the whole width, and the box an item brings out
+   lies beside the rail. */
+body:has(.rail-actions .panel-strip) .convo-page.panel-closed { grid-template-columns: minmax(0, 1fr); }
+body:has(.rail-actions .panel-strip) .panel-closed .convo-panel { display: contents; }
+body:has(.rail-actions .panel-strip) .panel-closed[data-pop] .panel-body,
+body:has(.rail-actions .panel-strip) .panel-closed .panel-body:has(.move-bar:not([hidden])) {
+    position: fixed;
+    top: calc(var(--frame) + 0.5rem);
+    left: calc(var(--rail-drawn) + 1.75rem);
+    z-index: 34;
+    width: min(26rem, calc(100vw - var(--rail-drawn) - 2.5rem));
+    max-height: calc(100vh - var(--frame) - 1.5rem);
+}
+
+/* ---- Commands that are a link or a single press (feature 042) -----------------------------------------------------------
+   Some of a page's commands open nothing: a link to another page, or a form that is one button. They sit with the
+   other commands and look like them. */
+.rail-form { display: contents; }
+.rail-actions .danger-link { color: var(--md-sys-color-error); }
+
+
+/* ---- Tables do not wrap (the person's feedback on feature 042) ----------------------------------------------------------
+   A heading or a short value broken over lines reads as two rows. Headings never wrap; a table too wide for its window
+   scrolls in its own box rather than squeezing its columns. */
+th { white-space: nowrap; }
+
+/* The files table: one line a file. Its name takes what width is left and ends in an ellipsis; the rest are short. */
+table.files { width: 100%; }
+table.files td { white-space: nowrap; vertical-align: middle; }
+table.files td.name { max-width: 18rem; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+table.files td.open { text-align: end; }
+.files-form { display: block; padding: 0; margin: 0 0 1rem; background: none; border: 0; box-shadow: none; overflow-x: auto; }
+.files-note { margin: 0 0 1rem; font-size: 0.85rem; color: var(--ink-faint); }
+.files-tools { display: flex; gap: 0.5rem; margin: 0 0 0.5rem; }
+.files-tools[hidden], #files-remove[hidden] { display: none; }
+/* A file's conversation is a filter: a small chip, apart from the Open button beside it. */
+a.in-chip { display: inline-flex; align-items: center; gap: 0.25rem; max-width: 100%; padding: 0 0.5rem; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-small); color: var(--md-sys-color-on-surface-variant); text-decoration: none; overflow: hidden; text-overflow: ellipsis; }
+a.in-chip .icon { flex: none; font-size: 0.95rem; }
+a.in-chip:hover { border-color: var(--md-sys-color-outline); background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
+/* Below 840px the hash gives way; it is still each name's title. */
+@media (max-width: 52.49rem) {
+    /* On a phone or a tablet held upright each file is a card on a fixed grid, so nothing in it wraps: chosen, its name
+       and Open on the first line; the conversation it is in and its size on the second; who placed it and when on the
+       third. Each sits in its own column and is cut short with an ellipsis rather than broken. Its hash is its name's
+       title. */
+    table.files, table.files tbody { display: block; width: 100%; }
+    table.files thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    table.files tr { display: grid; grid-template-columns: 2.25rem minmax(0, 1fr) auto auto; align-items: center; gap: 0.25rem 0.6rem; padding: 0.75rem 0.5rem; border-top: 1px solid var(--md-sys-color-outline-variant); }
+    table.files td { display: block; min-width: 0; padding: 0; border: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    table.files td.pick { grid-column: 1; grid-row: 1; }
+    table.files td.name { grid-column: 2 / 4; grid-row: 1; max-width: none; }
+    table.files td.open { grid-column: 4; grid-row: 1 / 3; overflow: visible; }
+    table.files td.in { grid-column: 2; grid-row: 2; }
+    table.files td.size { grid-column: 3; grid-row: 2; text-align: end; }
+    table.files td.by { grid-column: 2; grid-row: 3; }
+    table.files td.when { grid-column: 3 / 5; grid-row: 3; text-align: end; }
+    table.files :is(td.in, td.size, td.by, td.when) { font-size: 0.8rem; color: var(--ink-soft); }
+    table.files td.hash { display: none; }
+}
+.placements-fold { margin: 0 0 1rem; font-size: 0.9rem; }
+.placements-fold summary { cursor: pointer; color: var(--ink-soft); }
+
+@media (max-width: 37.49rem) {
+
+    /* Settings: each group its own card with room inside, and nothing reaching the window's edge. */
+    .settings-section fieldset { min-width: 0; margin: 0 0 0.75rem; padding: 0.75rem; }
+
+    /* Commands that are a link or one press, in the phone's bar. */
+    .rail-actions .rail-link { flex: none; width: auto; min-height: 2.5rem; padding: 0 1rem; background: var(--md-sys-color-surface-container-lowest); }
+}
+
+/* ---- An agent's state, and its projects as chips (feature 042) ----------------------------------------------------------
+   A state is a mark in a round badge, tinted for what needs attention, with its words beside it where there is room and
+   as its tooltip where there is not. A project the agent is in is a chip: a choice, not text in a sentence. */
+.state-cell { display: inline-flex; align-items: center; gap: 0.5rem; min-width: 0; max-width: 100%; }
+.state-words { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.state-mark { display: inline-grid; place-items: center; flex: none; width: 1.75rem; height: 1.75rem; border-radius: 50%; font-size: 0.85rem; line-height: 1; color: var(--md-sys-color-on-surface-variant); background: var(--md-sys-color-surface-container-high); }
+.state-working { color: var(--md-sys-color-on-primary-container); background: var(--md-sys-color-primary-container); }
+.state-background { color: var(--md-sys-color-on-tertiary-container); background: var(--md-sys-color-tertiary-container); }
+.state-stopped { color: var(--md-sys-color-on-error-container); background: var(--md-sys-color-error-container); }
+.state-outside { color: var(--md-sys-color-on-secondary-container); background: var(--md-sys-color-secondary-container); }
+.dgrid a.project-chip, a.project-chip { display: inline-flex; align-items: center; gap: 0.3rem; min-height: 2rem; margin: 0.1rem 0.25rem 0.1rem 0; padding: 0 0.75rem; border-radius: var(--md-sys-shape-corner-small); color: var(--md-sys-color-on-secondary-container); background: var(--md-sys-color-secondary-container); font: var(--md-sys-typescale-label-large); text-decoration: none; }
+a.project-chip:hover { background-image: linear-gradient(color-mix(in srgb, var(--md-sys-color-on-secondary-container) var(--md-sys-state-hover), transparent) 0 0); }
+.chip-mark { font-size: 0.9rem; }
+/* A label with a shorter word for a phone, where the long one would wrap (the Inbox's Waiting). One is drawn at a time. */
+.short-label { display: none; }
+@media (max-width: 37.49rem) { .long-label { display: none; } .short-label { display: inline; } }
+/* A count's unit, said only where the column head naming it is not drawn. */
+.unit { display: none; }
+@media (max-width: 37.49rem) { .unit { display: inline; } }
+/* An agent's registry entry: two columns of short facts that never need to scroll, so it stays a table at every width
+   and fills its card, its name centered over it (the person's feedback on feature 042). */
+table.registry { display: table; width: 100%; }
+/* What a fact means, opened from the (i) beside its name. */
+.info-tip { display: inline-block; position: relative; vertical-align: middle; }
+.info-tip > summary { display: inline-grid; place-items: center; width: 1.75rem; height: 1.75rem; list-style: none; cursor: pointer; border-radius: 50%; color: var(--md-sys-color-primary); }
+.info-tip > summary::-webkit-details-marker { display: none; }
+.info-tip > summary:hover, .info-tip[open] > summary { background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent); }
+.info-tip > summary .icon { font-size: 1.15rem; }
+.info-text { position: absolute; z-index: 6; left: 0; top: calc(100% + 0.25rem); width: min(22rem, 80vw); padding: 0.75rem 1rem; border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container-high); box-shadow: var(--md-sys-elevation-2); color: var(--md-sys-color-on-surface); font: var(--md-sys-typescale-body-medium); white-space: normal; text-transform: none; letter-spacing: 0; text-align: start; }
+.registry-caption { caption-side: top; text-align: center; padding: 0.5rem 0; font: var(--md-sys-typescale-title-small); color: var(--md-sys-color-on-surface-variant); }
+/* An agent's background work on its page (SPEC.md 11.6): five tasks show before the list scrolls, twenty to a page. Every
+   word is the agent's or the runner's, drawn as plain text; a long one wraps rather than widening the page. */
+.bg-work { margin: 1.25rem 0; }
+.bg-work h2 { font: var(--md-sys-typescale-title-medium); margin: 0 0 0.4rem; }
+.bg-count { margin: 0 0 0.5rem; color: var(--md-sys-color-on-surface-variant); }
+.bg-tasks { margin: 0; padding: 0.25rem 0.5rem 0.25rem 2.25rem; max-height: calc(5 * 4.25rem); overflow-y: auto; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container-lowest); }
+.bg-tasks li { padding: 0.5rem 0; min-height: 3.25rem; border-bottom: 1px solid var(--md-sys-color-outline-variant); overflow-wrap: anywhere; overflow: hidden; }
+.bg-tasks li:last-child { border-bottom: 0; }
+.bg-name { font-weight: 600; }
+.bg-kind { margin-left: 0.5rem; font-size: 0.8rem; color: var(--md-sys-color-on-surface-variant); }
+.bg-description { margin: 0.2rem 0 0.2rem; }
+.bg-pages { display: flex; gap: 1rem; margin-top: 0.5rem; }
+
+@media (max-width: 37.49rem) {
+    /* An agent's card: its name with its state's badge at the right on the first line, its machine and projects under it,
+       each in the same place on every card. The state's words are the badge's tooltip and stay for a screen reader. */
+    .dgrid[data-load="agents"] .dgrid-line { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0.35rem 0.75rem; }
+    .dgrid[data-load="agents"] .dgrid-line > :nth-child(1) { grid-column: 1 / 3; grid-row: 1; }
+    .dgrid[data-load="agents"] .dgrid-line > :nth-child(4) { grid-column: 3; grid-row: 1; justify-self: end; }
+    .dgrid[data-load="agents"] .dgrid-line > :nth-child(2) { grid-column: 1; grid-row: 2; padding-left: 2.1rem; font-size: 0.85rem; color: var(--ink-soft); }
+    .dgrid[data-load="agents"] .dgrid-line > :nth-child(3) { grid-column: 2 / 4; grid-row: 2; }
+    .dgrid[data-load="agents"] .state-words { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+
+/* ---- Appearance on the Settings page (feature 042, the person's layout sample) ------------------------------------------
+   Each choice is a card with its name centered, side by side where the window allows; theme and density are tiles with a
+   small picture of what each does, and the palette a list that opens from its current choice, each drawn as its colors. */
+/* The form is only what holds the cards: none of a form's own card look. */
+.settings-section form.appearance { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(17rem, 100%), 1fr)); gap: 1rem; align-items: start; max-width: 64rem; margin: 0; padding: 0; border: 0; background: none; box-shadow: none; }
+.settings-section form.appearance > .composer-note { grid-column: 1 / -1; }
+/* Hidden until script runs: the choices live in this browser's storage. */
+.settings-section form.appearance[hidden] { display: none; }
+.settings-section .choice-card { min-width: 0; margin: 0; padding: 1rem 1rem 1.25rem; border: 0; border-radius: var(--md-sys-shape-corner-large); background: var(--card); box-shadow: var(--md-sys-elevation-1); }
+.choice-card > legend { float: left; width: 100%; margin: 0 0 0.75rem; padding: 0; text-align: center; font: var(--md-sys-typescale-title-small); color: var(--md-sys-color-on-surface-variant); }
+.choice-card > legend + * { clear: both; }
+/* minmax(0, 1fr), not 1fr: a column of 1fr is never narrower than its tile, so larger text pushed the row past a phone's edge. */
+.tiles { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 0.5rem; }
+.choice .tile { position: relative; display: grid; align-items: center; min-height: 0; overflow-wrap: anywhere; justify-items: center; gap: 0.35rem; padding: 0.6rem 0.4rem 0.5rem; border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container); color: var(--md-sys-color-on-surface); font: var(--md-sys-typescale-label-large); cursor: pointer; }
+.choice .tile input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.tile svg { width: 4rem; max-width: 100%; height: 2.5rem; }
+.tile:hover { background-image: linear-gradient(color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent) 0 0); }
+.tile:has(input:checked) { color: var(--md-sys-color-on-secondary-container); background: var(--md-sys-color-secondary-container); box-shadow: inset 0 0 0 2px var(--md-sys-color-primary); }
+.tile:has(input:focus-visible) { outline: 3px solid var(--md-sys-color-secondary); outline-offset: 2px; }
+.pic-light { fill: var(--md-sys-color-surface-container-lowest); stroke: var(--md-sys-color-outline-variant); }
+.pic-dark { fill: var(--md-sys-color-inverse-surface); }
+.pic-line { fill: var(--md-sys-color-outline-variant); }
+.pic-line-dark { fill: var(--md-sys-color-inverse-on-surface); opacity: 0.6; }
+.pic-accent { fill: var(--md-sys-color-primary); }
+.pic-stroke { stroke: var(--md-sys-color-primary); stroke-width: 2; stroke-linecap: round; fill: none; }
+.pic-card { fill: var(--md-sys-color-primary-container); }
+
+.palette-menu { position: relative; }
+.palette-menu > summary { display: flex; align-items: center; gap: 0.75rem; min-height: 3rem; padding: 0 2.75rem 0 0.75rem; list-style: none; cursor: pointer; border: 1px solid var(--md-sys-color-outline); border-radius: var(--md-sys-shape-corner-extra-small); background: var(--md-sys-color-surface-container-lowest); font: var(--md-sys-typescale-body-large); }
+.palette-menu > summary::-webkit-details-marker { display: none; }
+.palette-menu > summary::after { content: "expand_more"; content: "expand_more" / ""; position: absolute; right: 0.75rem; font-family: "Material Symbols Outlined"; font-size: 1.5rem; color: var(--md-sys-color-on-surface-variant); }
+.palette-list { position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 0.25rem); display: grid; padding: 0.4rem 0; background: var(--md-sys-color-surface-container); border-radius: var(--md-sys-shape-corner-small); box-shadow: var(--md-sys-elevation-2); }
+.palette-option { display: flex; align-items: center; gap: 0.75rem; min-height: 3rem; padding: 0 0.75rem; cursor: pointer; }
+.palette-option input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.palette-option:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
+.palette-option:has(input:checked) { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); font-weight: 600; }
+.palette-option:has(input:focus-visible) { outline: 3px solid var(--md-sys-color-secondary); outline-offset: -3px; }
+/* In forced colors a background and a shadow are dropped, so the chosen tile and palette are outlined in the system's own. */
+@media (forced-colors: active) {
+    .choice .tile:has(input:checked), .palette-option:has(input:checked) { outline: 2px solid Highlight; outline-offset: -2px; }
+}
+.swatch.wide { flex: none; }
+.swatch.wide span { width: 2.25rem; height: 1.5rem; }
+
+/* ---- Agents by state (feature 042) ------------------------------------------------------------------------------------
+   Grouped by what each is doing, each state a section headed by its badge, its name and how many are in it; a toggle
+   beside the filter lists them A to Z instead; and a legend under the list says what every badge means. */
+.state-group { display: block; }
+.state-group + .state-group { border-top: 1px solid var(--md-sys-color-outline-variant); }
+.state-group-head { display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1rem; list-style: none; cursor: pointer; background: var(--md-sys-color-surface-container-low); font: var(--md-sys-typescale-title-small); }
+.state-group-head::-webkit-details-marker { display: none; }
+.state-group-head::after { content: "expand_more"; content: "expand_more" / ""; margin-left: auto; font-family: "Material Symbols Outlined"; font-size: 1.4rem; color: var(--md-sys-color-on-surface-variant); transition: transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard); }
+.state-group[open] > .state-group-head::after { transform: rotate(180deg); }
+.state-group-head .count { min-width: 1.5rem; padding: 0 0.45rem; border-radius: var(--md-sys-shape-corner-full); background: var(--md-sys-color-surface-container-highest); color: var(--md-sys-color-on-surface-variant); font: var(--md-sys-typescale-label-medium); text-align: center; }
+.view-toggle { display: inline-flex; padding: 0.2rem; gap: 0.2rem; border-radius: var(--md-sys-shape-corner-full); background: var(--md-sys-color-surface-container); }
+.view-toggle a { display: inline-flex; align-items: center; min-height: 2.25rem; padding: 0 1rem; border-radius: var(--md-sys-shape-corner-full); color: var(--md-sys-color-on-surface-variant); font: var(--md-sys-typescale-label-large); text-decoration: none; }
+.view-toggle a[aria-current] { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+.state-legend { padding: 0.9rem 1.2rem; }
+.state-legend h2 { margin: 0 0 0.5rem; font: var(--md-sys-typescale-title-small); }
+.state-legend ul { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(15rem, 100%), 1fr)); gap: 0.5rem 1.25rem; margin: 0; padding: 0; list-style: none; }
+.state-legend li { display: flex; align-items: center; gap: 0.6rem; }
+
+/* ---- The message box's handle and its recipients (feature 042) --------------------------------------------------------
+   The box shows and hides by a narrow bar centered on its top edge, as the menu folds by its handle; it takes the accent
+   while the box is hidden with a draft kept. Choosing recipients sits beside who it goes to. */
+.composer .composer-toggle { position: absolute; top: -0.5rem; left: 50%; transform: translateX(-50%); width: 3.75rem; min-height: 0; height: 0.875rem; margin: 0; padding: 0; border: 0; border-radius: var(--md-sys-shape-corner-full); background: color-mix(in srgb, var(--md-sys-color-outline) 75%, transparent); box-shadow: var(--md-sys-elevation-1); cursor: pointer; }
+.composer .composer-toggle::before { content: ""; position: absolute; inset: -1rem -0.5rem; }
+.composer .composer-toggle:hover, .composer .composer-toggle:focus-visible { background: var(--md-sys-color-on-surface-variant); }
+.composer .composer-toggle.kept { background: var(--md-sys-color-primary); }
+/* A draft kept is said by a dot as well as by color, so it shows to somebody who cannot tell the color apart. */
+.composer .composer-toggle.kept::after { content: ""; position: absolute; right: -0.9rem; top: 50%; width: 0.5rem; height: 0.5rem; border-radius: 50%; transform: translateY(-50%); background: var(--md-sys-color-primary); }
+.composer .composer-toggle .icon { display: none; }
+.composer .composer-toggle[hidden] { display: none; }
+.choose-to { flex: none; display: inline-flex; align-items: center; gap: 0.35rem; min-height: 2.25rem; padding: 0 0.85rem; }
+.choose-to[hidden] { display: none; }
+.choose-to .icon { font-size: 1.15rem; }
+
+/* ---- Size classes (feature 042, pass 4) ------------------------------------------------------------------------------
+   Material 3's window size classes: compact under 600px (a phone), medium to 839px (a tablet upright), expanded to
+   1199px (a tablet on its side) and large from 1200px. The rail and the drawer above are the medium, expanded and large
+   frame; this is what changes below them. The older blocks above use the same boundaries: 37.49rem and 74.99rem. */
+
+/* More is the bottom bar's fifth place, so it is drawn only on a phone. */
+.rail-more, .bar-label { display: none; }
+
+@media (max-width: 37.49rem) {
+    /* The bottom bar's height, and the top bar's real height, which the sticky things below are placed against. */
+    :root { --bar-h: 5rem; --frame: 4rem; }
+
+    /* A phone draws its scrollbar over the page, so the room kept for one is only a margin down the right. */
+    html { scrollbar-gutter: auto; }
+
+    /* Under the conversation's row of tools, which is pinned under the top bar. */
+    .minimap { top: calc(var(--frame) + var(--cmd-h, 0px) + 0.5rem); }
+
+    /* Navigation is a bar along the bottom, in reach of a thumb: four places and More, each an icon in its indicator
+       above a label, as Material 3 draws a navigation bar. The sections stay one landmark, laid out as the bar. */
+    .rail {
+        inset: auto 0 0 0;
+        width: auto;
+        height: var(--bar-h);
+        padding: 0 0.25rem;
+        overflow: visible;
+        box-shadow: var(--md-sys-elevation-2);
+    }
+
+    .rail nav.rail-foot, .rail .brand, .rail-heading, .rail-toggle { display: none; }
+    .rail nav { flex: 1 1 auto; flex-direction: row; align-items: stretch; height: 100%; }
+    .rail nav > a:not(.bar) { display: none; }
+
+    .rail nav > a.bar, .rail-more > summary {
+        flex: 1 1 0;
+        min-width: 0;
+        width: auto;
+        min-height: var(--bar-h);
+        margin: 0;
+        padding: 0.75rem 0 1rem;
+        flex-direction: column;
+        justify-content: flex-start;
+        gap: 0.25rem;
+        border-radius: 0;
+        background: none;
+        font: var(--md-sys-typescale-label-small);
+        letter-spacing: 0;
+        color: var(--md-sys-color-on-surface-variant);
+    }
+
+    .rail nav > a.bar:hover, .rail-more > summary:hover { background: none; }
+    .rail nav > a[aria-current], .rail nav > a[aria-current]:hover { background: none; background-image: none; color: var(--md-sys-color-on-surface); }
+
+    /* The indicator: a pill round the icon, filled for the current place and tinted on hover. */
+    .rail nav > a.bar .icon, .rail-more > summary .icon {
+        box-sizing: content-box;
+        width: 1.5rem;
+        height: 1.5rem;
+        padding: 0.25rem 1.25rem;
+        border-radius: var(--md-sys-shape-corner-full);
+        transition: background-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    }
+
+    .rail nav > a.bar:hover .icon, .rail-more > summary:hover .icon { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); }
+    .rail nav > a[aria-current] .icon, .rail-more > summary[aria-current] .icon, .rail-more[open] > summary .icon { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+
+    .rail .rail-label { position: static; left: auto; max-width: 100%; }
+    .rail a.bar:has(.bar-label) .rail-label { display: none; }
+    .rail .bar-label { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+    .rail .seat-waiting { position: absolute; top: 0.4rem; left: calc(50% + 0.4rem); right: auto; margin: 0; }
+
+    .rail-more { position: relative; display: flex; flex: 1 1 0; min-width: 0; }
+    .rail-more > summary { display: flex; align-items: center; list-style: none; cursor: pointer; }
+    .rail-more > summary::-webkit-details-marker { display: none; }
+
+    /* What More holds opens upwards from the bar as a menu. */
+    .rail-more-list {
+        position: absolute;
+        right: 0.25rem;
+        bottom: calc(100% + 0.5rem);
+        display: grid;
+        min-width: 15rem;
+        padding: 0.5rem 0;
+        background: var(--md-sys-color-surface-container);
+        border-radius: var(--md-sys-shape-corner-large);
+        box-shadow: var(--md-sys-elevation-3);
+    }
+
+    .rail-more-list a, .rail-more-list button {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 0.9rem;
+        width: 100%;
+        min-height: 3rem;
+        margin: 0;
+        padding: 0 1.25rem;
+        border: 0;
+        border-radius: 0;
+        background: none;
+        box-shadow: none;
+        color: var(--md-sys-color-on-surface);
+        font: var(--md-sys-typescale-label-large);
+        text-align: start;
+        text-decoration: none;
+    }
+
+    .rail-more-list a:hover, .rail-more-list button:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover), transparent); border: 0; }
+    .rail-more-list a[aria-current] { color: var(--md-sys-color-on-secondary-container); background: var(--md-sys-color-secondary-container); font-weight: 700; }
+    .rail-more-list .icon { font-size: 1.5rem; width: 1.5rem; height: 1.5rem; color: var(--md-sys-color-on-surface-variant); }
+    .rail-more-list [hidden] { display: none; }
+
+    /* The page takes the whole width, and ends clear of the bar, list pages included. */
+    .page, .grid-page .page { margin-left: 0; padding-bottom: calc(var(--bar-h) + 1.5rem); }
+    .page:has(.convo-page) { padding-bottom: var(--bar-h); }
+
+    /* Keyboard focus and jumps stop short of the bar as well as the box. */
+    .page :not(.composer, .composer *) { scroll-margin-bottom: calc(var(--composer-h, 0px) + var(--bar-h) + 1rem); }
+
+    /* The top bar keeps the project's name, when the page was read, and the person's seat. The build gives way. */
+    header { gap: 0.5rem; flex-wrap: nowrap; }
+    header::before { display: none; }
+    header .build { display: none; }
+    header .stamps .as-of { font: var(--md-sys-typescale-label-small); }
+    header .where { flex: 0 1 auto; flex-direction: column; align-items: flex-start; gap: 0; }
+    .crumb { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; overflow-wrap: normal; font: var(--md-sys-typescale-title-medium); }
+    header .where:has(.crumb-here) .crumb { font: var(--md-sys-typescale-label-medium); color: var(--ink-soft); }
+    .crumb-sep { display: none; }
+    .crumb-here { max-width: 100%; font: var(--md-sys-typescale-title-medium); color: var(--ink); }
+    /* The seat is the person's own, the same on every page: its dot is what a phone has room for. The name stays for a
+       screen reader. */
+    .seat-who:has(.seat-dot) { font-size: 0; gap: 0.3rem; justify-content: center; min-width: 3rem; }
+
+    /* Above the command bar, which lies just under it, so what the bell opens is drawn over the bar. */
+    header { z-index: 31; }
+    .rail:has(.rail-more[open]) { z-index: 45; }
+    header nav { flex: none; flex-wrap: nowrap; gap: 0.5rem; }
+    .seat-who { min-height: 3rem; white-space: nowrap; }
+    .bell > summary { min-width: 3rem; min-height: 3rem; }
+
+    /* The message box sits on the bar, not under it. */
+    .composer { bottom: var(--bar-h); }
+    .new-below { left: 50%; bottom: calc(var(--composer-h, 9rem) + var(--bar-h) + 1rem); }
+
+    /* A page's commands are a bar pinned under the top bar, on every page that has any, swiped sideways when they do not
+       fit (feature 042); each opens its panel just under the bar. What is pinned below the top bar sits below this bar too
+       (--cmd-h), and the page starts under it. */
+    /* Only while the bar is drawn: not in a framed page, which has no rail, nor while a conversation's panel is kept open,
+       which holds the same commands. */
+    body:not(.embed):has(.rail-actions):not(:has(.convo-page:not(.panel-closed))) { --cmd-h: 3.75rem; }
+    body:has(.rail-actions) main { padding-top: var(--cmd-h, 0px); }
+    /* More commands than fit: the bar's far edge fades, so it reads as going on. A strip of the bar's own color laid over
+       its end, never a mask: a mask hides everything the bar holds that is drawn outside it, and each command's panel is,
+       so on a phone Place a file and every other panel opened to nothing (the person's report, 2026-11-26). */
+    .rail-actions::after { content: ""; position: sticky; right: -0.75rem; flex: none; align-self: stretch; width: 2rem; margin-left: auto; margin-right: -0.75rem; pointer-events: none; background: linear-gradient(to right, transparent, var(--md-sys-color-surface-container)); }
+    .rail-actions {
+        position: fixed;
+        top: var(--frame);
+        left: 0;
+        right: 0;
+        z-index: 19;
+        flex-direction: row;
+        align-items: center;
+        gap: 0.5rem;
+        height: 3.75rem;
+        margin: 0;
+        padding: 0 0.75rem;
+        overflow-x: auto;
+        scrollbar-width: none;
+        background: var(--md-sys-color-surface-container);
+        box-shadow: var(--md-sys-elevation-1);
+    }
+    .rail-actions::-webkit-scrollbar { display: none; }
+    .rail-act { flex: none; }
+    .rail-actions .rail-act > summary { width: auto; min-height: 2.5rem; padding: 0 1rem; background: var(--md-sys-color-surface-container-lowest); color: var(--md-sys-color-primary); }
+    .rail-actions .rail-act-main > summary { min-height: 2.5rem; border-radius: var(--md-sys-shape-corner-full); background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); box-shadow: none; }
+    .rail-act .rail-label { position: static; }
+    .act-panel { position: fixed; top: calc(var(--frame) + var(--cmd-h) + 0.5rem); bottom: auto; left: 0.75rem; right: 0.75rem; width: auto; max-height: calc(100dvh - var(--frame) - var(--cmd-h) - var(--bar-h) - 1.5rem); }
+
+    /* The graph is under More; its tab would sit over the page's text. */
+    .pg-tab { display: none; }
+
+    /* A conversation's tools are a row under its name, above it, so its messages have the whole width. The panel is
+       drawn above the message box, so what an icon brings out is not hidden under it, and it ends above the box. */
+    .convo-page.panel-closed { grid-template-columns: minmax(0, 1fr); }
+    .convo-panel { z-index: 3; }
+    /* Solid, and close under the top bar, so the messages scrolling beneath it do not show through or past it. */
+    .convo-panel { top: var(--frame); }
+    .panel-closed .panel-strip { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.25rem; background: var(--md-sys-color-surface-container); box-shadow: var(--md-sys-elevation-2); }
+    .panel-closed .strip-note { writing-mode: horizontal-tb; }
+    .strip-button { width: 3rem; min-width: 3rem; height: 3rem; }
+    .rail-actions .panel-strip { flex-direction: row; align-items: center; gap: 0.5rem; }
+    .rail-actions .strip-button { width: 2.75rem; min-width: 2.75rem; min-height: 2.75rem; padding: 0; justify-content: center; }
+    .rail-actions .strip-button .rail-label { position: absolute; left: -100rem; }
+    .rail-actions .strip-count { left: auto; right: -0.25rem; top: -0.25rem; }
+    body:has(.rail-actions .panel-strip) .panel-closed[data-pop] .panel-body,
+    body:has(.rail-actions .panel-strip) .panel-closed .panel-body:has(.move-bar:not([hidden])) {
+        top: calc(var(--frame) + var(--cmd-h) + 0.5rem); left: 0.75rem; width: auto; right: 0.75rem;
+        max-height: calc(100dvh - var(--frame) - var(--cmd-h) - var(--bar-h) - var(--composer-h, 4rem) - 1.5rem);
+    }
+    .panel-closed[data-pop] .panel-body,
+    .panel-closed .panel-body:has(.move-bar:not([hidden])) {
+        top: calc(100% + 0.5rem);
+        left: 0;
+        width: 100%;
+        max-height: calc(100dvh - var(--frame) - var(--bar-h) - var(--composer-h, 4rem) - 9rem);
+    }
+}
+
+/* Lists on a phone. A tablet keeps the tables (the person's feedback on feature 042). */
+@media (max-width: 37.49rem) {
+    /* A list page scrolls as a page: no fixed-height view with a grid scrolling inside it, which on a phone is a
+       scroller inside a scroller. A page's title and its gloss stack. */
+    .view, .grid-page .view { height: auto; min-height: 0; }
+    .view-title { flex-wrap: wrap; gap: 0.25rem 1rem; }
+    .view-title .as-of { margin: 0; flex-basis: 100%; }
+
+    /* Each row of a list is a card: who or what it is on the first line, the rest of its columns after it with room
+       between, so every column's information stays. The column heads are kept for a screen reader, out of sight. Clipped
+       rather than scrolled, so its rows keep the card's corners and an open row still sticks under the top bar. */
+    .dgrid { overflow: clip; }
+    .dgrid-inner { min-width: 0; }
+    .dgrid-head { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+    .dgrid-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 1.1rem; padding: 0.9rem 1rem; }
+    .dgrid-line > :first-child { flex: 1 1 100%; }
+    details.dgrid-row[open] > summary { top: calc(var(--frame) + var(--cmd-h, 0px)); }
+    .dgrid-detail { padding: 0.4rem 1rem 1rem; }
+    .dgrid-detail .facts { grid-template-columns: minmax(0, 1fr); gap: 0 1rem; }
+    .dgrid-detail .facts dd + dt { margin-top: 0.5rem; }
+}
+
+/* A table that does not fit its card becomes cards, whatever the screen (the person's Tab S4, upright: the Inbox's
+   six columns need 46rem and a tablet's page beside the menu has about 36). Measured on the grid itself, so a tablet
+   held sideways, or any window wide enough, keeps the table, as the person asked of feature 042; only one too narrow
+   for its columns stops scrolling sideways. The grid still scrolls down inside its view on a tablet. */
+.dgrid { container: dgrid / inline-size; }
+@container dgrid (max-width: 46rem) {
+    .dgrid-inner { min-width: 0; }
+    .dgrid-head { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+    .dgrid-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 1.1rem; padding: 0.9rem 1rem; }
+    .dgrid-line > :first-child { flex: 1 1 100%; }
+    /* Beside a menu the grid scrolls inside its view, under no column heads; on a phone the page scrolls, and the
+       phone's own rule keeps an open row under the top bar. */
+    @media (min-width: 37.5rem) { details.dgrid-row[open] > summary { top: 0; } }
+    .dgrid-detail { padding: 0.4rem 1rem 1rem; }
+    .dgrid-detail .facts { grid-template-columns: minmax(0, 1fr); gap: 0 1rem; }
+    .dgrid-detail .facts dd + dt { margin-top: 0.5rem; }
+}

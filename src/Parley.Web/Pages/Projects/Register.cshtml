@@ -6,15 +6,18 @@
 
 <h1>Register an agent in @Model.Project</h1>
 
-<p>
+
+<p class="lede">
     Prefer to point at a folder? <a href="/?tab=agents&amp;project=@Model.Project">Register from the agents page</a> instead.
     This page is for writing the file yourself. An agent's name comes from its launch configuration and nowhere else.
     No call can supply it, so a sender cannot forge the agent it claims to be. This page can only tell you what to write.
 </p>
 
-<h2>1. Name the agent in the repository</h2>
+@* Three steps, each its own card, so the page reads as a list of things to do rather than a run of paragraphs. *@
+<section class="card-section register-step" aria-labelledby="step-name">
+    <h2 id="step-name">1. Name the agent in the repository</h2>
 
-<p>Put this in <code>.mcp.json</code> at the root of the repository that will act as the agent:</p>
+    <p>Put this in <code>.mcp.json</code> at the root of the repository that will act as the agent:</p>
 
 <pre><code>{
   "mcpServers": {
@@ -28,35 +31,47 @@
   }
 }</code></pre>
 
-<p>
-    A repository in several projects holds one entry for each, each under its own key. Leave an existing
-    <code>parley</code> entry as it is.
-</p>
+    <ul class="register-notes">
+        <li>
+            A repository in several projects holds one entry for each, each under its own key. Leave an existing
+            <code>parley</code> entry as it is.
+        </li>
+        <li>
+            If this machine does not name the project, use <code>"PARLEY_BROKER": "@Model.Endpoint"</code> in place of
+            <code>PARLEY_PROJECT</code>.
+        </li>
+        <li>
+            What the repository owns is not written by hand. The agent reports it once it has registered, and you can
+            review and change it under <a href="/Projects/Ownership?project=@Model.Project">Review ownership</a>.
+        </li>
+        <li>
+            That file is usually tracked, so <strong>which branch is checked out decides whether the agent exists</strong>.
+            On a branch without the entry the agent is absent, and nothing reports it. Put the entry on the
+            branch everything else is cut from.
+        </li>
+    </ul>
+</section>
 
-<p>
-    If this machine does not name the project, use <code>"PARLEY_BROKER": "@Model.Endpoint"</code> in place of
-    <code>PARLEY_PROJECT</code>.
-</p>
+<section class="card-section register-step" aria-labelledby="step-open">
+    <h2 id="step-open">2. Open the repository</h2>
 
-<p>
-    What the repository owns is not written by hand. The agent reports it once it has registered, and you can
-    review and change it under <a href="/Projects/Ownership?project=@Model.Project">Review ownership</a>.
-</p>
+    <p>Start a session in that repository. Attaching registers the agent.</p>
+</section>
 
-<p>
-    That file is usually tracked, so <strong>which branch is checked out decides whether the agent exists</strong>.
-    On a branch without the entry the agent is absent, and nothing reports it. Put the entry on the
-    branch everything else is cut from.
-</p>
+<section class="card-section register-step" aria-labelledby="step-confirm">
+    <h2 id="step-confirm">3. Confirm it worked</h2>
 
-<h2>2. Open the repository</h2>
+    <p>
+        Go to <a href="/?tab=agents&amp;project=@Model.Project">this project's agents</a>.
+        The new name appears there once its session has attached. If it does not, the session's own output says why.
+        A repository already open when the file was written needs reopening.
+    </p>
+</section>
 
-<p>Start a session in that repository. Attaching registers the agent.</p>
-
-<h2>3. Confirm it worked</h2>
-
-<p>
-    Go to <a href="/Projects/Agents?project=@Model.Project">this project's agents</a>.
-    The new name appears there once its session has attached. If it does not, the session's own output says why.
-    A repository already open when the file was written needs reopening.
-</p>
+<style>
+    .register-step h2 { font: var(--md-sys-typescale-title-large); }
+    .register-step pre { margin: 0.75rem 0; }
+    .register-notes { margin: 0.75rem 0 0; padding-left: 1.25rem; display: grid; gap: 0.5rem; list-style: disc; }
+    /* Notes inside a card, not cards of their own: the frame draws a section's list items as boxes. */
+    section > ul.register-notes > li { background: none; border: 0; border-radius: 0; padding: 0; margin: 0; }
+</style>

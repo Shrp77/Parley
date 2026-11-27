@@ -56,10 +56,29 @@ public static class RepositoryPaths
 
         var comparison = OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 
+        // The repository itself is inside it: "." names the root, where a fetch keeps the file's name.
+        if (string.Equals(Path.TrimEndingDirectorySeparator(full), Path.TrimEndingDirectorySeparator(root), comparison))
+        {
+            resolved = root;
+            return null;
+        }
+
         if (!full.StartsWith(root + Path.DirectorySeparatorChar, comparison))
         {
             return $"'{candidate}' is outside your repository. You read and write files only in your own repository; " +
                    "ask the agent that owns another repository to do anything there.";
+        }
+
+        // A part ending in a space survives GetFullPath in the middle of a path, but asking it alone asks the name without
+        // it, so the link check below looked at a missing `docs` while the write went through the real `docs ` link
+        // (review, lens 2 run 80). A name such as `...`, and one ending in other whitespace, is kept as written too, so
+        // any part ending in a dot or whitespace is refused, the file's own name included.
+        if (OperatingSystem.IsWindows()
+            && full[root.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries)
+                .Any(part => part[^1] == '.' || char.IsWhiteSpace(part[^1])))
+        {
+            return $"'{candidate}' has a name ending in a space, a dot or other whitespace, which Windows reads " +
+                   "differently from how it is written, so it is refused.";
         }
 
         for (var at = full; at.Length > root.Length; at = Path.GetDirectoryName(at)!)

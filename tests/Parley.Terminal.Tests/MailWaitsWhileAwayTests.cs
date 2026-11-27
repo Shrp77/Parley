@@ -12,6 +12,7 @@ namespace Parley.Terminal.Tests;
 /// seat is the broker's and its mail waits regardless; the count is asked for without a stream, so asking does not make
 /// the person present.
 /// </remarks>
+[Integration]
 public sealed class MailWaitsWhileAwayTests
 {
     [Fact]
@@ -27,14 +28,15 @@ public sealed class MailWaitsWhileAwayTests
 
         _ = await seated.AsksAsync(Seated.Billing, seated.Person, "are you there?", "elsewhere", ct);
 
-        // The fixture's own request was taken when it opened its conversation, so one is waiting.
-        for (var tries = 0; tries < 100 && shell.Mail is not { Waiting: >= 1 }; tries++)
+        // The count is what waits on the person's answer (owner, 2026-11-06), not the mail not yet collected: the fixture's
+        // own question is still open although it was collected when its conversation was opened, so two are waiting.
+        for (var tries = 0; tries < 100 && shell.Mail is not { Waiting: >= 2 }; tries++)
         {
             await Task.Delay(50, ct);
             await shell.Settled;
         }
 
         Assert.Null(shell.Held);
-        Assert.Equal((1, true), shell.Mail);
+        Assert.Equal((2, true), shell.Mail);
     }
 }

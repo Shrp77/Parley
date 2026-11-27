@@ -18,6 +18,7 @@ namespace Parley.Spec.Tests;
 /// four regions on one screen for a day after that stopped being what the terminal did.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed partial class ProjectRecordTests
 {
     private static string Root()

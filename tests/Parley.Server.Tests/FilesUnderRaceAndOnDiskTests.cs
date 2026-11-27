@@ -8,12 +8,13 @@ using Wire = Parley.Transport;
 namespace Parley.Server.Tests;
 
 /// <summary>
-/// Files under races and on a real disk: a fetch against replacements, a report across sessions, names the disk would
+/// Files under races and on a real disk: a fetch against removals and new placements of its name, a report across sessions, names the disk would
 /// equate, a junction under a destroy, and refusals that must be sentences (SPEC.md §9.5).
 /// </summary>
 /// <remarks>
 /// Each holds a property no other test reaches, so a change that breaks one of them says so.
 /// </remarks>
+[Integration]
 public sealed class FilesUnderRaceAndOnDiskTests
 {
     private const string Orders = "orders@alpha";
@@ -24,7 +25,7 @@ public sealed class FilesUnderRaceAndOnDiskTests
     private static byte[] Text(string text) => System.Text.Encoding.UTF8.GetBytes(text);
 
     [Fact]
-    public async Task A_fetch_racing_replacements_streams_bytes_matching_its_own_header_or_is_refused()
+    public async Task A_fetch_racing_removals_and_new_placements_streams_bytes_matching_its_own_header_or_is_refused()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
@@ -40,7 +41,15 @@ public sealed class FilesUnderRaceAndOnDiskTests
         for (var round = 0; round < 15; round++)
         {
             var fetching = FetchAsync(orders, "big.txt");
-            var replacing = FileWire.PlaceAsync(billing.Client, Billing, "big.txt", Bytes(random, (2 + round % 3) * 1024 * 1024), "pricing", Ct);
+            // A placed file is never changed (SPEC.md §9.5): the name takes new bytes only once removed and placed again.
+            var next = Bytes(random, (2 + round % 3) * 1024 * 1024);
+            var replacing = Task.Run(async () =>
+            {
+                _ = await billing.Client.RemoveOwnFilesAsync(
+                    new Wire.RemoveFilesRequest { Agent = Billing, Files = { new Wire.FileRef { ConversationId = "pricing", Name = "big.txt" } } },
+                    cancellationToken: Ct);
+                return await FileWire.PlaceAsync(billing.Client, Billing, "big.txt", next, "pricing", Ct);
+            }, Ct);
 
             await Task.WhenAll(fetching, replacing);
 

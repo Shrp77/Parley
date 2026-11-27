@@ -13,6 +13,7 @@ namespace Parley.Mcp.Tests;
 /// oriented and short, and clear that this only proposes. It is guidance and not a limit,
 /// so nothing here asserts a length bound, and a test that did would be the quiet reversal of that decision.
 /// </remarks>
+[Unit]
 public sealed class RoadmapToolTests
 {
     private static MethodInfo Tool() =>
@@ -47,7 +48,7 @@ public sealed class RoadmapToolTests
         // to name one by.
         Assert.Contains("revises", parameters);
         Assert.DoesNotContain(parameters, p => p.Contains("id", StringComparison.OrdinalIgnoreCase)
-            && !p.Equals("conversationId", StringComparison.Ordinal));
+            && !p.Equals("conversation_id", StringComparison.Ordinal));
     }
 
     [Fact]

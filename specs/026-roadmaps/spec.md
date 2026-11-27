@@ -46,7 +46,7 @@ The person opens a roadmap and sees each item with its state: not started, in pr
 **Acceptance Scenarios**:
 
 1. **Given** an item whose conversation has an open request an agent has collected, **When** the person opens the roadmap, **Then** the item reads in progress and names the agent holding it.
-2. **Given** an item whose conversation ended with a blocked result, **When** the roadmap is opened, **Then** it reads blocked and says the blocker the agent gave.
+2. **Given** an item whose conversation is open and whose agent's result was blocked, **When** the roadmap is opened, **Then** it reads blocked and says the blocker the agent gave; once the conversation is closed it reads closed and still says that blocker.
 3. **Given** an item whose agent has asked the person something, **When** the roadmap is opened, **Then** it reads waiting on the person, and the roadmap also counts it as waiting on them at project level.
 4. **Given** items ahead of a not-started item are all done, **When** the roadmap is opened, **Then** that item is named next. **Given** an earlier item is not done and a later item depends on it, **Then** the later item is not named next.
 5. **Given** every item is done, **When** the roadmap is opened, **Then** it reads complete and names no next item.
@@ -113,8 +113,9 @@ The Room of any conversation lists every agent in the project, not only those wh
 - An item's text, plus any words the person adds, would exceed the message cap when started: the start is refused with the cap named and nothing is sent, and the person shortens the item. The cap is not moved for roadmaps.
 - An item is confirmed naming an agent that is not in the project: refused when confirming, not when starting.
 - The item's conversation is force-closed, archived or destroyed by the person: the item says so; it is not shown as done unless a Result said done.
-- Two proposals for one roadmap at once: the person sees both, and confirming one marks the other out of date rather than silently overwriting.
+- Two proposals for one roadmap at once: the person sees both, and confirming one as a revision of it marks the other out of date rather than silently overwriting.
 - An agent that proposed a roadmap is later retired or purged: the roadmap stays; its provenance names the agent as it was.
+- An item's agent is purged: the item stays, meant for nobody, and keeps its conversation name; so does an item in another agent's waiting proposal.
 - A roadmap item's text edited after work started: the conversation keeps the words originally sent, and the item says the text changed since.
 - An item finished or made irrelevant outside Parley: the person edits the roadmap to remove or reword it; there is no mark that sets state by hand, so a roadmap never shows a state no conversation supports.
 - A very long roadmap: the list scrolls and the next item is reachable by one key.
@@ -149,25 +150,26 @@ The Room of any conversation lists every agent in the project, not only those wh
 
 **State and next**
 
-- **FR-014**: Each item's state MUST be derived from its conversation's exchanges and the registry, never typed in by anyone, and no operation sets or overrides it, with at least: not started, in progress, waiting on an agent, waiting on the person, blocked, done, closed by the person, and could not be read.
+- **FR-014**: Each item's state MUST be derived from its conversation's exchanges and the registry, never typed in by anyone, and no operation sets or overrides it, with at least: not started, in progress, waiting on an agent, waiting on the person, blocked, done, closed, and could not be read.
 - **FR-015**: A blocked item MUST show the blocker the agent gave.
-- **FR-014a**: An item whose text was edited after its conversation began MUST say so, comparing the item's text now with the words the person sent.
-- **FR-014b**: A surface that reaches a broker without roadmap support MUST say roadmaps are not available there, and act as no one.
-- **FR-016**: A roadmap MUST name its next item: the first not-started item, in order, whose dependencies are all done. When none qualifies it MUST say why (complete, or everything remaining is waiting or blocked).
+- **FR-014a**: An item whose text was edited after its conversation began MUST say so, from the item's own edit record and never by comparing words, because the person may change the item's words before sending them.
+- ~~**FR-014b**~~: **Dropped, and recorded as a decision rather than an omission.** `install.ps1 -Force` ends the broker and every adapter and installs one build of every tool, so on one machine a surface never meets a broker older than itself. A surface reaching a broker on another machine, through the SSH tunnel SPEC.md §16 describes, can; the project health warning that names a broker of another release says so. Only the store outlives an install, and it is upgraded by migration. Owner's call, 2026-10-24.
+- **FR-016**: A roadmap MUST name its next item: the first not-started item, in order, whose dependencies are all done. When none qualifies it MUST say why (complete, or everything remaining is waiting, blocked or closed, or needs an item that is).
 - **FR-017**: A roadmap waiting on the person MUST be counted with the project's other work waiting on them.
 - **FR-018**: A state that cannot be read MUST be shown as such and never as not started.
 
 **Instructing**
 
-- **FR-019**: The person MUST be able to start an item from the roadmap, which sends a request from the person to the chosen agents in the item's conversation, carrying the item's text and optionally the person's own words.
+- **FR-019**: The person MUST be able to start an item from the roadmap, which opens the item's conversation with the item's words in the box and only its intended agent ticked. Nothing is sent until the person sends; what they send goes as a request from the person to the agents ticked.
 - **FR-020**: Starting MUST use the person's seat and the existing rules of a person's line; it MUST NOT be an operator instruction and MUST appear in the transcript as the person's words.
 - **FR-021**: Starting an item already in progress MUST say so and send nothing without a further deliberate choice.
 - **FR-022**: Choosing agents MUST use the whole project's agents, the same list as the Room.
 
 **Items as conversations**
 
-- **FR-023**: Every item MUST have at most one conversation of its own, whose identity is derived, reserved when the roadmap is confirmed, and unique within the project. The conversation MUST be created the first time the item is started or written into, and not before; an unstarted item has none and shows as not started.
+- **FR-023**: Every item MUST have at most one conversation of its own, whose identity is derived, reserved when the roadmap is confirmed, and unique within the project. No agent may start that conversation, by request or by placing a file. The conversation MUST be created the first time the item is started or written into, and not before; an unstarted item has none and shows as not started.
 - **FR-023a**: Removing an item MUST NOT delete, close or archive its conversation. The conversation stays, belongs to no item, and says it formerly belonged to that item.
+- **FR-023b**: An edit, or a confirmation as a revision, that removes an item whose work is still open MUST be described before it is saved, and saved only on a second, deliberate act, because the agent holding the work is not told. A roadmap that could not be read is never taken to hold no open work.
 - **FR-024**: A conversation MUST be recognised as belonging to an item by the record of that relationship and never by a marker in any message payload.
 - **FR-025**: The person MUST be able to go from an item to its conversation and from that conversation to its roadmap and item, on every surface.
 - **FR-026**: Conversation lists MUST show which conversations belong to roadmap items.
@@ -176,7 +178,7 @@ The Room of any conversation lists every agent in the project, not only those wh
 
 - **FR-027**: Roadmaps, items, proposals and their provenance MUST be persisted by the broker's store, and the rules that matter (an item belongs to one roadmap, one conversation per item, no change without a person's confirmation) MUST be enforced in storage as well as in code.
 - **FR-028**: Every operator operation added MUST be available on the terminal and the web console, and every agent operation added MUST be on the agents' service only. The command line adds none: SPEC.md §10.2 keeps it to what a script or an installer reads, and the owner's rule since 019 is that what a person does to a deployment is the terminal's. A decision recorded after the plan assumed otherwise.
-- **FR-029**: Roadmaps MUST survive restart of the broker and of every agent, and MUST be included in a project's export, destruction and retention rules.
+- **FR-029**: Roadmaps MUST survive restart of the broker and of every agent, and MUST be included in destruction and retention rules; a conversation's export names its item and roadmap (§10.2), and there is no project export.
 - **FR-030**: The protocol document MUST be written first and the code MUST match it before review; any place they disagree is recorded as a decision, not an assumption.
 
 ### Key Entities
@@ -203,9 +205,9 @@ The Room of any conversation lists every agent in the project, not only those wh
 - Agents propose; Parley does not. The description said "an agent (or Parley)". Parley proposing would be a fourth act beyond the three the constitution (6.0.0) limits it to, so it is left out. Adding it is a constitution amendment for the owner to decide, not an implementation detail.
 - A proposal reaches the person through the same route as other work waiting on them (the waiting-on-you list), rather than as a message in a transcript.
 - Item order is the intended order; an item depends on those listed, and by default on nothing. "Next" respects dependencies when given and order otherwise.
-- Items are worked as requests like any other: the latest result decides: `done` makes an item done and `blocked` makes it blocked, and a person's close makes it closed by the person.
+- Items are worked as requests like any other: each agent's latest answer on the person's requests decides its part (`done`, `answered` and `acknowledged` all clear it, `blocked` blocks it, and a request the person closed first is no answer), so while anything in an item is open it reads as that work, naming any blocker beside it; with nothing open it is blocked while any agent's latest answer is `blocked` and its conversation is open, done when none is and none of the person's requests was closed before its agent answered, and closed otherwise once its conversation is closed, still naming any blocker. Only the person closes an item's conversation: its participants cannot close it by consensus, so a blocked item waits for the person to answer the blocker with a new request or close it.
 - One roadmap item has one conversation; an item meant for several agents sends one request each within it.
-- Nothing is released, so the protocol and schema change in place with no compatibility or migration; protocol and version numbers move per this repository's rules.
+- Nothing is released, but live stores are kept: schema 1 is frozen and any schema change is a new migration that upgrades a store in place. The protocol and the wire change freely, since every tool on a machine is installed together; protocol and version numbers move per this repository's rules.
 - Roadmaps are per project and never cross projects.
 - The template (FR-006a) is what keeps roadmaps brief, since no cap does. It lives in the proposing tool's description and in the standing instructions every agent receives, so it reaches agents that never read the plugin.
 - Having no cap on a roadmap is a reduction in a control that the constitution's terseness principle names, and is recorded as one, as the ownership statement's was. It is tolerable here because a proposal is read by the person and not by an agent; the text that reaches an agent travels as a request and keeps the message cap. If proposals prove large in practice, a cap should be set from that evidence.

@@ -27,6 +27,7 @@ namespace Parley.Cli.Tests;
 /// in step.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ResetScriptTests
 {
     public static TheoryData<string> BothScripts => ["reset.ps1", "reset.sh"];

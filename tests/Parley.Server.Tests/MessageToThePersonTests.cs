@@ -21,6 +21,7 @@ namespace Parley.Server.Tests;
 /// <c>UNREACHABLE</c>, and the second also sent the node a start.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class MessageToThePersonTests
 {
     private static readonly string Person = PersonSeat.On(ProjectName.Create("test")).Value;

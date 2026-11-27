@@ -34,7 +34,7 @@ public sealed class DestroyModel(BrokerDirectory directory) : PageModel
     public string? Id { get; set; }
 
     /// <summary>The identifier typed back.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public string? Typed { get; set; }
 
     /// <summary>The conversation as the list describes it, for the description.</summary>

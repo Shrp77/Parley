@@ -17,6 +17,7 @@ namespace Parley.Server.Tests;
 /// to its shape reaches every existing caller, including ones that predate the field entirely.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ExportShapeTests
 {
     private static async Task TalkAsync(LoopbackBroker broker, CancellationToken token)

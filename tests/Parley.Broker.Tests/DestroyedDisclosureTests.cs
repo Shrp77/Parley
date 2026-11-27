@@ -21,6 +21,7 @@ namespace Parley.Broker.Tests;
 /// conversation than the conversation itself would have.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class DestroyedDisclosureTests : IDisposable
 {
     private readonly SqliteConnection _connection;

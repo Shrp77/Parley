@@ -1,5 +1,4 @@
 using System.Globalization;
-using Google.Protobuf;
 using Grpc.Core;
 using Grpc.Net.Client;
 using Microsoft.Data.Sqlite;
@@ -74,26 +73,53 @@ internal sealed class FileLocationFixture : IAsyncDisposable
     {
         await AttachAsync(agent);
 
-        var bytes = System.Text.Encoding.UTF8.GetBytes(content);
-
+        using var bytes = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content), writable: false);
         using var call = Broker.Agents.PlaceFile(cancellationToken: Ct);
 
-        await call.RequestStream.WriteAsync(
-            new Wire.PlaceFileFrame
-            {
-                Header = new Wire.PlaceFileHeader { Agent = agent, Name = name, ConversationId = conversation }
-            },
-            Ct);
-
-        await call.RequestStream.WriteAsync(new Wire.PlaceFileFrame { Chunk = ByteString.CopyFrom(bytes) }, Ct);
-        await call.RequestStream.CompleteAsync();
-
-        var reply = await call.ResponseAsync;
+        var reply = await call.PlaceAsync(
+            new Wire.PlaceFileHeader { Agent = agent, Name = name, ConversationId = conversation }, bytes, Ct);
 
         Assert.True(
-            reply.Outcome is Wire.PlaceOutcome.Placed or Wire.PlaceOutcome.Replaced,
+            reply.Outcome is Wire.PlaceOutcome.Placed,
             string.Create(CultureInfo.InvariantCulture, $"the fixture's placement of {name} came to {reply.Outcome}: {reply.Detail}"));
     }
+
+    /// <summary>Changes a placed file's bytes on disk, as another program would, and sweeps the location.</summary>
+    /// <param name="conversation">The file's conversation, whose folder has its name.</param>
+    /// <param name="name">The file's name.</param>
+    /// <param name="content">What is written over it.</param>
+    /// <returns>A task that completes when the sweep has moved the file to quarantine and raised the problem.</returns>
+    /// <remarks>
+    /// The route a quarantine problem really takes: bytes changed under the broker, found by a sweep. Nothing is written
+    /// into the store.
+    /// </remarks>
+    public async Task TamperAsync(string conversation, string name, string content)
+    {
+        await File.WriteAllTextAsync(Path.Combine(Broker.Runtime.Files.FolderPath(conversation), name), content, Ct);
+        await Broker.Runtime.Sweeper.SweepAsync(Ct);
+    }
+
+    /// <summary>Raises a problem for an entry another program holds, with the path given, straight into the store.</summary>
+    /// <param name="path">The entry's path inside the location.</param>
+    /// <param name="conversation">Its conversation, or <see langword="null"/>.</param>
+    /// <returns>A task that completes when the problem is raised.</returns>
+    /// <remarks>
+    /// Written by hand, unlike everything else here, because the case it serves cannot be made on every machine: a path
+    /// carrying a control character is a name Linux allows and Windows refuses, and a program that holds a file so a
+    /// sweep cannot delete it is a race. The row is the one a sweep writes for that entry. Call it before a surface is
+    /// open, so nothing else is using the connection.
+    /// </remarks>
+    public async Task RaiseHeldAsync(string path, string? conversation)
+    {
+        var raised = await new FileProblemRepository(_connection).RaiseAsync(
+            FileProblemKind.Locked, conversation, path, null, null, null,
+            "Another program holds this, so the sweep could not delete it.", DateTimeOffset.UtcNow, cancellationToken: Ct);
+
+        Assert.True(raised, "the fixture's problem was not raised");
+    }
+
+    /// <summary>Where a copy opened from another machine goes: this fixture's own, never the person's application data.</summary>
+    public string Copies { get; } = Path.Combine(Path.GetTempPath(), "parley-cli-copies-" + Guid.NewGuid().ToString("N"));
 
     /// <summary>Runs <c>parley files</c> with these arguments.</summary>
     /// <param name="arguments">Everything after <c>files</c>.</param>
@@ -110,7 +136,8 @@ internal sealed class FileLocationFixture : IAsyncDisposable
                 Launched.Add((path, folder));
                 return true;
             },
-            Machine);
+            Machine,
+            Copies);
 
         var code = await new FilesCommand(Client, output, error, input, launcher, ProjectName).RunAsync(arguments, Ct);
 
@@ -135,6 +162,11 @@ internal sealed class FileLocationFixture : IAsyncDisposable
 
         await Broker.DisposeAsync();
         _connection.Dispose();
+
+        if (Directory.Exists(Copies))
+        {
+            Directory.Delete(Copies, recursive: true);
+        }
     }
 
     private async Task AttachAsync(string agent)

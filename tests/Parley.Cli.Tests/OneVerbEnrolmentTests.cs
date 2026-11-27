@@ -18,6 +18,7 @@ namespace Parley.Cli.Tests;
 /// each case below asserts the directory afterwards holds nothing but the checkouts.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class OneVerbEnrolmentTests : IDisposable
 {
     private readonly string _root =

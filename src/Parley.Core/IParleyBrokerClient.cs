@@ -74,9 +74,11 @@ public interface IParleyBrokerClient
     /// <summary>Every message in a conversation, and the state of every exchange they belong to.</summary>
     /// <param name="conversationId">The conversation.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
+    /// <param name="latestOnly">Only the newest message each sender wrote in each exchange and its newest Result, and the exchange states, for a
+    /// surface that summarises a conversation and would otherwise hold the broker for every payload in it.</param>
     /// <returns>The messages and the exchange states, read at one instant.</returns>
     Task<ConversationExport> ExportAsync(
-        string conversationId, CancellationToken cancellationToken = default);
+        string conversationId, CancellationToken cancellationToken = default, bool latestOnly = false);
 
     /// <summary>Who is waiting on whom.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
@@ -90,10 +92,25 @@ public interface IParleyBrokerClient
     /// </remarks>
     Task<IReadOnlyList<WaitingEdge>> WaitingAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>Says which conversation an exchange is in now (§10.2 <c>locate_exchange()</c>).</summary>
+    /// <param name="exchangeId">The exchange, by number.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The conversation, or <see langword="null"/> when the store has no such exchange.</returns>
+    /// <remarks>
+    /// So a surface can open an exchange a message names (§5.6). Finds any exchange by number, whoever is on it, which is
+    /// what makes it an operator operation.
+    /// </remarks>
+    Task<string?> LocateExchangeAsync(long exchangeId, CancellationToken cancellationToken = default);
+
     /// <summary>What the size cap refused, per agent and message type.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The counts.</returns>
     Task<IReadOnlyList<SizeRefusal>> RefusalsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>How long messages have been: overall, by agent and by position in a conversation.</summary>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The report.</returns>
+    Task<MessageLengthReport> MessageLengthsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>What clarification actually cost.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
@@ -195,6 +212,46 @@ public interface IParleyBrokerClient
     Task<bool> ForceConcludeAsync(
         string conversationId, string? reason = null, CancellationToken cancellationToken = default);
 
+    /// <summary>Close one open Request the person is a party to, without an answer.</summary>
+    /// <param name="exchangeId">The exchange.</param>
+    /// <param name="reason">Why, if the person said. The other side is told it.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether this call closed it. It may be closed already, or not the person's.</returns>
+    /// <remarks>Its conversation stays open. Both sides are sent the broker's <c>closed</c> Result in the same write.</remarks>
+    Task<bool> CloseRequestAsync(long exchangeId, string? reason = null, CancellationToken cancellationToken = default);
+
+    /// <summary>Opens a new conversation with a parent, sending nothing (SPEC.md §5.0, <c>spin_off</c>).</summary>
+    /// <param name="parent">The conversation it comes from.</param>
+    /// <param name="child">The new conversation's name.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Why it was refused, or <see langword="null"/> when the link is recorded.</returns>
+    /// <remarks>Called before the first Request, so a Request never reaches a spin-off with no link behind it.</remarks>
+    Task<string?> SpinOffAsync(string parent, string child, CancellationToken cancellationToken = default);
+
+    /// <summary>Takes back a link whose first Request reached nobody (SPEC.md §5.0, <c>abandon_spin_off</c>).</summary>
+    /// <param name="parent">The conversation it came from.</param>
+    /// <param name="child">The conversation that was to be started.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether anything was taken back. A child with anything in it is left alone.</returns>
+    Task<bool> AbandonSpinOffAsync(string parent, string child, CancellationToken cancellationToken = default);
+
+    /// <summary>Says what moving some exchanges would take, changing nothing (SPEC.md §5.0, <c>preview_move</c>).</summary>
+    /// <param name="source">The conversation they are in.</param>
+    /// <param name="exchanges">The exchanges picked.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Every exchange that would go, and the files that stay.</returns>
+    Task<MovePreview> PreviewMoveAsync(string source, IReadOnlyCollection<long> exchanges, CancellationToken cancellationToken = default);
+
+    /// <summary>Moves whole exchanges to another conversation, all or none (SPEC.md §5.0, <c>move_exchanges</c>).</summary>
+    /// <param name="source">The conversation they are in.</param>
+    /// <param name="destination">Where they go.</param>
+    /// <param name="isNew">Whether the destination must not exist yet, and takes the source as its parent.</param>
+    /// <param name="exchanges">Every exchange that goes, as the preview listed them.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>How many moved, or why none did.</returns>
+    Task<MoveOutcome> MoveExchangesAsync(
+        string source, string destination, bool isNew, IReadOnlyCollection<long> exchanges, CancellationToken cancellationToken = default);
+
     /// <summary>Apply the retention policy now rather than waiting for the sweep.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>What was removed, and what the floor held back.</returns>
@@ -270,6 +327,96 @@ public interface IParleyBrokerClient
     Task<bool> StartAsync(
         AgentName agent, string because, CancellationToken cancellationToken = default);
 
+    /// <summary>Ask the node that started an agent to stop it once its current turn is over (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="because">Why, for whoever reads the node's log.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether its node was asked; false when nothing is running under the name.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>It ends a process, not the agent.</b> What it owes stays owed, and the next work for it starts it again, as any
+    /// agent is started: only a freeze or retirement keeps one from being started. What the process had learned is lost, which is the cost a person
+    /// is told before doing it.
+    /// </para>
+    /// <para>
+    /// Refused for an agent open outside Parley, which belongs to whoever opened it, and for one whose machine has no
+    /// node joined, since then nothing holds its process.
+    /// </para>
+    /// </remarks>
+    Task<bool> StopAsync(
+        AgentName agent, string because, CancellationToken cancellationToken = default);
+
+    /// <summary>Ask the node that started an agent to stop it once its turn is over and start it again.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="because">Why, for whoever reads the node's log.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether its node was asked; false when nothing is running under the name, which is a start's to fix.</returns>
+    /// <remarks>
+    /// The new process reads its launch configuration afresh. Refused where <see cref="StopAsync"/> is.
+    /// </remarks>
+    Task<bool> RestartAsync(
+        AgentName agent, string because, CancellationToken cancellationToken = default);
+
+    /// <summary>Ask the node on an agent's machine to end a process a node that is gone left running (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="because">Why, for whoever reads the node's log.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether the node was asked; false when nothing is running under the name.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Only for a process left running by a node that is gone</b>: one that presented a launch token no node now holds.
+    /// A process opened in somebody's editor has none and is never ended here, and a supervised one is stopped, which
+    /// waits for its turn. This does not wait: the process ends with whatever it was doing, which is the cost a person is
+    /// told before doing it.
+    /// </para>
+    /// <para>
+    /// Refused for an agent that is not so left, for one whose adapter did not say which process hosts it, and where no
+    /// node is joined for its machine.
+    /// </para>
+    /// </remarks>
+    Task<bool> KillAsync(
+        AgentName agent, string because, CancellationToken cancellationToken = default);
+
+    /// <summary>Freeze an agent in this project: nothing starts it until a person unfreezes it, or the broker next starts unless the freeze is kept (SPEC.md §10.2 <c>freeze</c>, §14).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="keepFrozen">
+    /// Whether the freeze outlasts a start of the broker. Without it a later start, which is what a logon or a reboot brings,
+    /// lets the freeze lapse and the agent is started again if it owes work.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether it was newly frozen, and what became of its process.</returns>
+    /// <remarks>
+    /// <para>
+    /// Recorded first, then the agent's node is asked to stop it once its turn is over, so a turn that ends and a message that
+    /// arrives in between both find the freeze. It closes, moves and answers nothing.
+    /// </para>
+    /// <para>
+    /// This freezes it in one project's store. An agent whose repository is enrolled in several projects is frozen in each by a
+    /// surface, through <c>AgentFreezing</c>.
+    /// </para>
+    /// </remarks>
+    Task<FreezeResult> FreezeAsync(AgentName agent, bool keepFrozen = false, CancellationToken cancellationToken = default);
+
+    /// <summary>Clear an agent's freeze (SPEC.md §10.2 <c>unfreeze</c>).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns><see langword="true"/> if it was frozen. It is then asked to start, as after a restart, if it owes work.</returns>
+    Task<bool> UnfreezeAsync(AgentName agent, CancellationToken cancellationToken = default);
+
+    /// <summary>Place a file as the person, into a conversation that exists (SPEC.md §10.2 <c>place_persons_file</c>).</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="name">The name to place it under; characters outside the set become <c>_</c> (§9.5).</param>
+    /// <param name="content">The bytes, read to their end.</param>
+    /// <param name="cancellationToken">Cancels the call; nothing is left behind.</param>
+    /// <returns>What the placement came to.</returns>
+    /// <remarks>
+    /// The person's, because no agent places as anybody but itself. A file in the location enters only by placement:
+    /// one copied into a folder by hand is never listed, so this is how the person hands an agent a file. A placed
+    /// file is never changed, so a new version goes under a new name.
+    /// </remarks>
+    Task<PersonPlacement> PlacePersonsFileAsync(
+        string conversationId, string name, Stream content, CancellationToken cancellationToken = default);
+
     /// <summary>List a page of the file location (SPEC.md §9.5).</summary>
     /// <param name="conversationId">One conversation's files, or <see langword="null"/> for every one.</param>
     /// <param name="pageSize">Files per page; zero or less for the broker's default. The broker bounds it.</param>
@@ -312,13 +459,50 @@ public interface IParleyBrokerClient
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The machine and path, or why there is none.</returns>
     /// <remarks>
-    /// What lets a surface open a file in place: on the broker's machine it launches, and anywhere else it names the
-    /// machine and the path and launches nothing, because the file is not there to open (§10.2).
+    /// What lets a surface open a file: on the broker's machine it launches the file in place, and anywhere else it reads
+    /// the file through <see cref="ReadSharedFileAsync"/> and opens a checked copy, since a placed file never changes
+    /// (§10.2).
     /// </remarks>
     Task<FileLocationAnswer> DescribeFileLocationAsync(
         string? conversationId = null,
         string? name = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Read one conversation's file as the person, recording nothing.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="name">The file.</param>
+    /// <param name="expected">The hash the caller expects, or <see langword="null"/>.</param>
+    /// <param name="limitBytes">The most this caller will take; a larger file is answered too large with no bytes.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The file and its bytes, or why not.</returns>
+    /// <remarks>
+    /// What lets a surface show an image wherever it runs, the broker's machine or the end of a tunnel (§9.5). Unlike an
+    /// agent's fetch it records nothing: viewing is not an act on the deployment.
+    /// </remarks>
+    Task<SharedFileRead> ReadSharedFileAsync(
+        string conversationId,
+        string name,
+        ContentHash? expected,
+        long limitBytes,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>List what sweeps of the file location found and could not leave as it was.</summary>
+    /// <param name="includeDismissed">Whether to include the problems the person dismissed.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The problems, those waiting first, and where the quarantine directory is.</returns>
+    /// <remarks>
+    /// The person's alone (SPEC.md §9.5): a file moved to quarantine and an entry a sweep could not read, move or delete are nobody's
+    /// message. A surface shows how many are waiting wherever the person is, and draws each path as somebody else's text,
+    /// because what was put on disk by something other than Parley was never checked.
+    /// </remarks>
+    Task<FileProblemsReport> ListFileProblemsAsync(bool includeDismissed = false, CancellationToken cancellationToken = default);
+
+    /// <summary>Dismiss a problem the person has seen.</summary>
+    /// <param name="id">The problem.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns><see langword="true"/> when a waiting problem was dismissed.</returns>
+    /// <remarks>Deletes nothing on disk: a quarantined file stays for the person to look at or delete.</remarks>
+    Task<bool> DismissFileProblemAsync(long id, CancellationToken cancellationToken = default);
 
     /// <summary>List the project's roadmaps.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
@@ -342,24 +526,54 @@ public interface IParleyBrokerClient
 
     /// <summary>Read the proposals agents have made.</summary>
     /// <param name="state">Which to read; waiting ones by default, and <see langword="null"/> for every state.</param>
+    /// <param name="headings">
+    /// Whether to read headings only: each title cut to <see cref="RoadmapProposal.HeadingLength"/>, its item count, and
+    /// no items.
+    /// </param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The proposals, newest first.</returns>
+    /// <remarks>
+    /// Headings are what a count, a list or a refresh reads: roadmap text has no bound, so whole proposals are as large as
+    /// an agent makes them, and a heading is small whatever it wrote. <see cref="ProposalAsync"/> reads one whole.
+    /// </remarks>
     Task<IReadOnlyList<RoadmapProposal>> ProposalsAsync(
-        ProposalState? state = ProposalState.Waiting, CancellationToken cancellationToken = default);
+        ProposalState? state = ProposalState.Waiting, bool headings = false, CancellationToken cancellationToken = default);
+
+    /// <summary>Count the proposals agents have made.</summary>
+    /// <param name="state">Which to count; waiting ones by default, and <see langword="null"/> for every state.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>How many there are.</returns>
+    /// <remarks>
+    /// Reads no proposal, because nothing bounds how many an agent makes and a count is read on every refresh. A list of
+    /// headings carries the newest <see cref="RoadmapProposal.HeadingLimit"/>; this says how many there are in all.
+    /// </remarks>
+    Task<int> ProposalCountAsync(ProposalState? state = ProposalState.Waiting, CancellationToken cancellationToken = default);
+
+    /// <summary>Read one proposal whole, in whatever state it is.</summary>
+    /// <param name="id">The proposal.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The proposal, or <see langword="null"/> when there is none by that identifier.</returns>
+    Task<RoadmapProposal?> ProposalAsync(long id, CancellationToken cancellationToken = default);
 
     /// <summary>Turn a proposal into a roadmap, or a revision of one.</summary>
     /// <param name="id">The proposal.</param>
     /// <param name="content">The person's final content, which may be the proposal's own.</param>
     /// <param name="targetRoadmap">The roadmap it revises, or <see langword="null"/> for a new one.</param>
+    /// <param name="targetRevision">The revision of that roadmap the person was shown; required with a target.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>What it came to, with a sentence when it was refused.</returns>
     /// <remarks>
     /// Validates the whole content (<see cref="RoadmapRules"/>), and records whether it was confirmed as proposed
     /// or edited by comparing it with the stored proposal — never from a flag the caller passes, which would be
-    /// right only as often as somebody remembered to set it.
+    /// right only as often as somebody remembered to set it. A revision is refused when the roadmap has moved past the
+    /// revision shown, as an edit is, so a revision never replaces items another surface saved meanwhile.
     /// </remarks>
     Task<RoadmapChange> ConfirmProposalAsync(
-        long id, RoadmapContent content, long? targetRoadmap, CancellationToken cancellationToken = default);
+        long id,
+        RoadmapContent content,
+        long? targetRoadmap,
+        int? targetRevision,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Decline a waiting proposal.</summary>
     /// <param name="id">The proposal.</param>

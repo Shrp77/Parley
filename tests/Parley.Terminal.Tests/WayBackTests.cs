@@ -24,6 +24,8 @@ namespace Parley.Terminal.Tests;
 /// no actions at all and the menu used to refuse to open.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class WayBackTests
 {
     private static BrokerDirectory Directory() =>

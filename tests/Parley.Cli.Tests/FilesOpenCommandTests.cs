@@ -3,13 +3,14 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// <c>parley files open</c>: a placed file opened in place, on the machine that holds it and on no other (SPEC.md §10.2,
-/// §13).
+/// <c>parley files open</c>: a placed file opened in place on the machine that holds it, and as a checked copy read
+/// through the broker anywhere else (SPEC.md §10.2, §13).
 /// </summary>
 /// <remarks>
 /// Through the launcher's seam throughout, which records instead of launching; the refusals are checked by what was
 /// launched, which must be nothing.
 /// </remarks>
+[Integration]
 public sealed class FilesOpenCommandTests : IAsyncDisposable
 {
     private const string Billing = FileLocationFixture.Billing;
@@ -35,15 +36,49 @@ public sealed class FilesOpenCommandTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task A_file_on_another_machine_is_described_and_nothing_is_launched()
+    public async Task A_file_on_another_machine_opens_a_checked_copy_read_through_the_broker()
     {
+        // At the end of a tunnel the broker's disk is not this one, so the file is read and a copy opened, as the
+        // terminal and the web console do (SPEC.md §10.2).
         await _files.PlaceAsync(Billing, "notes.md", "net of tax", "pricing");
         _files.Machine = "elsewhere";
 
-        var (_, output, _) = await _files.RunAsync("open", "notes.md");
+        var (_, output, _) = await _files.RunAsync("open", "notes.md", "--conversation", "pricing");
 
+        var (path, folder) = Assert.Single(_files.Launched);
+        Assert.False(folder);
+        Assert.StartsWith(_files.Copies, path, StringComparison.Ordinal);
+        Assert.Equal("net of tax", await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken));
+        Assert.Contains("Opened a copy of notes.md", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_file_on_another_machine_with_no_conversation_named_is_found_by_its_name()
+    {
+        // One file of the name in the whole location is the one meant, as the broker's lookup already said.
+        await _files.PlaceAsync(Billing, "notes.md", "net of tax", "pricing");
+        _files.Machine = "elsewhere";
+
+        var (code, output, _) = await _files.RunAsync("open", "notes.md");
+
+        Assert.Equal(0, code);
+        var (path, _) = Assert.Single(_files.Launched);
+        Assert.Equal("net of tax", await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken));
+        Assert.Contains("Opened a copy of notes.md", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_open_refused_launches_nothing_and_exits_one()
+    {
+        // An image whose leading bytes are not its format is never launched (0.58.1); the command said so and exited 0
+        // with no test to notice (review, lens 3 round 29).
+        await _files.PlaceAsync(Billing, "diagram.png", "not an image", "pricing");
+
+        var (code, output, _) = await _files.RunAsync("open", "diagram.png");
+
+        Assert.Equal(1, code);
         Assert.Empty(_files.Launched);
-        Assert.Contains("is on machine " + TestMachine.Name + ", at", output, StringComparison.Ordinal);
+        Assert.Contains("diagram.png", output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -73,5 +108,37 @@ public sealed class FilesOpenCommandTests : IAsyncDisposable
         Assert.Equal(
             "within thirty days",
             await File.ReadAllTextAsync(Assert.Single(_files.Launched).Path, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task A_name_on_another_machine_that_two_conversations_hold_by_the_time_it_is_opened_copies_nothing()
+    {
+        // The broker found one notes.md, then the same name was placed in a second conversation before the open read the
+        // listing. Either could be meant, so neither is copied or opened: the person names its conversation.
+        var ct = TestContext.Current.CancellationToken;
+
+        await _files.PlaceAsync(Billing, "notes.md", "net of tax", "pricing");
+
+        var located = await _files.Client.DescribeFileLocationAsync(null, "notes.md", ct);
+        var location = Assert.IsType<Parley.Core.FileLocation>(located.Location);
+
+        await _files.PlaceAsync(Billing, "notes.md", "within thirty days", "returns");
+
+        var launched = new List<(string Path, bool Folder)>();
+        var launcher = new Parley.Client.Files.LocalLauncher(
+            (path, folder) =>
+            {
+                launched.Add((path, folder));
+                return true;
+            },
+            "elsewhere",
+            _files.Copies);
+
+        var opened = await launcher.OpenPlacedAsync(_files.Client, null, "notes.md", null, location, ct);
+
+        Assert.False(opened.Opened);
+        Assert.Equal($"notes.md is on {location.Machine}. Name its conversation to open a copy of it here.", opened.Said);
+        Assert.Empty(launched);
+        Assert.False(Directory.Exists(_files.Copies), "a copy was written although no conversation was named");
     }
 }

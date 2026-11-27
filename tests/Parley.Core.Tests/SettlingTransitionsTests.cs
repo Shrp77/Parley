@@ -10,6 +10,7 @@ namespace Parley.Core.Tests;
 /// Only what is true of one exchange is checked here. That the other party is the person, and that the settling
 /// exchange is the person's Request in the same conversation, are checked by the broker and by storage.
 /// </remarks>
+[Unit]
 public sealed class SettlingTransitionsTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

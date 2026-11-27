@@ -13,6 +13,8 @@ namespace Parley.Web.Tests;
 /// only acceptable behaviour is to say what will be lost and wait. An operator who meant retire
 /// and clicked purge has to have been told.
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class ActingTests : IClassFixture<WebApplicationFactory<Program>>
 {
     private readonly WebApplicationFactory<Program> _console;
@@ -21,7 +23,7 @@ public sealed class ActingTests : IClassFixture<WebApplicationFactory<Program>>
 
     [Theory]
     [InlineData("purge", "cannot be undone")]
-    [InlineData("retire", "Its history is kept")]
+    [InlineData("retire", "keeps its record and its history")]
     [InlineData("reinstate", "routed to again")]
     [InlineData("forceconclude", "whatever its participants")]
     [InlineData("prune", "deleted permanently")]
@@ -74,7 +76,9 @@ public sealed class ActingTests : IClassFixture<WebApplicationFactory<Program>>
     {
         // The words matter more than the mechanism here. Somebody about to purge is usually
         // somebody who wanted to retire, and the page is the last place that can say so.
-        var page = File.ReadAllText(RepositoryPath("src/Parley.Web/Pages/Projects/Act.cshtml.cs"));
+        // The page and the words it shares with the terminal, which live in Parley.Setup's AgentWithdrawal.
+        var page = File.ReadAllText(RepositoryPath("src/Parley.Web/Pages/Projects/Act.cshtml.cs"))
+                   + File.ReadAllText(RepositoryPath("src/Parley.Setup/AgentWithdrawal.cs"));
 
         Assert.Contains("cannot be undone", page, StringComparison.Ordinal);
         Assert.Contains("peers' side", page, StringComparison.Ordinal);

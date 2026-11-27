@@ -16,6 +16,7 @@ namespace Parley.Cli.Tests;
 /// the room said <i>working</i> for nearly three hours. The node had measured the turn and told nobody. These drive the
 /// node's own reporter against a loopback broker and read the result back through the operator's registry.
 /// </remarks>
+[Integration]
 public sealed class NodeReportsTurnsTests
 {
     private const string Machine = "m1";
@@ -35,7 +36,7 @@ public sealed class NodeReportsTurnsTests
         var broker = LoopbackOperator.Start(connection);
         var nodes = new Wire.Nodes.NodesClient(GrpcChannel.ForAddress(broker.Address));
         var join = nodes.Join(
-            new Wire.JoinRequest { Machine = Machine, ReportsTurns = true, StartableRoles = { "billing" } }, cancellationToken: Ct);
+            new Wire.JoinRequest { ProtocolVersion = Parley.Core.ProtocolVersion.Current, Machine = Machine, ReportsTurns = true, StartableRoles = { "billing" } }, cancellationToken: Ct);
 
         Assert.True(await join.ResponseStream.MoveNext(Ct), "the node was not acknowledged");
 

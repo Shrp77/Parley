@@ -38,43 +38,59 @@
         <li class="group">
             <details open data-group="@group.Key">
                 <summary>
+                    <span class="chev icon" aria-hidden="true">chevron_right</span>
                     <input type="checkbox" class="group-box" aria-label="Everyone at @group.Key" />
                     <span class="group-name">@@@group.Key</span>
                     <span class="count">@group.Count()</span>
                 </summary>
                 @if (Model.Pick)
                 {
-                    @* Under each machine, the people first and then one subgroup for each state the agents are in. *@
+                    @* Under each machine, one subgroup for each state the agents are in, and then the people. At every level the
+                       groups come first and the single rows after them, so a group never sits in the middle of a list of names. *@
                     <ul>
-                        @foreach (var person in group.Where(e => e.Name.Role == "human-user"))
-                        {
-                            @row(person)
-                        }
                         @foreach (var state in group.Where(e => e.Name.Role != "human-user").GroupBy(e => e.State).OrderBy(g => g.Key, StringComparer.Ordinal))
                         {
-                            var shownDivider = false;
+                            var outside = state.Where(e => !e.InIt).OrderBy(e => e.Name.Role, StringComparer.Ordinal).ToList();
 
                             <li class="group subgroup">
                                 <details open data-group="@group.Key/@state.Key">
                                     <summary>
+                                        <span class="chev icon" aria-hidden="true">chevron_right</span>
                                         <input type="checkbox" class="group-box" aria-label="Every agent @state.Key at @group.Key" />
                                         <span class="group-name">@state.Key</span>
                                         <span class="count">@state.Count()</span>
                                     </summary>
                                     <ul>
-                                        @foreach (var entry in state.OrderBy(e => e.InIt ? 0 : 1).ThenBy(e => e.Name.Role, StringComparer.Ordinal))
+                                        @if (outside.Count > 0)
                                         {
-                                            @if (!entry.InIt && !shownDivider)
-                                            {
-                                                shownDivider = true;
-                                                <li class="divider">Not in it yet</li>
-                                            }
-
+                                            <li class="group subgroup">
+                                                <details open data-group="@group.Key/@state.Key/not-in-it">
+                                                    <summary>
+                                                        <span class="chev icon" aria-hidden="true">chevron_right</span>
+                                                        <input type="checkbox" class="group-box" aria-label="Every agent @state.Key at @group.Key not in this conversation yet" />
+                                                        <span class="group-name">Not in it yet</span>
+                                                        <span class="count">@outside.Count</span>
+                                                    </summary>
+                                                    <ul>
+                                                        @foreach (var entry in outside)
+                                                        {
+                                                            @row(entry)
+                                                        }
+                                                    </ul>
+                                                </details>
+                                            </li>
+                                        }
+                                        @foreach (var entry in state.Where(e => e.InIt).OrderBy(e => e.Name.Role, StringComparer.Ordinal))
+                                        {
                                             @row(entry)
                                         }
                                     </ul>
                                 </details>
                             </li>
+                        }
+                        @foreach (var person in group.Where(e => e.Name.Role == "human-user"))
+                        {
+                            @row(person)
                         }
                     </ul>
                 }

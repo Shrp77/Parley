@@ -16,6 +16,8 @@ namespace Parley.Terminal.Tests;
 /// machine's — a suite run in a loop would otherwise replace whatever the person at the keyboard had copied.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class CopyingOneMessageTests
 {
     [Fact]

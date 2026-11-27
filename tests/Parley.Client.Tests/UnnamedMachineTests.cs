@@ -25,6 +25,7 @@ namespace Parley.Client.Tests;
 /// from.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class UnnamedMachineTests
 {
     /// <summary>A root this machine has never created.</summary>
@@ -47,6 +48,26 @@ public sealed class UnnamedMachineTests
 
         Assert.Equal("http://127.0.0.1:51707", offered.Endpoint);
         Assert.Null(directory.ManifestProblem);
+    }
+
+    [Fact]
+    public void A_bare_host_and_port_is_offered_as_every_other_tool_reads_it()
+    {
+        // Found by review, lens 1 run 60: the docs tell a person to run `parley --broker 127.0.0.1:19100`, the CLI adds
+        // the scheme, and the surfaces dialled the text as typed, so the one row they offered could never answer.
+        using var directory = BrokerDirectory.FromManifest(NoManifestHere, new FallbackBroker("127.0.0.1:19100"));
+
+        Assert.Equal("http://127.0.0.1:19100", Assert.Single(directory.Projects).Endpoint);
+    }
+
+    [Fact]
+    public void An_offered_broker_that_is_no_address_is_kept_as_written_so_its_row_says_why()
+    {
+        // Review, lens 3 run 68: the catch path had no case. Read refuses it, and the row is then the person's own text,
+        // shown as unreachable, never a default dialled in its place.
+        using var directory = BrokerDirectory.FromManifest(NoManifestHere, new FallbackBroker("ftp://nowhere"));
+
+        Assert.Equal("ftp://nowhere", Assert.Single(directory.Projects).Endpoint);
     }
 
     [Fact]

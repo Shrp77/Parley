@@ -11,8 +11,39 @@ namespace Parley.Core.Tests;
 /// once per peer, every listing — and an injection surface, since it is rendered into a list the
 /// reader is meant to trust.
 /// </remarks>
+[Unit]
 public sealed class OwnershipStatementTests
 {
+    [Theory]
+    [InlineData("Orders and their totals. ${GITHUB_TOKEN}", 26)]
+    [InlineData("${HOME}", 1)]
+    [InlineData("orders ${X:-y}", 8)]
+    public void A_line_naming_an_environment_variable_cannot_go_into_a_launch_configuration(string statement, int position)
+    {
+        // Lens 2 run 101: Claude Code expands ${NAME} in .mcp.json, so the value would be reported as the line and shown
+        // to every agent. Still a valid statement otherwise: the rule is the launch file's, not the roster's.
+        Assert.True(OwnershipStatement.IsValid(statement, out _));
+        Assert.False(OwnershipStatement.IsLaunchable(statement, out var error));
+        Assert.Contains($"at position {position}", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_person_accepting_a_line_naming_an_environment_variable_is_refused()
+    {
+        // Lens 3 run 112: the broker applies this when it records a person's line, on every surface.
+        var problem = new OwnershipAcceptance("Invoicing. ${GITHUB_TOKEN}", OwnershipSource.Composed, null, null).Problem();
+
+        Assert.NotNull(problem);
+        Assert.Contains("launch configuration", problem, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("Orders priced in $ and {braces}; not tax.")]
+    [InlineData("Costs over $5 and the {pricing} table")]
+    [InlineData("a } then ${")]
+    public void Dollar_signs_and_braces_apart_are_launchable_and_together_are_not(string statement) =>
+        Assert.Equal(!statement.Contains("${", StringComparison.Ordinal), OwnershipStatement.IsLaunchable(statement, out _));
+
     [Fact]
     public void An_ordinary_statement_is_accepted()
     {

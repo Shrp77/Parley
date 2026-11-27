@@ -12,6 +12,7 @@ namespace Parley.Server.Tests;
 /// and what the person's surface then sees — because a row nobody can read through the protocol is not evidence the
 /// protocol records anything.
 /// </remarks>
+[Integration]
 public sealed class SettlingOverTheWireTests
 {
     private const string Conversation = "invoice-export";
@@ -124,6 +125,81 @@ public sealed class SettlingOverTheWireTests
         Assert.Equal(answer, since.ExchangeId);
         Assert.Contains("the support address decision, D2", since.Envelope, StringComparison.Ordinal);
         Assert.Contains("[parley:", since.Envelope, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_list_beside_a_request_is_bounded_cut_and_counts_what_it_leaves_out()
+    {
+        // SPEC.md §5.6: at most 20 questions, each its first 160 characters, and a count of the rest (lens 3 run 84 found
+        // the cut, the count and the bound untested).
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var seat = await AttachedClient.AttachAsync(broker, Person, cancellationToken: Ct, adapter: PersonSeat.Adapter);
+        await using var orders = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: Ct);
+
+        var longQuestion = "which schema " + new string('x', 300);
+        await AskAsync(orders, Person, longQuestion);
+
+        for (var i = 2; i <= Settling.MostListed + 2; i++)
+        {
+            await AskAsync(orders, Person, $"question {i}?");
+        }
+
+        var line = await AskAsync(seat, orders.Name, "schema 12");
+
+        var inbox = await orders.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = orders.Name }, cancellationToken: Ct);
+        var delivered = Assert.Single(inbox.Messages, m => m.Message.ExchangeId == line);
+
+        Assert.Equal(Settling.MostListed, delivered.Settleable.Count);
+        Assert.Equal(2, delivered.SettleableLeftOut);
+        Assert.All(delivered.Settleable, q => Assert.True(q.Asked.Length <= Settling.LongestAsked, q.Asked));
+        Assert.Contains(delivered.Settleable, q => q.Asked.StartsWith("which schema xxx", StringComparison.Ordinal)
+                                                     && q.Asked.Length == Settling.LongestAsked);
+    }
+
+    [Fact]
+    public async Task A_request_handed_back_carries_only_the_latest_five_of_what_the_person_said_since()
+    {
+        // SPEC.md §5.6: the latest five, not the first five (lens 3 run 84).
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var seat = await AttachedClient.AttachAsync(broker, Person, cancellationToken: Ct, adapter: PersonSeat.Adapter);
+
+        long first;
+        var said = new List<long>();
+
+        await using (var orders = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: Ct))
+        {
+            first = await AskAsync(seat, orders.Name, "summarize this");
+            _ = await orders.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = orders.Name }, cancellationToken: Ct);
+
+            var asked = await orders.Client.ClarifyAsync(
+                new Wire.ClarifyRequest
+                {
+                    From = orders.Name,
+                    ExchangeId = first,
+                    ResponderModel = "claude-opus-5",
+                    PayloadJson = """{"text":"summarize what?"}"""
+                },
+                cancellationToken: Ct);
+            Assert.True(asked.Ok, asked.ToString());
+
+            for (var i = 1; i <= Settling.MostSince + 2; i++)
+            {
+                said.Add(await AskAsync(seat, orders.Name, $"answer {i}"));
+            }
+
+            // The agent answers the last and says it settles its question, as in the test above.
+            var reply = Requests.Result(orders.Name, said[^1]);
+            reply.Settles.Add(first);
+            Assert.True((await orders.Client.ResultAsync(reply, cancellationToken: Ct)).Ok);
+        }
+
+        await broker.WaitUntilDetachedAsync("orders@alpha", TimeSpan.FromSeconds(10));
+        await using var next = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: Ct);
+
+        var again = await next.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = next.Name }, cancellationToken: Ct);
+        var handedBack = Assert.Single(again.Messages, m => m.Message.ExchangeId == first);
+
+        Assert.Equal(said.TakeLast(Settling.MostSince), handedBack.Since.Select(s => s.ExchangeId));
     }
 
     [Fact]

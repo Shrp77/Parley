@@ -22,6 +22,7 @@ namespace Parley.Cli.Tests;
 /// is the stronger one: a moved subcommand creeping back into <c>parley --help</c> fails here.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed partial class ProjectHelpAgreementTests
 {
     /// <summary>The subcommands the command line refuses and the terminal performs.</summary>

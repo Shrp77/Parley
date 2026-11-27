@@ -19,6 +19,7 @@ namespace Parley.Terminal.Tests;
 /// thought of is held to it too.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class KeysNeedAModifierTests
 {
     private const string Plain = "abcdefghijklmnopqrstuvwxyz?";

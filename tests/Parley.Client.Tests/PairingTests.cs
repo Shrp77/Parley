@@ -18,6 +18,7 @@ namespace Parley.Client.Tests;
 /// the graph is what is read.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class PairingTests
 {
     private static readonly AgentName Me = AgentName.Create("arvind@test");

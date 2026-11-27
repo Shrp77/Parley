@@ -18,6 +18,7 @@ namespace Parley.Terminal.Tests;
 /// where the surface is, so moving one without the other fails the build rather than the review.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ReadmeDescribesTheTerminalTests
 {
     private static string Readme()

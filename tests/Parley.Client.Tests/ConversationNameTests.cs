@@ -18,6 +18,7 @@ namespace Parley.Client.Tests;
 /// which names are usable, and the one that disagreed would be the one letting something through.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class ConversationNameTests
 {
     [Theory]
@@ -82,6 +83,22 @@ public sealed class ConversationNameTests
         Assert.Equal(long_, ConversationName.Correct(long_));
         Assert.NotNull(ConversationName.Problem(long_));
         Assert.Null(ConversationName.Problem(new string('a', ConversationName.Longest)));
+    }
+
+    [Fact]
+    public void The_patterns_class_keeps_to_what_a_browser_compiles()
+    {
+        // Browsers compile `pattern` in the mode that refuses a bare hyphen, a syntax character or a doubled mark in a class,
+        // and then ignore the attribute silently. Nothing here runs that mode, so this holds the class's spelling.
+        var opening = ConversationName.Pattern.IndexOf('[', StringComparison.Ordinal);
+        var closing = ConversationName.Pattern.IndexOf(']', StringComparison.Ordinal);
+        var inClass = ConversationName.Pattern[(opening + 1)..closing];
+        var rest = System.Text.RegularExpressions.Regex.Replace(
+            inClass, @"\\-|[A-Za-z0-9]-[A-Za-z0-9]", string.Empty, System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromSeconds(5));
+
+        Assert.DoesNotContain('-', rest);
+        Assert.DoesNotContain(rest, c => "()[]{}/|".Contains(c, StringComparison.Ordinal));
+        Assert.DoesNotMatch(@"([!#$%&*+,.:;<=>?@^_`~])\1", rest);
     }
 
     [Fact]

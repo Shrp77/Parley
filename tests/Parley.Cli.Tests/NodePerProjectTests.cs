@@ -15,6 +15,7 @@ namespace Parley.Cli.Tests;
 /// project in turn — and this checks it is handed <i>each</i>, because a hook run once against
 /// the first started broker would be the old behaviour wearing the new signature.
 /// </remarks>
+[Integration]
 public sealed class NodePerProjectTests : IDisposable
 {
     private readonly string _directory =

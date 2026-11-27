@@ -1,0 +1,176 @@
+// The Inbox and a conversation at tablet sizes, upright and sideways (712x1138 is a Galaxy Tab S4 upright), for parley-screens audit.
+{
+  "theme": "light",
+  "scale": 1,
+  "maximumBytes": 0,
+  "shots": [
+    {
+      "file": "inbox-712x1138.png",
+      "width": 712,
+      "height": 1138,
+      "path": "/Inbox?scope={project}",
+      "shows": "inbox at 712x1138"
+    },
+    {
+      "file": "inbox-all-712x1138.png",
+      "width": 712,
+      "height": 1138,
+      "path": "/Inbox",
+      "shows": "inbox-all at 712x1138"
+    },
+    {
+      "file": "inbox-flight-712x1138.png",
+      "width": 712,
+      "height": 1138,
+      "path": "/Inbox?scope={project}&view=inflight",
+      "shows": "inbox-flight at 712x1138"
+    },
+    {
+      "file": "conversation-712x1138.png",
+      "width": 712,
+      "height": 1138,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "conversation at 712x1138"
+    },
+    {
+      "file": "inbox-800x1280.png",
+      "width": 800,
+      "height": 1280,
+      "path": "/Inbox?scope={project}",
+      "shows": "inbox at 800x1280"
+    },
+    {
+      "file": "inbox-all-800x1280.png",
+      "width": 800,
+      "height": 1280,
+      "path": "/Inbox",
+      "shows": "inbox-all at 800x1280"
+    },
+    {
+      "file": "inbox-flight-800x1280.png",
+      "width": 800,
+      "height": 1280,
+      "path": "/Inbox?scope={project}&view=inflight",
+      "shows": "inbox-flight at 800x1280"
+    },
+    {
+      "file": "conversation-800x1280.png",
+      "width": 800,
+      "height": 1280,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "conversation at 800x1280"
+    },
+    {
+      "file": "inbox-768x1024.png",
+      "width": 768,
+      "height": 1024,
+      "path": "/Inbox?scope={project}",
+      "shows": "inbox at 768x1024"
+    },
+    {
+      "file": "inbox-all-768x1024.png",
+      "width": 768,
+      "height": 1024,
+      "path": "/Inbox",
+      "shows": "inbox-all at 768x1024"
+    },
+    {
+      "file": "inbox-flight-768x1024.png",
+      "width": 768,
+      "height": 1024,
+      "path": "/Inbox?scope={project}&view=inflight",
+      "shows": "inbox-flight at 768x1024"
+    },
+    {
+      "file": "conversation-768x1024.png",
+      "width": 768,
+      "height": 1024,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "conversation at 768x1024"
+    },
+    {
+      "file": "inbox-1024x768.png",
+      "width": 1024,
+      "height": 768,
+      "path": "/Inbox?scope={project}",
+      "shows": "inbox at 1024x768"
+    },
+    {
+      "file": "inbox-all-1024x768.png",
+      "width": 1024,
+      "height": 768,
+      "path": "/Inbox",
+      "shows": "inbox-all at 1024x768"
+    },
+    {
+      "file": "inbox-flight-1024x768.png",
+      "width": 1024,
+      "height": 768,
+      "path": "/Inbox?scope={project}&view=inflight",
+      "shows": "inbox-flight at 1024x768"
+    },
+    {
+      "file": "conversation-1024x768.png",
+      "width": 1024,
+      "height": 768,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "conversation at 1024x768"
+    },
+    {
+      "file": "inbox-1138x712.png",
+      "width": 1138,
+      "height": 712,
+      "path": "/Inbox?scope={project}",
+      "shows": "inbox at 1138x712"
+    },
+    {
+      "file": "inbox-all-1138x712.png",
+      "width": 1138,
+      "height": 712,
+      "path": "/Inbox",
+      "shows": "inbox-all at 1138x712"
+    },
+    {
+      "file": "inbox-flight-1138x712.png",
+      "width": 1138,
+      "height": 712,
+      "path": "/Inbox?scope={project}&view=inflight",
+      "shows": "inbox-flight at 1138x712"
+    },
+    {
+      "file": "conversation-1138x712.png",
+      "width": 1138,
+      "height": 712,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "conversation at 1138x712"
+    },
+    {
+      "file": "inbox-1280x800.png",
+      "width": 1280,
+      "height": 800,
+      "path": "/Inbox?scope={project}",
+      "shows": "inbox at 1280x800"
+    },
+    {
+      "file": "inbox-all-1280x800.png",
+      "width": 1280,
+      "height": 800,
+      "path": "/Inbox",
+      "shows": "inbox-all at 1280x800"
+    },
+    {
+      "file": "inbox-flight-1280x800.png",
+      "width": 1280,
+      "height": 800,
+      "path": "/Inbox?scope={project}&view=inflight",
+      "shows": "inbox-flight at 1280x800"
+    },
+    {
+      "file": "conversation-1280x800.png",
+      "width": 1280,
+      "height": 800,
+      "path": "/Conversations/Detail?project={project}&id=UI-refresh-and-fixes-for-small-screens",
+      "shows": "conversation at 1280x800"
+    }
+  ]
+}

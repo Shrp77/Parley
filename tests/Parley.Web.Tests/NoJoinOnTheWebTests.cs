@@ -21,6 +21,8 @@ namespace Parley.Web.Tests;
 /// which is exactly when the fallback used to fire.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class NoJoinOnTheWebTests
 {
     [Theory]
@@ -118,7 +120,7 @@ public sealed class NoJoinOnTheWebTests
     /// The token is fetched from the page's own GET rather than disabled, because a test that turned antiforgery off
     /// would be testing a console nobody runs.
     /// </remarks>
-    private static async Task<HttpResponseMessage> PostAsync(
+    internal static async Task<HttpResponseMessage> PostAsync(
         HttpClient client, string path, Dictionary<string, string> fields)
     {
         var token = TestContext.Current.CancellationToken;

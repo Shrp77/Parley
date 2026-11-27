@@ -1,3 +1,4 @@
+using Terminal.Gui.Input;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Tests;
 using Parley.Client;
@@ -30,6 +31,8 @@ namespace Parley.Terminal.Tests;
 /// broker that refuses: every one must leave the registry and both files exactly as they were.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class WithdrawingTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");
@@ -102,6 +105,74 @@ public sealed class WithdrawingTests : IAsyncDisposable
         Assert.Equal(Withdrawing.Keep, Withdrawing.Choices[0]);
         Assert.Equal(Withdrawing.Kept, shell.Said);
         await AssertStillThereAsync();
+    }
+
+    [Fact]
+    public async Task Retiring_another_machines_agent_of_the_same_role_leaves_this_machines_files_alone()
+    {
+        // The same repository checked out on server-b, at the same path: an agent of the same role there. Its files are
+        // on server-b. The entry here names only the role, so withdrawing server-b's agent from here once took this
+        // machine's own entry, identity and catalogue line.
+        var elsewhere = AgentName.Create("orders@server-b");
+
+        await new AgentRepository(_connection).UpsertAsync(
+            new AgentRecord(elsewhere, "mcp", AgentTier.Pull, Workspace, null, null, false, AgentStatus.Active),
+            TestContext.Current.CancellationToken);
+
+        using var driving = Driving.Open();
+        using var shell = await OpenAsync(driving);
+
+        driving.Row(shell.Agents.List, "orders@server-b");
+        await Choose(driving, shell, Withdrawing.Retire, "orders@server-b");
+
+        var registry = await Client().RegistryAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(AgentStatus.Retired, Assert.Single(registry, a => a.Name == elsewhere).Status);
+        Assert.Equal(AgentStatus.Active, Assert.Single(registry, a => a.Name == Orders).Status);
+        Assert.Contains("runs on server-b", shell.Said, StringComparison.Ordinal);
+
+        var launch = JsonNode.Parse(await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!;
+
+        Assert.True(((JsonObject)launch["mcpServers"]!).ContainsKey("parley"), "this machine's entry was taken");
+        Assert.Contains(Catalogued.ToString(), await CatalogueTextAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Retiring_an_agent_the_registry_knows_by_another_identity_leaves_the_repository_alone()
+    {
+        // The registry row names this repository's role, machine and path, but it was registered with another
+        // identity: an agent attached under this name from somewhere it does not own. The identity is read from the
+        // registry before the act, so this repository's entry and catalogue line stay.
+        using var driving = Driving.Open();
+        using var shell = await OpenAsync(driving);
+
+        await new AgentRepository(_connection).RecordIdentityAsync(Orders, AgentIdentity.Mint(), TestContext.Current.CancellationToken);
+
+        await Choose(driving, shell, Withdrawing.Retire, "orders@test");
+
+        var launch = JsonNode.Parse(await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!;
+
+        Assert.True(((JsonObject)launch["mcpServers"]!).ContainsKey("parley"), "another agent's withdrawal took this repository's entry");
+        Assert.Contains(Catalogued.ToString(), await CatalogueTextAsync(), StringComparison.Ordinal);
+        Assert.Contains("another agent's repository", shell.Said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Purging_an_agent_the_registry_knows_by_another_identity_leaves_the_repository_alone()
+    {
+        // As retiring: purging reads the identity from the registry before the act, and the row goes with the act.
+        using var driving = Driving.Open();
+        using var shell = await OpenAsync(driving);
+
+        await new AgentRepository(_connection).RecordIdentityAsync(Orders, AgentIdentity.Mint(), TestContext.Current.CancellationToken);
+
+        await Choose(driving, shell, Withdrawing.Purge, "orders@test");
+
+        var launch = JsonNode.Parse(await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!;
+
+        Assert.True(((JsonObject)launch["mcpServers"]!).ContainsKey("parley"), "another agent's purge took this repository's entry");
+        Assert.Contains(Catalogued.ToString(), await CatalogueTextAsync(), StringComparison.Ordinal);
+        Assert.Contains("another agent's repository", shell.Said, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -202,6 +273,34 @@ public sealed class WithdrawingTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Retiring_and_purging_say_they_take_the_files_and_reach_this_project_only()
+    {
+        // Without the guard the terminal's dialog never said that either act takes the agent's .mcp.json entry and
+        // catalogue line, or that it reaches this project and no other, which the web console's page says (review, lens 3
+        // round 36).
+        using var driving = Driving.Open();
+        using var shell = await OpenAsync(driving);
+
+        await shell.Withdraw();
+        await shell.Settled;
+
+        var choosing = (ChoiceDialog)driving.Find(Withdrawing.Title);
+
+        Assert.Contains(".mcp.json", choosing.Described, StringComparison.Ordinal);
+        Assert.Contains("This happens in acme only", choosing.Described, StringComparison.Ordinal);
+
+        var rows = Drawn.Rows(choosing.Choices);
+
+        Assert.Equal(2, rows.Count(row => row.Contains("this project only", StringComparison.Ordinal)));
+
+        driving.Enter();
+        await shell.Settled;
+
+        Assert.Equal(Withdrawing.Kept, shell.Said);
+        await AssertStillThereAsync();
+    }
+
+    [Fact]
     public async Task Escape_at_the_name_keeps_the_agent()
     {
         using var driving = Driving.Open();
@@ -214,9 +313,7 @@ public sealed class WithdrawingTests : IAsyncDisposable
 
         driving.Row(choosing.Choices, Withdrawing.Purge);
         driving.Enter();
-        driving.Escape();
-
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Esc, () => shell.Settled);
 
         Assert.Equal(Withdrawing.Kept, shell.Said);
         await AssertStillThereAsync();
@@ -249,8 +346,7 @@ public sealed class WithdrawingTests : IAsyncDisposable
 
         Assert.Equal(Withdrawing.Keep, accepting.Chosen);
 
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(Withdrawing.Kept, shell.Said);
         await AssertStillThereAsync();
@@ -373,6 +469,9 @@ public sealed class WithdrawingTests : IAsyncDisposable
         // repository declares, and the withdrawal finds it by reading that repository — so a fixture
         // that wrote a role-keyed entry would describe a state no enrolment can produce, and the
         // withdrawal would rightly leave it alone.
+        //
+        // The entry holds the role, as every enrolment writes it, while the registry names the whole agent: the shape a
+        // withdrawal meets, which once matched nothing and left the entry in place.
         var identity = AgentIdentity.Mint();
 
         await File.WriteAllTextAsync(
@@ -386,7 +485,7 @@ public sealed class WithdrawingTests : IAsyncDisposable
             $$"""
             {
               "mcpServers": {
-                "parley": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "orders@test" } },
+                "parley": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "orders" } },
                 "other": { "command": "something" }
               },
               "{{LaunchConfiguration.IdentityMember}}": "{{identity}}"

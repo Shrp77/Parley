@@ -5,6 +5,7 @@ namespace Parley.Headless.Tests;
 /// <summary>
 /// Turning a launch-configuration string into something safe to execute.
 /// </summary>
+[Integration]
 public sealed class InvocationCommandTests
 {
     [Fact]

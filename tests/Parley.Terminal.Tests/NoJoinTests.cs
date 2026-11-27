@@ -24,6 +24,7 @@ namespace Parley.Terminal.Tests;
 /// graph are the facts, and a row saying "you" is a rendering of them.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class NoJoinTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

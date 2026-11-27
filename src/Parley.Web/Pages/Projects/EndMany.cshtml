@@ -1,0 +1,54 @@
+@page
+@model Parley.Web.Pages.Projects.EndManyModel
+@{
+    ViewData["Title"] = "End conversations";
+}
+
+<h1>End @Model.Chosen.Count @(Model.Chosen.Count == 1 ? "conversation" : "conversations")</h1>
+
+@if (Model.Outcome is { Length: > 0 } outcome)
+{
+    <p role="status"><strong>@outcome</strong></p>
+    <nav class="page-links" aria-label="This project"><a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a></nav>
+}
+else
+{
+    <p class="unreachable">
+        These will be closed now, whatever their participants have voted. Every request still open in each is closed with a
+        result saying a person closed it, and each participant holding that work is told. This cannot be undone.
+        @Parley.Client.Rendering.RetentionWords.WhatClosingKeeps
+    </p>
+
+    <ul>
+        @foreach (var id in Model.Chosen)
+        {
+            <li><code>@id</code></li>
+        }
+    </ul>
+
+    @if (Model.Wrong is { Length: > 0 } wrong)
+    {
+        <p class="unreachable" role="alert">@wrong</p>
+    }
+
+    <form method="post">
+        <input type="hidden" name="Project" value="@Model.Project" />
+        @foreach (var id in Model.Chosen)
+        {
+            <input type="hidden" name="Ids" value="@id" />
+        }
+        <p>
+            <partial name="_Composer" model="@(new Parley.Web.ComposerBox(
+                "reason", Id: "reason", Label: "Why are you closing them? Each participant holding open work is told.",
+                Required: false, MaxLength: 1000))" />
+        </p>
+        <div class="field withdraw-name">
+            <label for="typed">Type <code>@Parley.Web.Pages.Projects.EndManyModel.Word</code> to end them</label>
+            <input id="typed" name="Typed" required autocomplete="off" spellcheck="false" autocapitalize="none" />
+        </div>
+        <p class="actions">
+            <button type="submit" class="danger act">End them</button>
+            <a class="button quiet" href="/Projects/Agents?project=@Model.Project">Cancel</a>
+        </p>
+    </form>
+}

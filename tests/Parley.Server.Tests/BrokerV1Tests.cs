@@ -22,6 +22,7 @@ namespace Parley.Server.Tests;
 /// §4.1 says the protocol has no concept of a project and must not acquire one.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class BrokerV1Tests
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(10);

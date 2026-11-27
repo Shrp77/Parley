@@ -21,6 +21,7 @@ namespace Parley.Broker.Tests;
 /// person opened the page to look at.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WaitingTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");
@@ -54,6 +55,16 @@ public sealed class WaitingTests : IDisposable
     public async Task A_deployment_that_has_done_nothing_has_nobody_waiting()
     {
         Assert.Empty(await _console.DescribeWaitingAsync(Ct));
+    }
+
+    [Fact]
+    public async Task An_exchange_is_found_in_its_conversation_by_number_alone()
+    {
+        // So a message that names "exchange #N" can be opened where it is mentioned (spec 036, FR-020).
+        var sent = await Send(Orders, Billing, 1);
+
+        Assert.Equal(sent.Request!.ConversationId, await _console.LocateExchangeAsync(sent.Exchange!.Id, Ct));
+        Assert.Null(await _console.LocateExchangeAsync(sent.Exchange.Id + 1000, Ct));
     }
 
     [Fact]

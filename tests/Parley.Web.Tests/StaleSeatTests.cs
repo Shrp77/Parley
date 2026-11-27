@@ -13,6 +13,7 @@ namespace Parley.Web.Tests;
 /// mark means a stream is open now</b>, and a console whose broker cannot be reached has none.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class StaleSeatTests
 {
     [Fact]

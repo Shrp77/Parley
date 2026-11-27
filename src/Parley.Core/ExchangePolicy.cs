@@ -15,16 +15,13 @@ namespace Parley.Core;
 /// </para>
 /// <para>
 /// <b>Nothing here ends work.</b> The thresholds decide when silence is shown to the person running the
-/// deployment, and crossing one changes nothing about the exchange. Both caps are off by default,
-/// because a cap set without evidence refuses work at a number nobody measured (principle 2.8); a
-/// deployment that observes a flood sets one from that observation.
+/// deployment, and crossing one changes nothing about the exchange. Both caps are off, because a cap set
+/// without evidence refuses work at a number nobody measured (principle 2.8); the broker runs on
+/// <see cref="Default"/>, and nothing configures another (SPEC.md §7.1).
 /// </para>
 /// <para>
-/// <b>Policy is chosen by the operator and never by an agent.</b> Admission takes a resolved policy,
-/// never the name of one, so there is no parameter through which an agent could ask for a larger cap.
-/// A deployment may map agents to different policies — an agent whose work runs a full end-to-end suite
-/// needs a longer <see cref="StalledAfter"/> — but that mapping is resolved before any agent-facing
-/// path is reached.
+/// <b>An agent never chooses the terms of its exchanges.</b> Admission takes a resolved policy, never the
+/// name of one, so there is no parameter through which an agent could ask for a larger cap.
 /// </para>
 /// </remarks>
 public sealed record ExchangePolicy(

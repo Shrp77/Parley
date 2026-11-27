@@ -65,6 +65,9 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
 
     private readonly Seat _seat = seat ?? throw new ArgumentNullException(nameof(seat));
 
+    /// <summary>The name this voice speaks under.</summary>
+    public AgentName Name => _seat.Name;
+
     /// <summary>Sends one participant a Request: the ask, and the conversation it belongs to.</summary>
     /// <param name="to">Who is being asked.</param>
     /// <param name="ask">What is wanted, in the person's own words (§5.1).</param>
@@ -82,11 +85,31 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         AgentName to,
         string? ask,
         string? conversationId,
+        CancellationToken cancellationToken = default) =>
+        (await RequestOpeningAsync(to, ask, conversationId, cancellationToken).ConfigureAwait(false)).Says;
+
+    /// <summary>Sends one participant a Request, and says which exchange it opened.</summary>
+    /// <param name="to">Who is being asked.</param>
+    /// <param name="ask">What is wanted, in the person's own words (§5.1).</param>
+    /// <param name="conversationId">The conversation it belongs to, or <see langword="null"/> for a new one.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>
+    /// The sentence <see cref="RequestAsync"/> returns, the exchange it opened (none when it was not sent), and how the
+    /// receiver was reached, in a few words for a list.
+    /// </returns>
+    /// <remarks>
+    /// For a surface that follows the Request afterwards, as the Inbox follows what it asked about which questions are still
+    /// open: the sentence alone would have it read the exchange back out of words.
+    /// </remarks>
+    public async Task<RequestOpened> RequestOpeningAsync(
+        AgentName to,
+        string? ask,
+        string? conversationId,
         CancellationToken cancellationToken = default)
     {
         if (Unsendable(ask, conversationId) is { } wrong)
         {
-            return wrong;
+            return new RequestOpened(wrong, null, null);
         }
 
         var payload = Framed(ask!);
@@ -94,7 +117,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         if (TooLong(payload) is { } refused)
         {
             await RecordAsync(Wire.MessageType.Request, payload.Length, cancellationToken).ConfigureAwait(false);
-            return refused;
+            return new RequestOpened(refused, null, null);
         }
 
         try
@@ -105,15 +128,34 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
             var outcome = reply.Outcomes.Single();
 
             return outcome.Ok
-                ? $"Sent. Exchange {outcome.ExchangeId} is open in conversation {outcome.ConversationId}, and " +
-                  $"{to.Value} owes a Result. " + Waking(outcome.Wake, to)
-                : Refusal(outcome, to);
+                ? new RequestOpened(
+                    $"Sent. Exchange {outcome.ExchangeId} is open in conversation {outcome.ConversationId}, and " +
+                    $"{to.Value} owes a Result. " + Waking(outcome.Wake, to),
+                    outcome.ExchangeId,
+                    Reached(outcome.Wake))
+                : new RequestOpened(Refusal(outcome, to), null, null);
         }
         catch (RpcException failure)
         {
-            return Failed(failure);
+            return new RequestOpened(Failed(failure), null, null);
         }
     }
+
+    /// <summary>How a Request's receiver was reached, in a few words for a list.</summary>
+    /// <param name="wake">What the broker did.</param>
+    /// <returns>The words.</returns>
+    internal static string Reached(Wire.WakeOutcome wake) => wake switch
+    {
+        Wire.WakeOutcome.Started => "Being started",
+        Wire.WakeOutcome.AlreadyRunning => "Running",
+        Wire.WakeOutcome.AlreadyComing => "Already being started",
+        Wire.WakeOutcome.Unreachable => "Cannot be started now; reads it when it next runs",
+        Wire.WakeOutcome.OpenOutside => "Open outside Parley; reads it when prompted there",
+        Wire.WakeOutcome.WithThePerson => "With the person",
+        Wire.WakeOutcome.Frozen => "Frozen; reads it when unfrozen",
+        Wire.WakeOutcome.LeftRunning => "Left running; started for it once that process ends",
+        _ => "Not reported",
+    };
 
     /// <summary>Sends every participant given the same Request, each as its own exchange.</summary>
     /// <param name="hold">The seat to send under, re-read before every send.</param>
@@ -316,6 +358,18 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
             parts.Add($"{outside} open outside Parley, reading it when prompted there");
         }
 
+        // SPEC.md §11.1: left running by a node that is gone, and started for it once that process ends.
+        if (counted.GetValueOrDefault(Wire.WakeOutcome.LeftRunning) is > 0 and var left)
+        {
+            parts.Add($"{left} left running, started for it once that process ends");
+        }
+
+        // SPEC.md §14: frozen by the person, so nothing starts them until they are unfrozen.
+        if (counted.GetValueOrDefault(Wire.WakeOutcome.Frozen) is > 0 and var frozen)
+        {
+            parts.Add($"{frozen} frozen, reading it once unfrozen");
+        }
+
         if (parts.Count > 0)
         {
             _ = said.Append(' ').Append(string.Join(", ", parts)).Append('.');
@@ -474,6 +528,28 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     /// </remarks>
     private static string Flat(string text) => text.ReplaceLineEndings(" ");
 
+    private const string NothingCanStart = "Nothing can start ";
+    private const string OpenOutsideParley = " is open outside Parley";
+    private const string FrozenByYou = " is frozen, so nothing starts it";
+
+    /// <summary>Whether a send's sentence says it went and the receiver will get to it without anybody doing anything.</summary>
+    /// <param name="said">The sentence a send returned.</param>
+    /// <returns><see langword="false"/> for a refusal, and for a Request stored with nothing able to give its receiver a turn.</returns>
+    /// <remarks>
+    /// A surface may put the first kind out of the way. The second has gone, and no answer will come until somebody starts or
+    /// prompts the agent, so it is for the person to read. An agent's name cannot contain a space, so these words cannot
+    /// come from a name.
+    /// </remarks>
+    public static bool GoesOnUnaided(string said)
+    {
+        ArgumentNullException.ThrowIfNull(said);
+
+        return said.StartsWith("Sent.", StringComparison.Ordinal)
+            && !said.Contains(NothingCanStart, StringComparison.Ordinal)
+            && !said.Contains(OpenOutsideParley, StringComparison.Ordinal)
+            && !said.Contains(FrozenByYou, StringComparison.Ordinal);
+    }
+
     /// <summary>What became of the receiver, in words.</summary>
     /// <param name="wake">What the broker did about it.</param>
     /// <param name="to">Who it was sent to.</param>
@@ -488,15 +564,24 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         Wire.WakeOutcome.AlreadyRunning => $"{to.Value} is running and has been handed it.",
         Wire.WakeOutcome.AlreadyComing => $"{to.Value} is already being seen to, and will collect this with the rest.",
         Wire.WakeOutcome.Unreachable =>
-            $"Nothing can start {to.Value} right now; it collects this when it next runs, and you will see it " +
+            $"{NothingCanStart}{to.Value} right now; it collects this when it next runs, and you will see it " +
             "flagged if that takes too long.",
 
         // Only reachable if the person is ever the recipient of their own seat's send, which no surface offers — so this
         // is here so the switch never says "not reported" about a fact the broker did report.
         Wire.WakeOutcome.WithThePerson => $"{to.Value} is the person, and has it.",
         Wire.WakeOutcome.OpenOutside =>
-            $"{to.Value} is open outside Parley — somebody started it in an editor — so Parley cannot give it a turn; it " +
-            "reads this when somebody prompts it there.",
+            $"{to.Value}{OpenOutsideParley}, so Parley cannot give it a turn; it reads this when somebody prompts it where " +
+            "it is open.",
+
+        // SPEC.md §11.1: nobody has it open to prompt, and the broker starts it for this once that process has gone.
+        Wire.WakeOutcome.LeftRunning =>
+            $"{to.Value} is running as a process a node that is gone left behind, so Parley cannot give it a turn; it is " +
+            "started for this once that process ends, unless you freeze or kill it first.",
+
+        // SPEC.md §5, §14: the person froze it, so no answer comes until they unfreeze it. Said, never "not reported", and
+        // kept in front of them rather than put out of the way (review, lens 3 run B on 5de89187).
+        Wire.WakeOutcome.Frozen => $"{to.Value}{FrozenByYou}; it reads this once you unfreeze it.",
         _ => $"What became of {to.Value} was not reported.",
     };
 
@@ -520,14 +605,34 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     /// collects work and does nothing with it is flagged as stalled rather than as never having picked it up.
     /// It is offered as something a person does on purpose, never as part of rendering a page.
     /// </remarks>
-    public async Task<(IReadOnlyList<Delivered> Messages, int ClosurePolls)> DrainAsync(
-        CancellationToken cancellationToken = default)
-    {
-        var reply = await _agents.DrainInboxAsync(
-            new Wire.DrainInboxRequest { Agent = _seat.Name.Value, Limit = 0 },
-            cancellationToken: cancellationToken);
+    public Task<(IReadOnlyList<Delivered> Messages, int ClosurePolls)> DrainAsync(
+        CancellationToken cancellationToken = default) =>
+        DrainAsync(null, cancellationToken);
 
-        return ([.. reply.Messages.Select(one => new Delivered(Read(one.Message)))], reply.ClosurePolls.Count);
+    // One collection carries a bounded amount (SPEC.md §10.1), so a person is handed everything by asking again until
+    // nothing is left. Each pass is acknowledged before it returns, so the loop ends: what the broker did not record
+    // comes again at most once more, when a call broke after its reply. **Each pass
+    // is handed on as it arrives**: a later pass that fails would otherwise drop what the broker had already recorded
+    // delivered. A pass that fails before its acknowledgement records nothing, and the next collection brings it again.
+    private async Task<(IReadOnlyList<Delivered> Messages, int ClosurePolls)> DrainAsync(
+        Action<IReadOnlyList<Delivered>>? eachPass, CancellationToken cancellationToken)
+    {
+        var taken = new List<Delivered>();
+        Wire.InboxReply reply;
+
+        do
+        {
+            reply = await _agents.DrainInboxAsync(
+                new Wire.DrainInboxRequest { Agent = _seat.Name.Value, Limit = 0 },
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            List<Delivered> pass = [.. reply.Messages.Select(one => new Delivered(Read(one.Message)))];
+            eachPass?.Invoke(pass);
+            taken.AddRange(pass);
+        }
+        while (reply.MessagesWaiting > 0 && reply.Messages.Count > 0);
+
+        return (taken, reply.ClosurePolls.Count);
     }
 
     /// <summary>Collects and records what came back against the seat, as one act.</summary>
@@ -537,17 +642,15 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     /// <exception cref="ArgumentNullException"><paramref name="hold"/> is null.</exception>
     /// <remarks>
     /// Here rather than in each surface, so two surfaces cannot disagree about what a person has taken
-    /// delivery of.
+    /// delivery of. Recorded a collection at a time, so a later collection that fails leaves what the earlier ones
+    /// handed over recorded against the seat.
     /// </remarks>
     public async Task<(IReadOnlyList<Delivered> Messages, int ClosurePolls)> TakeDeliveryAsync(
         SeatHold hold, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(hold);
 
-        var (messages, polls) = await DrainAsync(cancellationToken).ConfigureAwait(false);
-        hold.Record(messages);
-
-        return (messages, polls);
+        return await DrainAsync(hold.Record, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Sends the Result of a Request this person was asked, and settles it against the seat when it closed.</summary>

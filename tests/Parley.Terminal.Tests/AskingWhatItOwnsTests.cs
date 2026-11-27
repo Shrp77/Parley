@@ -25,6 +25,8 @@ namespace Parley.Terminal.Tests;
 /// promise about what the agent was <em>told</em>, so the words are the requirement.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class AskingWhatItOwnsTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

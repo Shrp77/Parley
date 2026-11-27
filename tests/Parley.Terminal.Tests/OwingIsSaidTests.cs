@@ -23,6 +23,7 @@ namespace Parley.Terminal.Tests;
 /// two surfaces cannot describe one protocol two ways.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class OwingIsSaidTests
 {
     private static BrokerDirectory Directory() =>

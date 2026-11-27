@@ -13,6 +13,8 @@ namespace Parley.Terminal.Tests;
 /// than the first — and the second caller is the one that opens an address which came from a
 /// manifest or a broker.
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class LaunchTests
 {
     [Theory]

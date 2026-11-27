@@ -1,0 +1,254 @@
+/* The web console's tokens: Material 3's colour roles for light and dark, type, shape, elevation, state layers
+   and motion, and the older names the components read them through. Served at /brand/tokens.css; every other
+   stylesheet reads colour, type and shape only through these (MaterialTokensTests). */
+
+/* ---- Material 3 foundations ------------------------------------------------------------------------------------
+   Colour roles are Frost, the scheme the person chose for feature 042: each role is the Material 3 tone of one of five
+   palettes built from a few hues, written by specs/042-theme-and-layout-refresh/directions/generate.py, which refuses
+   any scheme whose text pairs fall below WCAG 2.2 AA (ContrastTests holds the same pairs here). Light here and dark
+   below, following the system or the person's choice. Everything else reads these roles, directly or through the
+   console's older names further down, so no other rule names a colour of its own. */
+:root {
+    --md-sys-color-primary: #066496;
+    --md-sys-color-on-primary: #ffffff;
+    --md-sys-color-primary-container: #cfe5fe;
+    --md-sys-color-on-primary-container: #011d31;
+    --md-sys-color-secondary: #476273;
+    --md-sys-color-on-secondary: #ffffff;
+    --md-sys-color-secondary-container: #cae6fb;
+    --md-sys-color-on-secondary-container: #011e2c;
+    --md-sys-color-tertiary: #3d6473;
+    --md-sys-color-on-tertiary: #ffffff;
+    --md-sys-color-tertiary-container: #c0e9fb;
+    --md-sys-color-on-tertiary-container: #011f28;
+    --md-sys-color-error: #b12938;
+    --md-sys-color-on-error: #ffffff;
+    --md-sys-color-error-container: #fedad8;
+    --md-sys-color-on-error-container: #400004;
+    --md-sys-color-surface: #f4faff;
+    --md-sys-color-on-surface: #171c20;
+    --md-sys-color-surface-variant: #d5e5f0;
+    --md-sys-color-on-surface-variant: #3b4852;
+    --md-sys-color-surface-dim: #d4dbe1;
+    --md-sys-color-surface-bright: #f4faff;
+    --md-sys-color-surface-container-lowest: #ffffff;
+    --md-sys-color-surface-container-low: #edf5fb;
+    --md-sys-color-surface-container: #e7eff5;
+    --md-sys-color-surface-container-high: #e2e9ef;
+    --md-sys-color-surface-container-highest: #dce3e9;
+    --md-sys-color-outline: #6b7983;
+    --md-sys-color-outline-variant: #bac8d4;
+    --md-sys-color-inverse-surface: #2b3136;
+    --md-sys-color-inverse-on-surface: #eaf2f8;
+    --md-sys-color-inverse-primary: #97cbff;
+    --md-sys-color-scrim: #000000;
+    --md-sys-color-shadow: #000000;
+    /* Not a scheme role: the person's presence, beside their own name and said in words there too. */
+    --md-ext-color-present: #1b7a46;
+    /* A card on the page (Frost, feature 042): the lowest container, slightly see-through so the page's tint shows at its
+       edges, and frosted where the browser can blur what is behind it. Mostly opaque, so text on it keeps its contrast. */
+    --md-ext-color-card: color-mix(in srgb, var(--md-sys-color-surface-container-lowest) 88%, transparent);
+    /* The frame, the side menu and the top bar as one surface, so the page below reads as a sheet inset in it. */
+    --md-ext-frame: var(--md-sys-color-surface-container-lowest);
+    /* The page behind the cards: a mist of the tertiary colour at the top, fading into the surface. */
+    --md-ext-page-background: linear-gradient(180deg, color-mix(in srgb, var(--md-sys-color-tertiary-container) 55%, var(--md-sys-color-surface)) 0%, var(--md-sys-color-surface) 60%);
+    /* The eight agent colours: today's hues re-toned in HCT to tone 40 here and 75 in dark, so each reads against the
+       surfaces and the eight stay apart. Decoration: every fact they tint is also written in words. */
+    --md-ext-slot-0: #1f54d1;
+    --md-ext-slot-1: #006c51;
+    --md-ext-slot-2: #9a460a;
+    --md-ext-slot-3: #793ebe;
+    --md-ext-slot-4: #00687b;
+    --md-ext-slot-5: #ad2b55;
+    --md-ext-slot-6: #566519;
+    --md-ext-slot-7: #3b608f;
+    /* What is written on an agent's colour: its initials, and a found word. */
+    --md-ext-on-slot: #ffffff;
+    --md-ext-scrim: rgb(0 0 0 / 0.32);
+}
+
+/* Dark follows the system unless the person chose a theme on the Settings page, which sets data-theme on <html>
+   before anything is drawn. The block is written twice, once for the system and once for the choice, because CSS
+   cannot make one rule answer to both a media query and an attribute; MaterialTokensTests holds the two equal. */
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --md-sys-color-primary: #97cbff;
+        --md-sys-color-on-primary: #033350;
+        --md-sys-color-primary-container: #024b72;
+        --md-sys-color-on-primary-container: #cfe5fe;
+        --md-sys-color-secondary: #afcade;
+        --md-sys-color-on-secondary: #183343;
+        --md-sys-color-secondary-container: #2f4a5b;
+        --md-sys-color-on-secondary-container: #cae6fb;
+        --md-sys-color-tertiary: #a5cdde;
+        --md-sys-color-on-tertiary: #063543;
+        --md-sys-color-tertiary-container: #234c5b;
+        --md-sys-color-on-tertiary-container: #c0e9fb;
+        --md-sys-color-error: #ffb3b0;
+        --md-sys-color-on-error: #670116;
+        --md-sys-color-error-container: #920123;
+        --md-sys-color-on-error-container: #fedad8;
+        --md-sys-color-surface: #0e1418;
+        --md-sys-color-on-surface: #dce3e9;
+        --md-sys-color-surface-variant: #3b4852;
+        --md-sys-color-on-surface-variant: #bac8d4;
+        --md-sys-color-surface-dim: #0e1418;
+        --md-sys-color-surface-bright: #343a3f;
+        --md-sys-color-surface-container-lowest: #070f14;
+        --md-sys-color-surface-container-low: #171c20;
+        --md-sys-color-surface-container: #1b2025;
+        --md-sys-color-surface-container-high: #252b2f;
+        --md-sys-color-surface-container-highest: #2f363a;
+        --md-sys-color-outline: #84939e;
+        --md-sys-color-outline-variant: #3b4852;
+        --md-sys-color-inverse-surface: #dce3e9;
+        --md-sys-color-inverse-on-surface: #2b3136;
+        --md-sys-color-inverse-primary: #066496;
+        --md-ext-color-present: #6fd59b;
+        --md-ext-color-card: color-mix(in srgb, var(--md-sys-color-surface-container-high) 85%, transparent);
+        --md-ext-page-background: linear-gradient(180deg, color-mix(in srgb, var(--md-sys-color-secondary-container) 45%, var(--md-sys-color-surface)) 0%, var(--md-sys-color-surface) 60%);
+        --md-ext-frame: var(--md-sys-color-surface-container-low);
+        --md-ext-slot-0: #a1b6ff;
+        --md-ext-slot-1: #64cba7;
+        --md-ext-slot-2: #ffa26f;
+        --md-ext-slot-3: #cfa7ff;
+        --md-ext-slot-4: #6dc5de;
+        --md-ext-slot-5: #ff9cb1;
+        --md-ext-slot-6: #afc16b;
+        --md-ext-slot-7: #97bbf0;
+        --md-ext-on-slot: #11131a;
+    }
+}
+
+:root[data-theme="dark"] {
+        --md-sys-color-primary: #97cbff;
+        --md-sys-color-on-primary: #033350;
+        --md-sys-color-primary-container: #024b72;
+        --md-sys-color-on-primary-container: #cfe5fe;
+        --md-sys-color-secondary: #afcade;
+        --md-sys-color-on-secondary: #183343;
+        --md-sys-color-secondary-container: #2f4a5b;
+        --md-sys-color-on-secondary-container: #cae6fb;
+        --md-sys-color-tertiary: #a5cdde;
+        --md-sys-color-on-tertiary: #063543;
+        --md-sys-color-tertiary-container: #234c5b;
+        --md-sys-color-on-tertiary-container: #c0e9fb;
+        --md-sys-color-error: #ffb3b0;
+        --md-sys-color-on-error: #670116;
+        --md-sys-color-error-container: #920123;
+        --md-sys-color-on-error-container: #fedad8;
+        --md-sys-color-surface: #0e1418;
+        --md-sys-color-on-surface: #dce3e9;
+        --md-sys-color-surface-variant: #3b4852;
+        --md-sys-color-on-surface-variant: #bac8d4;
+        --md-sys-color-surface-dim: #0e1418;
+        --md-sys-color-surface-bright: #343a3f;
+        --md-sys-color-surface-container-lowest: #070f14;
+        --md-sys-color-surface-container-low: #171c20;
+        --md-sys-color-surface-container: #1b2025;
+        --md-sys-color-surface-container-high: #252b2f;
+        --md-sys-color-surface-container-highest: #2f363a;
+        --md-sys-color-outline: #84939e;
+        --md-sys-color-outline-variant: #3b4852;
+        --md-sys-color-inverse-surface: #dce3e9;
+        --md-sys-color-inverse-on-surface: #2b3136;
+        --md-sys-color-inverse-primary: #066496;
+        --md-ext-color-present: #6fd59b;
+        --md-ext-color-card: color-mix(in srgb, var(--md-sys-color-surface-container-high) 85%, transparent);
+        --md-ext-page-background: linear-gradient(180deg, color-mix(in srgb, var(--md-sys-color-secondary-container) 45%, var(--md-sys-color-surface)) 0%, var(--md-sys-color-surface) 60%);
+        --md-ext-frame: var(--md-sys-color-surface-container-low);
+        --md-ext-slot-0: #a1b6ff;
+        --md-ext-slot-1: #64cba7;
+        --md-ext-slot-2: #ffa26f;
+        --md-ext-slot-3: #cfa7ff;
+        --md-ext-slot-4: #6dc5de;
+        --md-ext-slot-5: #ff9cb1;
+        --md-ext-slot-6: #afc16b;
+        --md-ext-slot-7: #97bbf0;
+        --md-ext-on-slot: #11131a;
+}
+
+:root {
+    /* Type:Material 3's scale, in Roboto Flex. Size / line height / weight / tracking. */
+    --md-ref-typeface: "Roboto Flex", "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --md-ref-typeface-mono: ui-monospace, "Cascadia Code", "Roboto Mono", Consolas, monospace;
+    --md-sys-typescale-headline-small: 400 1.5rem/2rem var(--md-ref-typeface);
+    --md-sys-typescale-title-large: 400 1.375rem/1.75rem var(--md-ref-typeface);
+    --md-sys-typescale-title-medium: 500 1rem/1.5rem var(--md-ref-typeface);
+    --md-sys-typescale-title-small: 500 0.875rem/1.25rem var(--md-ref-typeface);
+    --md-sys-typescale-body-large: 400 1rem/1.5rem var(--md-ref-typeface);
+    --md-sys-typescale-body-medium: 400 0.875rem/1.25rem var(--md-ref-typeface);
+    --md-sys-typescale-body-small: 400 0.75rem/1rem var(--md-ref-typeface);
+    --md-sys-typescale-label-large: 500 0.875rem/1.25rem var(--md-ref-typeface);
+    --md-sys-typescale-label-medium: 500 0.75rem/1rem var(--md-ref-typeface);
+    --md-sys-typescale-label-small: 500 0.6875rem/1rem var(--md-ref-typeface);
+
+    /* Shape. */
+    --md-sys-shape-corner-extra-small: 4px;
+    --md-sys-shape-corner-small: 8px;
+    --md-sys-shape-corner-medium: 14px;
+    --md-sys-shape-corner-large: 18px;
+    --md-sys-shape-corner-extra-large: 28px;
+    --md-sys-shape-corner-full: 9999px;
+
+    /* Elevation: Material 3's two-layer shadows, softened and tinted for Frost (feature 042): a close shadow that grounds
+       the surface and a wide, faint one that lifts it off the page. A raised surface also takes a higher container tone. */
+    --md-sys-elevation-1: 0 1px 2px rgb(30 40 70 / 0.06), 0 4px 14px rgb(30 40 70 / 0.08);
+    --md-sys-elevation-2: 0 2px 4px rgb(30 40 70 / 0.08), 0 10px 28px rgb(30 40 70 / 0.12);
+    --md-sys-elevation-3: 0 4px 10px rgb(30 40 70 / 0.10), 0 18px 44px rgb(30 40 70 / 0.16);
+
+    /* State layers, as a share of the content colour drawn over the container. */
+    --md-sys-state-hover: 8%;
+    --md-sys-state-focus: 10%;
+    --md-sys-state-pressed: 10%;
+    --md-sys-state-dragged: 16%;
+
+    /* Motion. */
+    --md-sys-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+    --md-sys-motion-duration-short: 150ms;
+    --md-sys-motion-duration-medium: 300ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :root { --md-sys-motion-duration-short: 0ms; --md-sys-motion-duration-medium: 0ms; }
+    *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; }
+}
+
+@font-face {
+    font-family: "Roboto Flex";
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url("/brand/roboto-flex.woff2") format("woff2");
+}
+
+:root {
+    /* How much of the top of the viewport the sticky frame occupies. Read by everything
+       else that sticks, so there is one number to change rather than four. */
+    --frame: 4rem;
+
+    /* The console's older names, kept so every rule below reads a Material 3 role through them. */
+    --ink: var(--md-sys-color-on-surface);
+    --ink-soft: var(--md-sys-color-on-surface-variant);
+    --ink-faint: var(--md-sys-color-on-surface-variant);
+    --page: var(--md-sys-color-surface);
+    --card: var(--md-ext-color-card);
+    /* Frost draws depth with surfaces and shadows rather than lines, so a card's edge is a faint glint, not a border. */
+    --rule: color-mix(in srgb, var(--md-sys-color-outline-variant) 45%, transparent);
+    --accent: var(--md-sys-color-primary);
+    --on-accent: var(--md-sys-color-on-primary);
+    --alarm: var(--md-sys-color-error);
+    --on-alarm: var(--md-sys-color-on-error);
+    --alarm-wash: var(--md-sys-color-error-container);
+    --quiet-wash: var(--md-sys-color-surface-container-high);
+    --radius: var(--md-sys-shape-corner-medium);
+    --gap: 2rem;
+    /* The page's side padding, read by the top bar so it can reach both edges. */
+    --page-pad: clamp(1rem, 2vw, 1.5rem);
+    /* Tells the browser to draw what it draws itself (scrollbars, date pickers, the menu of a select that is not
+       restyled) in the theme the page is in. */
+    color-scheme: light dark;
+}
+
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }

@@ -10,6 +10,7 @@ namespace Parley.Core.Tests;
 /// The schema refuses anything but 64 lowercase hexadecimal characters, so the spelling is part of the contract
 /// rather than a formatting choice.
 /// </remarks>
+[Unit]
 public sealed class ContentHashTests
 {
     [Fact]

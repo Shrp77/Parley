@@ -19,6 +19,7 @@ namespace Parley.Server.Tests;
 /// request is a routing address rather than an assertion — so what has to hold is that everything else still does.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class AdversarialTests
 {
     [Fact]

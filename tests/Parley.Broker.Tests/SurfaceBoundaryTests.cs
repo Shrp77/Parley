@@ -21,6 +21,7 @@ namespace Parley.Broker.Tests;
 /// <see cref="Broker"/> is where the connection already is.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SurfaceBoundaryTests
 {
     /// <summary>
@@ -40,9 +41,14 @@ public sealed class SurfaceBoundaryTests
         // exchanges and can do nothing RequestAsync could not do N times.
         nameof(Broker.RequestRoleAsync),
         nameof(Broker.ClarifyAsync),
+
+        // §10.1: reading the project's past, and nothing else (§5.8). Neither changes anything a participant can observe.
+        nameof(Broker.ReadExchangeAsync),
+        nameof(Broker.SearchHistoryAsync),
         nameof(Broker.ResultAsync),
         nameof(Broker.ConcludeAsync),
-        nameof(Broker.DrainInboxAsync),
+        nameof(Broker.CollectInboxAsync),
+        nameof(Broker.AcknowledgeInboxAsync),
         nameof(Broker.ListAgentsAsync),
 
         // The one roadmap operation an agent has (§10.1, principle 2.12): it stores a proposal and nothing else, so
@@ -68,10 +74,23 @@ public sealed class SurfaceBoundaryTests
     ];
 
     private static IEnumerable<string> PublicMethodsOf(Type type) =>
-        type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+        type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
             .Select(m => m.Name)
             .Where(n => !n.StartsWith("get_Equals", StringComparison.Ordinal))
             .Where(n => n is not ("Equals" or "GetHashCode" or "ToString"));
+
+    [Fact]
+    public void The_broker_exposes_no_field()
+    {
+        // The method list above cannot see a field, so a public field holding an OperatorConsole (or a delegate to one of
+        // its operations) handed an adapter every operator operation and passed.
+        var fields = typeof(Broker)
+            .GetFields(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static)
+            .Where(f => !f.IsLiteral) // a constant carries a value, never an operation
+            .Select(f => f.Name);
+
+        Assert.Empty(fields);
+    }
 
     [Fact]
     public void The_broker_exposes_no_operation_it_has_not_declared()
@@ -95,6 +114,11 @@ public sealed class SurfaceBoundaryTests
         string[] declared =
         [
             nameof(OperatorConsole.ForceConcludeAsync),
+            nameof(OperatorConsole.CloseRequestAsync),
+            nameof(OperatorConsole.SpinOffAsync),
+            nameof(OperatorConsole.AbandonSpinOffAsync),
+            nameof(OperatorConsole.PreviewMoveAsync),
+            nameof(OperatorConsole.MoveExchangesAsync),
             nameof(OperatorConsole.RetireAsync),
             nameof(OperatorConsole.ReinstateAsync),
 
@@ -126,6 +150,7 @@ public sealed class SurfaceBoundaryTests
 
             nameof(OperatorConsole.PruneAsync),
             nameof(OperatorConsole.DescribeRefusalsAsync),
+            nameof(OperatorConsole.DescribeMessageLengthsAsync),
 
             // Deliberately not named for the agent operation it reports on. §10.2's protection
             // against an operator operation reaching an agent's tool set is that the names
@@ -146,6 +171,10 @@ public sealed class SurfaceBoundaryTests
             // across the deployment, which is the disclosure §10.1 exists to prevent.
             nameof(OperatorConsole.DescribeWaitingAsync),
 
+            // Which conversation an exchange is in, found by number alone. An operator operation because it reaches any
+            // exchange in the store, whoever is on it: an agent could learn that exchanges it was never on exist and where.
+            nameof(OperatorConsole.LocateExchangeAsync),
+
             // Filing a conversation away, and how many are filed. An operator operation because
             // it is a decision about an operator's own view of a deployment, and because an agent
             // able to archive a conversation it is in would be deciding for every operator at
@@ -153,6 +182,12 @@ public sealed class SurfaceBoundaryTests
             // observe: delivery, exchanges and the closure poll are all untouched.
             nameof(OperatorConsole.SetConversationArchivedAsync),
             nameof(OperatorConsole.CountArchivedConversationsAsync),
+
+            // A person's freeze on an agent (§14), and clearing it. An operator operation because an agent able to freeze a peer
+            // would be deciding that nothing starts it, and one able to unfreeze a frozen agent would undo a person's decision:
+            // the authority Principle II says no agent has. Named apart from the facilitator's own `HoldAsync`.
+            nameof(OperatorConsole.FreezeAgentAsync),
+            nameof(OperatorConsole.UnfreezeAgentAsync),
 
             // §14's purge argument applied to a narrower subject, and it sits beside purge rather
             // than beside force_conclude for that reason: force_conclude ends a discussion and
@@ -170,6 +205,9 @@ public sealed class SurfaceBoundaryTests
             nameof(OperatorConsole.ListRoadmapsAsync),
             nameof(OperatorConsole.GetRoadmapAsync),
             nameof(OperatorConsole.ListProposalsAsync),
+            nameof(OperatorConsole.ListProposalHeadingsAsync),
+            nameof(OperatorConsole.GetProposalAsync),
+            nameof(OperatorConsole.CountProposalsAsync),
             nameof(OperatorConsole.ConfirmProposalAsync),
             nameof(OperatorConsole.DeclineProposalAsync),
             nameof(OperatorConsole.EditRoadmapAsync)
@@ -243,7 +281,7 @@ public sealed class SurfaceBoundaryTests
         var leaked = PublicMethodsOf(typeof(OperatorConsole))
             .Where(n => n is nameof(Broker.RequestAsync) or nameof(Broker.ClarifyAsync)
                           or nameof(Broker.ResultAsync) or nameof(Broker.ConcludeAsync)
-                          or nameof(Broker.DrainInboxAsync));
+                          or nameof(Broker.CollectInboxAsync) or nameof(Broker.AcknowledgeInboxAsync));
 
         Assert.Empty(leaked);
     }

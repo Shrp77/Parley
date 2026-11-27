@@ -29,6 +29,8 @@ namespace Parley.Terminal.Tests;
 /// width at every size and has nothing to stack.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class LayoutTests
 {
     [Fact]

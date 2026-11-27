@@ -20,6 +20,7 @@ namespace Parley.Server.Tests;
 /// said, because a refusal that left a file behind is the failure worth finding.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FileEdgesOverTheWireTests
 {
     private const string Orders = "orders@alpha";
@@ -139,7 +140,7 @@ public sealed class FileEdgesOverTheWireTests
     }
 
     [Fact]
-    public async Task Two_fetches_with_a_replacement_between_are_each_reportable_with_the_hash_each_streamed()
+    public async Task Two_fetches_with_a_removal_and_a_new_placement_between_are_each_reportable_with_the_hash_each_streamed()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
@@ -148,6 +149,10 @@ public sealed class FileEdgesOverTheWireTests
         await FileWire.PlaceAsync(billing.Client, Billing, "notes.md", Text("net"), "pricing", Ct);
         var first = await FetchOnlyAsync(orders, "notes.md", "pricing");
 
+        // A placed file is never changed; the name is free again once its file is removed.
+        _ = await billing.Client.RemoveOwnFilesAsync(
+            new Wire.RemoveFilesRequest { Agent = Billing, Files = { new Wire.FileRef { ConversationId = "pricing", Name = "notes.md" } } },
+            cancellationToken: Ct);
         await FileWire.PlaceAsync(billing.Client, Billing, "notes.md", Text("gross"), "pricing", Ct);
         var second = await FetchOnlyAsync(orders, "notes.md", "pricing");
 
@@ -157,7 +162,7 @@ public sealed class FileEdgesOverTheWireTests
     }
 
     [Fact]
-    public async Task A_download_given_up_part_way_releases_its_hold_so_a_replacement_goes_ahead()
+    public async Task A_download_given_up_part_way_releases_its_hold_so_a_removal_goes_ahead()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
@@ -184,14 +189,16 @@ public sealed class FileEdgesOverTheWireTests
             call.Dispose();
         }
 
-        var replaced = await FileWire.PlaceAsync(billing.Client, Billing, "capture.txt", Text("small now"), "pricing", Ct)
-            .WaitAsync(Patience, Ct);
+        var removed = await billing.Client.RemoveOwnFilesAsync(
+                new Wire.RemoveFilesRequest { Agent = Billing, Files = { new Wire.FileRef { ConversationId = "pricing", Name = "capture.txt" } } },
+                cancellationToken: Ct)
+            .ResponseAsync.WaitAsync(Patience, Ct);
 
-        Assert.Equal(Wire.PlaceOutcome.Replaced, replaced.Outcome);
+        Assert.Single(removed.Removed);
     }
 
     [Fact]
-    public async Task More_than_two_hundred_notices_come_back_over_two_checks_oldest_first_and_no_change_starts_anything()
+    public async Task More_than_two_hundred_notices_come_back_over_two_checks_oldest_first_and_no_removal_starts_anything()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["orders"], Ct);
@@ -216,10 +223,13 @@ public sealed class FileEdgesOverTheWireTests
 
         foreach (var name in names)
         {
-            Assert.Equal(Wire.PlaceOutcome.Replaced, (await FileWire.PlaceAsync(billing.Client, Billing, name, Text("v2"), "pricing", Ct)).Outcome);
+            var removed = await billing.Client.RemoveOwnFilesAsync(
+                new Wire.RemoveFilesRequest { Agent = Billing, Files = { new Wire.FileRef { ConversationId = "pricing", Name = name } } },
+                cancellationToken: Ct);
+            Assert.Single(removed.Removed);
         }
 
-        // A change is told at the next inbox check and asks for nothing: an agent that is not running is not started.
+        // A file's going is told at the next inbox check and asks for nothing: an agent that is not running is not started.
         Assert.Equal(0, await node.CountCommandsAsync(TimeSpan.FromMilliseconds(500)));
 
         await using var returned = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
@@ -229,7 +239,7 @@ public sealed class FileEdgesOverTheWireTests
 
         Assert.Equal(FileLimits.NoticesPerCollection, first.FileNotices.Count);
         Assert.Equal(50, first.FileNoticesWaiting);
-        Assert.Equal(first.FileNotices.Select(n => n.ChangedUtc).Order(StringComparer.Ordinal), first.FileNotices.Select(n => n.ChangedUtc));
+        Assert.Equal(first.FileNotices.Select(n => n.GoneUtc).Order(StringComparer.Ordinal), first.FileNotices.Select(n => n.GoneUtc));
 
         var second = await returned.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Orders }, cancellationToken: Ct);
 
@@ -420,8 +430,8 @@ public sealed class FileEdgesOverTheWireTests
     public async Task A_prune_racing_placements_leaves_the_disk_and_the_list_agreeing()
     {
         // Thirty rounds of five placements and a prune at once. What must hold afterwards
-        // is not who won but that no file is on disk unlisted — which the watcher would then hand to the person — and
-        // no row names a file that is not there.
+        // is not who won but that no file is on disk unlisted — counted as put there by hand, though Parley wrote it —
+        // and no row names a file that is not there.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
         var operators = broker.ConnectAsOperator();
@@ -476,9 +486,6 @@ public sealed class FileEdgesOverTheWireTests
 
     private static async Task AssertDiskAndListAgreeAsync(LoopbackBroker broker)
     {
-        // Past the watcher's quiet period, so anything it would record has been recorded.
-        await Task.Delay(TimeSpan.FromSeconds(2), Ct);
-
         var operators = broker.ConnectAsOperator();
         var all = new List<Wire.SharedFileView>();
         var next = string.Empty;

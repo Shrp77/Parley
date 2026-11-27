@@ -50,15 +50,23 @@ internal static class PersonSeats
         }
     }
 
-    /// <summary>Takes the seats and counts what is waiting, both at once.</summary>
+    /// <summary>Takes the seats and counts what is waiting on the person, both at once.</summary>
     /// <param name="seats">The book.</param>
     /// <param name="directory">The projects, and a client for each.</param>
     /// <param name="cancellationToken">Cancels the reads.</param>
     /// <param name="person">Whether a person caused this, as for <c>EnsureAsync</c>.</param>
-    /// <returns>How much is waiting for the person, and whether every project answered.</returns>
+    /// <returns>How many exchanges wait on the person's answer, and whether every project answered.</returns>
     /// <remarks>
+    /// <para>
     /// The frame does this while a page is drawn, and pages that do not need an answer to draw ask for it afterwards
-    /// instead. Mail waits against the name, not the stream, so the count does not need the seat taken first.
+    /// instead. What waits on the person is the broker's wait-for graph against the name, not the stream, so the count
+    /// does not need the seat taken first.
+    /// </para>
+    /// <para>
+    /// <b>What is owed, never what is undelivered</b> (owner's decision, 2026-11-06): the count leads to the Inbox, which
+    /// lists every question still waiting on the person. A count of undelivered mail read 4 beside a page of 10, and
+    /// dropped to nothing once the page was opened while all 10 still waited.
+    /// </para>
     /// </remarks>
     internal static async Task<(int Waiting, bool Certain)> PresenceAsync(
         SeatBook seats, BrokerDirectory directory, CancellationToken cancellationToken, bool person = true)
@@ -67,12 +75,23 @@ internal static class PersonSeats
         ArgumentNullException.ThrowIfNull(directory);
 
         var taking = EnsureAsync(seats, directory, cancellationToken, person);
-        var counting = seats.WaitingAsync(directory.Projects, cancellationToken);
+        var counting = PersonOwes.CountAsync(seats, directory, cancellationToken);
 
         await Task.WhenAll(taking, counting).ConfigureAwait(false);
 
         return await counting.ConfigureAwait(false);
     }
+
+    /// <summary>What a page says while a project's broker rewrites its store.</summary>
+    /// <param name="project">The project.</param>
+    /// <returns>The sentence.</returns>
+    /// <remarks>
+    /// <b>So a wait reads as a wait</b> (owner's decision, lens 1 run 115): a rewrite of a large store holds every call
+    /// for seconds, and a page or a send that hung with nothing said would read as a broker that stopped answering.
+    /// </remarks>
+    internal static string TidyingSays(string project) =>
+        $"Parley is rewriting the store of {project} to clear removed text. Anything sent waits and goes through when it "
+        + "finishes.";
 
     /// <summary>The query parameter a page's own timed reload carries, so the render can tell it from a person.</summary>
     internal const string Reloaded = "reloaded";

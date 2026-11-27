@@ -24,6 +24,8 @@ namespace Parley.Terminal.Tests;
 /// business. So it is asserted rather than assumed.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class DialogStackTests
 {
     [Fact]

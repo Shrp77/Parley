@@ -20,6 +20,7 @@ namespace Parley.Web.Tests;
 /// but a full one they would read as the answer to what they asked.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ScopeTests
 {
     [Theory]

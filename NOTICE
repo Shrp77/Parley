@@ -6,3 +6,7 @@ Licensed under the Apache License, Version 2.0.
 This product bundles Material Symbols Outlined (Copyright Google LLC), cut down to the
 icons the web console uses, in src/Parley.Web/Brand/material-symbols.woff2. It is licensed
 under the Apache License, Version 2.0: https://github.com/google/material-design-icons
+
+This product bundles Roboto Flex (Copyright The Roboto Flex Project Authors) in
+src/Parley.Web/Brand/roboto-flex.woff2. It is licensed under the SIL Open Font License,
+Version 1.1, whose text is in src/Parley.Web/Brand/RobotoFlex-OFL.txt.

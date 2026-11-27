@@ -3,6 +3,7 @@ using Xunit;
 
 namespace Parley.Store.Tests;
 
+[Integration]
 public sealed class EngineVersionTests : IDisposable
 {
     // The floor 001_initial.sql declares: STRICT tables arrived in 3.37, generated columns in

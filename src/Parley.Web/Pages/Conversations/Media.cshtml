@@ -1,0 +1,57 @@
+@page
+@model Parley.Web.Pages.Conversations.MediaModel
+@using Parley.Client.Files
+@{
+    ViewData["Title"] = $"Media in {Model.Id}";
+}
+
+<h1>Media in @Model.Id</h1>
+
+
+@if (Model.Problem is { Length: > 0 } problem)
+{
+    <p class="problem" role="alert">@problem</p>
+}
+else if (Model.Images.Count + Model.Others.Count == 0)
+{
+    <p>There are no files in this conversation.</p>
+}
+else
+{
+    @* Newest first, each saying who placed it and when, and leading back to where it sits in the conversation. *@
+    @if (Model.Images.Count > 0)
+    {
+        <h2>Images</h2>
+        <ul class="media-grid">
+            @foreach (var image in Model.Images)
+            {
+                <li>
+                    <partial name="_Placed" model="new Parley.Web.Pages.Conversations.PlacedItem(image, Model.Project, Model.Id!, true)" />
+                </li>
+            }
+        </ul>
+    }
+
+    @if (Model.Others.Count > 0)
+    {
+        <h2>Other files</h2>
+        <ul class="media-list">
+            @foreach (var file in Model.Others)
+            {
+                <li>
+                    <partial name="_Placed" model="new Parley.Web.Pages.Conversations.PlacedItem(file, Model.Project, Model.Id!, true)" />
+                </li>
+            }
+        </ul>
+    }
+
+    <p class="as-of">@Parley.Client.Rendering.LocalTime.Note()</p>
+}
+
+<partial name="_Viewer" />
+
+@section Actions {
+    @* This page's commands, in the rail like every page's; the places the menu already leads to are not repeated (feature 042). *@
+    <a class="rail-link" href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = Model.Id })" title="Back to the conversation"><span class="icon" aria-hidden="true">chevron_left</span><span class="rail-label">The conversation</span></a>
+    <a class="rail-link" href="@Url.Page("/Projects/Files", new { project = Model.Project, conversation = Model.Id })" title="Files, to place or remove"><span class="icon" aria-hidden="true">description</span><span class="rail-label">Its files</span></a>
+}

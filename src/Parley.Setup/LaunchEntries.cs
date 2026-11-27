@@ -87,13 +87,13 @@ internal static class LaunchEntries
     /// <returns>The entries this tooling owns, in the order the file holds them.</returns>
     /// <exception cref="InvalidDataException">Two servers share one name.</exception>
     /// <remarks>
-    /// <b>A duplicated member is refused here rather than crashing three call sites.</b>
+    /// <b>A duplicated member is refused here as well as at the parse.</b>
     /// <c>{"parley-alpha": {…}, "parley-alpha": {…}}</c> is legal JSON and is what a careless merge
-    /// produces; <c>JsonNode.Parse</c> accepts it and throws <c>ArgumentException</c> later, out of
-    /// the enumerator, where nothing was catching it — so a scan crashed, a withdrawal crashed, and
-    /// <c>enroll apply</c> crashed part-way through a run, leaving the half-applied set that command
-    /// refuses by design. Translated to the exception this codebase already means by "somebody's
-    /// file is in a shape I will not merge into", which every caller of that path already handles.
+    /// produces. A file read through <see cref="StrictJson"/> never gets this far with one; an object
+    /// built any other way would throw <c>ArgumentException</c> out of the enumerator, where nothing
+    /// catches it, and <c>enroll apply</c> would stop part-way through a run, leaving the half-applied
+    /// set that command refuses by design. Translated to the exception this codebase already means by
+    /// "somebody's file is in a shape I will not merge into", which every caller of that path handles.
     /// </remarks>
     public static IReadOnlyList<LaunchEntry> Read(JsonObject? servers)
     {

@@ -4,7 +4,7 @@
 // Deliberately not AgentSummary, and the two must never be merged.
 //
 // They differ by exactly what SPEC.md §10.1 withholds from an agent: the workspace directory, the
-// session reference, the adapter's configuration. AgentSummary is what a peer may see; this is
+// resume handle, the adapter's configuration. AgentSummary is what a peer may see; this is
 // what the person running the deployment may. Side by side in one project they look like
 // duplication and are the opposite -- a single shape would mean one of the two surfaces returns
 // more than its section allows, and which one would depend on who wrote the mapping.
@@ -26,7 +26,8 @@ namespace Parley.Core;
 /// </param>
 /// <param name="SessionRef">
 /// An adapter-specific handle for resuming a previous session, or <see langword="null"/> if
-/// none exists yet. Mutable: reassigned whenever the agent is spawned or resumed.
+/// none exists. No adapter sends one today, so it is always null; the column is kept for one that
+/// can resume (SPEC.md §14).
 /// </param>
 /// <param name="AdapterConfig">
 /// Whatever the named adapter needs to invoke this agent — a model identifier, an endpoint, a
@@ -81,6 +82,13 @@ namespace Parley.Core;
 /// reports and never an authority: it lets an attach under a new name rename the row it already holds, and only
 /// from the same repository on the same machine. It never decides who may attach.
 /// </param>
+/// <param name="Unsupervised">
+/// Running as a process a node started and a node that is gone still owns (SPEC.md §11.1): it presented a launch token no
+/// node now holds. True even when a process the current node started is attached beside it; otherwise
+/// <paramref name="OpenOutside"/> is also true. Observed from the attachments the broker holds; on the operator's registry only.
+/// </param>
+/// <param name="KeepFrozen">Whether the person asked that the freeze outlast a logon (SPEC.md §14); false when it is not frozen.</param>
+/// <param name="FrozenUtc">When a person froze it in this project, or null when it is not frozen (SPEC.md §14).</param>
 /// <remarks>
 /// Credentials are deliberately not a field here, and should not become one. The broker
 /// persists no credential reference or value for any agent (SPEC.md §12); a field on this
@@ -101,8 +109,15 @@ public sealed record AgentRecord(
     OwnershipSource? OwnsSource = null,
     TurnStanding? Turns = null,
     bool OpenOutside = false,
-    AgentIdentity Identity = default)
+    AgentIdentity Identity = default,
+    bool Unsupervised = false,
+    DateTimeOffset? FrozenUtc = null,
+    bool KeepFrozen = false)
 {
+    /// <summary>Whether a person has frozen the agent in this project (SPEC.md §14), so nothing starts it until they unfreeze it or, unless <see cref="KeepFrozen"/>, the broker next starts.</summary>
+    /// <remarks>Derived from <see cref="FrozenUtc"/>, which is the one fact; a flag beside it would be a second one to disagree.</remarks>
+    public bool Frozen => FrozenUtc is not null;
+
     /// <summary>Whether this row is the facilitator's (SPEC.md principle 2.11).</summary>
     /// <remarks>
     /// Derived from the adapter rather than carried as a field, because storage ties that adapter to the reserved

@@ -23,6 +23,7 @@ namespace Parley.Client.Tests;
 /// whether answering from one window leaves the other showing a debt that is already paid.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class TwoSurfaceDeliveryTests
 {
     private static readonly ProjectSettings Alpha =
@@ -123,8 +124,10 @@ public sealed class TwoSurfaceDeliveryTests
                 () => { });
 
         /// <inheritdoc/>
-        public override AsyncUnaryCall<Wire.InboxReply> DrainInboxAsync(
-            Wire.DrainInboxRequest request, CallOptions options)
+        public override AsyncDuplexStreamingCall<Wire.DrainInboxFrame, Wire.InboxReply> DrainInbox(CallOptions options) =>
+            FakeCollection.Answering(Answer);
+
+        private Wire.InboxReply Answer(Wire.DrainInboxRequest request)
         {
             if (refuseDrain)
             {
@@ -149,11 +152,7 @@ public sealed class TwoSurfaceDeliveryTests
                 Envelope = string.Empty
             });
 
-            return new(Task.FromResult(reply),
-                Task.FromResult(new Metadata()),
-                () => Status.DefaultSuccess,
-                () => [],
-                () => { });
+            return reply;
         }
     }
 

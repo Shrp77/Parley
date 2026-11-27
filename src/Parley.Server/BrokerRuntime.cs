@@ -43,6 +43,13 @@ namespace Parley.Server;
 public sealed class BrokerRuntime : IAsyncDisposable
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
+
+    // Whether the store is being rewritten now, and how many rewrites have started, so a send can tell it waited on one.
+    private int _rewriting;
+    private long _rewritesStarted;
+    private int _agentWorkWaiting;
+    private int _gateWaiting;
+
     // Every attachment for a name, not the latest. SPEC.md §14 treats two windows open on one
     // repository as two sessions for one agent -- `connected` counts them rather than flagging
     // one -- so a map holding only the newest would leave the older window connected, counted,
@@ -51,8 +58,21 @@ public sealed class BrokerRuntime : IAsyncDisposable
     // Immutable arrays under AddOrUpdate rather than a lock around a list. Nudging reads this on
     // every write to any inbox, and a reader that had to take a lock would be contending with
     // attach and detach for the privilege of sending a notice that is disposable anyway.
-    /// <summary>The token each node said it gave the agent it is starting, until that agent attaches (SPEC.md §11.7).</summary>
-    private readonly ConcurrentDictionary<AgentName, string> _launches = new();
+    /// <summary>The token each node said it gave the agent it is starting, and the node connection that said so (SPEC.md §11.7).</summary>
+    /// <remarks>
+    /// <b>A token goes with the connection that reported it</b> (SPEC.md §11.1; review, lens 1 run C on 5de89187). Kept after
+    /// its node left, every process that node started still read as one a node supervises: a sender was told a turn was coming
+    /// that no node would give, and a person's kill was refused. The connection, not the machine, is compared, so a node that
+    /// rejoined and announced the process again before the old connection's release keeps the token.
+    /// </remarks>
+    private readonly ConcurrentDictionary<AgentName, (string Token, JoinedNode Node)> _launches = new();
+
+    /// <summary>The last stop (not a restart) asked of each agent: the launch it was asked of and the node connection that took it.</summary>
+    /// <remarks>
+    /// Read when a node reports a launch of a frozen agent, so a stop that connection already holds for that process is not asked
+    /// twice. A stop given to an earlier connection may have gone with it, so only the current one counts.
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, (string? Launch, JoinedNode Node)> _stopAsked = new(StringComparer.Ordinal);
 
     /// <summary>The identity each agent was last registered with, so a command for a node can name the checkout.</summary>
     /// <remarks>
@@ -67,10 +87,26 @@ public sealed class BrokerRuntime : IAsyncDisposable
     private readonly ConcurrentDictionary<string, JoinedNode> _nodes =
         new(StringComparer.Ordinal);
 
+    // Set once the host begins stopping (CloseStreams). A session that arrives after that is closed as it is held, so a
+    // reattach during the stop cannot hold the host for its whole shutdown timeout. 1 when set; read with Volatile.
+    private int _closing;
+
     // The turns nodes have said are running and not yet said are over (SPEC.md §11.6). In memory on purpose: it is a
     // fact about live connections, like a node being joined, and a broker that has just started holds none — so a
     // restart forgetting them is right by construction, where a column would be false after every crash.
     private readonly ConcurrentDictionary<AgentName, RunningTurn> _turns = new();
+
+    // What each agent's node last said it has running in the background (SPEC.md §11.6), in memory like a running turn.
+    private readonly ConcurrentDictionary<AgentName, BackgroundWork> _background = new();
+
+    // What each agent has said about its own background tasks (feature 043), in memory, keyed by the caller.
+    private readonly ConcurrentDictionary<AgentName, DescribedTasks> _described = new();
+
+    // When the last few turns each agent was heard to end began. A start report slower than its own end (the node's call
+    // gave up after its deadline and the broker handled it anyway) carries that same time, and must not leave the agent
+    // reading as working until its next report. The same time, never an earlier one: a node's clock may step back, or
+    // the agent move to a node whose clock is behind, and an earlier start is then a real turn (review, run 63).
+    private readonly ConcurrentDictionary<AgentName, DateTimeOffset[]> _lastEnded = new();
 
     /// <summary>The silent participants each closure poll has already asked again, keyed by poll.</summary>
     /// <remarks>
@@ -106,14 +142,14 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <para>
     /// <b>The bound that makes waking every message's recipient affordable.</b> A wake
     /// might be thought unbounded, and the answer is
-    /// in SPEC.md §17 question 1's own evidence: <c>inbox</c> with no limit collects everything pending, so one
-    /// turn drains sixty messages and asking a second time buys nothing.
+    /// in SPEC.md §17 question 1's own evidence: one turn collects until nothing is waiting, so it drains sixty
+    /// messages and asking a second time buys nothing.
     /// </para>
     /// <para>
     /// <b>When it clears</b> (SPEC.md §5.4). It is removed as a collection begins rather than after it
     /// returns (<see cref="CollectAsync{T}"/>), so a message stored during one asks for its own turn. A
-    /// collection its caller limited to fewer than are waiting is followed by a wake for the rest
-    /// (<c>AgentsService.DrainInbox</c>), because the messages left behind are owed one.
+    /// collection that left messages waiting, by its caller's limit or by what one collection carries (SPEC.md §10.1),
+    /// is followed by a wake for the rest (<c>AgentsService.DrainInbox</c>), because the messages left behind are owed one.
     /// </para>
     /// <para>
     /// <b>Keyed on the drain, not on the attach, and that distinction is the whole of it.</b>
@@ -148,6 +184,139 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     private readonly ConcurrentDictionary<string, bool> _resumedMachines = new(StringComparer.Ordinal);
 
+    /// <summary>The restart wake each machine's first join scheduled, until the broker stops (SPEC.md §14, §11.1).</summary>
+    /// <remarks>Kept so stopping the broker can wait for one in progress before it closes the store.</remarks>
+    private readonly ConcurrentDictionary<string, Task> _restartWakes = new(StringComparer.Ordinal);
+
+    /// <summary>Cancelled when the broker stops, which ends a restart wake still waiting.</summary>
+    private readonly CancellationTokenSource _stopping = new();
+
+    /// <summary>The agents whose freeze lapsed when this broker started, until their machine's node first joins (SPEC.md §14).</summary>
+    /// <remarks>
+    /// <para>
+    /// A lapse is an unfreeze nobody was there to act on: no node had joined, so nothing could be started. The first join of the
+    /// agent's machine pays what an unfreeze pays, a turn for anything that arrived while it was frozen, whatever the resume policy.
+    /// </para>
+    /// <para>
+    /// <b>The store keeps the lapse until it is paid.</b> The row stays frozen under the earlier run until that turn has been
+    /// asked for, and only then is it cleared (<see cref="AgentRepository.ClearLapseAsync"/>), so a broker that starts again
+    /// before the join reads the same lapse and owes the same turn. Nothing here reads it as frozen meanwhile: it is never in
+    /// <see cref="_frozen"/>. A person's freeze or unfreeze of the agent takes it out, because either settles the debt itself.
+    /// </para>
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, bool> _lapsed = new(StringComparer.Ordinal);
+
+    /// <summary>The agents unfrozen while the process the freeze was stopping was still up, until that process has gone (SPEC.md §14).</summary>
+    /// <remarks>
+    /// The freeze's stop waits for the turn. An unfreeze before the turn ends finds the agent attached, so its wake is a turn, and
+    /// the node gives that turn to a process the stop then ends: the mail it was for is left with nothing coming. What the unfreeze
+    /// owes is asked for again when the last session of that process detaches, the first moment a start can be asked for.
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, bool> _unfrozenWhileUp = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The agents a turn was asked of while they were attached, each with the wake claim that turn left, until their process
+    /// has gone or a stop is asked of them (SPEC.md §11.1).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A turn asked of a process is not a turn taken.</b> The process may end first: a person's stop, asked through this
+    /// broker or through another project's that the same checkout serves, takes the turns queued behind it, and a process can
+    /// simply die. The turn's sender was told the agent was running, the claim the turn left held every later wake for two
+    /// minutes, and nothing started the agent, though "the next work for it starts it again" (SPEC.md §10.2 <c>stop</c>). So
+    /// every turn is noted, and when the last session of that process detaches the work is asked for again, as a start, if it is
+    /// still uncollected.
+    /// </para>
+    /// <para>
+    /// <b>Every turn, and not only one asked while a stop was known to be waiting.</b> This broker cannot know that: the stop may
+    /// be another broker's, and telling a turn asked just before a stop from one asked just after took a note of the stop, a
+    /// second look at it and a rule for each kind of wake, each of which a race then found a way past. A turn that was taken
+    /// collected its mail, so at the detach there is nothing uncollected and nothing is asked.
+    /// </para>
+    /// <para>
+    /// <b>The claim is kept with the note, and whoever takes the note acts on it.</b> The asking and the detach run on different
+    /// threads, so the claim a lost turn left is told from a start already asked for by being this exact claim, never by when it
+    /// was made. The note is taken once, by the detach or by the asking that finds the session already gone, so the start is
+    /// asked for once. A stop clears the notes of turns asked before it, before its node is asked: what the agent had not
+    /// collected by then does not undo the stop, and a turn asked after it is noted after the clearing.
+    /// </para>
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _turnAsked = new(StringComparer.Ordinal);
+
+    /// <summary>The agents a person asked to start while they were attached, so that the asking went out as a turn, until that turn begins or their process has gone.</summary>
+    /// <remarks>
+    /// A person's start of an agent that is still attached is asked as a turn. If the process ends before the turn begins, the
+    /// start the person asked for is still owed, whether or not anything is waiting for the agent: a turn asked of a process
+    /// that ends before taking it is not lost, whatever it was for (SPEC.md §11.1). Cleared when the node reports a turn begun,
+    /// which is the asking answered, and by a stop, which is the person's later word. A node never reports a turn begun for a
+    /// process that had already gone (<c>ResidentAgent.TakeTurnAsync</c>), or a turn the stop took would clear this.
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, bool> _startWanted = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The agents a wake passed over because they were running only as processes a node that is gone left running, until the
+    /// last of those processes has gone or a person kills it (SPEC.md §11.1).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A left process is not started beside itself, and it does not stay.</b> A broker that died hard under a turn finds the
+    /// process attached again with a token no node holds, so the restart wake, and every message's wake after it, leaves it
+    /// alone. The process finishes the turn it was on, finds its input ended because its node has gone, and exits. Nothing
+    /// asked for the agent afterwards, so the exchange it had collected stayed open and the mail sent to it meanwhile was
+    /// stranded (review, lens 1 run C, Linux, real processes). What was passed over is asked for when the last session
+    /// detaches, as <see cref="WakeIfOwingAsync"/> asks, so a frozen or retired agent is still not started.
+    /// </para>
+    /// <para>
+    /// <b>Not for a session open in an editor</b>, which presents no token: that one is somebody's, and it reads its mail
+    /// when they prompt it (§11.7). <b>A person's kill clears the note</b>, because a kill does not start the agent (§10.2).
+    /// </para>
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, bool> _leftPassedOver = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The agents whose lapse's start was passed over because they ran only as a left process, until that process has gone
+    /// (SPEC.md §14, §11.1).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A lapse passed over is not paid.</b> Nothing was started: the debt only moved into <see cref="_leftPassedOver"/>,
+    /// which is memory. Cleared from the store then, a broker that started again before the left process ended lost the
+    /// start the lapse owed, a Result or a closure poll left waiting for the agent (review, lens 2 run C on 5de89187). So the
+    /// stored lapse stays until the detach of the last left process asks for the start, and is cleared then.
+    /// </para>
+    /// <para>
+    /// <b>Not cleared when nobody could be asked</b> (the node left, or the broker is stopping and its node's stream is
+    /// closed): the lapse goes back to <see cref="_lapsed"/> for the machine's next join, and the store keeps it for a
+    /// broker that starts before. <b>Cleared when a person killed the process</b>, which took the note: a kill does not
+    /// start the agent (§10.2), and keeping the stored lapse would have a restart start what this run would not. Likewise
+    /// when a session somebody opened, or one a node started, took the note over.
+    /// </para>
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, bool> _lapseOnLeft = new(StringComparer.Ordinal);
+
+    /// <summary>Makes a wake's claim and its notes one step among wakes.</summary>
+    /// <remarks>
+    /// Two wakes for one agent, a person's Start crossing a message's, could each write its claim and then its note, in an order
+    /// that left the note holding one wake's claim and the claim table the other's. The detach then removed nothing and found a
+    /// live claim, so it asked for nothing. Nothing inside the lock waits on anything.
+    /// </remarks>
+    private readonly Lock _claimAndNote = new();
+
+    /// <summary>The agents a person has frozen (SPEC.md §14), by name: what <see cref="Ask"/> reads, because it cannot wait on the store.</summary>
+    /// <remarks>
+    /// Loaded when the broker starts and changed only by <see cref="MarkFrozen"/>, which the operator operations call after the
+    /// store has been written, so it is a copy of the column and never a second fact.
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, bool> _frozen = new(StringComparer.Ordinal);
+
+    /// <summary>A number this broker gave itself when it started, new every time (SPEC.md §14).</summary>
+    /// <remarks>
+    /// Kept with every freeze, so the next start can tell a freeze an earlier run made from one this run made. A start is the
+    /// evidence that the machine restarted, or that its owner logged on again and the processes were started afresh; a freeze
+    /// that is not marked to outlast one lapses with it.
+    /// </remarks>
+    public string RunId { get; } = Guid.NewGuid().ToString("D");
+
     private readonly SqliteConnection _connection;
     private readonly Parley.Broker.Broker _house;
     private readonly Parley.Broker.BrokerOptions _options;
@@ -172,12 +341,20 @@ public sealed class BrokerRuntime : IAsyncDisposable
         _connection = connection;
         _ownsConnection = ownsConnection;
         _storeLock = storeLock;
+
+        // One policy for both prunes: the hourly pass reads the options' and a person's prune reads Retention, and
+        // the two once differed, so a configured policy reached only the prune a person started.
+        options = options with { Retention = retention };
         _options = options;
         Clock = clock;
         Retention = retention;
 
         _house = new Parley.Broker.Broker(connection, options);
         _house.ServeFrom(clock.GetUtcNow());
+
+        // Told when a destroy, a purge or a retention pass rewrites the store, which holds every operation behind the
+        // gate for as long as it runs (SPEC.md §9.1).
+        ParleyDatabase.ObserveTidying(connection, TellTidying);
 
         // A connection is evidence (SPEC.md §4.0), and a broker that has just started holds
         // none -- so every `connected` in the database is a claim left over from the process
@@ -187,6 +364,24 @@ public sealed class BrokerRuntime : IAsyncDisposable
         _ = new NodeRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
         _ = new AgentRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
 
+        // A freeze an earlier run made lapses now, unless the person asked that it outlast a start (SPEC.md §14). Kept out of the
+        // set below, so `Ask` and every surface never see what has lapsed as frozen. Each is remembered until the first join of
+        // its machine's node, because what arrived for it while it was frozen had its wake declined and is owed a turn.
+        // **Left stored until that turn has been asked for** (WakeOnceReattachedAsync): cleared here, a second start before
+        // the join found nothing lapsed and the debt was gone (review, lens 1 run A on 6257cf80).
+        var lapsedAtStart = new AgentRepository(connection).LapsedAsync(RunId).GetAwaiter().GetResult();
+
+        foreach (var lapsed in lapsedAtStart)
+        {
+            _lapsed[lapsed.Value] = true;
+        }
+
+        foreach (var frozen in new AgentRepository(connection).GetAllAsync().GetAwaiter().GetResult()
+                     .Where(a => a.Frozen && !lapsedAtStart.Contains(a.Name)))
+        {
+            _frozen[frozen.Name.Value] = true;
+        }
+
         // The two rows the broker writes itself (SPEC.md §12.3), before anything could want to send as, or to, either:
         // the facilitator, and the person seat an agent asks when no agent can help (principle 2.6). Nothing launches
         // either, which makes them the two identities no launch fixes (constitution, Principle III). Both are named for
@@ -195,11 +390,15 @@ public sealed class BrokerRuntime : IAsyncDisposable
         Facilitator = new AgentRepository(connection).EnsureFacilitatorAsync(project).GetAwaiter().GetResult();
         Person = new AgentRepository(connection).EnsurePersonAsync(project).GetAwaiter().GetResult();
 
-        // Last, once everything it reads through is in place: the scan it starts goes through the gate like any other
-        // write, and changes made while no broker was running are found before anybody asks.
-        Watcher = new FolderWatcher(this);
-        Watcher.Start();
+        // **The file location is checked against the store before anybody lists or fetches** (SPEC.md §9.5): a file
+        // gone from disk while no broker ran is gone, one whose bytes changed is quarantined, and anything no row names,
+        // a folder a destroy could not delete included, is deleted. Before serving, so nothing waits on it but the start.
+        Sweeper = new FileSweeper(this);
+        Sweeper.SweepAsync(CancellationToken.None).GetAwaiter().GetResult();
     }
+
+    /// <summary>Gets what checks the file location against the store and puts right what was done to it (SPEC.md §9.5).</summary>
+    public FileSweeper Sweeper { get; }
 
     /// <summary>Gets the facilitator's name in this store (SPEC.md principle 2.11).</summary>
     public AgentName Facilitator { get; }
@@ -209,9 +408,6 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
     /// <summary>Gets the project this store serves, which both broker-provided participants are named for.</summary>
     public ProjectName Project { get; }
-
-    /// <summary>Gets what notices changes made to the file location outside Parley (SPEC.md §9.5).</summary>
-    internal FolderWatcher Watcher { get; }
 
     /// <summary>
     /// How long a wake stays pending before another may be asked for.
@@ -247,12 +443,47 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     internal static readonly TimeSpan WakeCeiling = TimeSpan.FromMinutes(2);
 
+    /// <summary>How long a machine's first join waits before the restart wake decides whom to start (SPEC.md §14, §11.1).</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Long enough for a process that outlived the broker to attach again.</b> A broker that was killed leaves the agents'
+    /// processes running, and their adapters try again every two seconds (<c>BrokerLink.RetryAfter</c> in Parley.Mcp). A node
+    /// rejoins faster than that, so a wake at the join found the agent detached and asked for a start: a second process in the
+    /// same checkout, collecting the same owed work. Once the old one is back it reads as left running, which the wake skips
+    /// until it has gone (<see cref="_leftPassedOver"/>).
+    /// </para>
+    /// <para>
+    /// A constant, not a setting: nothing a deployment knows makes another number right, and the adapter's interval is
+    /// fixed in code beside it. An adapter slower than this is not waited for, and its agent is started again as before.
+    /// </para>
+    /// </remarks>
+    internal static readonly TimeSpan RestartWakeDelayDefault = TimeSpan.FromSeconds(5);
+
+    /// <summary>Gets or sets how long the restart wake waits after a machine's first join; a seam for tests.</summary>
+    /// <remarks>Set before a node joins. Nothing outside the tests sets it, so a broker always waits <see cref="RestartWakeDelayDefault"/>.</remarks>
+    internal TimeSpan RestartWakeDelay { get; set; } = RestartWakeDelayDefault;
+
+    /// <summary>Gets the restart wake a machine's first join scheduled, or a completed task when none was.</summary>
+    /// <param name="machine">The machine.</param>
+    /// <returns>A task that completes when the wake has asked for every start it will, or has given up.</returns>
+    /// <remarks>For tests, which wait on it rather than on a fixed time. It never faults: a failed wake is forgotten.</remarks>
+    internal Task RestartWakeOf(string machine) =>
+        _restartWakes.TryGetValue(machine, out var wake) ? wake : Task.CompletedTask;
+
     /// <summary>Gets the clock every operation is stamped from.</summary>
     public TimeProvider Clock { get; }
 
     /// <summary>Gets how the store this runtime serves differs from the shape this build expects.</summary>
     /// <value>Empty when it matches, and for an in-memory store, which is made by this build.</value>
     public IReadOnlyList<string> StoreProblems { get; init; } = [];
+
+    /// <summary>Gets where the store was copied before this runtime upgraded it.</summary>
+    /// <value><see langword="null"/> when no migration was applied, and for a new or in-memory store.</value>
+    /// <remarks>
+    /// Kept so <c>serve</c> can say the store was upgraded once it serves, when every copy of the store is removed, and
+    /// name this one when the broker then cannot listen.
+    /// </remarks>
+    public string? MigrationBackup { get; init; }
 
     /// <summary>
     /// Gets the retention policy this deployment prunes to.
@@ -271,11 +502,78 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     public FileLocationStore Files { get; }
 
+    /// <summary>Gets what each collection in flight has handed over and not yet had acknowledged (SPEC.md §6).</summary>
+    /// <remarks>
+    /// Here for the reason <see cref="Files"/> is: shared by every session of every agent this broker serves, and in
+    /// memory, so a restart releases every hold and the store still holds everything as waiting.
+    /// </remarks>
+    public Parley.Broker.InboxHolds InboxHolds { get; } = new();
+
     /// <summary>Gets the fetches streamed to completion and not yet reported as written.</summary>
     public ServedFetches Fetches { get; } = new();
 
     /// <summary>Gets the agents currently attached, by name.</summary>
     public IReadOnlyCollection<string> Attached => (IReadOnlyCollection<string>)_attached.Keys;
+
+    /// <summary>Tells every open session that a rewrite started or finished.</summary>
+    /// <param name="underway">Whether it started.</param>
+    /// <remarks>
+    /// <b>Nothing is refused while it runs</b> (owner's decision, lens 1 run 115): what an agent or a person sends waits on
+    /// the gate and goes through when the rewrite finishes. Telling them is what keeps a wait of seconds on a large store
+    /// from reading as a broker that stopped answering. Called on the thread running the rewrite, under the gate, so it
+    /// only queues.
+    /// </remarks>
+    private void TellTidying(bool underway)
+    {
+        // **The flag before the count**, and a send reads them the other way round: a send whose two reads fall either
+        // side of a start then sees the flag set or the count moved, never neither (6 in 20,000 missed it the other way).
+        Volatile.Write(ref _rewriting, underway ? 1 : 0);
+
+        if (underway)
+        {
+            _ = Interlocked.Increment(ref _rewritesStarted);
+        }
+
+        foreach (var sessions in _attached.Values)
+        {
+            foreach (var session in sessions)
+            {
+                session.Tidy(underway);
+            }
+        }
+    }
+
+    /// <summary>Gets how many calls on an agent's behalf are waiting for the gate now.</summary>
+    /// <remarks>
+    /// A test's seam: one that holds the gate has to know a send reached it before letting a rewrite run ahead of it,
+    /// and a delay only guesses at that on a loaded machine.
+    /// </remarks>
+    internal int AgentWorkWaiting => Volatile.Read(ref _agentWorkWaiting);
+
+    /// <summary>Gets how many callers of any kind are waiting for the gate now.</summary>
+    /// <remarks>
+    /// A test's seam, and only that: nothing in the broker reads it, so it changes no behaviour. A test that queues
+    /// calls behind holds on the gate has to know each call reached the gate before queueing the next hold, and a
+    /// delay only guesses at that: on a stalled runner a request arrived late, queued behind the wrong hold, and the
+    /// test cancelled it at the wrong step. <see cref="AgentWorkWaiting"/> is the part of this count that speaks for
+    /// an agent.
+    /// </remarks>
+    internal int GateWaiting => Volatile.Read(ref _gateWaiting);
+
+    // Every wait for the gate goes through here, so GateWaiting counts all of them.
+    private async Task EnterGateAsync(CancellationToken cancellationToken)
+    {
+        _ = Interlocked.Increment(ref _gateWaiting);
+
+        try
+        {
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _ = Interlocked.Decrement(ref _gateWaiting);
+        }
+    }
 
     /// <summary>Gets how many sessions are open for an agent.</summary>
     /// <param name="agent">The agent.</param>
@@ -301,6 +599,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <returns>The runtime, holding the store until it is disposed.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     /// <exception cref="StoreHeldException">Another broker is serving this store.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The start failed after a copy of the store was taken before upgrading it. The message names the copy and says
+    /// whether the store was upgraded; the original failure is the inner exception.
+    /// </exception>
     /// <remarks>
     /// <para>
     /// Migration happens here, once, rather than in every client, so a deployment's schema version
@@ -335,22 +637,31 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         var held = StoreLock.Acquire(databasePath);
         SqliteConnection? connection = null;
+        string? backup = null;
+        var migrated = false;
 
         try
         {
             connection = ParleyDatabase.Open(databasePath);
 
             RefuseAForeignDatabase(connection, databasePath);
+
+            // Copied first, under the lock, so the copy is the store exactly as the previous build left it (SPEC.md §9.2).
+            backup = ParleyDatabase.BackUpBeforeMigrating(connection, databasePath, clock.GetUtcNow());
             SchemaMigrator.Migrate(connection);
+            migrated = true;
 
             // After the lock, like everything else that touches what belongs to the store: emptying the staging
             // directory while another broker was mid-placement would destroy an upload it was about to commit.
-            var files = new FileLocationStore(databasePath + StoreFiles.Files, databasePath + StoreFiles.FilesIncoming);
+            var files = new FileLocationStore(
+                databasePath + StoreFiles.Files,
+                databasePath + StoreFiles.FilesIncoming,
+                quarantine: databasePath + StoreFiles.FilesQuarantine);
             files.Prepare();
 
-            // Looked at after the migration, and only reported. The schema number is not a witness while it is
-            // edited in place, so the shape is compared directly; `StoreShape` says why a difference is never
-            // repaired here.
+            // Looked at after the migration, and only reported. The schema number is a witness only to the
+            // migrations a store was given, not to its shape, so the shape is compared directly; `StoreShape` says why a
+            // difference is never repaired here.
             var shape = StoreShape.Problems(connection);
 
             return new BrokerRuntime(
@@ -360,12 +671,28 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 storeLock: held)
             {
                 StoreProblems = shape,
+                MigrationBackup = backup,
             };
         }
-        catch
+        catch (Exception failed)
         {
             connection?.Dispose();
             held.Dispose();
+
+            // **A start that fails after taking a copy names it, and says whether the store was upgraded**: what a person
+            // does next differs (docs/operating.md), and the failure's own message rarely says which step failed. It goes
+            // once a start serves the upgraded store.
+            if (backup is not null && failed is not OperationCanceledException)
+            {
+                throw new InvalidOperationException(
+                    migrated
+                        ? string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"{failed.Message} The store was upgraded to schema {SchemaMigrator.LatestVersion} before this failed; a copy of it as it was before this start is at {backup}.")
+                        : $"{failed.Message} The store was not upgraded and is as it was; a copy of it as it was before this start is at {backup}.",
+                    failed);
+            }
+
             throw;
         }
     }
@@ -375,7 +702,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </summary>
     /// <param name="options">Lifecycle configuration.</param>
     /// <param name="clock">The clock.</param>
-    /// <param name="retention">What to prune to, or <see langword="null"/> for the default.</param>
+    /// <param name="retention">What to prune to, or <see langword="null"/> for the policy in <paramref name="options"/>.</param>
     /// <param name="filesRoot">
     /// Where placed files go, or <see langword="null"/> for a temporary directory deleted when the runtime is.
     /// </param>
@@ -402,7 +729,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
         try
         {
             return new BrokerRuntime(
-                project ?? TestProject, connection, options, clock, retention ?? RetentionPolicy.Default,
+                project ?? TestProject, connection, options, clock, retention ?? options.Retention,
                 FilesAt(filesRoot));
         }
         catch
@@ -469,7 +796,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="connection">An open, already-migrated connection. Not disposed by this.</param>
     /// <param name="options">Lifecycle configuration.</param>
     /// <param name="clock">The clock.</param>
-    /// <param name="retention">What to prune to, or <see langword="null"/> for the default.</param>
+    /// <param name="retention">What to prune to, or <see langword="null"/> for the policy in <paramref name="options"/>.</param>
     /// <param name="filesRoot">
     /// Where placed files go, or <see langword="null"/> for a temporary directory deleted when the runtime is.
     /// </param>
@@ -501,7 +828,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(clock);
 
         return new BrokerRuntime(
-            project ?? TestProject, connection, options, clock, retention ?? RetentionPolicy.Default,
+            project ?? TestProject, connection, options, clock, retention ?? options.Retention,
             FilesAt(filesRoot), ownsConnection: false);
     }
 
@@ -537,6 +864,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="registration">What the adapter said about itself.</param>
     /// <param name="cancellationToken">Cancels the attach.</param>
     /// <param name="launchToken">What the node that started this process put in its environment, or null (SPEC.md §11.7).</param>
+    /// <param name="processId">The process its adapter said hosts it, or null (SPEC.md §11.1).</param>
     /// <returns>The attachment, which the caller disposes when the stream ends.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="registration"/> is null.</exception>
     /// <exception cref="InvalidOperationException">
@@ -545,11 +873,12 @@ public sealed class BrokerRuntime : IAsyncDisposable
     public async Task<AttachedAgent> AttachAsync(
         AgentRecord registration,
         CancellationToken cancellationToken = default,
-        string? launchToken = null)
+        string? launchToken = null,
+        long? processId = null)
     {
         ArgumentNullException.ThrowIfNull(registration);
 
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await EnterGateAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -572,10 +901,12 @@ public sealed class BrokerRuntime : IAsyncDisposable
                     .ConfigureAwait(false) is { Length: > 0 } held
                 && !WorkspacePath.SameRepository(here, held))
             {
+                // The registered path is not said: the roster withholds every agent's workspace, and a refusal an
+                // agent can provoke with its own .mcp.json must not hand it another's.
                 throw new InvalidOperationException(
-                    $"'{registration.Name.Value}' is already registered to '{held}', and this " +
+                    $"'{registration.Name.Value}' is already registered to another repository, and this " +
                     $"one is attaching from '{here}'. An agent name belongs to one repository: " +
-                    "give this one a different role, or retire the other.");
+                    "give this one a different role, or retire the other (the registry on this machine says where it is).");
             }
 
             await ReconcileIdentityAsync(agents, registration, cancellationToken).ConfigureAwait(false);
@@ -611,14 +942,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
                     "reinstates it from the agents pane in `parley`, or from its page in the web UI.");
             }
 
-            // **Started by Parley only by the token its node reported for this launch** (SPEC.md §11.7), and spent here, so
-            // a second process presenting it — an editor started from a shell that inherited it — reads as outside.
-            var byParley = launchToken is { Length: > 0 }
-                && _launches.TryGetValue(registration.Name, out var launched)
-                && string.Equals(launched, launchToken, StringComparison.Ordinal)
-                && _launches.TryRemove(new KeyValuePair<AgentName, string>(registration.Name, launched));
-
-            var attached = new AttachedAgent(this, registration.Name, broker, started, byParley);
+            // **Started by Parley only by the token its node reported for its latest launch** (SPEC.md §11.7), checked
+            // whenever it matters (AttachedAgent.StartedByParley) rather than spent here.
+            var attached = new AttachedAgent(
+                this, registration.Name, broker, started, launchToken is { Length: > 0 } ? launchToken : null, processId);
 
             // Last, so that a failure above leaves nothing to find. Appended rather than
             // assigned: the name may already be here, and both sessions are real.
@@ -626,6 +953,22 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 registration.Name.Value,
                 [attached],
                 (_, existing) => existing.Add(attached));
+
+            // **Closed at once when the broker has begun stopping.** CloseStreams runs once, when the host begins to
+            // stop; an adapter that reattaches after it (during the web UI's grace, say) would otherwise hold its
+            // handler, and the host, for Kestrel's whole shutdown timeout (review, lens 1 run B on 4b802112).
+            if (Volatile.Read(ref _closing) == 1)
+            {
+                attached.Close();
+            }
+
+            // **Frozen while it was starting** (SPEC.md §14): the freeze found no process to stop, because the start a node
+            // had already been asked for had not attached yet. It is stopped now, as the freeze would have stopped it, once
+            // the turn it came up for is over. Without this it came up and went on working while every surface said frozen.
+            if (_frozen.ContainsKey(registration.Name.Value) && attached.StartedByParley)
+            {
+                _ = RequestStop(registration.Name, restart: false, "a person froze it while it was starting");
+            }
 
             return attached;
         }
@@ -686,10 +1029,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
             || !WorkspacePath.SameRepository(here, held))
         {
             throw new InvalidOperationException(
-                $"This repository's identity is already registered here as '{holder.Name.Value}', from " +
-                $"'{holder.Workspace ?? "no recorded workspace"}', and '{registration.Name.Value}' is attaching from " +
-                $"'{registration.Workspace ?? "no workspace"}'. An identity belongs to one repository on a machine: " +
-                "give this checkout its own, or retire the other.");
+                $"This repository's identity is already registered here as '{holder.Name.Value}', from another folder, " +
+                $"and '{registration.Name.Value}' is attaching from '{registration.Workspace ?? "no workspace"}'. An identity " +
+                "belongs to one repository on a machine: give this checkout its own, or retire the other (the registry on this " +
+                "machine says where it is).");
         }
 
         if (_attached.TryGetValue(holder.Name.Value, out var running) && !running.IsEmpty)
@@ -702,9 +1045,27 @@ public sealed class BrokerRuntime : IAsyncDisposable
         _ = await agents.RenameAsync(holder.Name, registration.Name, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
-        if (_launches.TryRemove(holder.Name, out var token))
+        if (_launches.TryRemove(holder.Name, out var launched))
         {
-            _launches[registration.Name] = token;
+            _launches[registration.Name] = launched;
+        }
+
+        // The stored freeze went with the row to the new name, so the freeze the broker honours goes with it. Left under the old
+        // name, the registry would say frozen while new work and a person's start still started the agent.
+        if (_frozen.TryRemove(holder.Name.Value, out _))
+        {
+            _frozen[registration.Name.Value] = true;
+        }
+
+        // A lapse still owed goes with it too: the stored freeze it clears once paid is the new name's now.
+        if (_lapsed.TryRemove(holder.Name.Value, out _))
+        {
+            _lapsed[registration.Name.Value] = true;
+        }
+
+        if (_lapseOnLeft.TryRemove(holder.Name.Value, out _))
+        {
+            _lapseOnLeft[registration.Name.Value] = true;
         }
 
         _ = _identities.TryRemove(holder.Name, out _);
@@ -757,6 +1118,12 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 "one node: two would each be told to start the same agents.");
         }
 
+        // A node joining after the broker began stopping is closed as it is held, as a late attach is.
+        if (Volatile.Read(ref _closing) == 1)
+        {
+            joined.Close();
+        }
+
         try
         {
             _ = await UseConnectionAsync(
@@ -780,15 +1147,260 @@ public sealed class BrokerRuntime : IAsyncDisposable
         catch
         {
             _ = _nodes.TryRemove(new KeyValuePair<string, JoinedNode>(node.Machine, joined));
+
+            // Whether this join's own write ran or not, and whether a release before it skipped its leave because this
+            // join held the machine. Not cancellable: the cancellation is usually what failed the join.
+            try
+            {
+                await LeaveIfUnheldAsync(node.Machine, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
+                // The broker is stopping, and a starting broker clears every connected flag.
+            }
+
             throw;
         }
 
-        if (_options.ResumePolicy == ResumePolicy.Always && _resumedMachines.TryAdd(node.Machine, true))
+        // **Scheduled, not awaited**: both wakes wait for processes that outlived the broker to attach again, and the join's
+        // reply must not wait with them. The agents whose freeze lapsed at this start are taken here, so a second join does
+        // not take them twice. Recorded before the join returns, so a test can wait on it.
+        var restart = _options.ResumePolicy == ResumePolicy.Always && _resumedMachines.TryAdd(node.Machine, true);
+
+        // The lapses are only looked at here and taken after the wait: a rename inside it carries the entry to the new name,
+        // which is then the one paid (review, lens 1 run A on fc26cb8a).
+        if (restart || LapsedOn(node.Machine).Count > 0)
         {
-            await WakeForOutstandingWorkAsync(node.Machine, cancellationToken).ConfigureAwait(false);
+            var machine = node.Machine;
+            var wake = Task.Run(() => WakeOnceReattachedAsync(machine, restart), CancellationToken.None);
+
+            _ = _restartWakes.AddOrUpdate(machine, wake, (_, earlier) => Task.WhenAll(earlier, wake));
         }
 
         return joined;
+    }
+
+    /// <summary>
+    /// Asks an agent to start if it owes open work or has anything waiting for it; used when a freeze is cleared (SPEC.md §14).
+    /// </summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <param name="because">Why it is asked, as the node's log says it.</param>
+    /// <returns>What came of asking, or null when it had nothing to do.</returns>
+    /// <remarks>
+    /// Wider than the restart wake, which asks only about open work owed. Every wake for a frozen agent was declined, so a
+    /// Result to its own question, or a closure poll waiting on its vote, arrived with no turn coming and its sender was told
+    /// nothing is lost. The unfreeze is the one moment that debt can be paid, so mail and polls count here too.
+    /// </remarks>
+    internal async Task<WakeOutcome?> WakeIfOwingAsync(
+        AgentName agent, CancellationToken cancellationToken, string because = "a person unfroze it and work or mail is waiting for it")
+    {
+        var owes = await UseConnectionAsync(
+            async (connection, _, ct) =>
+                // Only an agent that is still registered and not retired, as the restart wake asks: retirement is a person's
+                // judgement, and a freeze ending is not evidence against it.
+                (await new AgentRepository(connection).GetAllAsync(ct).ConfigureAwait(false))
+                    .Any(row => row.Name == agent && row.Status == AgentStatus.Active)
+                && ((await _house.OutstandingToWakeForAsync(agent, ct).ConfigureAwait(false)).Count > 0
+                || await new MessageRepository(connection).CountPendingAsync(agent, cancellationToken: ct).ConfigureAwait(false)
+                + await new ConversationRepository(connection).CountOutstandingPollsAsync(agent, ct).ConfigureAwait(false) > 0),
+            cancellationToken).ConfigureAwait(false);
+
+        return owes ? RequestAttentionForMail(agent, because) : null;
+    }
+
+    /// <summary>Pays what a freeze put off, once a person has cleared it (SPEC.md §14).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>A task that completes when it has been asked, or found to have nothing to do.</returns>
+    /// <remarks>
+    /// Not cancelled with the caller: the freeze is already cleared in the store, and a person who closes the page in between must
+    /// not leave the agent unfrozen with its mail unasked for.
+    /// </remarks>
+    internal async Task UnfrozenAsync(AgentName agent)
+    {
+        // Still up as a process Parley started, so the freeze's stop has not taken it yet: remembered, and asked again when it goes.
+        if (_attached.TryGetValue(agent.Value, out var sessions) && sessions.Any(session => session.StartedByParley))
+        {
+            _unfrozenWhileUp[agent.Value] = true;
+        }
+
+        _ = await WakeIfOwingAsync(agent, CancellationToken.None).ConfigureAwait(false);
+    }
+
+
+    /// <summary>
+    /// Waits for processes that outlived the broker to attach again, then wakes the machine's agents that owe work (§14).
+    /// </summary>
+    /// <param name="machine">The machine whose node first joined.</param>
+    /// <param name="restart">Whether to wake every agent that owes work (the resume policy's restart wake).</param>
+    /// <returns>A task that completes when the wake is done or given up; it never faults.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Why it waits</b> (SPEC.md §11.1: a process left running is not started again while it runs): a broker restarted
+    /// under its agents finds them detached until their adapters retry, and its node rejoins first. Woken at once, each agent
+    /// owing work was started a second time beside its old process, both collected the same work in one checkout, and the
+    /// old one could not be killed. After <see cref="RestartWakeDelay"/> the old process is attached again with a token no
+    /// node holds, and <see cref="Ask"/> leaves it alone until it has gone (<see cref="_leftPassedOver"/>).
+    /// </para>
+    /// <para>
+    /// <b>The wake is an extra</b>, so a failure, or the broker stopping, is forgotten and asked for again at the machine's
+    /// next join. The work stays open and is flagged on the ordinary schedule meanwhile.
+    /// </para>
+    /// <para>
+    /// <b>A lapsed freeze waits too</b>, whatever the resume policy: the broker lifted it at its start, and woken at the join
+    /// it started an agent whose editor session or left process had not attached again yet, two sessions in one checkout
+    /// (review, lens 3 run B on d99806d9).
+    /// </para>
+    /// </remarks>
+    private async Task WakeOnceReattachedAsync(string machine, bool restart)
+    {
+        try
+        {
+            var delay = RestartWakeDelay;
+
+            if (delay > TimeSpan.Zero)
+            {
+                await Task.Delay(delay, Clock, _stopping.Token).ConfigureAwait(false);
+            }
+        }
+        catch (Exception)
+        {
+            Forget(machine, restart);
+
+            return;
+        }
+
+        // Taken now, under the names they hold now, and only with a node to ask; a node that left keeps them for its next join.
+        var lapsed = new List<AgentName>();
+
+        if (_nodes.ContainsKey(machine))
+        {
+            foreach (var agent in LapsedOn(machine))
+            {
+                if (_lapsed.TryRemove(agent.Value, out _))
+                {
+                    lapsed.Add(agent);
+                }
+            }
+        }
+
+        if (restart)
+        {
+            try
+            {
+                // The node left while this waited, so there is nobody to ask: forgotten, for its next join to ask again.
+                var asking = true;
+
+                while (asking && !_nodes.ContainsKey(machine))
+                {
+                    _ = _resumedMachines.TryRemove(machine, out _);
+
+                    // A join between the look and the forgetting found the machine still claimed and scheduled no restart
+                    // wake, so it is claimed again and woken for here. A join after the forgetting claims it itself.
+                    asking = _nodes.ContainsKey(machine) && _resumedMachines.TryAdd(machine, true);
+                }
+
+                if (asking)
+                {
+                    await WakeForOutstandingWorkAsync(machine, _stopping.Token).ConfigureAwait(false);
+                }
+            }
+            catch (Exception)
+            {
+                _ = _resumedMachines.TryRemove(machine, out _);
+            }
+        }
+
+        foreach (var agent in lapsed)
+        {
+            try
+            {
+                // Nobody to ask after all (the node left as this asked): kept for the next join, never lost (review, lens 1
+                // run 2 on 6fde4ef3).
+                var outcome = await WakeIfOwingAsync(agent, _stopping.Token, "its freeze lapsed when the broker started, and work or mail is waiting for it")
+                    .ConfigureAwait(false);
+
+                if (outcome == WakeOutcome.Unreachable)
+                {
+                    _lapsed[agent.Value] = true;
+
+                    continue;
+                }
+
+                // **Passed over is not paid** (review, lens 2 run C on 5de89187): nothing was started, and the note the
+                // start now waits on is memory. The store keeps the lapse until the left process's detach asks for it.
+                if (outcome == WakeOutcome.LeftRunning)
+                {
+                    _lapseOnLeft[agent.Value] = true;
+
+                    continue;
+                }
+
+                // **Paid, so the stored freeze goes now and not before** (review, lens 1 run A on 6257cf80): until here a
+                // broker that started again read the same lapse and owed the same turn. Guarded on the lapse itself, so a
+                // person who froze the agent again meanwhile keeps that freeze. Not cancelled: the turn has been asked for.
+                _ = await UseConnectionAsync(
+                    (connection, _, ct) => new AgentRepository(connection).ClearLapseAsync(agent, RunId, ct),
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // As the restart wake: asked for again at the machine's next join, and the store still holds the lapse for a
+                // broker that starts before it. A turn already asked may be asked again then, which is a turn, never a loss.
+                _lapsed[agent.Value] = true;
+            }
+        }
+    }
+
+    /// <summary>The agents on a machine whose freeze lapsed and whose start is still owed.</summary>
+    /// <param name="machine">The machine.</param>
+    /// <returns>Their names as they stand now.</returns>
+    private List<AgentName> LapsedOn(string machine)
+    {
+        var names = new List<AgentName>();
+
+        foreach (var name in _lapsed.Keys)
+        {
+            if (AgentName.TryCreate(name, out var agent) && string.Equals(agent.Machine, machine, StringComparison.Ordinal))
+            {
+                names.Add(agent);
+            }
+        }
+
+        return names;
+    }
+
+    /// <summary>Clears from the store a lapse whose start a left process held up, once it is settled (SPEC.md §14).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>A task that completes when the store has been written, or the writing given up.</returns>
+    /// <remarks>
+    /// Guarded on the lapse itself (<see cref="AgentRepository.ClearLapseAsync"/>), so a person who froze the agent again
+    /// meanwhile keeps that freeze. A failure leaves the lapse stored, and the next start of the broker asks for the start
+    /// again: a turn, never a loss.
+    /// </remarks>
+    private async Task ClearPaidLapseAsync(AgentName agent)
+    {
+        try
+        {
+            _ = await UseConnectionAsync(
+                (connection, _, ct) => new AgentRepository(connection).ClearLapseAsync(agent, RunId, ct),
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Kept in the store, as the summary says.
+        }
+    }
+
+    /// <summary>Gives a scheduled wake back, so the machine's next join asks for it again.</summary>
+    /// <param name="machine">The machine.</param>
+    /// <param name="restart">Whether the restart wake was part of it.</param>
+    private void Forget(string machine, bool restart)
+    {
+        if (restart)
+        {
+            _ = _resumedMachines.TryRemove(machine, out _);
+        }
     }
 
     /// <summary>
@@ -863,7 +1475,15 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return false;
         }
 
+        if (EndedSince(agent, startedUtc))
+        {
+            return true;
+        }
+
         var running = new RunningTurn(startedUtc, machine, waiting);
+
+        // A turn has begun, which is a person's start of an attached agent answered: it is no longer owed when the process goes.
+        _ = _startWanted.TryRemove(agent.Value, out _);
 
         _ = _turns.AddOrUpdate(agent, running, (_, was) => was.Started > startedUtc ? was : running);
 
@@ -875,8 +1495,18 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return false;
         }
 
+        // Its end may have landed between the look above and the add: taken back for the same reason.
+        if (EndedSince(agent, startedUtc))
+        {
+            _ = _turns.TryRemove(new KeyValuePair<AgentName, RunningTurn>(agent, running));
+        }
+
         return true;
     }
+
+    // Whether the turn that began then has already been heard to end.
+    private bool EndedSince(AgentName agent, DateTimeOffset startedUtc) =>
+        _lastEnded.TryGetValue(agent, out var ends) && ends.Contains(startedUtc);
 
     /// <summary>Whether a node's word about when a turn began is within a day of this broker's clock.</summary>
     /// <param name="startedUtc">The node's time.</param>
@@ -922,6 +1552,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return false;
         }
 
+        _ = _lastEnded.AddOrUpdate(agent, [ended.StartedUtc], (_, was) => [.. was.TakeLast(7), ended.StartedUtc]);
+
         var before = _turns.TryGetValue(agent, out var running) && running.Started == ended.StartedUtc
             ? running.WaitingBefore
             : waitingAfter;
@@ -946,6 +1578,22 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 ct),
             cancellationToken).ConfigureAwait(false);
 
+        // **A turn that ran out of time with mail still uncollected asks again** (lens 1 run 103). The node says nothing
+        // while a reply is still owed to a turn that gave up, so such a turn spends the wake for the mail that arrived
+        // meanwhile; once the agent finished, it sat idle with that mail and nothing coming. Mail only: work it already
+        // collected is its own to finish, and a wedged agent costs one more turn per timeout, each shown timed out.
+        // A closure poll waiting only on its vote is asked once (SPEC.md §6) and is not a message, so it counts too
+        // (lens 1 run 104).
+        if (ended.TimedOut
+            && await UseConnectionAsync(
+                async (connection, _, ct) =>
+                    await new MessageRepository(connection).CountPendingAsync(agent, cancellationToken: ct).ConfigureAwait(false)
+                    + await new ConversationRepository(connection).CountOutstandingPollsAsync(agent, ct).ConfigureAwait(false),
+                cancellationToken).ConfigureAwait(false) > 0)
+        {
+            _ = RequestAttentionForMail(agent, "a turn ran out of time with mail still waiting");
+        }
+
         return true;
     }
 
@@ -955,31 +1603,524 @@ public sealed class BrokerRuntime : IAsyncDisposable
     public DateTimeOffset? TurnRunningSince(AgentName agent) =>
         _turns.TryGetValue(agent, out var running) ? running.Started : null;
 
-    /// <summary>Records that a node is about to start an agent with a token in its environment (SPEC.md §11.7).</summary>
+    /// <summary>Retires an agent whose node found its workspace gone where that can be told (SPEC.md §14): on the home disk, beside a folder in use.</summary>
     /// <param name="machine">The reporting node's machine.</param>
-    /// <param name="agent">The agent it is starting.</param>
-    /// <param name="token">The token it chose for this launch.</param>
-    /// <returns>Whether the report was accepted.</returns>
+    /// <param name="agent">The agent it was asked to start.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Whether the agent was retired by this report.</returns>
     /// <remarks>
+    /// <para>
+    /// <b>The node looks and the broker decides</b>: the broker never reads an agent's disk, which may be on a machine
+    /// it is not on, so the observation comes from the one process that can make it. The parent-folder check is the
+    /// node's too, so an unmounted drive retires nobody.
+    /// </para>
+    /// <para>
     /// Only from the node joined for the agent's machine, and never for the person or Parley, whom no node starts — the
-    /// same checks a turn report meets. A newer launch's token replaces an older one's, which is what a restart is.
+    /// checks a launch report meets. A hostile client on the loopback port could claim a node and retire that machine's
+    /// agents; that is §16's concession, and a person reinstates them.
+    /// </para>
     /// </remarks>
-    public bool LaunchReported(string machine, AgentName agent, string token)
+    public async Task<bool> WorkspaceGoneAsync(string machine, AgentName agent, CancellationToken cancellationToken = default)
     {
         if (PersonSeat.Is(agent)
             || Facilitation.Is(agent)
-            || string.IsNullOrWhiteSpace(token)
-            || token.Length > 128
             || !_nodes.ContainsKey(machine)
             || !string.Equals(agent.Machine, machine, StringComparison.Ordinal))
         {
             return false;
         }
 
-        _launches[agent] = token;
+        return await UseConnectionAsync(
+            async (connection, _, ct) => await new AgentRepository(connection).RetireAsync(agent, ct).ConfigureAwait(false) > 0,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Records that a node is about to start an agent with a token in its environment (SPEC.md §11.7).</summary>
+    /// <param name="machine">The reporting node's machine.</param>
+    /// <param name="agent">The agent it is starting.</param>
+    /// <param name="token">The token it chose for this launch.</param>
+    /// <param name="sequence">The node's reading number when it launched, so the last process's readings, lower, change
+    /// nothing once this lands; 0 when it gave none.</param>
+    /// <returns>Whether the report was accepted.</returns>
+    /// <remarks>
+    /// Only from the node joined for the agent's machine, and never for the person or Parley, whom no node starts — the
+    /// same checks a turn report meets. A newer launch's token replaces an older one's, which is what a restart is.
+    /// </remarks>
+    public bool LaunchReported(string machine, AgentName agent, string token, long sequence = 0)
+    {
+        if (PersonSeat.Is(agent)
+            || Facilitation.Is(agent)
+            || string.IsNullOrWhiteSpace(token)
+            || token.Length > 128
+            || !_nodes.TryGetValue(machine, out var reporter)
+            || !string.Equals(agent.Machine, machine, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        // A new process has no background work yet: what the last one had running went with it. The same token again is a
+        // node telling a broker about a process it already runs, whose count stands.
+        var fresh = !_launches.TryGetValue(agent, out var was) || !string.Equals(was.Token, token, StringComparison.Ordinal);
+
+        // Held with the connection that holds the machine now, so that connection's release takes the token with it
+        // (ReleaseNodeAsync), and a node that rejoins and announces the process again puts it back. Recorded before the
+        // old words are forgotten, so a describe landing in between is said under this launch, not the last.
+        _launches[agent] = (token, reporter);
+
+        if (fresh)
+        {
+            ForgetBackground(machine, agent, token, sequence);
+        }
+
+        // A freeze made while its node was away asked nobody, and the node's return announces the process again: it is asked
+        // to stop now, as the freeze would have (SPEC.md §14). Otherwise it ran on, frozen and given no turns, read on every
+        // surface as stopping once its turn ends (review, lens 1 run 3 on 6fde4ef3). Not when this connection already holds a stop
+        // for this very process, and said plainly, because the freeze may have been made while the node was here.
+        if (_frozen.ContainsKey(agent.Value)
+            && _attached.TryGetValue(agent.Value, out var sessions)
+            && sessions.Any(session => session.StartedByParley)
+            && !(_stopAsked.TryGetValue(agent.Value, out var asked)
+                 && string.Equals(asked.Launch, token, StringComparison.Ordinal)
+                 && _nodes.TryGetValue(machine, out var current)
+                 && ReferenceEquals(asked.Node, current)))
+        {
+            _ = RequestStop(agent, restart: false, "a person froze it");
+        }
+
+        TakenBack(agent);
 
         return true;
     }
+
+    /// <summary>Asks a turn for what a wake passed over while a process read as left running, once its node has taken it back.</summary>
+    /// <param name="agent">The agent whose launch was just reported.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>The note does not outlive the node taking the process back</b> (SPEC.md §11.1; review, lens 1 run A on 5de89187).
+    /// After a broker restart a resident's adapter can attach before its node announces it again, so it reads as left
+    /// running and a message's wake is passed over. Once it is the node's own, nothing would ask for that mail until the
+    /// process went, and a person's stop meanwhile was followed by a start. The note is taken now and the turn asked of the
+    /// supervised process, as a wake that finds such a session attached asks it (<see cref="PassedOver"/>).
+    /// </para>
+    /// <para>
+    /// <b>A lapse whose start waited on the note is paid by that turn</b>, and cleared from the store once it is asked;
+    /// when nobody could be asked it goes back to <see cref="_lapsed"/> for the machine's next join.
+    /// </para>
+    /// </remarks>
+    private void TakenBack(AgentName agent)
+    {
+        if (!_attached.TryGetValue(agent.Value, out var sessions)
+            || sessions.IsEmpty
+            || sessions.Any(Left)
+            || !_leftPassedOver.TryRemove(agent.Value, out _))
+        {
+            return;
+        }
+
+        var outcome = RequestAttentionForMail(agent, "its node took back a process a wake had passed over as left running");
+
+        if (!_lapseOnLeft.TryRemove(agent.Value, out _))
+        {
+            return;
+        }
+
+        if (outcome == WakeOutcome.Unreachable)
+        {
+            _lapsed[agent.Value] = true;
+        }
+        else
+        {
+            // Not awaited: a report from the node is answered at once, and the clearing gives up quietly (a turn, never a loss).
+            _ = ClearPaidLapseAsync(agent);
+        }
+    }
+
+    /// <summary>Records what a node says an agent has running in the background (SPEC.md §11.6).</summary>
+    /// <param name="machine">The reporting node's machine.</param>
+    /// <param name="agent">The agent.</param>
+    /// <param name="tasks">How many.</param>
+    /// <param name="running">Each task the node named: the runner's id, kind and label (feature 043).</param>
+    /// <param name="sequence">When the node read it, against its other readings: a report older than the one held from the
+    /// same node changes nothing.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Whether the report was accepted.</returns>
+    /// <remarks>
+    /// <para>
+    /// The same checks a turn report meets. Held in memory with the node that said it, as a running turn is, so a node that
+    /// leaves takes its word with it.
+    /// </para>
+    /// <para>
+    /// <b>Every entry is held to the rules again here</b>, not taken on the node's word: an id the runner could not have
+    /// given drops its entry, a label is cut and neutralised, the list is bounded, and an id named twice is named once. The
+    /// count stands whatever the list holds.
+    /// </para>
+    /// </remarks>
+    public async Task<bool> BackgroundReportedAsync(
+        string machine, AgentName agent, int tasks, IEnumerable<BackgroundTask> running, long sequence, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(running);
+
+        if (tasks is < 0 or > MostBackgroundTasks
+            || !_nodes.TryGetValue(machine, out var reporter)
+            || await AcceptedTurnAsync(machine, agent, cancellationToken).ConfigureAwait(false) is null)
+        {
+            return false;
+        }
+
+        // Looking the agent up waits on the store, and the node may have left and another joined meanwhile: a report from the
+        // connection that left changes nothing, so it never overwrites or clears what the one that joined since has said.
+        if (!_nodes.TryGetValue(machine, out var current) || !ReferenceEquals(current, reporter))
+        {
+            return false;
+        }
+
+        var named = new List<BackgroundTask>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var task in running)
+        {
+            if (named.Count == Math.Min(tasks, BackgroundTaskText.MostTasks))
+            {
+                break;
+            }
+
+            if (BackgroundTaskText.IsTaskId(task.Id) && seen.Add(task.Id))
+            {
+                named.Add(new BackgroundTask(task.Id, task.Kind, BackgroundTaskText.Name(task.Name).Text));
+            }
+        }
+
+        // A report of none is held too, as nothing running, so a reading the node sent earlier and that lands later still
+        // finds something newer to lose to.
+        var written = new BackgroundWork(tasks, machine, named, sequence);
+        BackgroundWork? before;
+
+        while (true)
+        {
+            if (_background.TryGetValue(agent, out var held))
+            {
+                // **Older than what is held: it changes nothing.** The node sends from its runner's notices and from a
+                // rejoin's reading, and nothing orders the two; taking the older last would show work that has ended, or end
+                // work still running and forget the agent's words for it (lens 1 run 1 on #115). Only one node is heard for
+                // an agent, the one joined for the machine its name carries, and its leaving clears what it said, so every
+                // number held was that node's.
+                if (held.Sequence > sequence)
+                {
+                    return false;
+                }
+
+                if (_background.TryUpdate(agent, written, held))
+                {
+                    before = held;
+                    break;
+                }
+            }
+            else if (_background.TryAdd(agent, written))
+            {
+                before = null;
+                break;
+            }
+        }
+
+        // A task the last report listed and this one does not has ended: its words go now, so words for work that is over
+        // never push out words for work still running when the oldest are dropped past the bound. Only the list this
+        // report replaced: a task begun since keeps its words.
+        if (before is not null)
+        {
+            var listed = named.Select(task => task.Id).ToHashSet(StringComparer.Ordinal);
+            ForgetWords(agent, before.Named.Select(task => task.Id).Where(id => !listed.Contains(id)));
+        }
+
+        // The node may have left while the agent was looked up, and its release swept the table before this landed. Only
+        // what this report wrote is taken back: a node that has rejoined since may have said something newer.
+        if (!_nodes.TryGetValue(machine, out var still) || !ReferenceEquals(still, reporter))
+        {
+            _ = _background.TryRemove(new KeyValuePair<AgentName, BackgroundWork>(agent, written));
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>The most background tasks a report may claim.</summary>
+    /// <remarks>Far past anything a session runs; what it stops is a number nobody could read.</remarks>
+    internal const int MostBackgroundTasks = 10_000;
+
+    /// <summary>How many background tasks an agent has running, as its node last said; zero when none or nobody says.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>The count.</returns>
+    /// <remarks>
+    /// Only while its turns are reported and it runs: a process that ended, or one opened outside Parley, has none that
+    /// Parley knows of.
+    /// </remarks>
+    public int BackgroundTasks(AgentName agent) => Running(agent)?.Tasks ?? 0;
+
+    /// <summary>Each background task an agent has running, by name, as far as its node named them (feature 043).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>The tasks in the runner's order, each named by the agent's own words where it gave them, else by the
+    /// runner's; empty whenever <see cref="BackgroundTasks"/> is zero.</returns>
+    /// <remarks>
+    /// The person's view only: an agent operation never reads this (SPEC.md §10.1). What the agent said about a task shows
+    /// only while the node lists that task, so words about a task that has ended, or one never started, are never shown.
+    /// </remarks>
+    public IReadOnlyList<BackgroundTask> RunningTasks(AgentName agent)
+    {
+        if (Running(agent) is not { } work)
+        {
+            return [];
+        }
+
+        var said = _described.TryGetValue(agent, out var described) ? described : DescribedTasks.None;
+
+        return [.. work.Named.Select(task => said.Find(task.Id) is { } words
+            ? task with { Name = words.Name, Description = words.Description, Link = words.Link, Said = true }
+            : task)];
+    }
+
+    /// <summary>Records an agent's own words for one of its background tasks (SPEC.md §10.1).</summary>
+    /// <param name="agent">The agent, as attached: the caller, never a name it gave.</param>
+    /// <param name="taskId">The runner's id for the task.</param>
+    /// <param name="name">What it is doing.</param>
+    /// <param name="description">One or two sentences about it, or empty.</param>
+    /// <param name="link">Where the person can read more, or empty.</param>
+    /// <returns>What was kept.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Kept whether or not the task is running yet</b>: the agent's call and its node's report race, and either can land
+    /// first. It is shown once the node lists the id (<see cref="RunningTasks"/>), and goes when the agent's background work
+    /// ends or a new process is launched under its name. So the answer says nothing about the task, which is turn
+    /// information an agent does not read.
+    /// </para>
+    /// <para>
+    /// At most <see cref="BackgroundTaskText.MostTasks"/> per agent, the oldest dropped first, so an agent describing ids
+    /// without end holds a bounded amount. Describing an id again replaces what was said.
+    /// </para>
+    /// <para>
+    /// Refused for the person seat and Parley, which run no background work, and for a caller that is not attached, so no
+    /// words are held for an agent before it runs. Kept with the launch the words were said under, so a new process clears
+    /// them and the same process announced again keeps them.
+    /// </para>
+    /// </remarks>
+    public TaskDescribed DescribeBackgroundTask(AgentName agent, string? taskId, string? name, string? description, string? link)
+    {
+        if (PersonSeat.Is(agent) || Facilitation.Is(agent))
+        {
+            return TaskDescribed.Refusal("Only an agent describes background work; the person and Parley run none.");
+        }
+
+        if (!_attached.TryGetValue(agent.Value, out var sessions) || sessions.IsEmpty)
+        {
+            return TaskDescribed.Refusal("Only an attached agent describes its background work.");
+        }
+
+        if (!BackgroundTaskText.IsTaskId(taskId))
+        {
+            return TaskDescribed.Refusal("The task id is not one the runner gives: 1 to 64 letters, digits, hyphens and underscores, as the tool's result says it.");
+        }
+
+        var named = BackgroundTaskText.Name(name);
+
+        if (named.Text.Length == 0)
+        {
+            return TaskDescribed.Refusal("A name is needed: what the task is doing, in a few words.");
+        }
+
+        var told = BackgroundTaskText.Description(description);
+        var linked = string.IsNullOrWhiteSpace(link) ? null : BackgroundTaskText.Link(link);
+        var dropped = !string.IsNullOrWhiteSpace(link) && linked is null
+            ? "Only exchange #N, conversation:<id>, file:<name> for a file placed in Parley, or an https address of a named host (not an address in numbers, not localhost) of at most 500 characters is kept."
+            : string.Empty;
+
+        var words = new SaidWords(taskId!, named.Text, told.Text, linked);
+        var launch = _launches.TryGetValue(agent, out var launched) ? launched.Token : null;
+
+        _ = _described.AddOrUpdate(
+            agent,
+            _ => DescribedTasks.None.With(words, launch),
+            (_, held) => held.With(words, launch));
+
+        return new TaskDescribed(true, string.Empty, named.Cut, told.Cut, dropped);
+    }
+
+    /// <summary>What the node said is running, while it says so and the agent runs; null otherwise.</summary>
+    /// <remarks>
+    /// Only while its turns are reported and it runs: a process that ended, or one opened outside Parley, has none that
+    /// Parley knows of.
+    /// </remarks>
+    private BackgroundWork? Running(AgentName agent) =>
+        _background.TryGetValue(agent, out var work)
+        && TurnsReported(agent)
+        && _attached.TryGetValue(agent.Value, out var sessions)
+        && !sessions.IsEmpty
+            ? work
+            : null;
+
+    /// <summary>Forgets an agent's words for tasks that have ended.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="ids">The tasks that ended.</param>
+    private void ForgetWords(AgentName agent, IEnumerable<string> ids)
+    {
+        var ended = ids.ToHashSet(StringComparer.Ordinal);
+
+        while (_described.TryGetValue(agent, out var held))
+        {
+            var left = held.Without(ended);
+
+            if (left.Words.IsEmpty
+                ? _described.TryRemove(new KeyValuePair<AgentName, DescribedTasks>(agent, held))
+                : _described.TryUpdate(agent, left, held))
+            {
+                return;
+            }
+        }
+    }
+
+    /// <summary>Forgets what an agent had running in the background, and its words about it when they were said under
+    /// another launch.</summary>
+    /// <param name="machine">The node that launched it.</param>
+    /// <param name="agent">The agent.</param>
+    /// <param name="token">The launch now running under the name.</param>
+    /// <param name="sequence">The node's reading number at the launch.</param>
+    /// <remarks>
+    /// A new process has started nothing yet, and what the agent said was about work of the last one. The same launch
+    /// announced again (a node that left and came back) keeps the words: its next report names the same tasks, and the
+    /// agent will not describe them again. Words said while no launch was known take this one; were it a new process's,
+    /// they show only for an id its node lists, which a runner's random ids do not repeat.
+    /// </remarks>
+    private void ForgetBackground(string machine, AgentName agent, string token, long sequence)
+    {
+        // Held as nothing running at the launch's number rather than removed, so a reading the last process's node made
+        // before the launch, and that lands after it, is older and does not bring that work back (lens 3 run 2 on #115).
+        var none = new BackgroundWork(0, machine, [], sequence);
+
+        while (true)
+        {
+            if (_background.TryGetValue(agent, out var work)
+                ? (sequence > 0 && work.Sequence > sequence)
+
+                    // Read after the launch, so the new process's own: a launch report handled late leaves it.
+                    || _background.TryUpdate(agent, none with { Sequence = Math.Max(work.Sequence, sequence) }, work)
+                : _background.TryAdd(agent, none))
+            {
+                break;
+            }
+        }
+
+        // Tried again when a word lands between the read and the change, so a describe racing the launch neither survives
+        // into the new process nor is lost from the old one's view of it.
+        while (_described.TryGetValue(agent, out var held))
+        {
+            var done = held.Token switch
+            {
+                // Said while no launch was known (a broker that restarted before its node rejoined): it takes this launch,
+                // which is almost always the same process announcing itself again.
+                null => _described.TryUpdate(agent, held with { Token = token }, held),
+                var said when string.Equals(said, token, StringComparison.Ordinal) => true,
+                _ => _described.TryRemove(new KeyValuePair<AgentName, DescribedTasks>(agent, held)),
+            };
+
+            if (done)
+            {
+                return;
+            }
+        }
+    }
+
+    /// <summary>What a node said an agent has running in the background.</summary>
+    /// <param name="Tasks">How many tasks.</param>
+    /// <param name="Machine">The node that said so, whose leaving ends the claim.</param>
+    /// <param name="Named">Each task it named, held to the rules.</param>
+    /// <param name="Sequence">When the node read it; a later reading from the same node is higher.</param>
+    private sealed record BackgroundWork(int Tasks, string Machine, IReadOnlyList<BackgroundTask> Named, long Sequence);
+
+    /// <summary>An agent's own words for one task.</summary>
+    private sealed record SaidWords(string Id, string Name, string Description, TaskLink? Link);
+
+    /// <summary>The words an agent has said about its tasks, oldest first, replaced whole on each change.</summary>
+    /// <param name="Token">The launch they were said under, or null when none was known.</param>
+    /// <param name="Words">The words, at most <see cref="BackgroundTaskText.MostTasks"/>.</param>
+    private sealed record DescribedTasks(string? Token, System.Collections.Immutable.ImmutableList<SaidWords> Words)
+    {
+        public static DescribedTasks None { get; } = new(null, System.Collections.Immutable.ImmutableList<SaidWords>.Empty);
+
+        /// <summary>The words said for a task, or null.</summary>
+        public SaidWords? Find(string id) => Words.FirstOrDefault(w => string.Equals(w.Id, id, StringComparison.Ordinal));
+
+        /// <summary>These words with one task's replaced or added, the oldest dropped past the bound.</summary>
+        /// <remarks>Words said under another launch are of a process that has gone, and go with it.</remarks>
+        public DescribedTasks With(SaidWords words, string? token)
+        {
+            var start = Token is { } was && token is { } now && !string.Equals(was, now, StringComparison.Ordinal)
+                ? None.Words
+                : Words;
+            var kept = start.RemoveAll(w => string.Equals(w.Id, words.Id, StringComparison.Ordinal)).Add(words);
+            var most = BackgroundTaskText.MostTasks;
+
+            return new(token ?? Token, kept.Count > most ? kept.RemoveRange(0, kept.Count - most) : kept);
+        }
+
+        /// <summary>These words without those for some tasks.</summary>
+        public DescribedTasks Without(HashSet<string> ids) => this with { Words = Words.RemoveAll(w => ids.Contains(w.Id)) };
+    }
+
+    /// <summary>
+    /// The name a repository is registered as on a machine now; or, when none is, <paramref name="fallback"/>, unless
+    /// that name is registered from another folder.
+    /// </summary>
+    /// <param name="identity">The repository's identifier.</param>
+    /// <param name="machine">The machine.</param>
+    /// <param name="fallback">The name the node knows it by.</param>
+    /// <param name="workspace">The repository's folder, or empty when the node did not say.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>
+    /// The registered name, which a rename may have changed since the node launched it; or <see langword="null"/> when
+    /// no name holds the identity and <paramref name="fallback"/> is registered from another folder.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <b>A name the identity holds is trusted wherever the report comes from.</b> A checkout moved and enrolled again
+    /// in one project keeps its old folder in the others' launch keys, so the folder its agent attaches from there and
+    /// the one its node reports differ, and comparing them left it open outside Parley in every project but one (lens 2
+    /// run 114). Until enrolment is one registry for every project, the identity is the better witness.
+    /// </para>
+    /// <para>
+    /// <b>A name it does not hold is compared by folder</b>, the comparison an attach makes (§4.1.1): a second checkout
+    /// whose launch key claims another agent's name would otherwise take its token (lens 2 run 111).
+    /// </para>
+    /// </remarks>
+    internal async Task<AgentName?> NameOfAsync(
+        AgentIdentity identity,
+        string machine,
+        AgentName fallback,
+        string workspace,
+        CancellationToken cancellationToken) =>
+        await UseConnectionAsync<AgentName?>(
+            async (connection, _, ct) =>
+            {
+                var agents = new AgentRepository(connection);
+
+                if (await agents.HolderOfIdentityAsync(identity, machine, ct).ConfigureAwait(false) is { } holder)
+                {
+                    return holder.Name;
+                }
+
+                return workspace is { Length: > 0 }
+                    && await agents.WorkspaceOfAsync(fallback, ct).ConfigureAwait(false) is { Length: > 0 } held
+                    && !WorkspacePath.SameRepository(workspace, held)
+                        ? null
+                        : fallback;
+            },
+            cancellationToken).ConfigureAwait(false);
+
+    /// <summary>Whether a token is the one an agent's node reported for its latest launch (SPEC.md §11.7).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="token">The token an attachment presented, or <see langword="null"/>.</param>
+    /// <returns>Whether that attachment is a process Parley started.</returns>
+    internal bool IsCurrentLaunch(AgentName agent, string? token) =>
+        token is { Length: > 0 }
+        && _launches.TryGetValue(agent, out var launched)
+        && string.Equals(launched.Token, token, StringComparison.Ordinal);
 
     /// <summary>Whether an agent is running only as processes Parley did not start (SPEC.md §11.7).</summary>
     /// <param name="agent">The agent.</param>
@@ -995,6 +2136,88 @@ public sealed class BrokerRuntime : IAsyncDisposable
         && _attached.TryGetValue(agent.Value, out var sessions)
         && !sessions.IsEmpty
         && sessions.All(session => !session.StartedByParley);
+
+    /// <summary>Whether an agent runs as a process a node started and a node that is gone still owns (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>
+    /// True when one of its attachments presented a token that no node now holds, whatever else is attached beside it.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <b>A token is what tells it from a process somebody opened in an editor.</b> A node puts one in the environment of
+    /// every agent it starts and an editor has none. A broker forgets the tokens it was told when it restarts, and a new
+    /// node knows only what it started, so a process a node started before an install is still holding a token nobody
+    /// holds: read as "open outside Parley" it was blamed on somebody who never opened it.
+    /// </para>
+    /// <para>
+    /// <see cref="OpenOutside"/> is also true for it, because no node can give it a turn, unless a process the current node
+    /// started is attached beside it. A person's session that happens to run beside it is not mistaken for it: that one has
+    /// no token.
+    /// </para>
+    /// <para>
+    /// <b>Read per attachment, not from the agent as a whole</b> (SPEC.md §11.1: an attachment that presents a token no node
+    /// holds is left running). A process left running beside one the current node started, which a broker restarted under
+    /// an agent that owed work could cause when the old adapter was slow to attach again, is still one nobody holds: read as
+    /// plain Running it was shown nowhere and could not be killed.
+    /// </para>
+    /// </remarks>
+    public bool Unsupervised(AgentName agent) =>
+        !PersonSeat.Is(agent)
+        && !Facilitation.Is(agent)
+        && _attached.TryGetValue(agent.Value, out var sessions)
+        && sessions.Any(Left);
+
+    /// <summary>Whether an attachment presented a launch token that no node now holds (SPEC.md §11.1, §11.7).</summary>
+    private static bool Left(AttachedAgent session) =>
+        !session.StartedByParley && session.LaunchToken is { Length: > 0 };
+
+    /// <summary>Asks the node on an agent's machine to end a process a node that is gone left running (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="because">Why, for the operator's benefit.</param>
+    /// <returns>What became of the asking.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Only one that presented a token and was not started by the current node</b>, so a process somebody opened in an
+    /// editor is never ended from here, and a supervised one is stopped the ordinary way, which waits for its turn.
+    /// </para>
+    /// <para>
+    /// <b>The process is the one its adapter named, and only a label.</b> The node checks what it is asked to end before
+    /// it does (§11.1). Of the sessions that qualify, the first to name a process is used: an agent has one process, and a
+    /// second is an editor's, which has no token.
+    /// </para>
+    /// </remarks>
+    public KillOutcome RequestKill(AgentName agent, string because)
+    {
+        if (!Unsupervised(agent) || !_attached.TryGetValue(agent.Value, out var sessions))
+        {
+            return KillOutcome.NotLeftRunning;
+        }
+
+        // Only the left ones, so a process the current node started beside them is never named.
+        var left = sessions.Where(Left).ToList();
+
+        if (left.Select(session => session.ProcessId).FirstOrDefault(id => id is > 0) is not { } process)
+        {
+            return KillOutcome.NoProcess;
+        }
+
+        // **A kill does not start the agent** (SPEC.md §10.2): what a wake passed over while it ran is not asked for when it goes.
+        // Cleared before the node is asked, so the detach the kill causes cannot take the note first, and put back when no node
+        // was asked, because the process then ends on its own and is owed what it was owed before.
+        var noted = _leftPassedOver.TryRemove(agent.Value, out _);
+
+        if (!_nodes.TryGetValue(agent.Machine, out var node) || !node.RequestKill(agent, process, because))
+        {
+            if (noted)
+            {
+                _leftPassedOver[agent.Value] = true;
+            }
+
+            return KillOutcome.NoNode;
+        }
+
+        return KillOutcome.Sent;
+    }
 
     /// <summary>Whether this agent's turns are reported (SPEC.md §11.6).</summary>
     /// <param name="agent">The agent.</param>
@@ -1065,6 +2288,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
         JoinedNode joined,
         CancellationToken cancellationToken = default)
     {
+        // Its tokens go before it leaves the list as well as after, so nobody who sees the machine without it still reads a
+        // process it started as one it supervises; the pass after catches a launch it reported in between.
+        ForgetLaunchesOf(joined);
+
         _ = _nodes.TryRemove(new KeyValuePair<string, JoinedNode>(joined.Machine, joined));
 
         // **Nothing a departed node said is running is claimed to be running any more** (§11.6). A turn
@@ -1074,15 +2301,68 @@ public sealed class BrokerRuntime : IAsyncDisposable
             _ = _turns.TryRemove(turn);
         }
 
+        foreach (var work in _background.Where(entry => entry.Value.Machine == joined.Machine).ToList())
+        {
+            _ = _background.TryRemove(work);
+        }
+
+        ForgetLaunchesOf(joined);
+
+        await LeaveIfUnheldAsync(joined.Machine, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Forgets the launch tokens a node connection reported, as it leaves (SPEC.md §11.1).</summary>
+    /// <param name="joined">The connection that is going.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>A process a departed node started is not claimed to be supervised</b> (review, lens 1 run C on 5de89187). Kept, its
+    /// token still read as held: a sender was told a turn was coming that no node would give, a person's kill was refused,
+    /// and the stop it was pointed to reached a node that was not running it. Gone, each such process still attached reads
+    /// as left running, a wake passes it over to its detach, and a person may kill it.
+    /// </para>
+    /// <para>
+    /// <b>Only the tokens this connection reported, by key and value</b>, so a node that has already rejoined and announced
+    /// a process again keeps it. One that rejoins later announces it then (<see cref="LaunchReported"/>), which takes back
+    /// what a wake passed over meanwhile (<see cref="TakenBack"/>) as a turn rather than a second process.
+    /// </para>
+    /// </remarks>
+    private void ForgetLaunchesOf(JoinedNode joined)
+    {
+        foreach (var launch in _launches.Where(entry => ReferenceEquals(entry.Value.Node, joined)).ToList())
+        {
+            _ = _launches.TryRemove(launch);
+        }
+    }
+
+    /// <summary>Records a machine's node as gone, unless a node holds the machine now.</summary>
+    /// <param name="machine">The machine.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>A task that completes when it is decided and, if so, written.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Not if a newer node holds the machine.</b> A node that rejoins at once (its catalogue changed) can be added and
+    /// write its join between a release's removal and its leave, and a leave landing after it would read the live node as
+    /// gone until it next rejoined. Decided under the gate the join's write takes, so whichever write runs second sees the
+    /// other.
+    /// </para>
+    /// <para>
+    /// <b>And written again by a join that fails</b>, because a release that found the failing join holding the machine
+    /// left the leave to it: without this, the machine would read as connected with no node behind it.
+    /// </para>
+    /// </remarks>
+    private async Task LeaveIfUnheldAsync(string machine, CancellationToken cancellationToken) =>
         _ = await UseConnectionAsync(
             async (connection, now, ct) =>
             {
-                await new NodeRepository(connection).LeaveAsync(joined.Machine, now, ct)
-                    .ConfigureAwait(false);
+                if (!_nodes.ContainsKey(machine))
+                {
+                    await new NodeRepository(connection).LeaveAsync(machine, now, ct)
+                        .ConfigureAwait(false);
+                }
+
                 return true;
             },
             cancellationToken).ConfigureAwait(false);
-    }
 
     /// <summary>
     /// Asks an agent's machine to see to it: a start if it is not running, a turn if it is.
@@ -1114,7 +2394,97 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </para>
     /// </remarks>
     public bool RequestAttention(AgentName agent, string because) =>
-        Ask(agent, because) is WakeOutcome.Started or WakeOutcome.AlreadyRunning;
+        Ask(agent, because, person: true) is WakeOutcome.Started or WakeOutcome.AlreadyRunning;
+
+    /// <summary>Whether a person has frozen the agent (SPEC.md §14).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns><see langword="true"/> while frozen.</returns>
+    public bool IsFrozen(AgentName agent) => _frozen.ContainsKey(agent.Value);
+
+    /// <summary>Records in memory that a freeze was written to, or cleared from, the store.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="frozen">Whether it is frozen now.</param>
+    /// <remarks>
+    /// Either way a lapse still owed is settled: a new freeze puts the debt off again, to be paid by its own unfreeze or lapse,
+    /// and an unfreeze pays it, so the join that was to pay it does not ask a second time.
+    /// </remarks>
+    internal void MarkFrozen(AgentName agent, bool frozen)
+    {
+        _ = _lapsed.TryRemove(agent.Value, out _);
+        _ = _lapseOnLeft.TryRemove(agent.Value, out _);
+
+        if (frozen)
+        {
+            _frozen[agent.Value] = true;
+
+            // Frozen again: nothing is owed a start now, whatever an earlier unfreeze was waiting to ask for.
+            _ = _unfrozenWhileUp.TryRemove(agent.Value, out _);
+        }
+        else
+        {
+            _ = _frozen.TryRemove(agent.Value, out _);
+        }
+    }
+
+    /// <summary>Asks an agent's node to stop it, or restart it, once its turn is over (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="restart">Whether to start it again once it has stopped.</param>
+    /// <param name="because">Why, for the operator's benefit.</param>
+    /// <returns>What became of the asking.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Only a process Parley started.</b> One opened in somebody's editor is theirs (§11.7), and no node holds it.
+    /// </para>
+    /// <para>
+    /// <b>The pending wake is let go before the command is sent</b>, with the notes of what was asked of the agent so far,
+    /// so the next work for the agent is asked for afresh rather than being suppressed by a turn the stop is about to end.
+    /// </para>
+    /// </remarks>
+    public StopOutcome RequestStop(AgentName agent, bool restart, string because)
+    {
+        if (PersonSeat.Is(agent)
+            || Facilitation.Is(agent)
+            || !_attached.TryGetValue(agent.Value, out var sessions)
+            || sessions.IsEmpty)
+        {
+            return StopOutcome.NotRunning;
+        }
+
+        if (sessions.All(session => !session.StartedByParley))
+        {
+            return StopOutcome.OpenOutside;
+        }
+
+        // **Cleared before the node is asked, never after.** What was asked of the agent before this stop does not undo it: the
+        // turns noted so far, a person's earlier start, and the claim that suppresses the next wake all go. A wake that asks
+        // its turn after the node has the stop writes its note after this clearing, so that note is still there when the
+        // process goes; cleared afterwards, the note of a turn the stop was about to take went with the rest, and the message
+        // sat unread while its sender was told the agent was running.
+        lock (_claimAndNote)
+        {
+            _ = _turnAsked.TryRemove(agent.Value, out _);
+            _ = _startWanted.TryRemove(agent.Value, out _);
+            _ = _pending.TryRemove(agent.Value, out _);
+
+            // A wake passed over while the process read as left running, before its node took it back, is a turn asked before
+            // the stop too (review, lens 1 run A on 5de89187). Only a session a node holds gets here, so a note still owed to an
+            // agent running only as a left process is not dropped by this.
+            _ = _leftPassedOver.TryRemove(agent.Value, out _);
+        }
+
+        if (!_nodes.TryGetValue(agent.Machine, out var node)
+            || !node.RequestStop(agent, IdentityOf(agent), restart, because))
+        {
+            return StopOutcome.NoNode;
+        }
+
+        if (!restart)
+        {
+            _stopAsked[agent.Value] = (_launches.TryGetValue(agent, out var launch) ? launch.Token : null, node);
+        }
+
+        return StopOutcome.Sent;
+    }
 
     /// <summary>
     /// Asks an agent's machine to see to its mail, unless something already has.
@@ -1167,7 +2537,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         var outcome = Ask(agent, because);
 
-        if (outcome is WakeOutcome.Unreachable)
+        // Open outside Parley is among them: nobody was asked, so a claim left behind told every wake for the next two minutes
+        // that a turn was coming when none was, the unfreeze's own wake included.
+        if (outcome is WakeOutcome.Unreachable or WakeOutcome.Frozen or WakeOutcome.OpenOutside or WakeOutcome.LeftRunning)
         {
             // Nothing is coming after all, so the claim is given back rather than left to expire.
             // Holding it would suppress every wake for the next two minutes on the strength
@@ -1181,7 +2553,41 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 .Remove(new KeyValuePair<string, DateTimeOffset>(agent.Value, claimed));
         }
 
-        return outcome;
+        return outcome is WakeOutcome.LeftRunning ? PassedOver(agent, because) : outcome;
+    }
+
+    /// <summary>Notes a wake passed over because the agent runs only as processes a node that is gone left running.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="because">Why it was asked, for the start the note may become.</param>
+    /// <returns>What became of the asking, now that it is noted.</returns>
+    /// <remarks>
+    /// <b>Noted after the claim is given back, never before</b> (SPEC.md §11.1). The note is taken once, by the detach of the
+    /// last such process or here when that detach came first, and whoever takes it asks for the start. Noted while this wake
+    /// still held its claim, a detach taking the note found that claim live, was told a turn was coming, and nothing came.
+    /// </remarks>
+    private WakeOutcome PassedOver(AgentName agent, string because)
+    {
+        _leftPassedOver[agent.Value] = true;
+
+        if (_attached.TryGetValue(agent.Value, out var still) && !still.IsEmpty)
+        {
+            if (still.All(Left))
+            {
+                return WakeOutcome.LeftRunning;
+            }
+
+            // Somebody opened it in an editor, or a node started it, meanwhile: nothing is owed when the left one goes, and
+            // the wake is asked again of what is attached now.
+            return _leftPassedOver.TryRemove(agent.Value, out _)
+                ? RequestAttentionForMail(agent, because)
+                : WakeOutcome.LeftRunning;
+        }
+
+        // **The process went between the look and the note.** Its detach found nothing to take, or has taken this already and
+        // asks for the start itself; whichever takes the note acts on it, so it is asked for once.
+        return _leftPassedOver.TryRemove(agent.Value, out _)
+            ? RequestAttentionForMail(agent, because)
+            : WakeOutcome.LeftRunning;
     }
 
     /// <summary>Whether a mark claimed that long ago still counts.</summary>
@@ -1327,14 +2733,23 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <summary>Asks the agent's machine for whatever it needs, and marks attention pending.</summary>
     /// <param name="agent">The agent.</param>
     /// <param name="because">Why, for the operator's benefit.</param>
+    /// <param name="person">Whether a person asked for the agent to be started, so the start is owed even with nothing waiting.</param>
     /// <returns>What became of the asking.</returns>
     /// <remarks>
     /// <b>Every wake marks, whatever asked for it.</b> A message arriving while a turn is already
     /// coming — for an earlier message, or a person's start — must find the mark set, or two in
     /// quick succession cost two turns for one reading.
     /// </remarks>
-    private WakeOutcome Ask(AgentName agent, string because)
+    private WakeOutcome Ask(AgentName agent, string because, bool person = false)
     {
+        // **The one place a start or a turn is asked for, so the one place a freeze is honoured** (SPEC.md §14): the
+        // restart wake, new work and a person's Start all come through here. Before any node is asked and before anything is
+        // marked as coming.
+        if (_frozen.ContainsKey(agent.Value))
+        {
+            return WakeOutcome.Frozen;
+        }
+
         if (!_nodes.TryGetValue(agent.Machine, out var node))
         {
             return WakeOutcome.Unreachable;
@@ -1350,7 +2765,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
         // would be suppressed.
         if (running && sessions.All(session => !session.StartedByParley))
         {
-            return WakeOutcome.OpenOutside;
+            // **Left running by a node that is gone** (§11.1): not somebody's editor, and nobody will prompt it. Told apart so
+            // the sender is not told an editor will, and so what is passed over is asked for once it has gone
+            // (RequestAttentionForMail, ReleaseAsync).
+            return sessions.All(Left) ? WakeOutcome.LeftRunning : WakeOutcome.OpenOutside;
         }
 
         if (!(running ? node.RequestTurn(agent, IdentityOf(agent), because) : node.RequestStart(agent, IdentityOf(agent), because)))
@@ -1361,7 +2779,48 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return WakeOutcome.Unreachable;
         }
 
-        _pending[agent.Value] = Clock.GetUtcNow();
+        DateTimeOffset claimed;
+
+        // A turn asked of a process is one the process may not live to take: noted with the claim it left, and asked for
+        // again as a start once the process has gone (ReleaseAsync). The claim and the notes are written as one step, so the
+        // note always holds the claim that is in the table.
+        lock (_claimAndNote)
+        {
+            claimed = Clock.GetUtcNow();
+            _pending[agent.Value] = claimed;
+
+            if (running)
+            {
+                _turnAsked[agent.Value] = claimed;
+
+                if (person)
+                {
+                    _startWanted[agent.Value] = true;
+                }
+            }
+        }
+
+        // **The process went between the look and the asking.** Its detach has taken its notes already, or is about to:
+        // whichever of the two takes this one acts on it. Taken here, the turn just asked for went to nobody, so its claim is
+        // let go and the work is asked for as the start it should have been.
+        if (running
+            && !(_attached.TryGetValue(agent.Value, out var still) && !still.IsEmpty)
+            && ((ICollection<KeyValuePair<string, DateTimeOffset>>)_turnAsked)
+                .Remove(new KeyValuePair<string, DateTimeOffset>(agent.Value, claimed)))
+        {
+            _ = ((ICollection<KeyValuePair<string, DateTimeOffset>>)_pending)
+                .Remove(new KeyValuePair<string, DateTimeOffset>(agent.Value, claimed));
+            _ = _startWanted.TryRemove(agent.Value, out _);
+
+            if (!node.RequestStart(agent, IdentityOf(agent), because))
+            {
+                return WakeOutcome.Unreachable;
+            }
+
+            _pending[agent.Value] = Clock.GetUtcNow();
+
+            return WakeOutcome.Started;
+        }
 
         return running ? WakeOutcome.AlreadyRunning : WakeOutcome.Started;
     }
@@ -1385,6 +2844,29 @@ public sealed class BrokerRuntime : IAsyncDisposable
     public async Task<T> RunAsync<T>(
         AgentName agent,
         Func<Parley.Broker.Broker, DateTimeOffset, CancellationToken, Task<T>> work,
+        CancellationToken cancellationToken = default) =>
+        (await RunNotingRewriteAsync(agent, work, cancellationToken).ConfigureAwait(false)).Value;
+
+    /// <summary>
+    /// Runs one unit of work against an attached agent's broker, alone, and says whether it waited on a rewrite of the
+    /// store first.
+    /// </summary>
+    /// <typeparam name="T">What the work returns.</typeparam>
+    /// <param name="agent">The agent the work is on behalf of.</param>
+    /// <param name="work">The work, given the broker and the instant to stamp it with.</param>
+    /// <param name="cancellationToken">Cancels the wait for the gate and the work.</param>
+    /// <returns>Whatever the work returned, and whether a rewrite held it up (SPEC.md §4.0, §9.1).</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="work"/> is null.</exception>
+    /// <exception cref="NotAttachedException">The agent has no open stream.</exception>
+    /// <remarks>
+    /// <b>Decided here, at the gate, and not by the adapter watching its stream</b>: the stream's one slot let a finish
+    /// overwrite a start the adapter had not yet read, and the reply could arrive before either, so a send that waited
+    /// seconds said nothing. A rewrite runs under the gate, so one that was running when this began to wait, or that
+    /// started while it waited, is one this work waited on.
+    /// </remarks>
+    public async Task<(T Value, bool Waited)> RunNotingRewriteAsync<T>(
+        AgentName agent,
+        Func<Parley.Broker.Broker, DateTimeOffset, CancellationToken, Task<T>> work,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(work);
@@ -1398,12 +2880,26 @@ public sealed class BrokerRuntime : IAsyncDisposable
         // only in when each attached. The newest is taken because it needs no comparison.
         var attached = sessions[^1];
 
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        // The count before the flag, the reverse of the order `TellTidying` writes them in; it says why.
+        var started = Interlocked.Read(ref _rewritesStarted);
+        var rewriting = Volatile.Read(ref _rewriting) == 1;
+
+        _ = Interlocked.Increment(ref _agentWorkWaiting);
 
         try
         {
-            return await work(attached.Broker, Clock.GetUtcNow(), cancellationToken)
-                .ConfigureAwait(false);
+            await EnterGateAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _ = Interlocked.Decrement(ref _agentWorkWaiting);
+        }
+
+        try
+        {
+            var waited = rewriting || Interlocked.Read(ref _rewritesStarted) != started;
+
+            return (await work(attached.Broker, Clock.GetUtcNow(), cancellationToken).ConfigureAwait(false), waited);
         }
         finally
         {
@@ -1431,7 +2927,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(work);
 
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await EnterGateAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -1527,6 +3023,32 @@ public sealed class BrokerRuntime : IAsyncDisposable
             cancellationToken);
     }
 
+    /// <summary>Runs an operator operation and the facilitator's part in it as one unit of work, alone.</summary>
+    /// <typeparam name="T">What the work returns.</typeparam>
+    /// <param name="work">The work, given the console, the facilitator, its name in this store and the instant.</param>
+    /// <param name="cancellationToken">Cancels the wait for the gate and the work.</param>
+    /// <returns>Whatever the work returned.</returns>
+    /// <remarks>
+    /// A person's ownership line and the settling of Parley's question it answers were two units, and the serve pass's
+    /// automatic accept could run between them: the question still read as answered, so the agent's words were written
+    /// over the person's line as automatic while the person was told theirs was recorded (review, lens 1 run 78).
+    /// </remarks>
+    public Task<T> UseConsoleWithFacilitatorAsync<T>(
+        Func<Parley.Broker.OperatorConsole, Parley.Broker.Facilitator, AgentName, DateTimeOffset, CancellationToken, Task<T>> work,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(work);
+
+        return UseConnectionAsync(
+            (connection, now, ct) => work(
+                new Parley.Broker.OperatorConsole(connection),
+                new Parley.Broker.Facilitator(connection, _options),
+                Facilitator,
+                now,
+                ct),
+            cancellationToken);
+    }
+
     /// <summary>Makes an answer the agent's line, once its launch configuration has been written.</summary>
     /// <param name="answer">The answer.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
@@ -1610,6 +3132,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 continue;
             }
 
+            // A refresh ends the process and starts it again, and nothing starts a frozen agent (SPEC.md §14). It is not
+            // marked sent, so it is due again once the agent is unfrozen.
+            if (_frozen.ContainsKey(agent.Value))
+            {
+                continue;
+            }
+
             if (!_nodes.TryGetValue(agent.Machine, out var node)
                 || !node.RequestRefresh(agent, IdentityOf(agent), "its first ownership line was accepted automatically"))
             {
@@ -1663,7 +3192,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 async (connection, _, ct) =>
                 {
                     var waiting = await new MessageRepository(connection)
-                        .CountPendingAsync(agent, ct).ConfigureAwait(false);
+                        .CountPendingAsync(agent, cancellationToken: ct).ConfigureAwait(false);
 
                     var polls = await new ConversationRepository(connection)
                         .CountOutstandingPollsAsync(agent, ct).ConfigureAwait(false);
@@ -1703,6 +3232,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
         // This attachment only. Two sessions for one agent are legitimate (§14), so one ending
         // must remove itself and leave the other where it is -- and the name goes only when the
         // last of them has gone.
+        var last = false;
+
         while (_attached.TryGetValue(attached.Name.Value, out var sessions))
         {
             var remaining = sessions.Remove(attached);
@@ -1715,6 +3246,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 {
                     // Its last session: nothing left can report a fetch it was streamed (SPEC.md §9.5).
                     Fetches.Forget(attached.Name);
+                    last = true;
                     break;
                 }
             }
@@ -1728,7 +3260,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
             // it would be dropped silently.
         }
 
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await EnterGateAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -1737,6 +3269,116 @@ public sealed class BrokerRuntime : IAsyncDisposable
         finally
         {
             _gate.Release();
+        }
+
+        if (!last)
+        {
+            // The last left process has gone and a session somebody opened, or one a node started, is still attached: what
+            // a wake passed over is that session's to read now, as it would have been had it been there at the wake.
+            if (Left(attached)
+                && _attached.TryGetValue(attached.Name.Value, out var others)
+                && !others.Any(Left))
+            {
+                _ = _leftPassedOver.TryRemove(attached.Name.Value, out _);
+            }
+
+            return;
+        }
+
+        // The process has gone. Each note is taken whatever the others say, so none is left behind for a later process.
+        var asked = _turnAsked.TryRemove(attached.Name.Value, out var lost);
+        var wanted = _startWanted.TryRemove(attached.Name.Value, out _);
+        var unfrozen = _unfrozenWhileUp.TryRemove(attached.Name.Value, out _);
+        var passedOver = _leftPassedOver.TryRemove(attached.Name.Value, out _);
+        var lapseOnLeft = _lapseOnLeft.TryRemove(attached.Name.Value, out _);
+
+        // **The note a lapse's start waited on was taken already**: a person's kill or stop took it, neither of which starts
+        // the agent, or a session that took over did. Either settles the lapse in this run, so the store does not keep it for the next.
+        if (lapseOnLeft && !passedOver)
+        {
+            await ClearPaidLapseAsync(attached.Name).ConfigureAwait(false);
+        }
+
+        if (!(asked || wanted || unfrozen || passedOver))
+        {
+            return;
+        }
+
+        // **Only the claim the noted turn left**, by key and value. Any other claim is a start a newer message has already
+        // asked for, and dropping it bought a second start for one message; telling them apart by time left a turn asked a
+        // moment after the session began to leave looking like such a start, with its message unread and nothing coming.
+        if (asked)
+        {
+            _ = ((ICollection<KeyValuePair<string, DateTimeOffset>>)_pending)
+                .Remove(new KeyValuePair<string, DateTimeOffset>(attached.Name.Value, lost));
+        }
+
+        // **A turn was asked of the process that has just ended, it was unfrozen while a stop was waiting for it, or a wake
+        // passed it over as left running** (SPEC.md §11.1, §14). What was asked is asked for again, as a start. A frozen agent
+        // is declined where every wake is, so a freeze made meanwhile still holds.
+        try
+        {
+            if (unfrozen || passedOver)
+            {
+                // An unfreeze pays what the freeze put off, whatever else was asked: open work the agent owes as well as
+                // anything uncollected. Gated on the turn's mail alone, an agent unfrozen before its turn had ended was
+                // left stopped with the work it had already collected. A left process that has gone is paid the same way:
+                // the restart wake passed over the work it had collected and left open, and every message's wake its mail.
+                var outcome = await WakeIfOwingAsync(
+                    attached.Name,
+                    CancellationToken.None,
+                    unfrozen
+                        ? "a person unfroze it and work or mail is waiting for it"
+                        : "a process a node that is gone left running has ended, and work or mail is waiting for it")
+                    .ConfigureAwait(false);
+
+                // **A lapse's start passed over while this process ran is paid now, and only now cleared from the store.**
+                // Not when nobody could be asked: a broker stopping closes its node's stream before this runs, so the asking
+                // finds no node, and the lapse is the next join's to pay, or the next start's.
+                if (lapseOnLeft)
+                {
+                    if (outcome == WakeOutcome.Unreachable)
+                    {
+                        _lapsed[attached.Name.Value] = true;
+                    }
+                    else
+                    {
+                        await ClearPaidLapseAsync(attached.Name).ConfigureAwait(false);
+                    }
+                }
+
+                // A person's start asked meanwhile is still owed when the unfreeze found nothing to pay. If the unfreeze did
+                // ask, its claim answers the asking below as already coming, so nothing is started twice.
+                if (!wanted)
+                {
+                    return;
+                }
+            }
+
+            // Only an agent still registered and not retired, as every wake the broker makes on its own account asks
+            // (WakeIfOwingAsync): the person may have retired or purged it since the turn was asked, and a start then would
+            // run a process the person's own Start is refused, in a repository they had withdrawn. And, unless a person
+            // asked for the start themselves, only when something is still waiting: a turn that was taken collected its
+            // mail, and work the agent had already collected does not start it again.
+            var (active, waiting) = await UseConnectionAsync(
+                async (connection, _, ct) =>
+                    ((await new AgentRepository(connection).GetAllAsync(ct).ConfigureAwait(false))
+                        .Any(row => row.Name == attached.Name && row.Status == AgentStatus.Active),
+                     await new MessageRepository(connection).CountPendingAsync(attached.Name, cancellationToken: ct).ConfigureAwait(false)
+                     + await new ConversationRepository(connection).CountOutstandingPollsAsync(attached.Name, ct).ConfigureAwait(false) > 0),
+                CancellationToken.None).ConfigureAwait(false);
+
+            if (active && (waiting || wanted))
+            {
+                _ = RequestAttentionForMail(
+                    attached.Name,
+                    wanted ? "a person asked to start it while its process was still going" : "a turn asked of it was not taken before its process went");
+            }
+        }
+        catch (Exception)
+        {
+            // The session has gone and its row says so. The wake is an extra: the work stays open and is flagged on the
+            // ordinary schedule, and the next message for the agent starts it.
         }
     }
 
@@ -1756,9 +3398,17 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// racing every handler on the way out — which is also the only arrangement that survives
     /// the shutdown it most needs to, the one where it did not get to run anything.
     /// </para>
+    /// <para>
+    /// <b>And every stream held after it.</b> It runs once, when the host begins stopping, but an adapter can attach
+    /// again (or a node join) while the host is still stopping. Each of those is closed as it is held, or it would hold
+    /// the host for the same thirty seconds this exists to save.
+    /// </para>
     /// </remarks>
     public void CloseStreams()
     {
+        // First, and a full fence, so a session held after this is either seen below or sees the flag itself.
+        _ = Interlocked.Exchange(ref _closing, 1);
+
         foreach (var sessions in _attached.Values)
         {
             foreach (var attached in sessions)
@@ -1777,14 +3427,28 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <returns>A task that completes when it is closed.</returns>
     public async ValueTask DisposeAsync()
     {
-        // Before the gate and the connection go: a look it had scheduled would otherwise reach for both.
-        await Watcher.DisposeAsync().ConfigureAwait(false);
+        // A restart wake still waiting for processes to attach again is ended, and one already reading is waited for while
+        // the store is open. Neither faults: a wake that cannot finish is forgotten.
+        try
+        {
+            await _stopping.CancelAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Disposed before: there is nothing left to end.
+        }
+
+        await Task.WhenAll(_restartWakes.Values).ConfigureAwait(false);
+
+        // First, while the store is still open: a sweep in progress finishes the entry it is on and stops.
+        await Sweeper.DisposeAsync().ConfigureAwait(false);
 
         CloseStreams();
 
         _attached.Clear();
         _nodes.Clear();
         _gate.Dispose();
+        _stopping.Dispose();
 
         if (_ownsConnection)
         {

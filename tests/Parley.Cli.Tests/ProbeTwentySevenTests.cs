@@ -11,6 +11,7 @@ namespace Parley.Cli.Tests;
 /// Git stores a symlink's target verbatim, absolute paths included, so a checkout can point its
 /// <c>.mcp.json</c> anywhere the person can read. The scan must not follow it out of the checkout.
 /// </remarks>
+[Integration]
 public sealed class ProbeTwentySevenTests : IDisposable
 {
     private const string Secret = "PRIVATE-KEY-MATERIAL-THAT-IS-LONGER-THAN-TWENTY-CHARACTERS";

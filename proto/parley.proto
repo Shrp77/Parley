@@ -49,9 +49,20 @@ service Agents {
   rpc Conclude(ConcludeRequest) returns (ConcludeReply);
   rpc ListAgents(ListAgentsRequest) returns (ListAgentsReply);
 
-  // Everything waiting, taken once, each message already inside the section 13 envelope. The only
-  // path a participant's words travel to a model.
-  rpc DrainInbox(DrainInboxRequest) returns (InboxReply);
+  // Section 10.1. One exchange of this project, by number, as a record of the past and not as mail: every message in its
+  // own history envelope (section 13). Changes nothing a participant can observe: nothing is marked delivered, nobody is
+  // woken, the caller does not become a participant. The one write is the record the person sees (section 5.8).
+  rpc ReadExchange(ReadExchangeRequest) returns (ReadExchangeReply);
+
+  // Section 10.1. Messages of this project matching words, with a snippet each, newest first. Never a whole message.
+  rpc SearchHistory(SearchHistoryRequest) returns (SearchHistoryReply);
+
+  // What is waiting, up to what one collection carries (section 10.1), each message already inside the section 13
+  // envelope. The only path a participant's words travel to a model. Two-way so delivery is acknowledged (section 6):
+  // the caller sends `collect`, reads the InboxReply, sends `acknowledge`, and the broker ends the call once what it
+  // handed over is recorded delivered. A call that ends without `acknowledge` records nothing, and the next collection
+  // hands it all over again.
+  rpc DrainInbox(stream DrainInboxFrame) returns (stream InboxReply);
 
   // How much is waiting, without taking any of it. For a caller that holds no stream -- an editor
   // hook that wants to say "work is waiting" before a turn. Marks nothing delivered.
@@ -62,17 +73,23 @@ service Agents {
   rpc RecordRefusal(RecordRefusalRequest) returns (Empty);
 
   // Places a file from the agent's own repository in a conversation's folder of the file location (section 9.5).
-  // The first frame is a header naming the conversation and the file; every later frame carries bytes. The
-  // conversation is assigned as a Request's is (section 5.0), and placing makes the placer a participant.
-  rpc PlaceFile(stream PlaceFileFrame) returns (PlaceFileReply);
+  // The first frame is a header naming the conversation and the file, and the client then waits: the broker answers
+  // with a go-ahead, or with the reply when it refuses before any bytes. After a go-ahead every later frame carries
+  // bytes, and the broker's reply comes once the client has ended its stream. The broker never ends the call while the
+  // client may still be sending: a refusal that comes while the bytes arrive reads and discards the rest first, since
+  // bytes sent on a call already ended are a fault in the connection they share with every other call. The
+  // conversation is assigned as a Request's is (section 5.0), and placing makes the placer a participant. A placed
+  // file is never changed: a name already holding other content is refused, and a new version takes a new name.
+  rpc PlaceFile(stream PlaceFileFrame) returns (stream PlaceFileAnswer);
 
-  // Streams one whole content of a file: a header and then bytes, or a refusal instead of the header. While the
-  // call is open the stored file is held for reading and a replacement or removal waits. The adapter writes the
+  // Streams one whole file: a header and then bytes, or a refusal instead of the header. A refusal can also follow the
+  // bytes, when what was streamed does not hash to what was placed (FILE_REJECTION_TAMPERED); the adapter then writes
+  // nothing. While the call is open the stored file is held for reading and a removal waits. The adapter writes the
   // bytes to disk; nothing carries them into a model's context.
   rpc FetchFile(FetchFileRequest) returns (stream FetchFileFrame);
 
-  // Reports that a fetch was written and verified. Only then is it recorded, so change notices follow. A report of
-  // a fetch the broker did not stream to this agent, or of a hash it did not stream, is refused.
+  // Reports that a fetch was written and verified. Only then is it recorded, so a gone notice follows if the file
+  // goes. A report of a fetch the broker did not stream to this agent, or of a hash it did not stream, is refused.
   rpc FetchedFile(FetchedFileRequest) returns (FetchedFileReply);
 
   // A page of the files in the location: names, sizes, hashes and placers, never contents.
@@ -85,6 +102,27 @@ service Agents {
   // exchange, writes no message and creates no roadmap. This is the whole of what an agent can do with one -- there
   // is no read, no change and no marking done, and none may be added (principle 2.12).
   rpc ProposeRoadmap(ProposeRoadmapRequest) returns (ProposeRoadmapReply);
+
+  // The agent's own words for a background task it started: a name, a description and a link, shown to the person only
+  // (section 11.6). Held in memory until the task ends. The reply says nothing about whether the
+  // task is running, which is turn information (section 10.1).
+  rpc DescribeBackgroundTask(DescribeBackgroundTaskRequest) returns (DescribeBackgroundTaskReply);
+}
+
+message DescribeBackgroundTaskRequest {
+  string agent = 1;                   // the caller, as every Agents request names it
+  string task_id = 2;                 // the runner's id for the task, from the tool's result
+  string name = 3;                    // what it is doing, at most 64 characters
+  string description = 4;             // at most 300 characters; empty when none
+  string link = 5;                    // exchange #N, conversation:<id>, file:<name> or an https address; empty when none
+}
+
+message DescribeBackgroundTaskReply {
+  bool kept = 1;                      // false when refused: the id, the name, a caller not attached, or the person and Parley
+  string refused = 2;                 // why, when not kept
+  bool name_cut = 3;
+  bool description_cut = 4;
+  string link_dropped = 5;            // why a link given was not kept; empty when none was given or it was kept
 }
 
 message AttachRequest {
@@ -101,13 +139,25 @@ message AttachRequest {
   // The repository's identifier (`parleyAgentId`), empty when it has none. A label and never authority (section 4.1.1):
   // presented under a name the project does not hold, from the workspace and machine that hold it, it renames the agent.
   string identity = 10;
+
+  // The process that hosts this adapter -- the editor or `claude` that started it -- when the adapter can say, else 0. A
+  // label and never authority: it lets a person end a process left running by a node that is gone (section 11.1), and a
+  // node ends it only after checking it is one of the agent's own kind.
+  int64 process_id = 11;
 }
 
 message Event {
   oneof event {
     Attached attached = 1;
     Notice notice = 2;
+    Tidying tidying = 3;
   }
+}
+
+// The broker is rewriting its store after a destroy, a purge or a retention pass (section 9.1), and then has finished.
+// Nothing is refused meanwhile: what is sent waits and goes through when it finishes. Told so a surface can say so.
+message Tidying {
+  bool underway = 1;
 }
 
 message Attached {
@@ -123,7 +173,7 @@ message Attached {
 // notice carrying the words would be a second path for the same text with no envelope on it.
 message Notice {
   int32 messages_waiting = 1;
-  int32 closure_polls_waiting = 2;
+  int32 closure_polls_waiting = 2;  // every poll outstanding, listed or not
   int32 file_notices_waiting = 3;     // section 9.5: counted like the rest, and never waking anything
   int32 roadmap_notices_waiting = 4;  // section 5.7: what became of the agent's own proposals; wakes nothing
 }
@@ -142,6 +192,7 @@ message OpenRequest {
 // One outcome per exchange a Request opened, or a single refusal when none could be opened.
 message RequestReply {
   repeated RequestOutcome outcomes = 1;
+  bool waited = 2;               // the send waited for a rewrite of the store to finish (section 9.1)
 }
 
 message RequestOutcome {
@@ -208,6 +259,8 @@ message SayReply {
   // handed back to the agent.
   repeated int64 settled = 6;
   repeated int64 handed_back = 7;
+
+  bool waited = 8;               // the send waited for a rewrite of the store to finish (section 9.1)
 }
 
 message SettleRefusal {
@@ -225,6 +278,82 @@ message ConcludeReply {
   bool ok = 1;
   ClosureError refusal = 2;
   bool concluded = 3;
+}
+
+message ReadExchangeRequest {
+  string asking_as = 1;
+  int64 exchange_id = 2;
+  int64 after = 3;                 // 0 for the start; else the `next_after` of an earlier reply
+}
+
+message HistoryMessage {
+  int64 id = 1;
+  int64 exchange_id = 2;
+  MessageType type = 3;
+  string from = 4;
+  string to = 5;
+  string conversation = 6;
+  string created_utc = 7;
+  string envelope = 8;             // the only form its words travel in: a record, never mail (section 13)
+}
+
+message ReadExchangeReply {
+  // An unset value is never read as found.
+  enum Found {
+    FOUND_UNSET = 0;
+    FOUND = 1;
+    NO_SUCH_EXCHANGE = 2;
+    RATE_LIMITED = 3;
+  }
+  Found found = 1;
+  int64 exchange_id = 2;
+  string conversation = 3;
+  string state = 4;                // open, or closed and how
+  repeated HistoryMessage messages = 5;
+  int64 next_after = 6;            // pass as `after` for the rest; 0 when there is none
+  int32 messages_remaining = 7;
+  int32 retry_after_seconds = 8;
+}
+
+message SearchHistoryRequest {
+  string asking_as = 1;
+  string words = 2;                // 1..200 characters; whitespace splits it; every word must occur
+  string agent = 3;                // optional: from or to
+  string conversation = 4;         // optional
+  MessageType type = 5;            // optional; unspecified means any
+  string since_utc = 6;            // optional
+  string until_utc = 7;            // optional
+  int64 continue_after = 8;        // 0 for the first page
+}
+
+message HistoryMatch {
+  int64 exchange_id = 1;
+  int64 message_id = 2;
+  string conversation = 3;
+  string from = 4;
+  string to = 5;
+  MessageType type = 6;
+  string created_utc = 7;
+  string snippet = 8;              // at most 240 characters
+}
+
+message SearchHistoryReply {
+  string refusal = 1;              // a sentence when refused, empty otherwise
+  int32 retry_after_seconds = 2;
+  repeated HistoryMatch matches = 3;   // at most 20
+  int32 not_shown = 4;
+  int64 continue_after = 5;        // 0 when there is no more
+}
+
+// Section 5.8. One tally row, for the person only: an agent's reads of one exchange, or its searches, with how often and when last, names
+// and numbers and the newest words searched for, never a message's text.
+message HistoryReadRow {
+  string reader = 1;
+  int64 exchange_id = 2;           // 0 for a search
+  string words = 3;                // empty for a read of an exchange
+  int32 matches = 4;
+  string created_utc = 5;
+  int32 count = 6;                 // reads this row stands for: an exchange's by this reader, or this reader's searches
 }
 
 message ListAgentsRequest {
@@ -248,30 +377,55 @@ message DrainInboxRequest {
   int32 limit = 2;
 }
 
+message DrainInboxFrame {
+  oneof frame {
+    DrainInboxRequest collect = 1;
+    InboxAcknowledgement acknowledge = 2;
+  }
+}
+
+// Sent once the caller holds the InboxReply. Carries nothing: it acknowledges the reply on its own call.
+message InboxAcknowledgement {}
+
 message InboxReply {
   repeated DeliveredMessage messages = 1;
   repeated ClosurePoll closure_polls = 2;
 
-  // Section 9.5. Not messages: nothing is owed back. At most 200 in one collection, oldest change first, whatever
+  // Section 9.5. Not messages: nothing is owed back. At most 200 in one collection, oldest first, whatever
   // `limit` says about messages; the rest wait for the agent's next collection and are counted here.
   repeated FileNotice file_notices = 3;
   int32 file_notices_waiting = 4;
 
   // Section 5.7. What became of this agent's own roadmap proposals, with its own title. Not messages: nothing is
-  // owed back and nothing is woken.
+  // owed back and nothing is woken. At most 50 in one collection; the rest are counted here.
   repeated RoadmapNotice roadmap_notices = 5;
   int32 roadmap_notices_waiting = 6;
+
+  // Section 5.0. Open exchanges of this agent's that the person moved. Not messages: nothing is owed back and nothing
+  // is woken. At most 50 in one collection; the rest are counted here.
+  repeated MoveNotice move_notices = 20;
+  int32 move_notices_waiting = 21;
+
+  // Section 10.1. Messages still waiting: a collection carries about 64,000 characters of messages and never fewer
+  // than one, or fewer when `limit` says so, and the rest wait for the next collection, counted here.
+  int32 messages_waiting = 7;
+
+  // Section 10.1. Closure polls beyond the 200 listed, oldest first; not the count of every poll outstanding, which
+  // `Notice.closure_polls_waiting` carries. A poll stays until it is answered, so later
+  // collections list these.
+  int32 closure_polls_not_listed = 8;
 }
 
-// That a file the agent fetched has changed or gone since. A name and two hashes, never the content.
+// That a file the agent fetched has gone since, or that one it fetched or placed went missing or was tampered with
+// (section 9.5). A name, the hash it had and when, never the content.
 message FileNotice {
   string conversation_id = 1;
   string name = 2;
-  string sha256_had = 3;              // what the agent fetched
-  string sha256_now = 4;              // empty when gone
-  int64 size_bytes = 5;               // 0 when gone
-  string changed_utc = 6;
-  bool gone = 7;
+  string sha256_had = 3;              // what the agent fetched, or placed
+  string gone_utc = 4;
+  // Empty when the file is only gone. Otherwise it was tampered with: the hash of the bytes found where it should have
+  // been, which something other than Parley wrote (section 9.5). The file is no longer reliable.
+  string sha256_found = 5;
 }
 
 // ===========================================================================================
@@ -291,17 +445,25 @@ message PlaceFileFrame {
 message PlaceFileHeader {
   string agent = 1;                   // the adapter's launch identity, as every Agents call carries
   string conversation_id = 2;         // empty: assigned by the broker (section 5.0)
-  string name = 3;                    // section 9.5's rules; only .md and .txt
+  string name = 3;                    // section 9.5's rules; only .md, .txt and images
+}
+
+// What the broker sends on a placement: a go-ahead once, after the header, and then the reply; or the reply alone, when
+// it refuses before any bytes. The reply is always the last.
+message PlaceFileAnswer {
+  oneof answer {
+    Empty go_ahead = 1;               // send the bytes, then end the stream
+    PlaceFileReply reply = 2;
+  }
 }
 
 message PlaceFileReply {
   PlaceOutcome outcome = 1;
-  FileRejection rejection = 2;        // NONE when the file was placed, replaced or already current
+  FileRejection rejection = 2;        // NONE when the file was placed or already current
   string conversation_id = 3;
   string name = 4;
   int64 size_bytes = 5;
   string sha256 = 6;                  // the broker's, never the placer's
-  string previous_sha256 = 7;         // on REPLACED
   string placed_by = 8;               // on NAME_PLACED_BY_ANOTHER; empty there means the person
   repeated string assignable_conversations = 9;   // on CONVERSATION_NOT_ASSIGNABLE, as a Request's refusal carries
   int32 characters_left = 10;         // on DOES_NOT_FIT: the longest name the conversation's folder allows
@@ -316,11 +478,17 @@ message FetchFileRequest {
   string expect_sha256 = 4;           // empty: no expectation
 }
 
+message ReadSharedFileRequest {
+  string conversation_id = 1;         // required: a read is always of one conversation's file
+  string name = 2;
+  string expect_sha256 = 3;           // empty: no expectation
+}
+
 message FetchFileFrame {
   oneof frame {
     SharedFileView header = 1;        // size, hash and placer of the content about to be streamed
     bytes chunk = 2;
-    FileRefusal refusal = 3;          // sent instead of a header
+    FileRefusal refusal = 3;          // sent instead of a header, or after the bytes when they were tampered with
   }
 }
 
@@ -335,7 +503,7 @@ message FileRefusal {
   string placed_by = 3;               // on NAME_PLACED_BY_ANOTHER; empty there means the person
   repeated string conversations = 4;  // on AMBIGUOUS_NAME: at most 200 holding the name
   int32 conversations_more = 5;       // how many more hold it than are listed
-  string sha256_now = 6;              // on CHANGED: the hash the location holds
+  string sha256_now = 6;              // on CHANGED: the hash the location holds; on TAMPERED: the hash of the bytes found
   string detail = 7;                  // the rule, in words
 }
 
@@ -365,7 +533,6 @@ message SharedFileView {
   string sha256 = 4;
   string placed_by = 5;               // empty: the person
   string placed_utc = 6;
-  string changed_utc = 7;
   string folder = 8;                  // the conversation's folder on disk
 }
 
@@ -376,7 +543,7 @@ message FilesReply {
   repeated FilePlacementCount placements = 4;     // Operators only
   string next_page_token = 5;                     // empty at the end
   int32 total_files = 6;                          // the files total_bytes counts
-  int32 files_not_listed = 7;                     // Operators only: files in the listed folders whose names break section 9.5's rules
+  int32 files_not_listed = 7;                     // Operators only: files in the listed folders that nothing placed (section 9.5)
 }
 
 message ConversationFilesTotal {
@@ -414,6 +581,42 @@ message FileLocationRequest {
   string name = 2;                    // empty: the folder
 }
 
+message ListFileProblemsRequest {
+  bool include_dismissed = 1;
+}
+
+message FileProblemsReply {
+  repeated FileProblemView problems = 1;  // those waiting first, each oldest first
+  string machine = 2;                     // the broker's machine name (section 4.1.1)
+  string quarantine_path = 3;             // absolute, on that machine
+}
+
+enum FileProblemKind {
+  FILE_PROBLEM_KIND_UNSPECIFIED = 0;
+  FILE_PROBLEM_KIND_QUARANTINED = 1;      // bytes no longer matched what was placed; moved to quarantine
+  FILE_PROBLEM_KIND_LOCKED = 2;           // the sweep could not read, move or delete it: another program held it, the
+                                          // broker may not, or the quarantine folder is a link
+}
+
+// The path is text nothing checked when the entry was put there by something other than Parley: shown as somebody
+// else's text.
+message FileProblemView {
+  int64 id = 1;
+  FileProblemKind kind = 2;
+  string conversation_id = 3;             // empty for an entry no conversation owns
+  string path = 4;                        // inside the location, '/' between its parts
+  string sha256_placed = 5;               // quarantined, and a tampered file the sweep could not move
+  string sha256_found = 6;                // the same
+  string moved_to = 7;                    // quarantined only: inside the quarantine directory
+  string detail = 8;
+  string raised_utc = 9;
+  string dismissed_utc = 10;              // empty while it waits
+}
+
+message DismissFileProblemRequest {
+  int64 id = 1;
+}
+
 message FileLocationReply {
   bool ok = 1;
   FileRefusal refusal = 2;            // when not ok
@@ -430,21 +633,24 @@ enum FileRejection {
   FILE_REJECTION_AMBIGUOUS_NAME = 5;
   FILE_REJECTION_CONVERSATION_NOT_ASSIGNABLE = 6;
   FILE_REJECTION_CONVERSATION_CLOSED = 7;
-  FILE_REJECTION_CHANGED = 8;
+  FILE_REJECTION_CHANGED = 8;             // not the content expected, or held for writing or unreadable; bytes changed
+                                          // on disk are TAMPERED
   FILE_REJECTION_NO_SPACE = 9;
   FILE_REJECTION_EXTENSION_NOT_ALLOWED = 10;
   FILE_REJECTION_NOT_FETCHED = 11;
   FILE_REJECTION_TOO_MANY_NAMES = 12;
   FILE_REJECTION_SAFE_NAME_TAKEN = 13;  // a renamed placement's safe spelling is already another file's name
+  FILE_REJECTION_NAME_HOLDS_OTHER_CONTENT = 14;  // a placed file is never changed: a new version takes a new name
+  FILE_REJECTION_TAMPERED = 15;  // something other than Parley changed the bytes on disk; no longer reliable
 }
 
 enum PlaceOutcome {
   PLACE_OUTCOME_UNSPECIFIED = 0;
   PLACE_OUTCOME_PLACED = 1;
-  PLACE_OUTCOME_REPLACED = 2;
   PLACE_OUTCOME_ALREADY_CURRENT = 3;
   PLACE_OUTCOME_PLACED_BY_ANOTHER = 4;
   PLACE_OUTCOME_DOES_NOT_FIT = 5;
+  PLACE_OUTCOME_HOLDS_OTHER_CONTENT = 6;
 }
 
 // A message and the envelope that marks it as a participant's words, per section 13. Built by the
@@ -461,6 +667,15 @@ message DeliveredMessage {
   // Only beside a person's Request the receiving agent had asked back about: what the person has said to it in that
   // conversation since it last spoke on the exchange, oldest first, at most 5, each in its own envelope (section 5.6).
   repeated AnswerSince since = 5;
+
+  // Only on a Result answering one member of a Request to a role, delivered to the agent that sent it: how many
+  // agents the Request reached and how many have answered so far, counted when this Result is delivered (section 5.5).
+  RoleRequestProgress role_request = 6;
+}
+
+message RoleRequestProgress {
+  int32 asked = 1;
+  int32 answered = 2;               // members closed by a Result, complete or blocked
 }
 
 message AnswerSince {
@@ -521,16 +736,39 @@ service Nodes {
   // node's machine and the node is joined. A failure here never fails the turn.
   rpc ReportTurn(TurnReport) returns (Empty);
 
-  // This node is about to start an agent, with this token in its environment (section 11.7). The adapter presents
-  // the token on attach, which is how the broker tells a process Parley started from one opened outside it. Ignored
-  // unless the agent is on this node's machine and the node is joined. A failure here never stops the launch.
+  // This node is about to start an agent, with this token in its environment, or is still running one it started
+  // (on joining, and when another project this node hosts starts it) (section 11.7). The adapter presents the token on
+  // attach, which is how the broker tells a process Parley started from one opened outside it. Ignored unless the
+  // agent is on this node's machine and the node is joined, and when it carries a folder and an identity no name
+  // holds, under a name registered from another folder. A failure here never stops the launch.
   rpc ReportLaunch(LaunchReport) returns (Empty);
+
+  // An agent this node was asked to start has no workspace, it is on the disk holding the person's home folder, with the folder above it still there, in use, no mount folder and reached through no link (section 14).
+  // The broker retires it. Ignored unless the agent is on this node's machine and the node is joined; never the person or
+  // Parley, whom no node starts.
+  rpc ReportWorkspaceGone(WorkspaceGoneReport) returns (WorkspaceGoneReply);
+}
+
+message WorkspaceGoneReport {
+  string machine = 1;
+  string agent = 2;
+}
+
+message WorkspaceGoneReply {
+  bool retired = 1;   // false when the report was ignored or the agent was already retired
 }
 
 message LaunchReport {
   string machine = 1;
   string agent = 2;
   string token = 3;     // chosen by the node for this one launch
+  string identity = 4;  // the repository's identifier, so a rename since the launch still finds the agent; empty at a fresh launch, filed under the name just asked for
+  string workspace = 5; // the checkout's folder when the node knows it, so a name registered from another is not given its token; empty when not
+  // The node's reading number for the launch (BackgroundWork.sequence), taken before the process started and the same in
+  // every project told of it and on every try: the last process's readings are lower, so one that lands after this
+  // launch changes nothing, and the new process's are higher, so one that landed first is kept. On a rejoin's
+  // announcement, a number taken then. 0 from a sender that gives none: the broker then holds nothing running at the number it held.
+  int64 sequence = 6;
 }
 
 message JoinRequest {
@@ -544,6 +782,9 @@ message JoinRequest {
   // The identifiers (`parleyAgentId`) of the checkouts this node can launch for this project. A node can start an agent
   // by the identifier alone, so a repository whose role was renamed is still startable under the name the broker holds.
   repeated string startable_identities = 5;
+
+  // Refused when it differs, naming both (section 4.0): two machines are not one build.
+  string protocol_version = 6;
 }
 
 message TurnReport {
@@ -552,7 +793,33 @@ message TurnReport {
   oneof phase {
     TurnStarted started = 3;
     TurnEnded ended = 4;
+    // How many background tasks the agent has running, said whenever it changes (section 11.6). A turn the agent begins on
+    // its own when one finishes is reported as started and ended like any other.
+    BackgroundWork background = 5;
   }
+}
+
+message BackgroundWork {
+  int32 tasks = 1;
+  // Each running task the runner listed, in its order, at most 200; `tasks` still counts them all. The broker holds each
+  // entry to the same rules again, and drops one that fails them.
+  repeated RunningTask running = 2;
+  // When the node read it, higher for every later reading on that node; a rejoin's re-announced reading is sent at no
+  // less than that announcement's number. Nothing orders a node's sends, so the broker keeps the highest from that node
+  // and drops a report older than the one it holds.
+  int64 sequence = 3;
+}
+
+message RunningTask {
+  string id = 1;                      // the runner's task id
+  TaskKind kind = 2;
+  string label = 3;                   // the runner's description of it, cut and neutralised; empty when it gave none
+}
+
+enum TaskKind {
+  TASK_KIND_OTHER = 0;
+  TASK_KIND_AGENT = 1;                // a sub-agent
+  TASK_KIND_COMMAND = 2;              // a background command
 }
 
 message TurnStarted {
@@ -590,7 +857,28 @@ message NodeCommand {
     // Sent once, for an agent's first ownership line accepted automatically (section 11.1), and never for an agent the
     // node did not start.
     RefreshAgent refresh = 4;
+
+    // A person's stop or restart of an agent this node started (section 11.1), once its current turn is over. Never for
+    // an agent the node did not start.
+    StopAgent stop = 5;
+
+    // A person's end of a process left running by a node that is gone (section 11.1): not one this node started, so
+    // there is no turn to wait for. The node checks what it is told to end before it does.
+    KillProcess kill = 6;
   }
+}
+
+message KillProcess {
+  string agent = 1;
+  int64 process_id = 2;          // what the agent's adapter said hosts it
+  string because = 3;            // for the operator's benefit, never the agent's
+}
+
+message StopAgent {
+  string agent = 1;
+  string because = 2;            // for the operator's benefit, never the agent's
+  string identity = 3;           // which checkout, when the broker knows; the node finds it by this and not by the name
+  bool restart = 4;              // start it again once it has stopped, reading its launch configuration afresh
 }
 
 message RefreshAgent {
@@ -646,6 +934,14 @@ service Operators {
   // How the person closes a conversation (section 5.0). Every exchange still open in it ends closed,
   // and every participant holding one is sent the broker's closed Result in the same write.
   rpc ForceConclude(ForceConcludeRequest) returns (DidItReply);
+  rpc CloseRequest(CloseRequestRequest) returns (DidItReply);
+
+  // Section 5.0. Only the person links or moves: an agent that could split a line of work is what that section refuses.
+  // A move wakes nobody; an agent party to an open exchange that moved is told at its next collection.
+  rpc SpinOff(SpinOffRequest) returns (SpinOffReply);
+  rpc AbandonSpinOff(SpinOffRequest) returns (DidItReply);
+  rpc PreviewMove(PreviewMoveRequest) returns (PreviewMoveReply);
+  rpc MoveExchanges(MoveExchangesRequest) returns (MoveExchangesReply);
   rpc Retire(AgentRequest) returns (DidItReply);
   rpc Reinstate(AgentRequest) returns (DidItReply);
   rpc Purge(AgentRequest) returns (PurgeReply);
@@ -666,6 +962,7 @@ service Operators {
 
   rpc DescribeRegistry(Empty) returns (RegistryReply);
   rpc DescribeRefusals(Empty) returns (RefusalsReply);
+  rpc DescribeMessageLengths(Empty) returns (MessageLengthsReply);
   rpc DescribeClarifications(Empty) returns (ClarificationsReply);
 
   // What Results have said: outcomes by responder, blockers by kind, sources, closures (section 15).
@@ -685,6 +982,8 @@ service Operators {
   rpc Implements(Empty) returns (ImplementsReply);
   rpc ListConversations(ListConversationsRequest) returns (ListConversationsReply);
   rpc DescribeWaiting(Empty) returns (WaitingReply);
+  // Which conversation an exchange is in now, so a surface can open one a message names (section 5.6). Read only.
+  rpc LocateExchange(LocateExchangeRequest) returns (LocateExchangeReply);
 
   // Filing, not muting: delivery is unchanged and no participant is told.
   rpc Archive(ConversationRequest) returns (DidItReply);
@@ -699,6 +998,8 @@ service Operators {
   rpc Roadmaps(Empty) returns (RoadmapsReply);
   rpc Roadmap(RoadmapRequest) returns (RoadmapReply);
   rpc Proposals(ProposalsRequest) returns (ProposalsReply);
+  rpc ProposalCount(ProposalsRequest) returns (ProposalCountReply);
+  rpc Proposal(ProposalRequest) returns (ProposalsReply);
   rpc ConfirmProposal(ConfirmProposalRequest) returns (RoadmapChangeReply);
   rpc DeclineProposal(ProposalRequest) returns (RoadmapChangeReply);
   rpc EditRoadmap(EditRoadmapRequest) returns (RoadmapChangeReply);
@@ -706,12 +1007,42 @@ service Operators {
   // Causes a launch and never a registration (section 12.3).
   rpc Start(StartRequest) returns (DidItReply);
 
-  // The file location (section 9.5). Removing any file and pruning them all are the person's, because they remove
-  // files other agents placed. Describing where a file is lets a surface on that machine open it in place.
+  // A person's stop or restart of an agent its node started (section 11.1). The node waits for the agent's current turn to
+  // end. Refused for an agent open outside Parley and for one whose machine has no node; changed is false when it is not
+  // running. A stopped agent is started again by the next work for it, as any agent is: only a freeze or retirement keeps
+  // one from being started. Restart is refused for a frozen agent.
+  rpc Stop(StopRequest) returns (DidItReply);
+  rpc Restart(StopRequest) returns (DidItReply);
+
+  // End a process left running by a node that is gone (section 11.1). Only for an agent whose process presented a launch
+  // token no node now holds; never for one open in somebody's editor, which has no token, and never for a supervised one.
+  rpc Kill(StopRequest) returns (DidItReply);
+
+  // A person's freeze on an agent (section 14): recorded in this project's store, then the agent's node is asked to stop it after
+  // its current turn. While frozen nothing starts it -- not new work, not a person's Start or Restart -- and its open work stays
+  // open. Unfreeze clears it, and so does the broker's next start unless the freeze was made with keep_frozen. A freeze is the
+  // person's alone: the Agents service carries neither.
+  rpc Freeze(FreezeRequest) returns (FreezeReply);
+  rpc Unfreeze(AgentRequest) returns (DidItReply);
+
+  // The file location (section 9.5). Placing as the person, removing any file and pruning them all are the person's:
+  // no agent places as somebody else or removes another's files. Describing where a file is lets a surface on that
+  // machine open it to read. The person's placement streams as an agent's does, header, go-ahead, bytes and reply, its
+  // header naming no agent and naming a conversation that exists. Named apart from Agents.PlaceFile, as section 10.2
+  // names it apart.
+  rpc PlacePersonsFile(stream PlaceFileFrame) returns (stream PlaceFileAnswer);
   rpc ListSharedFiles(ListFilesRequest) returns (FilesReply);
   rpc RemoveFiles(RemoveFilesRequest) returns (RemoveFilesReply);
   rpc PruneFiles(Empty) returns (PruneFilesReply);
   rpc DescribeFileLocation(FileLocationRequest) returns (FileLocationReply);
+  // Reads one file as the person, so a surface can show an image wherever it runs (section 9.5). Streams as FetchFile does
+  // and records nothing: no fetch, no notice, no delivery. Viewing is not an act on the deployment.
+  rpc ReadSharedFile(ReadSharedFileRequest) returns (stream FetchFileFrame);
+
+  // What sweeps of the file location found and could not leave as it was (section 9.5): files moved to quarantine, and
+  // entries a sweep could not read, move or delete. Kept until the person dismisses each; dismissing deletes nothing on disk.
+  rpc ListFileProblems(ListFileProblemsRequest) returns (FileProblemsReply);
+  rpc DismissFileProblem(DismissFileProblemRequest) returns (DidItReply);
 }
 
 message Empty {}
@@ -720,8 +1051,98 @@ message AgentRequest {
   string agent = 1;
 }
 
+// A person's freeze of an agent. `keep_frozen` asks that the freeze outlast a start of the broker: without it, a later start (what a
+// logon or a reboot brings) lets the freeze lapse and the agent is started again if it owes work (section 14).
+message FreezeRequest {
+  string agent = 1;
+  bool keep_frozen = 2;
+}
+
 message DidItReply {
   bool changed = 1;
+}
+
+// What a freeze did. `changed` is false when the agent was already frozen. `process` says what became of its process: `stopping`
+// (its node was asked, and waits for the turn), `not_running`, `open_outside` (open in somebody's editor; no node holds it),
+// `left_running` (a node that is gone left it running; only a person's kill ends it) or `no_node`.
+message FreezeReply {
+  bool changed = 1;
+  string process = 2;
+}
+
+message SpinOffRequest {
+  string parent = 1;
+  string child = 2;
+}
+
+message SpinOffReply {
+  string refused = 1;                 // empty when the link is recorded
+}
+
+message PreviewMoveRequest {
+  string source = 1;
+  repeated int64 exchanges = 2;
+}
+
+message MovePreviewExchange {
+  int64 exchange_id = 1;
+  bool open = 2;
+  string requester = 3;
+  string receiver = 4;
+  int32 messages = 5;
+  string first_words = 6;
+  string added_because = 7;           // empty when it was picked
+}
+
+message PreviewMoveReply {
+  repeated MovePreviewExchange exchanges = 1;
+  repeated string files_staying = 2;
+  string refused = 3;                 // empty when it can be done
+}
+
+message MoveExchangesRequest {
+  string source = 1;
+  string destination = 2;
+  bool new_conversation = 3;          // the destination must not exist yet, and takes the source as its parent
+  repeated int64 exchanges = 4;
+}
+
+message MoveExchangesReply {
+  string refused = 1;                 // empty when it was done
+  int32 exchanges = 2;
+  int32 messages = 3;
+}
+
+message MoveRecord {
+  int64 id = 1;
+  string source = 2;
+  string destination = 3;
+  string moved_by = 4;
+  string moved_utc = 5;
+  int64 first_message = 6;            // 0 when none of what moved still had a message
+  int32 messages = 7;
+  repeated int64 exchanges = 8;
+}
+
+message SettledElsewhere {
+  int64 exchange_id = 1;
+  int64 settled_by = 2;
+  string conversation_id = 3;
+}
+
+// An agent's next message after this conversation went to another agent in a different one (section 5.0).
+message WroteElsewhere {
+  int64 message = 1;                  // the message, in the other conversation
+  int64 after_message = 2;            // the last message here the agent sent or received before it
+  string from = 3;
+  string to = 4;
+  string conversation_id = 5;
+}
+
+message CloseRequestRequest {
+  int64 exchange_id = 1;
+  // Empty when the person gave none.
+  string reason = 2;
 }
 
 message ForceConcludeRequest {
@@ -757,6 +1178,11 @@ enum DestroyVerdict {
 }
 
 message StartRequest {
+  string agent = 1;
+  string because = 2;              // for whoever reads the node's log
+}
+
+message StopRequest {
   string agent = 1;
   string because = 2;              // for whoever reads the node's log
 }
@@ -807,10 +1233,60 @@ message RegistryRow {
   // The repository's identifier (section 4.1.1), empty when the agent presented none. Never shown: a surface uses it to
   // tell a catalogued checkout from an agent already registered under another name, and to name the checkout to a node.
   string identity = 18;
+
+  // How many background tasks its node last said it has running (section 11.6); zero when none, or when nobody reports.
+  int32 background_tasks = 19;
+
+  // Running as a process a node started and a node that is gone still owns (section 11.1): its launch token is one no
+  // node now holds. `open_outside` is also true, since no node can give it a turn, but it was not opened by somebody.
+  bool unsupervised = 20;
+
+  // When a person froze the agent in this project (section 14); empty when it is not frozen.
+  string frozen_utc = 21;
+
+  // Whether the person asked that the freeze outlast a start of the broker; false when it is not frozen.
+  bool keep_frozen = 22;
+
+  // Each background task running, by name, as far as the node listed them (section 11.6): the agent's own words where it
+  // gave them, else the runner's. At most 200; `background_tasks` is the count.
+  repeated BackgroundTaskRow running_tasks = 23;
+}
+
+message BackgroundTaskRow {
+  string id = 1;
+  TaskKind kind = 2;
+  string name = 3;                    // empty when neither the agent nor the runner named it
+  string description = 4;             // empty when the agent gave none
+  string link = 5;                    // in its one spelling (exchange #N, conversation:<id>, file:<name>, https://...); empty when none
+  bool said = 6;                      // the agent named it itself, not only its runner
 }
 
 message RefusalsReply {
   repeated SizeRefusal refusals = 1;
+}
+
+// How long messages have been. Lengths only: the record this is read from holds no words.
+message MessageLengthsReply {
+  MessageLengthGroup overall = 1;
+  repeated MessageLengthGroup by_type = 2;
+  repeated MessageLengthGroup by_position = 3;
+  repeated AgentMessageLengths by_agent = 4;
+}
+
+message MessageLengthGroup {
+  string name = 1;
+  int64 messages = 2;
+  int32 median = 3;
+  int32 longest = 4;
+  int64 over_soft_limit = 5;
+}
+
+message AgentMessageLengths {
+  string agent = 1;
+  int64 sent = 2;
+  int64 received = 3;
+  int32 longest = 4;
+  int64 over_soft_limit = 5;
 }
 
 message SizeRefusal {
@@ -892,6 +1368,11 @@ message CycleView {
 
 message ExportRequest {
   string conversation_id = 1;
+
+  // Only the newest message each sender wrote in each exchange and the newest Result of each, and the exchanges' states: what a
+  // surface that summarises a conversation reads, without every payload in it. The Inbox reads every active conversation on each render,
+  // and a whole export of each held the broker's gate for all agents and put the history of every conversation on the wire.
+  bool latest_only = 2;
 }
 
 message ExportReply {
@@ -907,6 +1388,18 @@ message ExportReply {
 
   // The roadmap item this conversation belongs to, by the broker's reservation and by nothing in any message.
   optional RoadmapItemRef item = 4;
+
+  // Section 5.0. Names and numbers, never message text, so they outlive what they describe.
+  string parent = 5;                  // empty when it has none
+  bool parent_by_move = 6;
+  repeated string children = 7;
+  repeated MoveRecord moves = 8;
+  repeated SettledElsewhere settled_elsewhere = 9;
+  repeated WroteElsewhere wrote_elsewhere = 10;
+
+  // Section 5.8. For the person only: one row for each agent that read each exchange in this conversation, with how often
+  // (`count`), and one row for each agent's newest search among the project's, with how many it made in all.
+  repeated HistoryReadRow reads = 11;
 }
 
 // Facts and no content (section 9.4). There is no field to put message text in.
@@ -924,6 +1417,7 @@ message ExchangeSnapshot {
   string closed_utc = 4;              // empty while it is open
   ExchangeOutcome outcome = 5;        // UNSPECIFIED while it is open
   int64 settled_by = 6;               // 0 unless the outcome is SETTLED (section 5.6)
+  string request_group = 7;           // set only for a member of a Request to a role (section 5.5)
 }
 
 message ImplementsReply {
@@ -960,6 +1454,17 @@ message ConversationSummary {
   bool has_open_exchange = 6;
   bool archived = 7;
   optional RoadmapItemRef item = 8;   // section 5.7: set when it is a reserved item conversation
+  string parent = 9;                  // section 5.0: empty when it has none
+  bool closed = 10;
+  string last_closed_utc = 11;        // when an exchange in it last closed; empty when none has
+}
+
+message LocateExchangeRequest {
+  int64 exchange_id = 1;
+}
+
+message LocateExchangeReply {
+  string conversation_id = 1;   // empty when there is no such exchange in this store
 }
 
 message WaitingReply {
@@ -1041,6 +1546,8 @@ message PruneReply {
   int32 held_by_floor = 2;
   int32 contended = 3;
   bool capped = 4;
+  int64 idle_seconds = 5;       // the policy applied (section 9.4): a quiet conversation's idle period
+  int64 max_age_seconds = 6;    // and the age cap past which nothing but open work is kept
 }
 
 // ===========================================================================================
@@ -1125,15 +1632,22 @@ enum WakeOutcome {
   // The receiver is the person seat (section 12.3): they have it and will answer, whether here or
   // away. No machine was asked to start anybody, because nothing starts a person.
   WAKE_OUTCOME_WITH_THE_PERSON = 5;
-  // The receiver is running only as a process Parley did not start (section 11.7): nobody was asked, and it reads
-  // the message when somebody prompts it.
+  // The receiver is open in a session somebody opened outside Parley, with no launch token (section 11.7): nobody
+  // was asked, and it reads the message when somebody prompts it there.
   WAKE_OUTCOME_OPEN_OUTSIDE = 6;
+  // A person has frozen the receiver (section 14): nobody was asked to start it, and the work waits until it is unfrozen.
+  WAKE_OUTCOME_FROZEN = 7;
+  // The receiver is running only as a process a node that is gone left running (section 11.1): nobody was asked, and it
+  // is started for the message once that process has gone, unless a person ends it with kill or freezes it first.
+  WAKE_OUTCOME_LEFT_RUNNING = 8;
 }
 
 enum ClosureError {
   CLOSURE_ERROR_UNSPECIFIED = 0;
   CLOSURE_ERROR_NONE = 1;
   CLOSURE_ERROR_NOT_A_PARTICIPANT = 2;
+  // The conversation is the work on a live roadmap item, which only the person closes (section 5.7).
+  CLOSURE_ERROR_PERSON_CLOSES = 3;
 }
 
 enum MessageType {
@@ -1249,13 +1763,19 @@ message RoadmapContent {
 message ProposeRoadmapRequest {
   string agent = 1;                   // the caller, as every Agents request names it
   RoadmapContent content = 2;
-  string conversation_id = 3;         // where it came from; empty when none
+  string conversation_id = 3;         // where it came from, one the caller took part in; empty when none
   string revises = 4;                 // the title of a roadmap it would change, a hint; empty when none
 }
 
 message ProposeRoadmapReply {
   int64 proposal_id = 1;              // 0 when refused
   string problem = 2;                 // empty when it was stored
+}
+
+message MoveNotice {
+  int64 exchange_id = 1;
+  string from_conversation = 2;
+  string to_conversation = 3;
 }
 
 message RoadmapNotice {
@@ -1288,12 +1808,12 @@ message ItemFacts {
   int32 open_exchanges = 2;
   bool collected = 3;
   int32 complete_exchanges = 4;
-  int32 blocked_exchanges = 5;
-  int32 closed_exchanges = 6;
+  int32 blocked_exchanges = 5;        // how many agents' latest answer on the person's requests was blocked
+  int32 closed_exchanges = 6;         // how many of the person's requests were closed with no Result
   string blocker = 7;                 // empty when none
   string closed_by = 8;               // empty while the conversation is not closed
   bool destroyed = 9;
-  string first_sent_text = 10;        // empty when nothing was sent
+  bool text_edited_since_started = 10; // the item's text was edited after its first request was sent
   repeated int64 open_exchange_ids = 11;   // to join with the wait-for graph
 }
 
@@ -1325,6 +1845,7 @@ message RoadmapReply {
 
 message ProposalsRequest {
   ProposalState state = 1;            // UNSPECIFIED for every state
+  bool headings = 2;                  // the newest 200, title and target_title cut to a heading's length, item_count set, no items
 }
 
 message ProposalDetail {
@@ -1337,10 +1858,15 @@ message ProposalDetail {
   ProposalState state = 7;
   string created_utc = 8;
   string decided_utc = 9;             // empty while waiting
+  int32 item_count = 10;              // always set; the only count a heading carries, since its content has no items
 }
 
 message ProposalsReply {
-  repeated ProposalDetail proposals = 1;
+  repeated ProposalDetail proposals = 1;  // headings: the newest 200; otherwise every one whole; Proposal: at most one
+}
+
+message ProposalCountReply {
+  int32 count = 1;                    // how many proposals are in the state asked for; headings is ignored
 }
 
 message ProposalRequest {
@@ -1351,6 +1877,7 @@ message ConfirmProposalRequest {
   int64 id = 1;
   RoadmapContent content = 2;         // the person's final content, which may be the proposal's own
   int64 target_roadmap = 3;           // 0 for a new roadmap
+  int32 target_revision = 4;          // the target's revision the caller read; required with a target
 }
 
 message EditRoadmapRequest {

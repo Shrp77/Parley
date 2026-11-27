@@ -10,6 +10,7 @@ namespace Parley.Core.Tests;
 /// the dot from, a name Linux hides, and two names one folder on Windows and macOS. The first design mapped a
 /// reserved name to <c>_con</c>, which a conversation may legitimately be called.
 /// </remarks>
+[Unit]
 public sealed class ConversationFolderTests
 {
     private static Func<string, bool> Taken(params string[] folders) =>

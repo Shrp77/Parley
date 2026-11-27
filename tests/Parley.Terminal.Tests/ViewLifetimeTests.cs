@@ -22,6 +22,8 @@ namespace Parley.Terminal.Tests;
 /// that failed to count as a touch would release the seat of somebody actively reading.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class ViewLifetimeTests
 {
     private static BrokerDirectory Directory() =>

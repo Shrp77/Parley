@@ -19,6 +19,7 @@ namespace Parley.Store.Tests;
 /// out later.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class TombstoneRetentionTests : IDisposable
 {
     private readonly SqliteConnection _connection;

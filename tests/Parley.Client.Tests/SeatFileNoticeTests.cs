@@ -7,7 +7,7 @@ using Wire = Parley.Transport;
 namespace Parley.Client.Tests;
 
 /// <summary>
-/// That a seat's drain leaves file change notices alone (SPEC.md §9.5).
+/// That a seat's drain leaves file gone notices alone (SPEC.md §9.5).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -17,6 +17,7 @@ namespace Parley.Client.Tests;
 /// if one ever arrives: nothing, rather than recording it as a message the person owes an answer to.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SeatFileNoticeTests
 {
     private static readonly ProjectSettings Alpha =
@@ -55,7 +56,10 @@ public sealed class SeatFileNoticeTests
             new(new Acknowledged(), Task.FromResult(new Metadata()), () => Status.DefaultSuccess, () => [], () => { });
 
         /// <inheritdoc/>
-        public override AsyncUnaryCall<Wire.InboxReply> DrainInboxAsync(Wire.DrainInboxRequest request, CallOptions options)
+        public override AsyncDuplexStreamingCall<Wire.DrainInboxFrame, Wire.InboxReply> DrainInbox(CallOptions options) =>
+            FakeCollection.Answering(Answer);
+
+        private Wire.InboxReply Answer(Wire.DrainInboxRequest request)
         {
             var reply = new Wire.InboxReply { FileNoticesWaiting = 3 };
 
@@ -80,9 +84,7 @@ public sealed class SeatFileNoticeTests
                 ConversationId = "pricing",
                 Name = "notes.md",
                 Sha256Had = new string('a', 64),
-                Sha256Now = new string('b', 64),
-                SizeBytes = 12,
-                ChangedUtc = "2026-09-14T00:00:00Z"
+                GoneUtc = "2026-09-14T00:00:00Z"
             });
 
             reply.FileNotices.Add(new Wire.FileNotice
@@ -90,11 +92,10 @@ public sealed class SeatFileNoticeTests
                 ConversationId = "pricing",
                 Name = "rates.md",
                 Sha256Had = new string('c', 64),
-                ChangedUtc = "2026-09-14T00:00:00Z",
-                Gone = true
+                GoneUtc = "2026-09-14T00:00:00Z"
             });
 
-            return new(Task.FromResult(reply), Task.FromResult(new Metadata()), () => Status.DefaultSuccess, () => [], () => { });
+            return reply;
         }
     }
 

@@ -1,3 +1,5 @@
+using Parley.Core;
+
 namespace Parley.Client;
 
 /// <summary>
@@ -25,8 +27,8 @@ namespace Parley.Client;
 /// </remarks>
 public static class ConversationName
 {
-    /// <summary>The most characters a name may hold, per the schema's <c>CHECK</c>.</summary>
-    public const int Longest = 64;
+    /// <summary>The most characters a name may hold: <see cref="ConversationId.Longest"/>, which the broker holds.</summary>
+    public const int Longest = ConversationId.Longest;
 
     /// <summary>What a field says when <see cref="Correct"/> changed what was typed.</summary>
     /// <remarks>
@@ -39,15 +41,16 @@ public static class ConversationName
 
     /// <summary>The rule in one line, for a field to carry above itself.</summary>
     public const string Rule =
-        "Letters, digits, '.', '_' and '-', up to 64 characters. Spaces become hyphens.";
+        "Letters, digits, '.', '_' and '-', up to 64 characters, and no '..'. Spaces become hyphens.";
 
     /// <summary>The same rule as a regular expression, for an HTML <c>pattern</c> attribute.</summary>
     /// <remarks>
     /// Derived from nothing — written once, here, next to the code that applies it, so a console
     /// field and a terminal field cannot come to hold two spellings of one rule. The lookahead is
-    /// what carries the <c>..</c> half, which a character class cannot say.
+    /// what carries the <c>..</c> half, which a character class cannot say. The hyphen is escaped because browsers compile
+    /// a <c>pattern</c> in a mode that refuses a bare one in a class, and then ignore the whole attribute without saying so.
     /// </remarks>
-    public const string Pattern = @"(?!.*\.\.)[A-Za-z0-9._-]{1,64}";
+    public const string Pattern = @"(?!.*\.\.)[A-Za-z0-9._\-]{1,64}";
 
     /// <summary>The characters <see cref="Correct"/> keeps, as a character class.</summary>
     /// <remarks>
@@ -125,9 +128,7 @@ public static class ConversationName
     /// string, a message off the wire — is neutralising it for its own surface anyway.
     /// </remarks>
     public static string? Problem(string? typed) =>
-        typed is { Length: > 0 and <= Longest }
-        && !typed.Contains("..", StringComparison.Ordinal)
-        && typed.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-')
+        ConversationId.IsValid(typed)
             ? null
             : $"'{typed}' cannot name a conversation. Up to {Longest} characters of letters, "
               + "digits, '.', '_' and '-', with no '..' — the name reaches a filename when a "

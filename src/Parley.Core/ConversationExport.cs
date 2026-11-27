@@ -12,6 +12,9 @@
 /// For an exchange closed as <see cref="ExchangeOutcome.Settled"/>, the exchange whose Request settled it (SPEC.md §5.6);
 /// otherwise <see langword="null"/>.
 /// </param>
+/// <param name="RequestGroup">
+/// For one member of a Request to a role, the group every member shares (SPEC.md §5.5); otherwise <see langword="null"/>.
+/// </param>
 /// <remarks>
 /// State and outcome are read rather than inferred from the messages present, and the difference is
 /// the whole reason this exists. A person opens a conversation because something went wrong, and a
@@ -24,7 +27,8 @@ public sealed record ExchangeSnapshot(
     DateTimeOffset OpenedUtc,
     DateTimeOffset? ClosedUtc,
     ExchangeOutcome? Outcome = null,
-    long? SettledBy = null);
+    long? SettledBy = null,
+    string? RequestGroup = null);
 
 /// <summary>
 /// Everything one conversation holds: its messages, and where each exchange stands.
@@ -39,6 +43,11 @@ public sealed record ExchangeSnapshot(
 /// The roadmap item this conversation belongs to, or null for an ordinary one (SPEC.md §5.7). Carried here so a
 /// surface holding only a conversation can offer its roadmap without asking for every roadmap.
 /// </param>
+/// <param name="Links">Its parent and children (SPEC.md §5.0), or <see langword="null"/> for none.</param>
+/// <param name="Moves">Every move in or out of it, oldest first (SPEC.md §5.0), or <see langword="null"/> for none.</param>
+/// <param name="SettledElsewhere">Settled pairs split across this and another conversation (SPEC.md §5.6), or <see langword="null"/> for none.</param>
+/// <param name="WroteElsewhere">Where an agent's next message went instead of here (SPEC.md §5.0), or <see langword="null"/> for none.</param>
+/// <param name="Reads">Who read each exchange in this conversation and how often, and each agent's newest search of the project (SPEC.md §5.8), or <see langword="null"/> for none.</param>
 /// <remarks>
 /// <para>
 /// The two travel together rather than in two calls, so a client never holds one without the
@@ -56,7 +65,12 @@ public sealed record ConversationExport(
     IReadOnlyList<Message> Messages,
     IReadOnlyList<ExchangeSnapshot> Exchanges,
     DestroyedConversation? Destroyed = null,
-    RoadmapItemRef? Item = null);
+    RoadmapItemRef? Item = null,
+    ConversationLinks? Links = null,
+    IReadOnlyList<MoveRecord>? Moves = null,
+    IReadOnlyList<SettledElsewhere>? SettledElsewhere = null,
+    IReadOnlyList<WroteElsewhere>? WroteElsewhere = null,
+    IReadOnlyList<HistoryRead>? Reads = null);
 
 /// <summary>
 /// What is left of a conversation an operator destroyed.

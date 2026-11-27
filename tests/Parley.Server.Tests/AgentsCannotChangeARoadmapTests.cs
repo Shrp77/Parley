@@ -24,6 +24,7 @@ namespace Parley.Server.Tests;
 /// a roadmap, so every message reachable from an <c>Agents</c> method is walked.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class AgentsCannotChangeARoadmapTests
 {
     private static readonly string[] Words = ["Roadmap", "Proposal", "Proposals"];

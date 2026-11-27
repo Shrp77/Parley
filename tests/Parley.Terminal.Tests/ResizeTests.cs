@@ -21,6 +21,8 @@ namespace Parley.Terminal.Tests;
 /// rather than once.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class ResizeTests
 {
     [Fact]

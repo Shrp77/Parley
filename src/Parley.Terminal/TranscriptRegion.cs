@@ -17,7 +17,7 @@ namespace Parley.Terminal;
 /// second renderer, and the two would disagree about visibility on the day it mattered.
 /// </para>
 /// <para>
-/// <b>It does not draw <see cref="Transcript.Write"/></b>, which is the export: one flattened line of JSON
+/// <b>It does not draw <see cref="Transcript.Write(string, string, ConversationExport)"/></b>, which is the export: one flattened line of JSON
 /// per message.
 /// </para>
 /// <para>
@@ -96,6 +96,7 @@ internal sealed class TranscriptRegion : FrameView
 
     internal TranscriptRegion()
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = RegionTitle;
         CanFocus = true;
         SetScheme(Colours.Region(Colours.Transcript));
@@ -113,6 +114,13 @@ internal sealed class TranscriptRegion : FrameView
     /// <summary>Which conversation is open, or null when none is.</summary>
     internal string? Open { get; private set; }
 
+    /// <summary>The project the open conversation is in; a conversation's id is only unique within one.</summary>
+    internal string? OpenIn { get; private set; }
+
+    /// <summary>The roadmap item the open conversation is the work on, by the broker's reservation; null for an ordinary one.</summary>
+    /// <remarks>Never from the conversation's name or a message (SPEC.md §5.7), so an agent cannot make one look like an item's.</remarks>
+    internal RoadmapItemRef? Item { get; private set; }
+
     /// <summary>The whole transcript as written, whether or not it all fits.</summary>
     internal string Written => _written;
 
@@ -128,19 +136,24 @@ internal sealed class TranscriptRegion : FrameView
     /// <param name="project">The project it came from.</param>
     /// <param name="export">The messages and the state of their exchanges, or null when unread.</param>
     /// <param name="problem">Why the broker could not be asked, or null when it could.</param>
+    /// <param name="files">The conversation's placed files, each drawn where it was placed (SPEC.md §9.5).</param>
     internal void Show(
         string conversationId,
         string project,
         ConversationExport? export,
-        string? problem)
+        string? problem,
+        IReadOnlyList<SharedFile>? files = null)
     {
         // **Opened at the end, and read again at the end when the reader was there**: a conversation taking place
         // is tailed. A conversation is read for what has just been said, so the newest message is where somebody
         // arriving belongs. The same conversation read again — after a send, say — keeps a
         // reader who scrolled up where they are, by the rule `Follow` keeps.
-        var arriving = !string.Equals(Open, conversationId, StringComparison.Ordinal);
+        var arriving = !string.Equals(Open, conversationId, StringComparison.Ordinal)
+            || !string.Equals(OpenIn, project, StringComparison.Ordinal);
 
         Open = problem is null ? conversationId : null;
+        OpenIn = problem is null ? project : null;
+        Item = problem is null ? export?.Item : null;
         Retitle();
 
         // **Read on screen rather than exported to it.** The export (`Transcript.Write`) is one flattened line
@@ -164,7 +177,7 @@ internal sealed class TranscriptRegion : FrameView
             _tailing = true;
         }
 
-        Mark(Laid(conversationId, project, export));
+        Mark(Laid(conversationId, project, export, files));
     }
 
     /// <summary>Whether what is on screen says the reader is at the end, judged when the reader has just scrolled.</summary>
@@ -208,6 +221,7 @@ internal sealed class TranscriptRegion : FrameView
     /// <param name="conversationId">Which conversation this read was of.</param>
     /// <param name="project">The project it came from.</param>
     /// <param name="export">What the broker holds now.</param>
+    /// <param name="files">The conversation's placed files now.</param>
     /// <returns>Whether anything was redrawn.</returns>
     /// <remarks>
     /// <para>
@@ -215,8 +229,8 @@ internal sealed class TranscriptRegion : FrameView
     /// <see cref="Show"/> is called once, when a conversation is opened; this is every later read.
     /// </para>
     /// <para>
-    /// <b>It does not move what somebody is reading.</b> A transcript only grows at the end, so the row under the
-    /// cursor is the same row afterwards, and a reader at the end, who is reading as it arrives, is carried to
+    /// <b>It does not move what somebody is reading.</b> The cursor and the view stay on the message they were on,
+    /// wherever a move has put its rows, and a reader at the end, who is reading as it arrives, is carried to
     /// the new end. That includes a reader on no row, because a transcript opens at the end and tails what is
     /// said (<see cref="Tailing"/>).
     /// </para>
@@ -225,17 +239,18 @@ internal sealed class TranscriptRegion : FrameView
     /// exchange changing state is a different transcript with the same number of messages in it.
     /// </para>
     /// </remarks>
-    internal bool Follow(string conversationId, string project, ConversationExport export)
+    internal bool Follow(string conversationId, string project, ConversationExport export, IReadOnlyList<SharedFile>? files = null)
     {
         ArgumentNullException.ThrowIfNull(export);
 
-        // The reader opened something else, or closed it, since this read was queued.
-        if (!string.Equals(Open, conversationId, StringComparison.Ordinal))
+        // The reader opened something else, or closed it, since this read was queued: another project's conversation of
+        // the same id is something else.
+        if (!string.Equals(Open, conversationId, StringComparison.Ordinal) || !string.Equals(OpenIn, project, StringComparison.Ordinal))
         {
             return false;
         }
 
-        var lines = Laid(conversationId, project, export);
+        var lines = Laid(conversationId, project, export, files);
         var written = Safe.Lines(string.Join(Environment.NewLine, lines.Select(line => line.Text)));
 
         if (string.Equals(written, _written, StringComparison.Ordinal))
@@ -344,6 +359,9 @@ internal sealed class TranscriptRegion : FrameView
 
         var end = Math.Max(0, rows - view.Height);
 
+        // Kept, so a reader who stops following by moving the cursor within what is on screen stays where they are.
+        _top = end;
+
         if (view.Y == end)
         {
             return;
@@ -365,13 +383,14 @@ internal sealed class TranscriptRegion : FrameView
     /// <param name="conversationId">Which conversation.</param>
     /// <param name="project">The project it came from.</param>
     /// <param name="export">What the broker holds, or null when it holds nothing.</param>
+    /// <param name="files">Its placed files, or null to leave them out.</param>
     /// <returns>The lines to draw.</returns>
     /// <remarks>
     /// One layout for opening and for following, so the two cannot come to disagree about what a
     /// destroyed or an empty conversation looks like — which would make every refresh of one a redraw.
     /// </remarks>
     private IReadOnlyList<TranscriptLine> Laid(
-        string conversationId, string project, ConversationExport? export)
+        string conversationId, string project, ConversationExport? export, IReadOnlyList<SharedFile>? files)
     {
         if (export?.Destroyed is { } gone)
         {
@@ -383,24 +402,38 @@ internal sealed class TranscriptRegion : FrameView
             return
             [
                 new TranscriptLine(Destroyed, LineKind.Header, null),
+                .. Related(export),
                 new TranscriptLine(string.Empty, LineKind.Blank, null),
                 .. Reading.Gone(gone).Select(line =>
                     new TranscriptLine(new string(' ', Reading.Indent) + line, LineKind.Body, null)),
             ];
         }
 
-        if (export is null || export.Messages.Count == 0)
+        // A conversation a file started has no message yet, and the file is still what is in it (SPEC.md §9.5).
+        if (export is null || (export.Messages.Count == 0 && files is not { Count: > 0 }))
         {
-            return [new TranscriptLine(new string(' ', Reading.Indent) + Empty, LineKind.Annotation, null)];
+            // An emptied conversation says where everything went (SPEC.md §5.0).
+            return export?.Moves is { Count: > 0 } moves
+                ?
+                [
+                    .. Related(export),
+                    .. moves.Select(move => new TranscriptLine(
+                        new string(' ', Reading.Indent) + Safe.Text(ConversationWording.MoveLine(move, conversationId)), LineKind.Annotation, null)),
+                ]
+                : [
+                    .. export is null ? [] : Related(export),
+                    new TranscriptLine(new string(' ', Reading.Indent) + Empty, LineKind.Annotation, null),
+                ];
         }
 
-        return Lay(conversationId, project, export);
+        return Lay(conversationId, project, export, files);
     }
 
     /// <summary>Lays a conversation out for reading.</summary>
     /// <param name="conversationId">Which conversation.</param>
     /// <param name="project">The project it came from.</param>
     /// <param name="export">Its messages and their exchange states.</param>
+    /// <param name="files">Its placed files, or null to leave them out.</param>
     /// <returns>The transcript, line by line and each line knowing what it is.</returns>
     /// <remarks>
     /// <para>
@@ -416,7 +449,7 @@ internal sealed class TranscriptRegion : FrameView
     /// </para>
     /// </remarks>
     private static IReadOnlyList<TranscriptLine> Lay(
-        string conversationId, string project, ConversationExport export) =>
+        string conversationId, string project, ConversationExport export, IReadOnlyList<SharedFile>? files) =>
     [
         new TranscriptLine(
             $"Conversation {conversationId} in project {project}", LineKind.Header, null),
@@ -425,9 +458,29 @@ internal sealed class TranscriptRegion : FrameView
         // recoverable from nowhere else, drawn to be noticed. The zone this surface renders times in is a
         // note about the rendering.
         new TranscriptLine(new string(' ', Reading.Indent) + LocalTime.Note(), LineKind.Body, null),
+        .. Related(export),
         new TranscriptLine(string.Empty, LineKind.Blank, null),
-        .. Reading.Lines(export),
+        .. Reading.Lines(export, conversation: conversationId, files: files),
     ];
+
+    /// <summary>The conversation's parent and children, under its heading (SPEC.md §5.0).</summary>
+    private static IEnumerable<TranscriptLine> Related(ConversationExport export)
+    {
+        var indent = new string(' ', Reading.Indent);
+
+        if (export.Links is { Parent: { } parent } links)
+        {
+            yield return new TranscriptLine(
+                indent + Safe.Text((links.How == ConversationLinkKind.Move ? "Made by moving entries out of " : "Spun off from ") + parent),
+                LineKind.Body,
+                null);
+        }
+
+        if (export.Links is { Children.Count: > 0 } family)
+        {
+            yield return new TranscriptLine(indent + Safe.Text("Started from this one: " + string.Join(", ", family.Children)), LineKind.Body, null);
+        }
+    }
 
     /// <summary>Puts one line on screen, and nothing else.</summary>
     /// <param name="said">What it says.</param>
@@ -630,7 +683,10 @@ internal sealed class TranscriptRegion : FrameView
     /// <summary>Closes whatever is open.</summary>
     internal void Clear()
     {
+        // The item goes with the conversation, so nothing offers a way to a roadmap from a transcript showing nothing.
         Open = null;
+        OpenIn = null;
+        Item = null;
         Retitle();
         Say(Nothing, LineKind.Annotation);
     }
@@ -642,7 +698,11 @@ internal sealed class TranscriptRegion : FrameView
     /// </remarks>
     private void Retitle()
     {
-        var named = Open is { } open ? $"{RegionTitle} — {Safe.Text(open)}" : RegionTitle;
+        // An item's conversation says which item, because rm1-3 alone tells a reader nothing.
+        var named = Open is { } open
+            ? $"{RegionTitle} — {Safe.Text(open)}"
+                + (Item is { } item ? $" · {Safe.Text(Parley.Client.Roadmaps.ItemWording.Belongs(item))}" : string.Empty)
+            : RegionTitle;
 
         Title = _folded ? FoldedTitle.Replace(RegionTitle, named, StringComparison.Ordinal) : named;
     }
@@ -770,11 +830,20 @@ internal sealed class TranscriptRegion : FrameView
         // **No selection stays no selection.** A reader who
         // has never moved the cursor is left at the top and is not on a row; turning that into row zero makes
         // the surface claim they are reading something, and `FollowingTests` says so in as many words.
+        // **By message, not by row number.** A move takes rows out of the middle or adds them there (SPEC.md 5.0), so
+        // the same number can be a different message, and spinning off or moving starts from what is under the cursor.
+        var before = _owners;
+
         int? selected = _tailing && wrapped.Count > 0
             ? wrapped.Count - 1
             : _lines.SelectedItem is { } at && wrapped.Count > 0
-                ? Math.Clamp(at, 0, wrapped.Count - 1)
+                ? SameMessage(at, before, owners)
                 : null;
+
+        if (!_tailing && wrapped.Count > 0)
+        {
+            _top = SameMessage(_top, before, owners);
+        }
 
         _moving = true;
 
@@ -797,6 +866,65 @@ internal sealed class TranscriptRegion : FrameView
         // reader who wheeled up past a cursor left on the last row was sent back down by the redraw itself. The view is
         // put back where they had it, held inside the rows that now exist; a reader following the end is shown it.
         Place();
+    }
+
+    /// <summary>Where a row's message is now that the rows have been laid out again.</summary>
+    /// <param name="row">The row before.</param>
+    /// <param name="before">Which message each row belonged to before.</param>
+    /// <param name="after">Which message each row belongs to now. Not empty.</param>
+    /// <returns>A row that exists.</returns>
+    /// <remarks>
+    /// A message that has gone, or a row belonging to no message, gives way to the next message still here, then the
+    /// nearest before it: the reader stays at that point in the conversation. With nothing in common, as when another
+    /// conversation opens, the number is only held inside the rows there are.
+    /// </remarks>
+    private static int SameMessage(int row, List<long?> before, List<long?> after)
+    {
+        var last = after.Count - 1;
+
+        if (row < 0 || row >= before.Count)
+        {
+            return Math.Clamp(row, 0, last);
+        }
+
+        var first = new Dictionary<long, int>();
+        var rows = new Dictionary<long, int>();
+
+        for (var at = 0; at < after.Count; at++)
+        {
+            if (after[at] is { } message)
+            {
+                first.TryAdd(message, at);
+                rows[message] = rows.GetValueOrDefault(message) + 1;
+            }
+        }
+
+        if (before[row] is { } own && first.TryGetValue(own, out var start))
+        {
+            return start + Math.Min(row - before.IndexOf(own), rows[own] - 1);
+        }
+
+        // A row of a note or a heading keeps its distance from the message it sits above, or else below.
+        var nextOwned = before.FindIndex(row, id => id is not null);
+        var lastOwned = before.FindLastIndex(row, id => id is not null);
+
+        for (var at = row + 1; at < before.Count; at++)
+        {
+            if (before[at] is { } later && first.TryGetValue(later, out var found))
+            {
+                return Math.Clamp(at == nextOwned ? found - (at - row) : found, 0, last);
+            }
+        }
+
+        for (var at = row - 1; at >= 0; at--)
+        {
+            if (before[at] is { } earlier && first.TryGetValue(earlier, out var found))
+            {
+                return Math.Clamp(found + rows[earlier] - 1 + (at == lastOwned ? row - at : 0), 0, last);
+            }
+        }
+
+        return Math.Clamp(row, 0, last);
     }
 
     /// <summary>Whether a line is drawn as things stand.</summary>

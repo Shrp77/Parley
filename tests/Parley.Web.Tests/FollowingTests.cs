@@ -15,6 +15,7 @@ namespace Parley.Web.Tests;
 /// half to what the script relies on: the page and the handler render one region with one digest, the digest moves
 /// exactly when the region does, and a failed read is a failure rather than an empty region.
 /// </remarks>
+[Integration]
 public sealed partial class FollowingTests
 {
     private const string Orders = "orders@test";

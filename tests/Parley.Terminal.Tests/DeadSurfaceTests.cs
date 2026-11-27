@@ -21,6 +21,7 @@ namespace Parley.Terminal.Tests;
 /// reading the file cannot tell a deliberate seam from a leftover.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class DeadSurfaceTests
 {
     /// <summary>The one exception, and why it is one rather than a hole in the rule.</summary>

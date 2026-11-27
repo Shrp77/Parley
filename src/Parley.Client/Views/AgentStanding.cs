@@ -9,7 +9,7 @@ namespace Parley.Client.Views;
 /// <param name="Running">Whether the broker holds an open connection for it right now.</param>
 /// <param name="EverRun">Whether anything has ever registered under this name.</param>
 /// <param name="StartableHere">Whether this project's catalogue permits starting it.</param>
-/// <param name="Retired">Whether an operator has withdrawn it.</param>
+/// <param name="Retired">Whether it is retired, by a person or because its workspace was found gone.</param>
 /// <param name="Tier">Its tier, or a mark when only the catalogue knows it.</param>
 /// <param name="Owns">What it says it is for, or that it has said nothing.</param>
 /// <param name="Workspace">Where it runs, as the registry or the catalogue records it.</param>
@@ -65,10 +65,49 @@ public static class Standing
     /// <summary>Running only as a process Parley did not start, so Parley cannot give it turns (SPEC.md §11.7).</summary>
     public const string Outside = "open outside Parley, so Parley cannot give it turns";
 
-    /// <summary>An operator has withdrawn it.</summary>
+    /// <summary>Running as a process a node that is gone started, so Parley cannot give it turns or stop it (SPEC.md §11.1).</summary>
+    public const string Left = "left running by a node that is gone, so Parley cannot give it turns";
+
+    /// <summary>It is retired, by a person or because its workspace was found gone.</summary>
     public const string Retired = "retired";
 
-    /// <summary>It is attached to the broker now.</summary>
+    /// <summary>
+    /// A person has frozen it and its process has ended (SPEC.md §14): nothing starts it until they unfreeze it or the broker
+    /// next starts, which a logon brings.
+    /// </summary>
+    public const string Frozen = "frozen by you; nothing starts it until you unfreeze it or the broker next starts";
+
+    /// <summary>As <see cref="Frozen"/>, and the person asked that a logon not lift it (SPEC.md §14).</summary>
+    public const string FrozenKept = "frozen by you, and stays frozen when the broker starts again; nothing starts it until you unfreeze it";
+
+    /// <summary>A person has frozen it and its process has not ended yet: its node waits for the turn (SPEC.md §14).</summary>
+    public const string Freezing = "frozen by you, stopping once its turn ends";
+
+    /// <summary>
+    /// A person has frozen it and a process a node that is gone left is still running: nothing holds that process to stop it,
+    /// so only a person's Kill ends it (SPEC.md §11.1, §14).
+    /// </summary>
+    public const string FrozenLeft = "frozen by you; left running by a node that is gone, so only Kill ends it";
+
+    /// <summary>A person has frozen it and a session opened outside Parley is still attached, which Parley cannot end (§11.7).</summary>
+    public const string FrozenOutside = "frozen by you; open outside Parley, so Parley cannot end it";
+
+    /// <summary>Whether a standing phrase says the agent is frozen, in any of its ways.</summary>
+    /// <param name="standing">The phrase.</param>
+    /// <returns><see langword="true"/> for a frozen agent.</returns>
+    public static bool IsFrozen(string standing) =>
+        standing is Frozen or FrozenKept or Freezing or FrozenLeft or FrozenOutside;
+
+    /// <summary>A turn is running for it now (SPEC.md §11.6).</summary>
+    public const string Working = "working";
+
+    /// <summary>Its last turn had a tool call refused for want of permission, and only a person can get it past that.</summary>
+    public const string StoppedRefused = "stopped on a refused permission";
+
+    /// <summary>It is attached with no turn running, and its turns are reported, so that is known.</summary>
+    public const string Ready = "idle";
+
+    /// <summary>It is attached to the broker now, and nobody reports whether it is in a turn.</summary>
     public const string Running = "running";
 
     /// <summary>Registered before, not attached now, and this machine may start it.</summary>
@@ -158,7 +197,16 @@ public static class Standing
                 // The person reads here or away and nothing else: whether anybody is there is the one fact a
                 // peer asking them needs.
                 seat ? (agent.Presence == AgentPresence.Here ? Here : Away)
+                    // A freeze outranks what the turns say, but not what holds the process: "stopping once its turn ends"
+                    // is true only of a process a node holds (review, lens 3 run B on d99806d9).
+                    : agent.Frozen && !retired
+                        ? (!running ? (agent.KeepFrozen ? FrozenKept : Frozen)
+                            : agent.Unsupervised ? FrozenLeft
+                            : agent.OpenOutside ? FrozenOutside
+                            : Freezing)
+                    : agent.Unsupervised && !retired ? Left
                     : agent.OpenOutside && !retired ? Outside
+                    : !retired && FromTurns(agent, running) is { } turn ? turn
                     : Phrase(retired, running, agent.Presence, startable, everRun: true),
                 running,
                 EverRun: true,
@@ -197,8 +245,40 @@ public static class Standing
         return [.. rows.OrderBy(row => row.Name, StringComparer.Ordinal)];
     }
 
+    /// <summary>What its turns say about an agent, when anybody reports them.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="running">Whether it is attached.</param>
+    /// <returns>The phrase, or null when its turns say nothing and its presence decides.</returns>
+    private static string? FromTurns(AgentRecord agent, bool running)
+    {
+        var turns = agent.Turns ?? TurnStanding.Unreported;
+
+        if (!turns.Reported)
+        {
+            return null;
+        }
+
+        if (turns.RunningSince is not null)
+        {
+            return Working;
+        }
+
+        // Not idle: its turn ended while work it started runs on, and it takes that up itself (SPEC.md §11.6).
+        if (running && turns.BackgroundTasks > 0)
+        {
+            return Activities.WaitingOnBackground(turns.BackgroundTasks);
+        }
+
+        if (turns.LastEnded is not null && turns.LastPermissionDenials > 0)
+        {
+            return StoppedRefused;
+        }
+
+        return running ? Ready : null;
+    }
+
     /// <summary>The phrase for one agent.</summary>
-    /// <param name="retired">Whether an operator withdrew it.</param>
+    /// <param name="retired">Whether it is retired.</param>
     /// <param name="running">Whether it is attached now.</param>
     /// <param name="presence">What the broker observes about it.</param>
     /// <param name="startable">Whether this project's catalogue names its role.</param>

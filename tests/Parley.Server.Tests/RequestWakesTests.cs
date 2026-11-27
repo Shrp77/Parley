@@ -22,6 +22,7 @@ namespace Parley.Server.Tests;
 /// turns; the broker's coalescing is what makes a burst cost one, and it clears only when the recipient collects.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RequestWakesTests
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(5);

@@ -12,7 +12,9 @@
 --   * Nothing referencing conversations(id) cascades on delete: a destroy deletes in order inside one
 --     transaction with foreign keys deferred, so a table nobody remembered fails the whole destroy.
 --   * Message rows are never rewritten; §9.4 prunes text, it does not edit it.
---   * A store written by another build is not upgraded: reset.ps1 and reset.sh clear a developer's stores.
+--   * This is schema 1 as live stores hold it, and it is never edited again: SchemaOneIsFrozenTests pins
+--     what it creates. Every change to the schema is a new migration, 002 onwards, that upgrades a store in
+--     place and keeps its rows.
 
 CREATE TABLE nodes (
   -- Detected by the node, per §4.1.1. The primary key rather than a surrogate, because

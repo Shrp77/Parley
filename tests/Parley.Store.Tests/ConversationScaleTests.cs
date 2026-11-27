@@ -23,6 +23,7 @@ namespace Parley.Store.Tests;
 /// and cannot check at all once the history is long enough to matter.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ConversationScaleTests : IDisposable
 {
     private const int Agents = 20;

@@ -11,6 +11,8 @@ namespace Parley.Terminal.Tests;
 /// region that the text in it cannot tell you: it was right about what was written while being nought rows
 /// tall, twice, and both times the owner found it rather than the suite.
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class BoxGrowthTests
 {
     [Fact]

@@ -22,6 +22,8 @@ namespace Parley.Terminal.Tests;
 /// front of them — and it would look like data rather than like a mistake.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class ViewRaceTests
 {
     private static BrokerDirectory Directory() =>

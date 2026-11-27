@@ -13,6 +13,7 @@ namespace Parley.Mcp.Tests;
 /// was always valid — and a suite that only ever checks refusals will catch the first and none
 /// of the second.
 /// </remarks>
+[Integration]
 public sealed class RefusalIntegrityTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 3, 1, 9, 0, 0, TimeSpan.Zero);
@@ -37,8 +38,8 @@ public sealed class RefusalIntegrityTests
         await orders.RequestAsync("billing@test", string.Empty, cancellationToken: ct);
         await orders.RequestAsync("billing@test", "   ", cancellationToken: ct);
         await orders.RequestAsync("billing@test", One, "../bad", cancellationToken: ct);
-        await orders.RequestAsync("billing@test", One, responderModel: "parley:broker", cancellationToken: ct);
-        await orders.RequestAsync("billing@test", One, responderModel: "not a model", cancellationToken: ct);
+        await orders.RequestAsync("billing@test", One, responder_model: "parley:broker", cancellationToken: ct);
+        await orders.RequestAsync("billing@test", One, responder_model: "not a model", cancellationToken: ct);
         await orders.RequestAsync("orders@test", One, cancellationToken: ct);
         await orders.RequestAsync(
             "billing@test", new string('x', MessageLimits.MaxPayloadCharacters + 1000), cancellationToken: ct);
@@ -74,8 +75,8 @@ public sealed class RefusalIntegrityTests
         var sent = await orders.RequestAsync(
             to: "billing@test",
             ask: "Is the tax rate stamped at time of sale? If so, stamp it on refunds too.",
-            conversationId: "tax-rate",
-            responderModel: "some-org/some-model-9",
+            conversation_id: "tax-rate",
+            responder_model: "some-org/some-model-9",
             cancellationToken: ct);
 
         Assert.True(sent["ok"]!.GetValue<bool>(), sent.ToJsonString());
@@ -90,7 +91,7 @@ public sealed class RefusalIntegrityTests
             + "need write on refunds_job.",
             blocker: "permission",
             sources: ["inventory@test"],
-            responderModel: "human:on-call",
+            responder_model: "human:on-call",
             cancellationToken: ct);
 
         Assert.True(resolved["ok"]!.GetValue<bool>(), resolved.ToJsonString());

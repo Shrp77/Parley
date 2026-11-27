@@ -9,17 +9,17 @@
 @if (Model.Outcome is not null)
 {
     <p class="outcome">@Model.Outcome</p>
-    <p><a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a></p>
+    <nav class="page-links" aria-label="This project"><a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a></nav>
 }
 else if (Model.Problem is not null)
 {
     <p class="problem">@Model.Problem</p>
-    <p><a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a></p>
+    <nav class="page-links" aria-label="This project"><a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a></nav>
 }
 else if (Model.Conversation is null)
 {
     <p>There is no conversation called @Model.Id in @Model.Project.</p>
-    <p><a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a></p>
+    <nav class="page-links" aria-label="This project"><a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a></nav>
 }
 else
 {
@@ -33,7 +33,9 @@ else
     </ul>
 
     <p>
-        Every participant's half goes with it. <strong>It cannot be undone.</strong>    </p>
+        Every participant's half goes with it, and its folder of files, with anything copied into it by hand.
+        <strong>It cannot be undone.</strong>
+    </p>
 
     @if (Model.Conversation.HasOpenExchange)
     {
@@ -52,7 +54,7 @@ else
         <label for="typed">Type the conversation's identifier to confirm:</label>
         <input id="typed" name="typed" autocomplete="off" />
 
-        <button type="submit">Destroy it</button>
-        <a href="/Projects/Agents?project=@Model.Project">Keep it</a>
+        <button type="submit" class="danger act">Destroy it</button>
+        <a class="button quiet" href="/Projects/Agents?project=@Model.Project">Keep it</a>
     </form>
 }

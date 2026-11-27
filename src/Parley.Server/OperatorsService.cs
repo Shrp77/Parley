@@ -100,6 +100,100 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     }
 
     /// <inheritdoc/>
+    public override async Task<Wire.SpinOffReply> SpinOff(Wire.SpinOffRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var refused = await Console(
+            (console, now, ct) => console.SpinOffAsync(request.Parent, request.Child, now, ct),
+            context).ConfigureAwait(false);
+
+        return new Wire.SpinOffReply { Refused = refused ?? string.Empty };
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.DidItReply> AbandonSpinOff(Wire.SpinOffRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var changed = await Console(
+            (console, _, ct) => console.AbandonSpinOffAsync(request.Parent, request.Child, ct),
+            context).ConfigureAwait(false);
+
+        return new Wire.DidItReply { Changed = changed };
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.PreviewMoveReply> PreviewMove(Wire.PreviewMoveRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var preview = await Console(
+            (console, _, ct) => console.PreviewMoveAsync(request.Source, [.. request.Exchanges], ct),
+            context).ConfigureAwait(false);
+
+        var reply = new Wire.PreviewMoveReply { Refused = preview.Refused ?? string.Empty };
+
+        reply.FilesStaying.AddRange(preview.FilesStaying);
+        reply.Exchanges.AddRange(preview.Exchanges.Select(e => new Wire.MovePreviewExchange
+        {
+            ExchangeId = e.Id,
+            Open = e.Open,
+            Requester = e.Requester.Value,
+            Receiver = e.Receiver.Value,
+            Messages = e.Messages,
+            FirstWords = e.FirstWords,
+            AddedBecause = e.AddedBecause ?? string.Empty,
+        }));
+
+        return reply;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Nudges nobody, unlike every other operation that changes an agent's work: a move wakes no agent (§5.0).</remarks>
+    public override async Task<Wire.MoveExchangesReply> MoveExchanges(Wire.MoveExchangesRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var moved = await Console(
+            (console, now, ct) => console.MoveExchangesAsync(
+                request.Source, request.Destination, request.NewConversation, [.. request.Exchanges], now, ct),
+            context).ConfigureAwait(false);
+
+        return new Wire.MoveExchangesReply
+        {
+            Refused = moved.Refused ?? string.Empty,
+            Exchanges = moved.Exchanges,
+            Messages = moved.Messages,
+        };
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.DidItReply> CloseRequest(Wire.CloseRequestRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason;
+
+        var closed = await Console(
+            (console, now, ct) => console.CloseRequestAsync(request.ExchangeId, reason, now, ct),
+            context).ConfigureAwait(false);
+
+        if (closed is not null)
+        {
+            await _runtime.NudgeAsync(closed.Requester, context.CancellationToken).ConfigureAwait(false);
+            await _runtime.NudgeAsync(closed.Receiver, context.CancellationToken).ConfigureAwait(false);
+        }
+
+        return new Wire.DidItReply { Changed = closed is not null };
+    }
+
+    /// <inheritdoc/>
     public override async Task<Wire.DidItReply> Archive(Wire.ConversationRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -152,7 +246,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             (console, now, ct) => console.DestroyConversationAsync(conversationId, now, ct),
             context).ConfigureAwait(false);
 
-        await DeleteFoldersWhoseRowsWentAsync(files, folder is null ? [] : [folder], context).ConfigureAwait(false);
+        await DeleteFoldersWhoseRowsWentAsync(files, folder is null ? [] : [folder]).ConfigureAwait(false);
 
         var reply = new Wire.DestroyReply { Verdict = Conversions.Out(outcome.Verdict) };
         reply.Destroyed.AddRange(outcome.Destroyed.Select(t => new Wire.PurgeToll { Table = t.Table, Rows = t.Rows }));
@@ -167,7 +261,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     /// the launched adapter registers the one agent it attaches, by §12.3's ordinary route.
     /// </para>
     /// <para>
-    /// A retired agent is not started: retirement is a person's decision that nothing is routed to it, and
+    /// A retired agent is not started: retirement — a person's, or a node's on finding the workspace gone — means nothing is routed to it, and
     /// <c>reinstate</c> is the route that undoes it. An agent the registry does not hold is started, because
     /// nothing about it has been retired.
     /// </para>
@@ -184,8 +278,11 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         {
             throw new RpcException(new Status(
                 StatusCode.FailedPrecondition,
-                $"'{agent.Value}' is already open outside Parley — somebody started it in an editor — so starting another " +
-                "would put two models in one checkout. Close that session first, or prompt it there."));
+                _runtime.Unsupervised(agent)
+                    ? $"'{agent.Value}' is already running, left by a node that is gone, so starting another would put two " +
+                      "models in one checkout. End that process with kill first, and the next work for it starts it again."
+                    : $"'{agent.Value}' is already open outside Parley — somebody started it in an editor — so starting " +
+                      "another would put two models in one checkout. Close that session first, or prompt it there."));
         }
 
         var registry = await Console((console, _, ct) => console.DescribeRegistryAsync(ct), context)
@@ -196,10 +293,183 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             return new Wire.DidItReply { Changed = false };
         }
 
+        // SPEC.md §14: nothing starts a frozen agent, a person's Start included. Said, not silently declined.
+        if (_runtime.IsFrozen(agent))
+        {
+            throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"'{agent.Value}' is frozen, so nothing starts it. Unfreeze it first."));
+        }
+
         var started = _runtime.RequestAttention(
             agent, string.IsNullOrWhiteSpace(request.Because) ? "the person asked for it" : request.Because);
 
         return new Wire.DidItReply { Changed = started };
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The node waits for the current turn to end, so this says only that it was asked (SPEC.md §11.1). The agent is
+    /// started again by the next work for it, as any agent is: a freeze or retirement, not this, keeps one out.
+    /// </remarks>
+    public override Task<Wire.DidItReply> Stop(Wire.StopRequest request, ServerCallContext context) =>
+        StopOrRestart(request, context, restart: false);
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The same as <see cref="Stop"/>, then started again with its launch configuration read afresh. An agent that is
+    /// not running is not started by this: that is <see cref="Start"/>.
+    /// </remarks>
+    public override Task<Wire.DidItReply> Restart(Wire.StopRequest request, ServerCallContext context) =>
+        StopOrRestart(request, context, restart: true);
+
+    private Task<Wire.DidItReply> StopOrRestart(Wire.StopRequest request, ServerCallContext context, bool restart)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var agent = Acted(request.Agent);
+        var because = string.IsNullOrWhiteSpace(request.Because) ? "the person asked for it" : request.Because;
+
+        // SPEC.md §14: nothing starts a frozen agent, and a restart starts it again. One still finishing its turn is already
+        // being stopped by the freeze, so there is nothing a stop would add either.
+        if (restart && _runtime.IsFrozen(agent))
+        {
+            throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"'{agent.Value}' is frozen, so nothing starts it again. Unfreeze it first."));
+        }
+
+        return _runtime.RequestStop(agent, restart, because) switch
+        {
+            StopOutcome.Sent => Task.FromResult(new Wire.DidItReply { Changed = true }),
+            StopOutcome.NotRunning => Task.FromResult(new Wire.DidItReply { Changed = false }),
+            StopOutcome.OpenOutside => throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                // SPEC.md §11.7: a process a node started and a node that is gone still owns is not somebody's editor, and
+                // blaming one who never opened it was the defect; the way to end it is kill.
+                _runtime.Unsupervised(agent)
+                    ? $"'{agent.Value}' is running, left by a node that is gone, so no node holds a process of it to stop. End "
+                      + "it with kill, which ends only a process a node started."
+                    : $"'{agent.Value}' is open outside Parley — somebody started it in an editor — so Parley holds no process "
+                      + "of it to stop. Close it where it was opened.")),
+            _ => throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"No node on '{agent.Machine}' can stop '{agent.Value}': its node is not connected, or does not list it "
+                + "among what it can start. Run `parley up` on that machine, or restart the broker there.")),
+        };
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Does not wait for a turn: the process is one no node holds, so nothing can say when one ends (SPEC.md §11.1). What it
+    /// was doing is lost, and the next work for the agent starts it again as any agent is started.
+    /// </remarks>
+    public override Task<Wire.DidItReply> Kill(Wire.StopRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var agent = Acted(request.Agent);
+        var because = string.IsNullOrWhiteSpace(request.Because) ? "the person asked for it" : request.Because;
+
+        return _runtime.RequestKill(agent, because) switch
+        {
+            KillOutcome.Sent => Task.FromResult(new Wire.DidItReply { Changed = true }),
+            KillOutcome.NotLeftRunning => throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"'{agent.Value}' is not running as a process a node left behind, so there is nothing to end here. One "
+                + "open in somebody's editor is theirs to close, and one a node supervises is stopped, not killed.")),
+            KillOutcome.NoProcess => throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"'{agent.Value}' was left running by a node that is gone, but its adapter did not say which process hosts "
+                + "it, so none can be named. End its `claude` process by hand, or wait for it to finish.")),
+            _ => throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"No node is joined for '{agent.Machine}', so nothing there can end the process of '{agent.Value}'. Run "
+                + "`parley up` on that machine, or restart the broker there.")),
+        };
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Recorded before the node is asked, so a turn that ends and a message that arrives in between both find the freeze
+    /// (SPEC.md §14). The process is ended by the existing stop, which waits for the turn and never ends one a node did not start.
+    /// </remarks>
+    public override async Task<Wire.FreezeReply> Freeze(Wire.FreezeRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var agent = Acted(request.Agent);
+        var registry = await Console((console, _, ct) => console.DescribeRegistryAsync(ct), context).ConfigureAwait(false);
+
+        if (registry.All(row => row.Name != agent))
+        {
+            throw new RpcException(new Status(
+                StatusCode.NotFound, $"Nothing has registered under '{agent.Value}', so there is nothing to freeze."));
+        }
+
+        // Marked only when a row took the freeze: one already frozen is marked already, and a row that went between the look
+        // and the write (a purge) must not leave its name frozen with nothing stored to lift. Marked inside the same turn at the
+        // store as the write, so a freeze and an unfreeze that cross cannot leave the store saying one thing and the broker another.
+        var changed = await Console(
+            async (console, now, ct) =>
+            {
+                var took = await console.FreezeAgentAsync(agent, now, _runtime.RunId, request.KeepFrozen, ct).ConfigureAwait(false);
+
+                if (took)
+                {
+                    _runtime.MarkFrozen(agent, true);
+                }
+
+                return took;
+            },
+            context).ConfigureAwait(false);
+
+        // A process a node that is gone left is not somebody's editor: said apart, so the person is told only Kill ends it
+        // (review, lens 3 run 2 on 6fde4ef3).
+        var process = _runtime.RequestStop(agent, restart: false, "a person froze it") switch
+        {
+            StopOutcome.Sent => "stopping",
+            StopOutcome.OpenOutside when _runtime.Unsupervised(agent) => "left_running",
+            StopOutcome.OpenOutside => "open_outside",
+            StopOutcome.NoNode => "no_node",
+            _ => "not_running"
+        };
+
+        return new Wire.FreezeReply { Changed = changed, Process = process };
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Then the agent is asked to start if it owes open work, as after a restart, or if anything arrived for it while it was
+    /// frozen, whose wake was declined (SPEC.md §14); one with nothing to do stays as it is until work arrives.
+    /// </remarks>
+    public override async Task<Wire.DidItReply> Unfreeze(Wire.AgentRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var agent = Acted(request.Agent);
+        // Cleared in the same turn at the store as the write, for the reason Freeze marks there.
+        var changed = await Console(
+            async (console, _, ct) =>
+            {
+                var lifted = await console.UnfreezeAgentAsync(agent, ct).ConfigureAwait(false);
+
+                _runtime.MarkFrozen(agent, false);
+
+                return lifted;
+            },
+            context).ConfigureAwait(false);
+
+        if (changed)
+        {
+            await _runtime.UnfrozenAsync(agent).ConfigureAwait(false);
+        }
+
+        return new Wire.DidItReply { Changed = changed };
     }
 
     /// <inheritdoc/>
@@ -233,19 +503,22 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             request.ProposedLength > 0 ? request.ProposedLength : null,
             string.IsNullOrEmpty(request.ConversationId) ? null : request.ConversationId);
 
-        var record = await Console(
-            (console, now, ct) => console.RecordOwnershipAsync(agent, acceptance, now, ct),
-            context).ConfigureAwait(false);
-
         // A person's line answers whatever Parley was still waiting on for this agent, so the question settles and its
         // conversation closes. Left alone it would stay waiting beside a line that already answers it, and the agent
-        // could never be asked again.
-        if (record.Recorded)
-        {
-            _ = await _runtime.UseFacilitatorAsync(
-                (facilitator, parley, now, ct) => facilitator.SettledByPersonAsync(parley, agent, now, cancellationToken: ct),
-                context.CancellationToken).ConfigureAwait(false);
-        }
+        // could never be asked again. Both happen in one unit of work, so no automatic accept runs between them.
+        var record = await _runtime.UseConsoleWithFacilitatorAsync(
+            async (console, facilitator, parley, now, ct) =>
+            {
+                var recorded = await console.RecordOwnershipAsync(agent, acceptance, now, ct).ConfigureAwait(false);
+
+                if (recorded.Recorded)
+                {
+                    _ = await facilitator.SettledByPersonAsync(parley, agent, now, cancellationToken: ct).ConfigureAwait(false);
+                }
+
+                return recorded;
+            },
+            context.CancellationToken).ConfigureAwait(false);
 
         return new Wire.RecordOwnershipReply
         {
@@ -371,20 +644,39 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
         using var held = await files.HoldEverythingAsync(context.CancellationToken).ConfigureAwait(false);
 
-        var folders = await _runtime.UseConnectionAsync(
-            (connection, _, ct) => new Parley.Store.SharedFileRepository(connection)
-                .GetFoldersPurgingWouldDeleteAsync(agent, cancellationToken: ct),
-            context.CancellationToken).ConfigureAwait(false);
+        // **Every recorded folder, before and after**, rather than the ones the purge would delete, read before it: a
+        // Request joining the agent to a conversation that has files can land between the read and the purge, and that
+        // conversation's folder was then left on disk with no row naming it, until whatever next swept the location.
+        var before = await RecordedFoldersAsync(context.CancellationToken).ConfigureAwait(false);
 
         var outcome = await Console((console, _, ct) => console.PurgeAsync(agent, ct), context).ConfigureAwait(false);
 
-        await DeleteFoldersWhoseRowsWentAsync(files, folders, context).ConfigureAwait(false);
+        // A freeze is a column of the row. When the row has gone the freeze has gone, and an agent registered later under the
+        // same name must not find itself frozen with nothing on any surface to unfreeze.
+        // Not cancelled, like the folders below: the rows have gone whatever the caller does since.
+        var remains = await _runtime.UseConnectionAsync(
+            (connection, _, ct) => new OperatorConsole(connection).DescribeRegistryAsync(ct), CancellationToken.None).ConfigureAwait(false);
+
+        if (remains.All(row => row.Name != agent))
+        {
+            _runtime.MarkFrozen(agent, false);
+        }
+
+        // Not cancelled from here: the rows have gone, so their folders go whatever the caller does.
+        var after = await RecordedFoldersAsync(CancellationToken.None).ConfigureAwait(false);
+        var folders = before.Except(after, StringComparer.Ordinal).ToList();
+
+        await DeleteFoldersWhoseRowsWentAsync(files, folders).ConfigureAwait(false);
 
         var reply = new Wire.PurgeReply { Verdict = Conversions.Out(outcome.Verdict) };
         reply.Destroyed.AddRange(outcome.Destroyed.Select(t => new Wire.PurgeToll { Table = t.Table, Rows = t.Rows }));
 
         return reply;
     }
+
+    /// <summary>The most bytes of background tasks' words one registry reply carries (<see cref="TaskWordBudget"/>).</summary>
+    /// <remarks>A quarter of gRPC's default limit, so the rest of every row always fits beside it.</remarks>
+    internal const int MostTaskWordBytes = 1024 * 1024;
 
     /// <inheritdoc/>
     public override async Task<Wire.RegistryReply> DescribeRegistry(Wire.Empty request, ServerCallContext context)
@@ -402,6 +694,8 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             .ToDictionary(turn => turn.Agent);
 
         var reply = new Wire.RegistryReply();
+        var words = new TaskWordBudget(MostTaskWordBytes);
+
         reply.Rows.AddRange(rows.Select(row => Conversions.Out(row with
         {
             Turns = new TurnStanding(
@@ -409,8 +703,16 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
                 _runtime.TurnRunningSince(row.Name),
                 latest.TryGetValue(row.Name, out var last) ? last.EndedUtc : null,
                 last?.Clean ?? false,
-                last?.PermissionDenials ?? 0),
+                last?.PermissionDenials ?? 0,
+                _runtime.BackgroundTasks(row.Name),
+                words.Spend(_runtime.RunningTasks(row.Name))),
             OpenOutside = _runtime.OpenOutside(row.Name),
+            Unsupervised = _runtime.Unsupervised(row.Name),
+
+            // **Frozen as the broker honours it** (SPEC.md §14): a freeze that lapsed at this start stays stored until the
+            // start it owes has been asked for, and it is not a freeze meanwhile, so it is not shown as one.
+            FrozenUtc = _runtime.IsFrozen(row.Name) ? row.FrozenUtc : null,
+            KeepFrozen = _runtime.IsFrozen(row.Name) && row.KeepFrozen,
         })));
 
         return reply;
@@ -434,6 +736,38 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             Total = r.Total,
             Cap = r.Cap,
             LastUtc = Conversions.Stamp(r.LastUtc)
+        }));
+
+        return reply;
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.MessageLengthsReply> DescribeMessageLengths(Wire.Empty request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var report = await Console((console, _, ct) => console.DescribeMessageLengthsAsync(ct), context)
+            .ConfigureAwait(false);
+
+        static Wire.MessageLengthGroup Group(MessageLengthGroup group) => new()
+        {
+            Name = group.Name,
+            Messages = group.Messages,
+            Median = group.Median,
+            Longest = group.Longest,
+            OverSoftLimit = group.OverSoftLimit
+        };
+
+        var reply = new Wire.MessageLengthsReply { Overall = Group(report.Overall) };
+        reply.ByType.AddRange(report.ByType.Select(Group));
+        reply.ByPosition.AddRange(report.ByPosition.Select(Group));
+        reply.ByAgent.AddRange(report.ByAgent.Select(a => new Wire.AgentMessageLengths
+        {
+            Agent = a.Agent.Value,
+            Sent = a.Sent,
+            Received = a.Received,
+            Longest = a.Longest,
+            OverSoftLimit = a.OverSoftLimit
         }));
 
         return reply;
@@ -548,7 +882,8 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var exported = await Console((console, _, ct) => console.ExportAsync(Identified(request.ConversationId), ct), context)
+        var exported = await Console(
+            (console, _, ct) => console.ExportAsync(Identified(request.ConversationId), ct, request.LatestOnly), context)
             .ConfigureAwait(false);
 
         var reply = new Wire.ExportReply();
@@ -571,6 +906,57 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             reply.Item = Conversions.Out(item);
         }
 
+        if (exported.Links is { } links)
+        {
+            reply.Parent = links.Parent ?? string.Empty;
+            reply.ParentByMove = links.How == ConversationLinkKind.Move;
+            reply.Children.AddRange(links.Children);
+        }
+
+        reply.Moves.AddRange((exported.Moves ?? []).Select(m =>
+        {
+            var move = new Wire.MoveRecord
+            {
+                Id = m.Id,
+                Source = m.Source,
+                Destination = m.Destination,
+                MovedBy = m.MovedBy,
+                MovedUtc = m.MovedUtc.ToString("O", CultureInfo.InvariantCulture),
+                FirstMessage = m.FirstMessage ?? 0,
+                Messages = m.Messages,
+            };
+
+            move.Exchanges.AddRange(m.Exchanges);
+
+            return move;
+        }));
+
+        reply.SettledElsewhere.AddRange((exported.SettledElsewhere ?? []).Select(s => new Wire.SettledElsewhere
+        {
+            ExchangeId = s.Exchange,
+            SettledBy = s.SettledBy,
+            ConversationId = s.Conversation,
+        }));
+
+        reply.WroteElsewhere.AddRange((exported.WroteElsewhere ?? []).Select(w => new Wire.WroteElsewhere
+        {
+            Message = w.Message,
+            AfterMessage = w.AfterMessage,
+            From = w.From.Value,
+            To = w.To.Value,
+            ConversationId = w.Conversation,
+        }));
+
+        reply.Reads.AddRange((exported.Reads ?? []).Select(r => new Wire.HistoryReadRow
+        {
+            Reader = r.Reader.Value,
+            ExchangeId = r.ExchangeId ?? 0,
+            Words = r.Words ?? string.Empty,
+            Matches = r.Matches ?? 0,
+            CreatedUtc = r.CreatedUtc.ToString("O", CultureInfo.InvariantCulture),
+            Count = r.Count,
+        }));
+
         reply.Messages.AddRange(exported.Messages.Select(Conversions.Out));
 
         reply.Exchanges.AddRange(exported.Exchanges.Select(e => new Wire.ExchangeSnapshot
@@ -580,7 +966,8 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             OpenedUtc = e.OpenedUtc.ToString("O", CultureInfo.InvariantCulture),
             ClosedUtc = e.ClosedUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty,
             Outcome = Conversions.Out(e.Outcome),
-            SettledBy = e.SettledBy ?? 0
+            SettledBy = e.SettledBy ?? 0,
+            RequestGroup = e.RequestGroup ?? string.Empty
         }));
 
         return reply;
@@ -626,13 +1013,47 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
         var state = Conversions.In(request.State);
 
-        var listed = await Console((console, _, ct) => console.ListProposalsAsync(state, ct), context)
-            .ConfigureAwait(false);
+        // As headings when asked, since a list is read on every refresh and roadmap text has no bound (SPEC.md §10.2
+        // `proposals`).
+        var listed = request.Headings
+            ? await Console((console, _, ct) => console.ListProposalHeadingsAsync(state, ct), context).ConfigureAwait(false)
+            : await Console((console, _, ct) => console.ListProposalsAsync(state, ct), context).ConfigureAwait(false);
 
         var reply = new Wire.ProposalsReply();
         reply.Proposals.AddRange(listed.Select(Conversions.Out));
 
         return reply;
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.ProposalsReply> Proposal(Wire.ProposalRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        // One proposal whole, in whatever state, or none: what a surface reads when the person opens one (§10.2 `proposal`).
+        var one = await Console((console, _, ct) => console.GetProposalAsync(request.Id, ct), context).ConfigureAwait(false);
+
+        var reply = new Wire.ProposalsReply();
+
+        if (one is not null)
+        {
+            reply.Proposals.Add(Conversions.Out(one));
+        }
+
+        return reply;
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.ProposalCountReply> ProposalCount(Wire.ProposalsRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var state = Conversions.In(request.State);
+        var count = await Console((console, _, ct) => console.CountProposalsAsync(state, ct), context).ConfigureAwait(false);
+
+        return new Wire.ProposalCountReply { Count = count };
     }
 
     /// <inheritdoc/>
@@ -645,8 +1066,11 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         var content = Conversions.In(request.Content ?? new Wire.RoadmapContent());
         long? target = request.TargetRoadmap == 0 ? null : request.TargetRoadmap;
 
+        // Zero on the wire is none named, which the store refuses for a revision (SPEC.md §10.2).
+        int? revision = target is null || request.TargetRevision <= 0 ? null : request.TargetRevision;
+
         var change = await Console(
-            (console, now, ct) => console.ConfirmProposalAsync(request.Id, content, target, now, ct), context)
+            (console, now, ct) => console.ConfirmProposalAsync(request.Id, content, target, now, ct, revision), context)
             .ConfigureAwait(false);
 
         return Conversions.Out(change);
@@ -679,6 +1103,18 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             .ConfigureAwait(false);
 
         return Conversions.Out(change);
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.LocateExchangeReply> LocateExchange(Wire.LocateExchangeRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var conversation = await Console(
+            (console, _, ct) => console.LocateExchangeAsync(request.ExchangeId, ct), context).ConfigureAwait(false);
+
+        return new Wire.LocateExchangeReply { ConversationId = conversation ?? string.Empty };
     }
 
     /// <inheritdoc/>
@@ -766,7 +1202,10 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
                 FirstActivityUtc = summary.FirstActivityUtc.ToString("O", CultureInfo.InvariantCulture),
                 LastActivityUtc = summary.LastActivityUtc.ToString("O", CultureInfo.InvariantCulture),
                 HasOpenExchange = summary.HasOpenExchange,
-                Archived = summary.Archived
+                Archived = summary.Archived,
+                Parent = summary.Parent ?? string.Empty,
+                Closed = summary.Closed,
+                LastClosedUtc = summary.LastClosedUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty
             };
 
             if (summary.Item is { } item)
@@ -805,8 +1244,26 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             Removed = result.Removed,
             HeldByFloor = result.HeldByFloor,
             Contended = result.Contended,
-            Capped = result.Capped
+            Capped = result.Capped,
+            IdleSeconds = (long)(result.Applied?.IdlePeriod.TotalSeconds ?? 0),
+            MaxAgeSeconds = (long)(result.Applied?.MaximumAge.TotalSeconds ?? 0)
         };
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// As the person, which is why this is here and not on <c>Agents</c>: an agent places only as itself (SPEC.md §10.2).
+    /// </remarks>
+    public override Task PlacePersonsFile(
+        IAsyncStreamReader<Wire.PlaceFileFrame> requestStream,
+        IServerStreamWriter<Wire.PlaceFileAnswer> responseStream,
+        ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(requestStream);
+        ArgumentNullException.ThrowIfNull(responseStream);
+        ArgumentNullException.ThrowIfNull(context);
+
+        return new FileWork(_runtime).PlaceAsPersonAsync(requestStream, responseStream, context.CancellationToken);
     }
 
     /// <inheritdoc/>
@@ -847,16 +1304,77 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         return new FileWork(_runtime).DescribeAsync(request, context.CancellationToken);
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// As the person, which is why this is here and not on <c>Agents</c>: an agent's fetch is recorded, and the person
+    /// viewing an image records nothing (SPEC.md §9.5).
+    /// </remarks>
+    public override Task ReadSharedFile(
+        Wire.ReadSharedFileRequest request,
+        IServerStreamWriter<Wire.FetchFileFrame> responseStream,
+        ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(responseStream);
+        ArgumentNullException.ThrowIfNull(context);
+
+        return new FileWork(_runtime).ReadAsync(request, responseStream, context.CancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.FileProblemsReply> ListFileProblems(
+        Wire.ListFileProblemsRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var problems = await _runtime.UseConnectionAsync(
+            (connection, _, ct) => new Parley.Store.FileProblemRepository(connection).ListAsync(request.IncludeDismissed, ct),
+            context.CancellationToken).ConfigureAwait(false);
+
+        var reply = new Wire.FileProblemsReply { Machine = MachineName.Current, QuarantinePath = _runtime.Files.Quarantine };
+        reply.Problems.AddRange(problems.Select(Conversions.Out));
+
+        return reply;
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.DidItReply> DismissFileProblem(
+        Wire.DismissFileProblemRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var dismissed = await _runtime.UseConnectionAsync(
+            (connection, now, ct) => new Parley.Store.FileProblemRepository(connection).DismissAsync(request.Id, now, ct),
+            context.CancellationToken).ConfigureAwait(false);
+
+        return new Wire.DidItReply { Changed = dismissed };
+    }
+
+    private Task<List<string>> RecordedFoldersAsync(CancellationToken cancellationToken) =>
+        _runtime.UseConnectionAsync(
+            async (connection, _, ct) => (await new Parley.Store.SharedFileRepository(connection)
+                    .GetFoldersAsync(cancellationToken: ct).ConfigureAwait(false))
+                .Select(f => f.Folder)
+                .ToList(),
+            cancellationToken);
+
     /// <summary>Deletes the folders on disk of conversations whose rows are gone.</summary>
     /// <param name="files">The file operations.</param>
     /// <param name="folders">The folders as they were recorded before the delete.</param>
-    /// <param name="context">The call.</param>
     /// <returns>A task that completes when they are deleted.</returns>
     /// <remarks>
+    /// <para>
     /// Checked against the store rather than assumed from the outcome, so a destroy or purge that deleted nothing —
     /// no such conversation, no such agent — can never take a folder that still belongs to one.
+    /// </para>
+    /// <para>
+    /// **Never cancelled**, because it runs after the rows have gone: a call given up then would leave the folders on
+    /// disk, deleted only by whatever next sweeps the location, though the operator was told their files went.
+    /// </para>
     /// </remarks>
-    private async Task DeleteFoldersWhoseRowsWentAsync(FileWork files, IReadOnlyList<string> folders, ServerCallContext context)
+    private async Task DeleteFoldersWhoseRowsWentAsync(FileWork files, IReadOnlyList<string> folders)
     {
         if (folders.Count == 0)
         {
@@ -879,7 +1397,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
                 return orphaned;
             },
-            context.CancellationToken).ConfigureAwait(false);
+            CancellationToken.None).ConfigureAwait(false);
 
         files.DeleteFolders(gone);
     }

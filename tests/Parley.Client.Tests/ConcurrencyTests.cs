@@ -21,13 +21,14 @@ namespace Parley.Client.Tests;
 /// reading.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ConcurrencyTests
 {
     /// <summary>How many threads ask at once.</summary>
     /// <remarks>
-    /// Enough to be a real crowd and few enough that every one of them gets a thread: they wait
-    /// for each other before asking, so a pool that ran them in batches would never produce the
-    /// simultaneous arrival the race needs.
+    /// Enough to be a real crowd. Each gets a thread of its own rather than the pool's: they wait for each other before
+    /// asking, so on the pool they held every pool thread blocked until it grew to sixteen, which under load took most
+    /// of a minute and stalled every other test in the process that needed one (two seat tests failed on CI for it).
     /// </remarks>
     private const int Callers = 16;
 
@@ -58,17 +59,19 @@ public sealed class ConcurrencyTests
 
         var project = directory.Projects[0];
 
-        await Task.WhenAll(Enumerable.Range(0, Callers).Select(_ => Task.Run(
+        await Task.WhenAll(Enumerable.Range(0, Callers).Select(_ => Task.Factory.StartNew(
             () =>
             {
                 // Every caller waits for every other before asking, so they arrive together
-                // rather than in whatever order the pool happened to start them.
+                // rather than in whatever order they happened to start.
                 arrived.Signal();
                 arrived.Wait(TestContext.Current.CancellationToken);
 
                 Assert.NotNull(directory.ClientFor(project));
             },
-            TestContext.Current.CancellationToken)));
+            TestContext.Current.CancellationToken,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default)));
 
         arrived.Dispose();
 
@@ -115,16 +118,17 @@ public sealed class ConcurrencyTests
     public async Task An_endpoint_that_cannot_be_dialled_takes_down_only_its_own_project()
     {
         // The manifest accepts more than gRPC can dial -- "localhost:5301" with no scheme is the
-        // usual way to find that out -- and the throw happens where the channel is opened rather
-        // than at startup. Uncontained, one bad row costs the whole page, which is the coupling
-        // ReadAsync exists to prevent.
+        // usual way to find that out. Making the client never throws, wherever a caller makes it
+        // (the web's pages and the terminal's survey made it outside every guard); the call does,
+        // as unavailable, and ReadAsync says what it is.
         using var directory = new BrokerDirectory(
             [new ProjectSettings(
                 ProjectName.Create("alpha"), "a.db", "localhost:5301", null)],
             GrpcChannel.ForAddress);
 
-        var read = await BrokerDirectory.ReadAsync(() =>
-            Task.FromResult(directory.ClientFor(directory.Projects[0])));
+        var client = directory.ClientFor(directory.Projects[0]);
+        var read = await BrokerDirectory.ReadAsync(async () =>
+            await new BrokerClient(client).ProposalCountAsync(null, TestContext.Current.CancellationToken));
 
         Assert.False(read.Reachable);
         Assert.Contains("cannot be reached as written", read.Problem, StringComparison.Ordinal);

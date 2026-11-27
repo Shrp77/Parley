@@ -20,6 +20,7 @@ namespace Parley.Cli.Tests;
 /// variable shown and never written sends somebody looking for something that was never there.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class LaunchContractTests
 {
     private static readonly string Contract = Path.GetFullPath(Path.Combine(

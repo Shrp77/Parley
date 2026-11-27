@@ -29,6 +29,7 @@ namespace Parley.Server.Tests;
 /// reading the document does not carry.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RetirementHoldsTests
 {
     [Fact]

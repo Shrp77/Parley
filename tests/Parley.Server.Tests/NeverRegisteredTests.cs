@@ -10,6 +10,7 @@ namespace Parley.Server.Tests;
 /// This is the state a repository is in the moment it is enrolled: the catalogue names it, so a node can start it,
 /// and nothing has ever attached under the name. On a fresh deployment it is the state most agents are in.
 /// </remarks>
+[Integration]
 public sealed class NeverRegisteredTests
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(5);

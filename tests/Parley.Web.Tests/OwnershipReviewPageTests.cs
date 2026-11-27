@@ -13,6 +13,7 @@ namespace Parley.Web.Tests;
 /// spending a turn on each for nothing. Every decision on the page is a link to <c>Act</c>, which
 /// <c>EveryActionHasADoorTests</c> holds to describing itself before it acts.
 /// </remarks>
+[Integration]
 public sealed class OwnershipReviewPageTests
 {
     [Fact]

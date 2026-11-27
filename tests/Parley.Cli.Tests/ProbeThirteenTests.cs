@@ -18,6 +18,7 @@ namespace Parley.Cli.Tests;
 /// enough to push the reason off a screen has refused nothing.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeThirteenTests : IDisposable
 {
     private readonly string _root =

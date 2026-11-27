@@ -20,6 +20,7 @@ namespace Parley.Mcp.Tests;
 /// needs an interpreter; these still run where there is none.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WaitingHookTests
 {
     private const string Script = "plugins/parley/hooks/parley_waiting.py";
@@ -224,7 +225,7 @@ public sealed class WaitingHookTests
     [Fact]
     public void A_file_notice_alone_never_holds_a_turn_open()
     {
-        // A change notice wakes nothing (SPEC.md §9.5), and a Stop hook that speaks continues the turn — which is a
+        // A gone notice wakes nothing (SPEC.md §9.5), and a Stop hook that speaks continues the turn — which is a
         // turn asked for. So at Stop the notices count only beside mail that would hold the turn anyway.
         Assert.Contains("if event == \"Stop\" and not (unread or owed):", Code, StringComparison.Ordinal);
     }

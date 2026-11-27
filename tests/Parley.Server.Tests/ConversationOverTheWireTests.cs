@@ -17,6 +17,7 @@ namespace Parley.Server.Tests;
 /// its Result. Nothing here touches a <c>Broker</c> or a <c>SqliteConnection</c>.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ConversationOverTheWireTests
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(5);
@@ -129,7 +130,11 @@ public sealed class ConversationOverTheWireTests
             async () => await AttachedClient.AttachAsync(broker, "docs@alpha", "C:/repo-two", token));
 
         Assert.Equal(Grpc.Core.StatusCode.FailedPrecondition, refused.StatusCode);
-        Assert.Contains("C:/repo-one", refused.Status.Detail, StringComparison.Ordinal);
+        // Says it belongs to another repository without saying where: the roster withholds every agent's workspace, and a
+        // refusal an agent can provoke from its own .mcp.json must not hand it another's (security lens run 17, 0.63.4).
+        Assert.Contains("already registered to another repository", refused.Status.Detail, StringComparison.Ordinal);
+        Assert.Contains("C:/repo-two", refused.Status.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("C:/repo-one", refused.Status.Detail, StringComparison.Ordinal);
     }
 
     [Fact]

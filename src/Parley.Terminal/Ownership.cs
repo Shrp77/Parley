@@ -336,7 +336,7 @@ internal static class Ownership
     internal static string Asked(AgentName agent, bool autoAccept)
     {
         var becomes = autoAccept
-            ? "Auto Accept is on, so its answer becomes its line unless it cannot be one."
+            ? "Auto Accept is on, so its answer becomes its line unless it cannot be one or the agent is on another machine."
             : "Auto Accept is off, so its answer waits for a person in the ownership review.";
 
         return $"""
@@ -530,7 +530,7 @@ internal static class Ownership
             AcceptTitle,
             Reviewed(agent, live, proposal, Roster.Neighbours(roster, agent)),
             proposal.Statement,
-            problem: typed => OwnershipStatement.IsValid(typed, out var wrong) ? null : wrong);
+            problem: typed => OwnershipStatement.IsLaunchable(typed, out var wrong) ? null : wrong);
 
         var open = Prompting.Open(app, typing);
 
@@ -719,6 +719,13 @@ internal static class Ownership
                 + Safe.Text(outcome.Problem!)).ConfigureAwait(false);
 
             return;
+        }
+
+        if (outcome.Value!.Recorded)
+        {
+            _ = await OwnershipLine
+                .AfterRecordedAsync(workspace, project, agent, acceptance.Statement, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         await done(Said(outcome.Value!)).ConfigureAwait(false);

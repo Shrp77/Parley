@@ -17,6 +17,7 @@ namespace Parley.Cli.Tests;
 /// forwarder says the tool is not installed, and a flag answered here prints a version or a manual.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ForwardedFlagsTests
 {
     public static TheoryData<string, string, string> Flags => new()

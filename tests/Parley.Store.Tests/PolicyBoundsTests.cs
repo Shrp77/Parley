@@ -20,6 +20,7 @@ namespace Parley.Store.Tests;
 /// is verified by writing a row at it and a row just outside it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class PolicyBoundsTests : IDisposable
 {
     private const string Stamp = "2026-01-01T00:00:00.0000000+00:00";

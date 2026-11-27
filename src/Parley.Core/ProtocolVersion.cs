@@ -21,7 +21,14 @@ namespace Parley.Core;
 /// carries one ask and its conversation, and a Result answers the exchange whole under the item
 /// <c>request</c>. Files cross between repositories through the broker, which computes each file's
 /// SHA-256; what crosses about a file is a bounded name and a hash, never its contents in a model's
-/// context. SPEC.md §18 carries the history.
+/// context, and a placed file is never changed: a new version is a new name. An agent may propose a
+/// roadmap, which only a person confirms, edits or declines; it opens no exchange, and the agent is told
+/// only what became of its proposal. A person may stop or restart an agent its node started, which the
+/// node does once the agent's turn is over. A node reports how many background tasks an agent has running,
+/// and a turn the agent begins on its own when one finishes. A person may end a process a node that is gone left
+/// running, which no node now holds; the adapter says which process hosts it, and a node ends it after checking it is the
+/// agent's own kind. A node lists each background task by its runner's id and label, and an agent may give a task of its
+/// own a name, a description and a link, which only the person sees.
 /// </para>
 /// <para>
 /// Kept here rather than read from the document at run time, so an implementation that ships without
@@ -31,5 +38,5 @@ namespace Parley.Core;
 public static class ProtocolVersion
 {
     /// <summary>The protocol version, as SPEC.md declares it.</summary>
-    public const string Current = "0.8";
+    public const string Current = "0.21";
 }

@@ -13,6 +13,7 @@ namespace Parley.Store.Tests;
 /// the checks here ask the schema rather than a list: nothing may name the old agent afterwards, and the database must
 /// still agree with itself.
 /// </remarks>
+[Integration]
 public sealed class AgentRenameStoreTests : IDisposable
 {
     private const string Id = "9f2c1a77-3b41-4e0e-8a6f-7c4b2d9e5011";

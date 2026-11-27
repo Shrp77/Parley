@@ -25,6 +25,7 @@ namespace Parley.Mcp.Tests;
 /// round.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SecondBrokerTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@probe");

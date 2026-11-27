@@ -29,6 +29,7 @@ namespace Parley.Server.Tests;
 /// mapping between the two spellings has to be exact for that protection to mean anything.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WireMatchesTheDocumentTests
 {
     private static string Root()
@@ -102,6 +103,7 @@ public sealed class WireMatchesTheDocumentTests
         // The document names these by what they report, not by the verb a client calls.
         ["describe_registry"] = "registry",
         ["describe_refusals"] = "refusals",
+        ["describe_message_lengths"] = "message_lengths",
         ["describe_clarifications"] = "clarifications",
         ["describe_results"] = "results",
         ["describe_flags"] = "flags",

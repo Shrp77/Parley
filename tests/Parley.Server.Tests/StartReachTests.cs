@@ -19,6 +19,7 @@ namespace Parley.Server.Tests;
 /// read and judged sound is a guard nobody has attacked.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class StartReachTests
 {
     private static readonly TimeSpan Briefly = TimeSpan.FromMilliseconds(400);

@@ -134,6 +134,13 @@ internal sealed class GuardedList : ListView
     /// </remarks>
     private readonly Lock _guard = new();
 
+    /// <summary>Creates an empty list.</summary>
+    /// <remarks>
+    /// A toolkit list reads a hot key from its title, which would bind a key no table claims; <see cref="PlainButton"/>
+    /// says why that matters.
+    /// </remarks>
+    internal GuardedList() => HotKeySpecifier = Plain.NoHotKey;
+
     /// <inheritdoc/>
     /// <remarks>
     /// <para>

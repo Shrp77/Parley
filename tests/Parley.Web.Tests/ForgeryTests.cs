@@ -22,6 +22,7 @@ namespace Parley.Web.Tests;
 /// pages nobody has written yet, unlike a test that exercises one.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ForgeryTests : IClassFixture<WebApplicationFactory<Program>>
 {
     private readonly WebApplicationFactory<Program> _console;

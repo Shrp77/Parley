@@ -21,6 +21,7 @@ namespace Parley.Terminal.Tests;
 /// unreachable-broker line that appears above the rows and shifts every one of them down.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SelectionTests
 {
     /// <summary>Puts the cursor on the row that names one agent.</summary>

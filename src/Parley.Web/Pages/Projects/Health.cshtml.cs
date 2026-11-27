@@ -12,8 +12,8 @@ namespace Parley.Web.Pages.Projects;
 /// <remarks>
 /// <para>
 /// These are the reads SPEC.md §10.2 keeps so that the protocol's provisional numbers can be argued about
-/// from evidence. The message cap is 8,000 and provisional (§17 question 16), and §9.3 keeps the count precisely
-/// so the number is not moved on the strength of whoever complained most recently.
+/// from evidence. A message's limits are the owner's decision, and the lengths and refusals here are how they get
+/// judged (§17 question 16).
 /// </para>
 /// <para>
 /// <b>Flags come first.</b> Nothing in the protocol times out, so work nobody picked up, or picked up and
@@ -27,8 +27,11 @@ public sealed class HealthModel(BrokerDirectory directory) : PageModel
     [BindProperty(SupportsGet = true)]
     public string? Project { get; set; }
 
-    /// <summary>What the size cap turned away.</summary>
+    /// <summary>What the size limit turned away.</summary>
     public IReadOnlyList<SizeRefusal> Refusals { get; private set; } = [];
+
+    /// <summary>How long messages have been.</summary>
+    public MessageLengthReport? Lengths { get; private set; }
 
     /// <summary>What clarification cost.</summary>
     public ClarifyReport? Clarifications { get; private set; }
@@ -79,6 +82,7 @@ public sealed class HealthModel(BrokerDirectory directory) : PageModel
         {
             Flags = await broker.FlagsAsync(token).ConfigureAwait(false);
             Refusals = await broker.RefusalsAsync(token).ConfigureAwait(false);
+            Lengths = await broker.MessageLengthsAsync(token).ConfigureAwait(false);
             Clarifications = await broker.ClarificationsAsync(token).ConfigureAwait(false);
             Results = await broker.ResultsAsync(token).ConfigureAwait(false);
 

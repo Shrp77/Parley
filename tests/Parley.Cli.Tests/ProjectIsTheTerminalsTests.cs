@@ -25,6 +25,7 @@ namespace Parley.Cli.Tests;
 /// in-process test passed.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProjectIsTheTerminalsTests
 {
     /// <summary>The subcommands a shell no longer reaches.</summary>

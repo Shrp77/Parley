@@ -2,6 +2,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using Parley.Setup;
 using Grpc.Core;
 using Grpc.Net.Client;
@@ -36,12 +37,14 @@ const string Help = """
 
       parley serve [--log <path>] [--with-node]        run the broker: the one process that
                    [--with-web-ui [--web-ui <url>]]     opens the stores, and what everything
-                                                       else connects to. It serves every project
+                   [--heartbeat]                       else connects to. It serves every project
                                                        on this machine, each on the port that
                                                        project was given. --with-node also runs
                                                        this machine's node in it, and
                                                        --with-web-ui starts the web UI beside it.
-                                                       --project serves one alone, for testing
+                                                       --project serves one alone, for testing.
+                                                       --heartbeat logs a line a second from
+                                                       each broker, and every connection
 
       parley                                           a deployment from this terminal: the
                                                        projects, who is in each, and their
@@ -86,23 +89,31 @@ const string Help = """
                                                        the terminal
 
       parley up [--node-config <path>]                 run this machine's node: report it to
-                                                       the broker and start the agents on it
-                                                       when a question arrives
+                [--keep-trying]                        the broker and start the agents on it
+                                                       when a question arrives; --keep-trying
+                                                       waits for a broker it cannot reach
 
       parley enroll <dir> [--all | --none]             find the repositories under a directory,
                     [--describe]                       tick the ones to enroll, and configure and
                                                        start them; --describe changes nothing
 
       parley registry                                  every registered agent, with its workspace
-      parley files list [--conversation <id>]          the files agents placed: name, size, sha256,
+      parley files list [--conversation <id>]          the files placed: name, size, sha256,
                         [--full]                       who placed each, totals and placements
+      parley files place <path> --conversation <id>    place a .md, .txt or image file from this machine
+                        [--name <name>]                in a conversation, as the person
       parley files remove <name>... [--conversation <id>]  remove files whoever placed them;
                         [--yes]                        describes them and asks first
       parley files prune [--yes-remove-every-file]     REMOVE every file; asks for the project's name
-      parley files open <name>... [--conversation <id>]  open files in their editor on this
-                                                       machine, or say which machine holds them
+      parley files open <name>... [--conversation <id>]  open files to read: in place on the
+                                                       broker's machine, a checked copy elsewhere
       parley files folder [--conversation <id>]        open a conversation's folder, or the whole
                                                        location, or say which machine holds it
+      parley files problems [--all]                    what sweeps of the location found: files
+                                                       changed on disk and moved to quarantine,
+                                                       and entries it could not read, move or delete
+      parley files dismiss <id>                        take a problem off the list; deletes
+                                                       nothing on disk
       parley open                                      every conversation with an exchange
                                                        still open, and who is in it. What a
                                                        broker restart would interrupt
@@ -145,8 +156,9 @@ const string Help = """
     list`; --config or PARLEY_CONFIG names a different one, for a test rig or a second account.
     Explicit flags and environment variables still win over a project.
 
-    Every command except `serve`, `autostart` and `project` connects to a broker, at
-    --broker or PARLEY_BROKER, and defaults to the local one. Nothing works until a broker is
+    Every command except `serve`, `autostart`, `project`, `use`, `enroll`, `terminal` and `web-ui` connects to a
+    broker, at --broker or PARLEY_BROKER, and defaults to the local one; `enroll` asks each project's own broker,
+    and only when it writes. Nothing works until a broker is
     running: `parley autostart install` starts one at every logon, serving every project named.
 
     serve opens its projects' stores — and it is the only command that touches a file. There is no
@@ -228,7 +240,8 @@ if (!forwarding && arguments.Exists(a => a is "--version" or "-v"))
     return 0;
 }
 
-var selectAllRepositories = TakeFlag("--all");
+// `files problems --all` is that command's own, so it is left for `parley files` to read, as its other options are.
+var selectAllRepositories = !(arguments.Count > 0 && arguments[0] == "files") && TakeFlag("--all");
 var selectNoRepositories = TakeFlag("--none");
 
 // **`enroll --describe` reports what would be configured and changes nothing.** Taken centrally with
@@ -243,8 +256,13 @@ var logPath = TakeOption("--log", null);
 // **Let go of the console window a logon entry would otherwise put on somebody's desktop.** Read by
 // `serve`, which detaches, and by `autostart install`, which writes it into the entry it registers.
 var hidden = TakeFlag("--hidden");
+
+// **A line a second from each broker `serve` hosts, and one for every connection**, for finding out why one stopped
+// answering. Off unless asked for.
+var heartbeat = TakeFlag("--heartbeat");
 var webUiOn = TakeOption("--web-ui", null);
 var noWebUi = TakeFlag("--no-web-ui");
+var keepTrying = TakeFlag("--keep-trying");
 var withFiles = TakeFlag("--with-files");
 var shellName = TakeOption("--shell", null);
 var clearProject = TakeFlag("--clear");
@@ -316,8 +334,10 @@ if (arguments.Count == 0)
         // of them this one. The rule is right: `"parley"` is a launch key, and a fourth meaning for
         // it should be a decision somebody makes in that list rather than a spelling that drifts in
         // here. The sentence reads better this way in any case.
+        // The raw command line, as `parley terminal` forwards it: nothing is left here only because the options were
+        // taken above, and `--broker` and `--config` are the terminal's to read (review, lens 3 run 67).
         var opened = await Forwarding.RunAsync(
-            "parley-terminal", "Parley.Terminal", "The terminal", [], Console.Error).ConfigureAwait(false);
+            "parley-terminal", "Parley.Terminal", "The terminal", args, Console.Error).ConfigureAwait(false);
 
         if (opened != Unavailable)
         {
@@ -332,8 +352,8 @@ if (arguments.Count == 0)
 var verb = arguments[0];
 var rest = arguments.Skip(1).ToArray();
 
-// **The fourteen operator operations that are the terminal's.** Held as data rather than
-// as fourteen case arms so that the refusal, the help and the test that holds them read one list --
+// **The operator operations that are the terminal's.** Held as data rather than
+// as a case arm each so that the refusal, the help and the test that holds them read one list --
 // three copies of a set like this agree until one of them is edited.
 //
 // `registry` and `open` are deliberately not here: the installers invoke both, so every command
@@ -342,6 +362,7 @@ string[] Moved =
 [
     "retire", "reinstate", "purge", "export", "force-conclude", "prune", "start",
     "archive", "unarchive", "destroy", "refusals", "clarifications", "results", "flags",
+    "spin-off", "move", "stop", "restart", "kill", "freeze", "unfreeze",
 ];
 
 // Options are taken centrally, above the verb, because a flag consumed by the command it belongs
@@ -372,7 +393,7 @@ if (hostWebUi && verb != "serve")
 if (withFiles && verb != "waiting")
 {
     await Console.Error.WriteLineAsync(
-        $"--with-files is only for `parley waiting`, where it adds the file change notices waiting as a third count. "
+        $"--with-files is only for `parley waiting`, where it adds the file gone notices waiting as a third count. "
         + $"`parley {verb}` has no count to add it to.").ConfigureAwait(false);
 
     return Usage;
@@ -393,6 +414,15 @@ if ((webUiAt is not null || noWebUi) && verb != "serve" && verb != "autostart")
         $"--web-ui and --no-web-ui are for `parley serve` and `parley autostart install`, "
         + $"which are the commands that host a console or install one. `parley {verb}` does "
         + "neither.").ConfigureAwait(false);
+
+    return Usage;
+}
+
+if (keepTrying && verb != "up")
+{
+    await Console.Error.WriteLineAsync(
+        $"--keep-trying is only for `parley up`, the node that waits for a broker. `parley {verb}` does not have it.")
+        .ConfigureAwait(false);
 
     return Usage;
 }
@@ -461,8 +491,8 @@ if (Moved.Contains(verb, StringComparer.Ordinal))
         $"'{verb}' is not a command here. Reading and changing a deployment happens in the "
         + "terminal, which shows the lists it works on:"
         + $"{Environment.NewLine}{Environment.NewLine}    parley{Environment.NewLine}"
-        + $"{Environment.NewLine}A machine with no terminal reaches the web UI over an SSH tunnel; "
-        + "the README has the recipe.").ConfigureAwait(false);
+        + $"{Environment.NewLine}The web console does the same, at {WebUiAddress.Loopback} on this machine; "
+        + "from another machine, forward its port over SSH.").ConfigureAwait(false);
 
     // EX_USAGE, so a script detects it rather than reading an empty success.
     return Usage;
@@ -710,8 +740,13 @@ if (verb == "serve" && rest.Length == 0)
 
             using var channel = GrpcChannel.ForAddress(addresses[0]);
 
+            // **Keeps trying, because nobody is watching it.** This is what the logon entry runs. A stream that drops
+            // while the broker keeps serving (seen when a busy broker's HTTP/2 connection closed under thread-pool
+            // starvation) ended the node for good, and every agent in the project read as stranded until somebody
+            // restarted the entry. A deliberate stop cancels `stopping`, which every retry checks first.
             return await NodeCommand.RunAsync(
-                channel, addresses[0], from, reporting, project.Name.Value, residents, stopping)
+                channel, addresses[0], from, reporting, project.Name.Value, residents, stopping,
+                keepTrying: true)
                 .ConfigureAwait(false);
         }
 
@@ -727,7 +762,7 @@ if (verb == "serve" && rest.Length == 0)
         // and a broker that refused to serve because a web page could not bind would take a whole
         // deployment down for the one part of it no agent uses.
         async Task<int> HostingWebUi(
-            IReadOnlyList<string> addresses, TextWriter reporting, CancellationToken stopping)
+            IReadOnlyList<string> addresses, TextWriter reporting, TextWriter failing, CancellationToken stopping)
         {
             // Set apart, because this is the one address on the screen a person is meant to type
             // into a browser. Ruled rather than coloured: this writer is tee'd into --log, so
@@ -741,7 +776,21 @@ if (verb == "serve" && rest.Length == 0)
             // the broker, and that is frequently not a machine with a browser on it at all.
 
             Process? child = null;
+            WebUiReadiness.Said? said = null;
+            Task? followUp = null;
             string? whyNot = null;
+            var installHint = false;
+            var silent = false;
+            var taken = false;
+
+            // **Asked before anything is started.** Something already answering there is another program, and a
+            // child started now could only fail to bind. Whether a child started later is serving is not asked of
+            // the address at all: it says so itself (WebUiReadiness).
+            if (await WebUiReadiness.TakenAsync(webUiAddress, stopping).ConfigureAwait(false))
+            {
+                whyNot = WebUiReadiness.Taken(webUiAddress);
+                taken = true;
+            }
 
             try
             {
@@ -757,14 +806,35 @@ if (verb == "serve" && rest.Length == 0)
                 // ASCII only in this region, comments included: `StartupBannerTests` holds it.
                 // What that guard protects is the block printed on a console whose code page
                 // nobody chose.
+                //
+                // **Its standard input is a pipe from this process, and nothing is ever written to it.** The web
+                // UI is told to stop when that pipe closes. A broker that ends in order closes it below; a broker
+                // that is killed outright (SIGKILL, Stop-Process -Force, a supervisor's hard stop) cannot run any
+                // code at all, but the operating system closes every handle it held, so the pipe closes then too
+                // and the web UI stops instead of holding its port with this broker's settings. Chosen over a
+                // Windows job object and Linux's parent-death signal because it is one mechanism on Windows,
+                // Linux and macOS (which has no parent-death signal), needs no native call, and fails safe: a
+                // web UI run by hand is not given the flag and reads nothing.
                 var start = new ProcessStartInfo(WebUiTool)
                 {
                     UseShellExecute = false,
                     CreateNoWindow = true,
+                    RedirectStandardInput = true,
+
+                    // **Its standard output comes here.** The web UI says on it, in one line, when it is serving, and
+                    // that line is what the address is announced on. Everything else it writes is passed on to this
+                    // process's own output for as long as it runs (WebUiReadiness.Watch), so the pipe never fills.
+                    RedirectStandardOutput = true,
+
+                    // **So are its errors, to this process's error output, which is copied into --log.** Its warnings
+                    // (a webUi.hosts name it left out, the names it also answers to) reached an inherited handle that a
+                    // hidden logon task points at nothing. Read for its whole life too, and neutralised.
+                    RedirectStandardError = true,
                 };
 
                 start.ArgumentList.Add("--listen");
                 start.ArgumentList.Add(webUiAddress);
+                start.ArgumentList.Add("--until-input-closes");
 
                 // **The manifest this process serves, not whichever one the web UI would find on its own.** It locates
                 // one the way every tool does -- the variable, then this machine's -- so without this
@@ -773,18 +843,24 @@ if (verb == "serve" && rest.Length == 0)
                 start.Environment[ProjectManifest.PathVariable] = manifestPath;
 
                 // Only when there is a broker. A machine serving a manifest that names no project yet has none, and
-                // the web UI then reads the manifest and says how to name the first one.
+                // the web UI then reads the manifest and says how to name the first one. Never this process's
+                // PARLEY_BROKER: the web UI reads it as `--broker`, and here it names somebody else's host, so a
+                // console beside a broker with no project would offer that one as this machine.
+                start.Environment.Remove(BrokerEndpoint.Variable);
+
                 if (addresses.Count > 0)
                 {
                     start.ArgumentList.Add("--broker");
                     start.ArgumentList.Add(addresses[0]);
                 }
 
-                child = Process.Start(start);
-
-                if (child is null)
+                // Not started at all when the address was already taken: the reason is known, and a child that
+                // could only fail would print a second, vaguer one. Nor when the broker is already stopping.
+                if (whyNot is null && !stopping.IsCancellationRequested)
                 {
-                    throw new InvalidOperationException($"{WebUiTool} could not be started.");
+                    child = Process.Start(start)
+                        ?? throw new InvalidOperationException($"{WebUiTool} could not be started.");
+                    said = WebUiReadiness.Watch(child, reporting, failing);
                 }
             }
             catch (Exception failure) when (failure is Win32Exception
@@ -795,6 +871,27 @@ if (verb == "serve" && rest.Length == 0)
                 // chosen per machine. Named as a missing tool rather than as a fault, and the
                 // broker keeps serving.
                 whyNot = failure.Message;
+                installHint = true;
+            }
+
+            // **Announced once it says it is serving, never merely once it started, and never because the
+            // address answers.** A child that could not bind used to be announced as serving, and later a program
+            // that took the address after the check above was announced in its place while the child failed and
+            // exited. Waited on once, with a deadline: this is not a wait on the child's life, and a child that
+            // exits is still not restarted.
+            if (child is not null && said is not null)
+            {
+                var outcome = await WebUiReadiness.AwaitAsync(
+                    said, child, WebUiReadiness.Deadline, stopping).ConfigureAwait(false);
+
+                if (outcome == WebUiReadiness.Outcome.Exited)
+                {
+                    // Something answering now is not this broker's web UI, which has exited.
+                    taken = await WebUiReadiness.TakenAsync(webUiAddress, stopping).ConfigureAwait(false);
+                    whyNot = WebUiReadiness.Exited(child.ExitCode, webUiAddress, taken);
+                }
+
+                silent = outcome == WebUiReadiness.Outcome.Silent;
             }
 
             // **Printed either way, and the failure is a line inside it rather than instead of**
@@ -805,9 +902,13 @@ if (verb == "serve" && rest.Length == 0)
             // run where somebody needs to be told there is another way in.
             var opening = whyNot is null
                 ? $"   Web UI:   {webUiAddress}{Environment.NewLine}"
-                    + "   Open that one in a browser."
+                    + (silent
+                        ? "   Started, but not answering yet. The broker will say so here when it does."
+                        : "   Open that one in a browser.")
                 : $"   Web UI:   did not start ({whyNot}){Environment.NewLine}"
-                    + $"   The broker is still serving. Install it: dotnet tool install --global Parley.WebUi";
+                    + "   The broker is still serving."
+                    + (installHint ? $" {Forwarding.InstallHint("parley-web-ui")}" : string.Empty)
+                    + (taken ? $" {WebUiReadiness.ElsewhereAdvice}" : string.Empty);
 
             var body =
                 opening + Environment.NewLine
@@ -823,10 +924,22 @@ if (verb == "serve" && rest.Length == 0)
             var rule = new string(
                 '-', body.Split(Environment.NewLine).Max(line => line.Length));
 
-            await reporting.WriteLineAsync(
-                $"{Environment.NewLine}  {rule}{Environment.NewLine}"
-                + $"{body}{Environment.NewLine}"
-                + $"  {rule}{Environment.NewLine}").ConfigureAwait(false);
+            // Nothing at all once the broker is stopping: an address to open, or a promise to say when it answers,
+            // printed after "stopping" sends a person to a web UI that is being ended.
+            if (!stopping.IsCancellationRequested)
+            {
+                await reporting.WriteLineAsync(
+                    $"{Environment.NewLine}  {rule}{Environment.NewLine}"
+                    + $"{body}{Environment.NewLine}"
+                    + $"  {rule}{Environment.NewLine}").ConfigureAwait(false);
+            }
+
+            // **A web UI announced as not answering yet is followed up once:** a line when it says it is serving,
+            // or when it exits. Not a wait on its life either: it ends at the first of those or at the broker's stop.
+            if (silent && child is not null && said is not null)
+            {
+                followUp = WebUiReadiness.FollowUpAsync(said, child, webUiAddress, reporting, stopping);
+            }
 
             try
             {
@@ -843,20 +956,36 @@ if (verb == "serve" && rest.Length == 0)
                 // **Ended with the broker, so nothing is orphaned.** A web UI outliving the broker
                 // it was started for is a page serving a deployment that has stopped, holding the
                 // port that the next broker's web UI would want.
+                //
+                // Asked first, by closing the pipe it watches, so it stops as Ctrl+C would stop it; ended
+                // outright only when it has not gone within a few seconds.
                 try
                 {
                     if (child is { HasExited: false })
                     {
-                        child.Kill(entireProcessTree: true);
-                        child.WaitForExit(5000);
+                        child.StandardInput.Close();
+
+                        if (!child.WaitForExit(5000))
+                        {
+                            child.Kill(entireProcessTree: true);
+                            child.WaitForExit(5000);
+                        }
                     }
                 }
                 catch (Exception ending) when (ending is InvalidOperationException
                                                    or Win32Exception
-                                                   or NotSupportedException)
+                                                   or NotSupportedException
+                                                   or IOException)
                 {
                     // Already gone, or not this process's to end. Neither is worth a message on a
                     // path that runs while the broker is shutting down.
+                }
+
+                // Finished before the process is let go, so the follow-up never asks a disposed one. The broker
+                // is stopping by now, which is what ends it, and it never throws.
+                if (followUp is not null)
+                {
+                    await followUp.ConfigureAwait(false);
                 }
 
                 child?.Dispose();
@@ -939,15 +1068,20 @@ if (verb == "serve" && rest.Length == 0)
             Console.SetError(TextWriter.Null);
         }
 
+        // **A terminal that closes under a running broker costs it nothing.** A disowned `serve --with-node` got an
+        // IOException on its next console write, and the node's "started" line threw out of an agent's start
+        // (SurvivingWriter). The log, written after the console, is unaffected either way.
         return ServeCommand.RunAsync(
             serving,
             logPath,
-            Console.Out,
-            Console.Error,
+            new SurvivingWriter(Console.Out),
+            new SurvivingWriter(Console.Error),
             hostNode ? HostingNodeFor : null,
             hostWebUi ? HostingWebUi : null,
             watching ? rereadManifest : null,
             checkInstall: true,
+            heartbeat: heartbeat,
+            watchProcess: true,
             cancellationToken: token);
         }).ConfigureAwait(false);
     }
@@ -956,7 +1090,7 @@ if (verb == "serve" && rest.Length == 0)
         // **Every agent this machine started is sent away here, and only here.** A node loop sweeps only a
         // table it created itself; this one it did not create, so ending them belongs to the process that
         // did.
-        await NodeCommand.StopEveryoneAsync(residents, Console.Out).ConfigureAwait(false);
+        await NodeCommand.StopEveryoneAsync(residents, new SurvivingWriter(Console.Out)).ConfigureAwait(false);
     }
 }
 
@@ -1134,7 +1268,17 @@ catch (InvalidOperationException ex)
     return Config;
 }
 
-using var channel = GrpcChannel.ForAddress(endpoint);
+// Pinged, as the adapter's connection is: a node waiting on a stream cannot otherwise tell a tunnel that went silent from a quiet
+// broker, and would stay "joined" to nothing for as long as the machine is up.
+using var channel = GrpcChannel.ForAddress(endpoint, new GrpcChannelOptions
+{
+    HttpHandler = new System.Net.Http.SocketsHttpHandler
+    {
+        KeepAlivePingDelay = TimeSpan.FromSeconds(60),
+        KeepAlivePingTimeout = TimeSpan.FromSeconds(30),
+        EnableMultipleHttp2Connections = true,
+    },
+});
 
 try
 {
@@ -1183,7 +1327,7 @@ try
 
         // **What is in flight, for the one caller that has to know before it stops a broker.**
         // §12 says the node stopping tells every agent it started to quit, and a Request already
-        // drained into an agent's inbox is marked delivered -- so killing the agent that holds it
+        // drained into an agent's inbox and acknowledged is marked delivered -- so killing the agent that holds it
         // leaves the exchange open and owed with nothing running to do the work, flagged as
         // collected and left (§6) against an agent that was killed rather than one that ignored
         // anything.
@@ -1231,7 +1375,7 @@ catch (RpcException failure) when (failure.StatusCode == StatusCode.Unavailable)
 }
 catch (RpcException failure)
 {
-    await Console.Error.WriteLineAsync($"The broker refused that: {failure.Status.Detail}")
+    await Console.Error.WriteLineAsync($"The broker refused that: {Inert.Line(failure.Status.Detail)}")
         .ConfigureAwait(false);
 
     return IoError;
@@ -1256,10 +1400,13 @@ async Task<int> UpAsync() =>
             channel,
             endpoint,
             resolvedNodeConfig.Value ?? NodeCatalogue.DefaultFileName,
-            Console.Out,
+
+            // A closed terminal must not end the node or lose the agent it was starting (SurvivingWriter).
+            new SurvivingWriter(Console.Out),
             project?.Name.Value,
             null,
-            token)).ConfigureAwait(false);
+            token,
+            keepTrying: keepTrying)).ConfigureAwait(false);
 
 // Runs something that would otherwise never return, and gives the terminal back on Ctrl+C.
 //
@@ -1284,6 +1431,35 @@ async Task<int> UntilInterrupted(Func<CancellationToken, Task<int>> run)
     }
 
     Console.CancelKeyPress += Stop;
+
+    // **SIGTERM is Ctrl+C from a supervisor, and SIGHUP is Ctrl+C from a terminal that went away.** systemd and
+    // launchd stop a service with SIGTERM and then SIGKILL. Only Ctrl+C reached the token, so a SIGTERM was taken by
+    // each project's web host (which cancels it and stops only itself), the token never moved, and the process stayed
+    // up with its node retrying a broker that had stopped until the supervisor killed it outright -- agents not told to
+    // quit, the web UI orphaned. Each now does exactly what the first Ctrl+C does.
+    //
+    // Not on Windows, where these two are a closed console window and logoff or shutdown: Windows ends the process
+    // a few seconds after either whatever a handler says, so they are left as they were.
+    var signalled = 0;
+
+    void Signalled(PosixSignalContext context)
+    {
+        // The first one stops. A later one is left to the default handling, as a second Ctrl+C is: if shutting down
+        // has wedged, a second signal must still end the process.
+        if (Interlocked.Exchange(ref signalled, 1) == 0)
+        {
+            context.Cancel = true;
+            stopping.Cancel();
+        }
+    }
+
+    using var terminated = OperatingSystem.IsWindows()
+        ? null
+        : PosixSignalRegistration.Create(PosixSignal.SIGTERM, Signalled);
+
+    using var hungUp = OperatingSystem.IsWindows()
+        ? null
+        : PosixSignalRegistration.Create(PosixSignal.SIGHUP, Signalled);
 
     try
     {

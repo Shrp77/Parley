@@ -10,6 +10,7 @@ namespace Parley.Core.Tests;
 /// work, and nothing is deadlocked because nothing waits synchronously. It is recorded so the person running
 /// the deployment can see a loop that has stopped making progress.
 /// </remarks>
+[Unit]
 public sealed class WaitForGraphTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

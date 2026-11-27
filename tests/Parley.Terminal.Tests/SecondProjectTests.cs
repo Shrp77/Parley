@@ -33,6 +33,7 @@ namespace Parley.Terminal.Tests;
 /// across every project one process hosts, so the second ask finds the first one's process.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SecondProjectTests
 {
     [Fact]

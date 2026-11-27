@@ -19,6 +19,7 @@ namespace Parley.Server.Tests;
 /// partial unique index dropped and the never-asked rule narrowed to live questions.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class NothingIsAskedTwiceTests
 {
     [Fact]

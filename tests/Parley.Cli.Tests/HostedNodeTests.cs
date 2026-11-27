@@ -25,6 +25,8 @@ namespace Parley.Cli.Tests;
 /// to be listed first, which is one nobody named.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class HostedNodeTests : IDisposable
 {
     private readonly string _directory =

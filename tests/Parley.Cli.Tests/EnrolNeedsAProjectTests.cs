@@ -24,6 +24,7 @@ namespace Parley.Cli.Tests;
 /// half of <c>parley files</c> was unreachable from a shell while every in-process test passed.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class EnrolNeedsAProjectTests : IDisposable
 {
     private readonly string _directory =

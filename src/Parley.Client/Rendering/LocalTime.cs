@@ -15,7 +15,7 @@ namespace Parley.Client.Rendering;
 /// </para>
 /// <para>
 /// So the conversion belongs here, at the views, and never inside
-/// <see cref="Transcript.Write"/>. A test asserts the export contains no local time, because the
+/// <see cref="Transcript.Write(string, string, Parley.Core.ConversationExport)"/>. A test asserts the export contains no local time, because the
 /// obvious refactor — "make the transcript writer format times nicely" — is the one that breaks it.
 /// </para>
 /// <para>

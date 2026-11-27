@@ -1,0 +1,293 @@
+@page
+@model Parley.Web.Pages.GraphModel
+@using Parley.Client.Views
+@using Parley.Client.Rendering
+@{
+    Layout = null;
+    var picture = Model.Picture;
+    static string Enc(string value) => Uri.EscapeDataString(value);
+    static string Plural(int n, string one, string many) => n == 1 ? $"1 {one}" : $"{n} {many}";
+    // The agent's page in the project that named its tasks, where every one of them is listed.
+    static string TaskPage(WorkingAgent agent)
+    {
+        var post = agent.Posts.FirstOrDefault(p => p.Project == agent.TasksProject) ?? agent.Posts[0];
+        return $"/Projects/Agent?project={Uri.EscapeDataString(post.Project)}&agent={Uri.EscapeDataString(post.Name)}";
+    }
+    // One task's place on that page: its page of twenty, and its row.
+    static string AtTask(WorkingAgent agent, int index, string id) =>
+        $"{TaskPage(agent)}&tasks={(index / TaskWords.MostListed) + 1}#task-{Uri.EscapeDataString(id)}";
+    var hiddenWords = picture.Hidden == 0 ? null : $"{Plural(picture.Hidden, "agent", "agents")} not working {(picture.Hidden == 1 ? "is" : "are")} hidden";
+    var workingWords = Plural(picture.Working.Count, "agent", "agents") + " working";
+    var filtered = Model.ChosenProjects.Count + Model.ChosenAgents.Count > 0;
+    // The list is redrawn on every refresh, so its queue is bounded too; the rest is counted.
+    const int ListedQueued = 20;
+}
+@* What is being worked on now (spec 041, reworked by feature 042 from the person's feedback). A fragment: the console's script
+   puts it in the panel, sends the filter's choices back and moves and zooms the picture. Every fact in the picture is also in
+   the list after it, so nothing depends on seeing a colour, a line or the picture at all. Freezing every agent in a project is
+   on the project's Agents page. *@
+<div class="pg" data-asof="@Model.AsOf.ToString("O")">
+    <div class="pg-filters">
+        <details class="pg-filter" data-pg-keep="filter">
+            <summary class="button tonal"><span class="icon" aria-hidden="true">tune</span> Filter</summary>
+            <div class="pg-filter-body">
+                <fieldset>
+                    <legend>Projects</legend>
+                    @foreach (var name in picture.Projects)
+                    {
+                        <label class="toggle"><input type="checkbox" name="project" value="@name" checked="@Model.ChosenProjects.Contains(name)" /> <span>@name</span></label>
+                    }
+                </fieldset>
+                <fieldset>
+                    <legend>Agents</legend>
+                    @if (picture.Agents.Count == 0)
+                    {
+                        <p class="hint">No agent is registered yet.</p>
+                    }
+                    @foreach (var name in picture.Agents)
+                    {
+                        <label class="toggle"><input type="checkbox" name="agent" value="@name" checked="@Model.ChosenAgents.Contains(name)" /> <span>@name</span></label>
+                    }
+                </fieldset>
+            </div>
+        </details>
+        @if (filtered)
+        {
+            <ul class="filter-chips" aria-label="Filtered on">
+                @foreach (var name in Model.ChosenProjects)
+                {
+                    <li><button type="button" class="chip" data-pg-drop="project" value="@name" title="Take this filter off">Project: @name<span class="visually-hidden">, remove this filter</span> <span class="icon" aria-hidden="true">close</span></button></li>
+                }
+                @foreach (var name in Model.ChosenAgents)
+                {
+                    <li><button type="button" class="chip" data-pg-drop="agent" value="@name" title="Take this filter off">Agent: @name<span class="visually-hidden">, remove this filter</span> <span class="icon" aria-hidden="true">close</span></button></li>
+                }
+            </ul>
+        }
+    </div>
+
+    @foreach (var problem in picture.Problems)
+    {
+        <p class="pg-note" role="status"><strong>@problem.Project</strong> @(problem.Unreachable ? "project, unreachable." : "project, could not be read in full.") @problem.Problem</p>
+    }
+
+    @if (picture.Working.Count == 0)
+    {
+        <p class="pg-empty">Nothing is being worked on right now@(filtered ? " in what is chosen" : "").@(hiddenWords is null ? "" : $" {hiddenWords}.")</p>
+    }
+    else
+    {
+        <div class="pg-stage">
+        <div class="pg-canvas" tabindex="0" data-w="@picture.Width" data-h="@picture.Height"
+             aria-label="The picture of what is being worked on. Drag or use the arrow keys to move it; plus and minus zoom.">
+            <svg class="pg-svg" viewBox="0 0 @picture.Width @picture.Height" role="img" preserveAspectRatio="xMinYMin meet"
+                 aria-label="Each working agent, what it holds, what waits for it and its background tasks. The same facts follow as a list.">
+                @foreach (var edge in picture.Edges)
+                {
+                    <path class="pg-edge pg-edge-@edge.Kind" d="@edge.Path" />
+                }
+                @foreach (var box in picture.Boxes)
+                {
+                    var agent = box.Agent is { } a ? picture.Working[a] : null;
+                    var x = box.X;
+                    var y = box.Y;
+
+                    @switch (box.Kind)
+                    {
+                        case WorkBoxKind.Root:
+                            <g class="pg-node pg-root">
+                                <rect x="@x" y="@y" width="@box.Width" height="@box.Height" rx="14" />
+                                <text x="@(x + (box.Width / 2))" y="@(y + 23)" text-anchor="middle" class="pg-title">Parley, now</text>
+                                <text x="@(x + (box.Width / 2))" y="@(y + 41)" text-anchor="middle" class="pg-sub">@workingWords@(picture.Hidden > 0 ? $" · {picture.Hidden} hidden" : "")</text>
+                            </g>
+                            break;
+                        case WorkBoxKind.Agent:
+                            var home = agent!.Posts[0];
+                            var frozen = agent.Posts.Any(p => p.Frozen);
+                            var under = agent.Current.Count + agent.Queued.Count + agent.Background;
+                            var fx = x + box.Width - 40;
+                            var fy = y + 14;
+                            <g class="pg-node pg-agent@(frozen ? " pg-frozen" : "")">
+                                <title>@agent.Name: @agent.Now.Words</title>
+                                <rect x="@x" y="@y" width="@box.Width" height="@box.Height" rx="14" />
+                                <a href="/Projects/Agent?project=@Enc(home.Project)&amp;agent=@Enc(home.Name)"><text x="@(x + 16)" y="@(y + 25)" class="pg-title">@WorkNow.NameLine(agent.Name)</text></a>
+                                <text x="@(x + 16)" y="@(y + 45)" class="pg-sub">@agent.Now.Words@(agent.Posts.Count > 1 ? $" · {agent.Posts.Count} projects" : "")@(agent.Folded ? $" · {Plural(under, "item", "items")} folded" : "")</text>
+                                @* Folds what is under the agent, or opens it again; the name is the link to the agent's page.
+                                   Folding changes only the picture, which a screen reader reads as one image; the list holds
+                                   everything either way. *@
+                                <g class="pg-fold" role="button" tabindex="0" data-pg-fold="@agent.Name" aria-expanded="@(agent.Folded ? "false" : "true")"
+                                   aria-label="@(agent.Folded ? "Show" : "Hide") what is under @agent.Name">
+                                    <title>@(agent.Folded ? "Show" : "Hide") what is under it</title>
+                                    <rect x="@fx" y="@fy" width="32" height="32" rx="16" />
+                                    <path d="@(agent.Folded ? $"M {fx + 10} {fy + 13} L {fx + 16} {fy + 19} L {fx + 22} {fy + 13}" : $"M {fx + 10} {fy + 19} L {fx + 16} {fy + 13} L {fx + 22} {fy + 19}")" />
+                                </g>
+                            </g>
+                            break;
+                        case WorkBoxKind.Now:
+                            var held = box.Index < agent!.Current.Count ? agent.Current[box.Index] : null;
+                            @if (held is null)
+                            {
+                                <g class="pg-node pg-now">
+                                    <title>A turn does not say what it is for, and it holds nothing it has not answered.</title>
+                                    <rect x="@x" y="@y" width="@box.Width" height="@box.Height" rx="12" />
+                                    <text x="@(x + 14)" y="@(y + 22)" class="pg-tag">NOW</text>
+                                    <text x="@(x + 14)" y="@(y + 42)" class="pg-title">Nothing it holds</text>
+                                    <text x="@(x + 14)" y="@(y + 59)" class="pg-sub">It has answered everything it collected</text>
+                                </g>
+                            }
+                            else
+                            {
+                                <g class="pg-node pg-now">
+                                    <title>@held.Project, @held.Conversation, exchange #@held.Exchange: @held.Whole</title>
+                                    <rect x="@x" y="@y" width="@box.Width" height="@box.Height" rx="12" />
+                                    <text x="@(x + 14)" y="@(y + 22)" class="pg-tag">NOW · @held.Project</text>
+                                    <a href="/Conversations/Detail?project=@Enc(held.Project)&amp;id=@Enc(held.Conversation)"><text x="@(x + 14)" y="@(y + 42)" class="pg-title">@WorkNow.NameLine(held.Conversation) <tspan class="pg-sub">#@held.Exchange</tspan></text></a>
+                                    <text x="@(x + 14)" y="@(y + 59)" class="pg-sub">@(held.Ask.Length > 0 ? held.Ask : "What was asked could not be read")</text>
+                                </g>
+                            }
+                            break;
+                        case WorkBoxKind.Queued:
+                            var waits = agent!.Queued[box.Index];
+                            <g class="pg-node pg-queued">
+                                <title>@waits.Project, @waits.Conversation, exchange #@waits.Exchange, @(waits.AnswerWaits ? "a reply waits, not collected yet" : "not collected yet"): @waits.Whole</title>
+                                <rect x="@x" y="@y" width="@box.Width" height="@box.Height" rx="12" />
+                                <text x="@(x + 14)" y="@(y + 21)" class="pg-tag">@(waits.AnswerWaits ? "REPLY WAITS" : "QUEUED") @(box.Index + 1) · @waits.Project</text>
+                                <a href="/Conversations/Detail?project=@Enc(waits.Project)&amp;id=@Enc(waits.Conversation)"><text x="@(x + 14)" y="@(y + 40)" class="pg-title">@WorkNow.NameLine(waits.Conversation) <tspan class="pg-sub">#@waits.Exchange</tspan></text></a>
+                                <text x="@(x + 14)" y="@(y + 56)" class="pg-sub">@(waits.Ask.Length > 0 ? waits.Ask : "What was asked could not be read")</text>
+                            </g>
+                            break;
+                        case WorkBoxKind.Task:
+                            @* Named by the agent where it said, else by the runner; its words are plain text, drawn encoded and
+                               never as markup. What is followed is the link, drawn as where it goes (a web address by its host),
+                               never the name the agent chose. *@
+                            var task = agent!.TaskAt(box.Index);
+                            var taskName = TaskWords.Name(task);
+                            var taskLink = task?.Link is { } l ? TaskLinks.Href(l, agent.TasksProject, AtTask(agent, box.Index, task.Id)) : default;
+                            <g class="pg-node pg-task">
+                                <title>@taskName@(task?.Description is { Length: > 0 } said ? ": " + said : "")@(task?.Link is { } shown ? $" ({TaskWords.Link(shown)})" : "")</title>
+                                <rect x="@x" y="@y" width="@box.Width" height="@box.Height" rx="12" />
+                                @if (taskLink.Href is { } href)
+                                {
+                                    <a href="@href" target="@(taskLink.External ? "_blank" : null)" rel="@(taskLink.External ? "noopener noreferrer" : null)"><text x="@(x + 14)" y="@(y + 18)" class="pg-tag">BACKGROUND · @WorkNow.NameLine(TaskWords.Where(task!.Link!))</text></a>
+                                }
+                                else
+                                {
+                                    <g><text x="@(x + 14)" y="@(y + 18)" class="pg-tag">BACKGROUND</text></g>
+                                }
+                                <text x="@(x + 14)" y="@(y + 35)" class="pg-title">@WorkNow.NameLine(taskName)</text>
+                            </g>
+                            break;
+                        case WorkBoxKind.MoreTasks:
+                            <g class="pg-node pg-more">
+                                <title>Every background task, on its page</title>
+                                <rect x="@x" y="@y" width="@box.Width" height="@box.Height" rx="10" />
+                                <a href="@TaskPage(agent!)#background-work"><text x="@(x + 14)" y="@(y + 20)" class="pg-sub">@Plural(box.Index, "more background task", "more background tasks"): see all</text></a>
+                            </g>
+                            break;
+                        default:
+                            var counted = box.Kind switch
+                            {
+                                WorkBoxKind.MoreHeld => "more it holds",
+                                _ => "more queued",
+                            };
+                            <g class="pg-node pg-more">
+                                <rect x="@x" y="@y" width="@box.Width" height="@box.Height" rx="10" />
+                                <text x="@(x + 14)" y="@(y + 20)" class="pg-sub">@box.Index @counted</text>
+                            </g>
+                            break;
+                    }
+                }
+            </svg>
+        </div>
+        @* Over the picture, stacked, and moved by its handle (the person's feedback on feature 042); where it was put is kept
+           in this browser. The glyphs are drawn here, not taken from the icon font, which holds only the icons the console
+           named before. *@
+        <div class="pg-tools" role="group" aria-label="Zoom">
+            <button type="button" class="pg-grip" data-pg-grip aria-label="Move these buttons: drag, or use the arrow keys" title="Move these buttons">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g fill="currentColor"><circle cx="9" cy="6" r="1.6" /><circle cx="15" cy="6" r="1.6" /><circle cx="9" cy="12" r="1.6" /><circle cx="15" cy="12" r="1.6" /><circle cx="9" cy="18" r="1.6" /><circle cx="15" cy="18" r="1.6" /></g></svg>
+            </button>
+            <button type="button" data-pg-zoom="in" aria-label="Zoom in" title="Zoom in">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14" /></svg>
+            </button>
+            <button type="button" data-pg-zoom="fit" aria-label="Fit the whole picture" title="Fit the whole picture">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /></svg>
+            </button>
+            <button type="button" data-pg-zoom="out" aria-label="Zoom out" title="Zoom out">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 12h14" /></svg>
+            </button>
+        </div>
+        </div>
+        @if (hiddenWords is not null)
+        {
+            <p class="pg-hidden-count">@hiddenWords.</p>
+        }
+    }
+
+    @* The picture's facts as words, for a screen reader and the keyboard (spec 041 FR-003). The person asked that it not be
+       shown (feature 042), so it is drawn only while the focus is in it; tabbing past the picture reaches it. *@
+    <section class="pg-list" aria-label="What is being worked on, as a list">
+        <h2 class="pg-list-head">What is being worked on, as a list</h2>
+        @if (picture.Working.Count == 0)
+        {
+            <p>No agent is working.</p>
+        }
+        @foreach (var agent in picture.Working)
+        {
+            <h3>@agent.Name</h3>
+            <p>@agent.Now.Words</p>
+            <ul>
+                @if (agent.Current.Count == 0)
+                {
+                    <li>Holds nothing it has not answered.</li>
+                }
+                @foreach (var held in agent.Current.Take(ListedQueued))
+                {
+                    <li>Holds: <a href="/Conversations/Detail?project=@Enc(held.Project)&amp;id=@Enc(held.Conversation)">@held.Project, @held.Conversation</a>, exchange #@held.Exchange@(held.Whole.Length > 0 ? ": " + held.Whole : "")</li>
+                }
+                @if (agent.Current.Count > ListedQueued)
+                {
+                    <li>@(agent.Current.Count - ListedQueued) more it holds, not listed.</li>
+                }
+                @for (var n = 0; n < Math.Min(agent.Queued.Count, ListedQueued); n++)
+                {
+                    var waits = agent.Queued[n];
+                    <li>Queued @(n + 1), @(waits.AnswerWaits ? "a reply waits, not collected yet" : "not collected yet"): <a href="/Conversations/Detail?project=@Enc(waits.Project)&amp;id=@Enc(waits.Conversation)">@waits.Project, @waits.Conversation</a>, exchange #@waits.Exchange@(waits.Whole.Length > 0 ? ": " + waits.Whole : "")</li>
+                }
+                @if (agent.Queued.Count > ListedQueued)
+                {
+                    <li>@(agent.Queued.Count - ListedQueued) more queued, not listed.</li>
+                }
+                @* Each task as the picture names it, a stand-in where the node named none, as many as one page of the agent's
+                   page holds; past that, the agent's page lists them all. *@
+                @if (agent.Background > 0)
+                {
+                    <li>@(agent.Background == 1 ? "1 background task" : $"{agent.Background} background tasks") running:</li>
+                }
+                @{ var listedTasks = TaskWords.Every(agent.Tasks ?? [], agent.Background); }
+                @for (var t = 0; t < Math.Min(listedTasks.Count, TaskWords.MostListed); t++)
+                {
+                    var named = listedTasks[t];
+                    var listedLink = named?.Link is { } ll ? TaskLinks.Href(ll, agent.TasksProject, AtTask(agent, t, named.Id)) : default;
+                    <li>
+                        Background: @TaskWords.Name(named)@(TaskWords.Kind(named) is { Length: > 0 } kind ? $" ({kind})" : "")@(named?.Description is { Length: > 0 } said ? ". " + said : "")
+                        @if (listedLink.Href is { } listedHref)
+                        {
+                            <a href="@listedHref" target="@(listedLink.External ? "_blank" : null)" rel="@(listedLink.External ? "noopener noreferrer" : null)">@TaskWords.Link(named!.Link!)</a>
+                        }
+                    </li>
+                }
+                @if (agent.Background > TaskWords.MostListed)
+                {
+                    <li><a href="@TaskPage(agent)#background-work">Every background task, on its page.</a></li>
+                }
+            </ul>
+            <p class="pg-acts">
+                @foreach (var post in agent.Posts)
+                {
+                    var project = Enc(post.Project);
+                    <a href="/Projects/Act?project=@project&amp;action=@(post.Frozen ? "unfreeze" : "freeze")&amp;subject=@Enc(post.Name)">@(post.Frozen ? "Unfreeze" : "Freeze") @(post.Name == agent.Name ? "" : post.Name + " ")in @post.Project</a>
+                }
+            </p>
+        }
+    </section>
+</div>

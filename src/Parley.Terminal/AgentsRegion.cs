@@ -110,6 +110,7 @@ internal sealed class AgentsRegion : FrameView
 
     internal AgentsRegion()
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = RegionTitle;
         CanFocus = true;
         SetScheme(Colours.Region(Colours.Agents));
@@ -420,7 +421,7 @@ internal sealed class AgentsRegion : FrameView
     /// </para>
     /// <para>
     /// The remaining groups are ordered by how much they ask of the reader: what is running, what
-    /// could be, what will not be, and what an operator withdrew. Alphabetical within a group,
+    /// could be, what will not be, and what is retired. Alphabetical within a group,
     /// because the order of two agents in the same state carries no information and a stable order
     /// is what lets an eye return to where it was.
     /// </para>
@@ -490,6 +491,9 @@ internal sealed class AgentsRegion : FrameView
     private static int Rank(string heading) => heading switch
     {
         Seats => 0,
+        Standing.Working => 1,
+        Standing.StoppedRefused => 1,
+        Standing.Ready => 2,
         Standing.Running => 2,
         Standing.NeverRun => 3,
         Standing.Idle => 4,
@@ -530,7 +534,38 @@ internal sealed class AgentsRegion : FrameView
         var at = row.Name.IndexOf('@', StringComparison.Ordinal);
         var role = at < 0 ? row.Name : row.Name[..at];
 
-        return ActivityOf(role) is { } doing ? $"  — {Safe.Text(doing)}" : string.Empty;
+        if (ActivityOf(role) is { } doing)
+        {
+            return $"  — {Safe.Text(doing)}";
+        }
+
+        // How long, on the row, because the heading already says what.
+        var turns = Registry.FirstOrDefault(record => record.Name.Value == row.Name)?.Turns;
+
+        return turns switch
+        {
+            { Reported: true, RunningSince: { } running } => "  — " + Activities.For(running, DateTimeOffset.UtcNow),
+
+            // Waiting on its background work: the first task by name and how many more, so the row says what, not only
+            // how many. Alt+B lists them all. Before a refused stop, as the heading decides it (AgentStanding): the agent
+            // waiting on work it started is the one under that heading.
+            { Reported: true, BackgroundTasks: > 0 } waiting => "  — " + Safe.Text(FirstOf(waiting)),
+            { Reported: true, LastPermissionDenials: > 0, LastEnded: { } ended } => "  — " + Activities.For(ended, DateTimeOffset.UtcNow),
+            _ => string.Empty,
+        };
+    }
+
+    /// <summary>An agent's first background task by name, and how many more.</summary>
+    /// <param name="turns">What its node last said.</param>
+    /// <returns><c>Checking VAT on gift cards, +2 more</c>, or the stand-in for an unnamed task.</returns>
+    private static string FirstOf(TurnStanding turns)
+    {
+        ArgumentNullException.ThrowIfNull(turns);
+
+        var first = TaskWords.Name(turns.Named.Count > 0 ? turns.Named[0] : null);
+        var more = turns.BackgroundTasks - 1;
+
+        return more > 0 ? $"{first}, +{more} more" : first;
     }
 
     /// <summary>What colour a row earns from where its agent stands.</summary>

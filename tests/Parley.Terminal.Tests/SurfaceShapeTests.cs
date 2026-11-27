@@ -19,6 +19,7 @@ namespace Parley.Terminal.Tests;
 /// <c>internal</c> is a keyword somebody can forget and a partial rewrite is exactly when.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SurfaceShapeTests
 {
     private static IEnumerable<Type> Exported =>

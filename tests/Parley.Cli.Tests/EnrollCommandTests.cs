@@ -24,6 +24,7 @@ namespace Parley.Cli.Tests;
 /// success. Nothing else holds a copy of that file.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class EnrollCommandTests : IDisposable
 {
     private readonly string _root =
@@ -102,6 +103,34 @@ public sealed class EnrollCommandTests : IDisposable
             cancellationToken: TestContext.Current.CancellationToken);
 
         return (code, output.ToString(), error.ToString());
+    }
+
+    [Theory]
+    [InlineData(true, "CLAUDE.md")]
+    [InlineData(false, "CLAUDE.md")]
+    [InlineData(true, ".mcp.json")]
+    public async Task A_file_another_program_holds_stops_the_run_and_names_that_file(bool describe, string held)
+    {
+        // Read as absent, a held file made the plan say *create*; caught as a parse failure, it blamed .mcp.json for a
+        // held CLAUDE.md and said to fix or move it (review, lens 1 round 13, lens 3 round 12).
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows enforces a sharing mode on every open");
+        Repository("orders");
+        var path = Path.Combine(Checkouts, "orders", held);
+
+        await File.WriteAllTextAsync(path, held == ".mcp.json" ? "{}" : "# Orders\n", TestContext.Current.CancellationToken);
+
+        int code;
+        string error;
+
+        using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            (code, _, error) = await EnrolAsync(NodePath, describe, Chosen(unattended: false));
+        }
+
+        Assert.NotEqual(0, code);
+        Assert.Contains(held, error, StringComparison.Ordinal);
+        Assert.Contains("run this again", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("cannot be merged into", error, StringComparison.Ordinal);
     }
 
     [Fact]

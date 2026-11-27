@@ -15,6 +15,7 @@ namespace Parley.Headless.Tests;
 /// nobody chose. It joined, reported that it could start nothing, and every agent on the machine
 /// stayed startable-and-never-started.
 /// </remarks>
+[Integration]
 public sealed class NodeCatalogueTests : IDisposable
 {
     private readonly string _root =

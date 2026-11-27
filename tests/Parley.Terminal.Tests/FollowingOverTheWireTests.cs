@@ -25,6 +25,8 @@ namespace Parley.Terminal.Tests;
 /// broker is serving that store on another thread and one connection is not two writers.
 /// </para>
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class FollowingOverTheWireTests : IDisposable
 {
     private const string Conversation = "release-notes";

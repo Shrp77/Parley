@@ -27,6 +27,7 @@ namespace Parley.Mcp.Tests;
 /// fail a suite about Parley — the source-level checks still run there.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WaitingHookRunTests : IAsyncDisposable
 {
     private const string Script = "plugins/parley/hooks/parley_waiting.py";
@@ -105,6 +106,11 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
                 RedirectStandardError = true,
                 UseShellExecute = false,
             });
+
+            // Read, because the help is longer than a pipe holds: left unread, the tool blocks writing it and this waits out
+            // the whole minute, on every run of this class.
+            _ = probe?.StandardOutput.ReadToEndAsync();
+            _ = probe?.StandardError.ReadToEndAsync();
 
             probe?.WaitForExit(milliseconds: 60_000);
         }
@@ -236,7 +242,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
 
     /// <summary>Builds a store holding one undelivered Request from a peer, and serves it.</summary>
     /// <param name="ct">Cancels the seeding.</param>
-    /// <param name="withFileNotice">Also leaves inventory one file change notice waiting, and no mail.</param>
+    /// <param name="withFileNotice">Also leaves inventory one file gone notice waiting, and no mail.</param>
     /// <remarks>
     /// A broker is started over the seeded file, because the hook asks rather than reads. That is
     /// heavier than opening a database in the test and it is the arrangement being checked: the
@@ -270,24 +276,19 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
 
         if (withFileNotice)
         {
-            // Inventory fetched a file and billing then replaced it: one change notice waiting, and no mail at all.
+            // Inventory fetched a file and billing then removed it: one gone notice waiting, and no mail at all.
             var files = new SharedFileRepository(connection);
             var name = SharedFileName.Create("price-snapshot.md");
+            var bytes = System.Text.Encoding.UTF8.GetBytes("net of tax");
 
-            foreach (var (content, at) in new[] { ("net of tax", T0), ("gross of tax", T0.AddMinutes(1)) })
-            {
-                var bytes = System.Text.Encoding.UTF8.GetBytes(content);
-
-                await files.PlaceAsync(
-                    "invoice-rounding", name, ContentHash.Of(bytes), bytes.Length, Billing, modifiedTicks: 1, at,
-                    takenOnDisk: _ => false, cancellationToken: ct);
-
-                if (at == T0)
-                {
-                    await new FileNoticeRepository(connection).RecordFetchAsync(
-                        Inventory, "invoice-rounding", name, ContentHash.Of(bytes), T0, cancellationToken: ct);
-                }
-            }
+            await files.PlaceAsync(
+                "invoice-rounding", name, ContentHash.Of(bytes), bytes.Length, Billing, modifiedTicks: 1, T0,
+                takenOnDisk: _ => false, cancellationToken: ct);
+            await new FileNoticeRepository(connection).RecordFetchAsync(
+                Inventory, "invoice-rounding", name, ContentHash.Of(bytes), T0, cancellationToken: ct);
+            _ = await files.RemoveAsync(
+                (await files.GetAsync("invoice-rounding", name, cancellationToken: ct))!, Billing, T0.AddMinutes(1),
+                cancellationToken: ct);
         }
 
         _connection = connection;
@@ -338,6 +339,14 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
             RedirectStandardError = true,
             UseShellExecute = false,
         };
+
+        // Every PARLEY_ variable this process inherited is cleared first, as CLAUDE.md requires of a test that starts a
+        // tool: PARLEY_BROKER outranks --project, so a shell pointed at a live broker had the hook ask it, and an
+        // inherited PARLEY_NODE_CONFIG named the live catalogue (review, lens 3 round 20).
+        foreach (var name in start.Environment.Keys.Where(key => key.StartsWith("PARLEY_", StringComparison.OrdinalIgnoreCase)).ToList())
+        {
+            start.Environment.Remove(name);
+        }
 
         // The hook shells out to `parley waiting`, so the tool has to be findable. Prepended
         // rather than replacing PATH, because the interpreter itself needs whatever is already
@@ -394,6 +403,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         return specific.GetProperty("additionalContext").GetString()!;
     }
 
+    [Slow]
     [Theory]
     [InlineData("PostToolBatch")]
     [InlineData("Stop")]
@@ -412,6 +422,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.DoesNotContain("systemMessage", output, StringComparison.Ordinal);
     }
 
+    [Slow]
     [Fact]
     public async Task A_turn_already_continuing_is_not_held_a_second_time()
     {
@@ -426,6 +437,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.Empty(Run("Stop", new { stop_hook_active = true }));
     }
 
+    [Slow]
     [Theory]
     [InlineData("PostToolBatch")]
     [InlineData("Stop")]
@@ -442,6 +454,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.Empty(Run(hookEvent, new { agent_id = "sub-1" }));
     }
 
+    [Slow]
     [Theory]
     [InlineData("SessionStart")]
     [InlineData("UserPromptSubmit")]
@@ -459,6 +472,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.DoesNotContain("hookSpecificOutput", output, StringComparison.Ordinal);
     }
 
+    [Slow]
     [Theory]
     [InlineData("SessionStart")]
     [InlineData("UserPromptSubmit")]
@@ -485,6 +499,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.DoesNotContain("billing@test", output, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Slow]
     [Theory]
     [InlineData("SessionStart")]
     [InlineData("UserPromptSubmit")]
@@ -513,6 +528,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.Contains("carry on with what you were asked", output, StringComparison.Ordinal);
     }
 
+    [Slow]
     [Theory]
     [InlineData("SessionStart")]
     [InlineData("UserPromptSubmit")]
@@ -536,6 +552,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.Empty(Run(hookEvent));
     }
 
+    [Slow]
     [Theory]
     [InlineData("SessionStart")]
     [InlineData("UserPromptSubmit")]
@@ -549,13 +566,14 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
 
         var output = Run(hookEvent);
 
-        Assert.Contains("1 notice that a file you fetched has changed or gone", output, StringComparison.Ordinal);
+        Assert.Contains("1 notice that a file you fetched or placed has gone or was tampered with", output, StringComparison.Ordinal);
         Assert.DoesNotContain("price-snapshot", output, StringComparison.Ordinal);
         Assert.DoesNotContain("uncollected message", output, StringComparison.Ordinal);
     }
 
+    [Slow]
     [Fact]
-    public async Task A_file_change_notice_alone_does_not_hold_a_turn_open()
+    public async Task A_file_gone_notice_alone_does_not_hold_a_turn_open()
     {
         // A notice wakes nothing (SPEC.md §9.5). Speaking at Stop continues the turn, which is a turn asked for.
         await SeedAsync(TestContext.Current.CancellationToken, withFileNotice: true);
@@ -565,6 +583,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.Empty(Run("Stop", new { stop_hook_active = false }));
     }
 
+    [Slow]
     [Fact]
     public async Task An_event_the_script_does_not_know_is_silent()
     {
@@ -620,6 +639,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         File.WriteAllText(Path.Combine(_workspace, ".mcp.json"), JsonSerializer.Serialize(new { mcpServers = servers }));
     }
 
+    [Slow]
     [Theory]
     [InlineData("UserPromptSubmit")]
     [InlineData("PostToolBatch")]
@@ -649,6 +669,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.Contains("1 uncollected message", Run("UserPromptSubmit"), StringComparison.Ordinal);
     }
 
+    [Slow]
     [Fact]
     public async Task A_repository_answering_in_two_projects_hears_from_the_one_that_answers()
     {
@@ -663,6 +684,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.Contains("1 uncollected message", Run("UserPromptSubmit"), StringComparison.Ordinal);
     }
 
+    [Slow]
     [Fact]
     public async Task An_entry_that_connects_by_address_is_asked_on_a_machine_naming_several_projects()
     {
@@ -678,6 +700,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
     /// <summary>The machine name the hook's own environment carries in a test that sets one, or null.</summary>
     private string? _machine;
 
+    [Slow]
     [Fact]
     public async Task A_launch_configuration_naming_a_role_is_asked_about_that_role_on_this_machine()
     {
@@ -696,6 +719,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.Contains("1 uncollected message", Run("UserPromptSubmit"), StringComparison.Ordinal);
     }
 
+    [Slow]
     [Fact]
     public async Task A_machine_the_entry_names_completes_the_role_rather_than_the_hosts_own()
     {
@@ -714,6 +738,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         Assert.Contains("1 uncollected message", Run("UserPromptSubmit"), StringComparison.Ordinal);
     }
 
+    [Slow]
     [Fact]
     public async Task A_project_whose_broker_never_answers_does_not_silence_the_others()
     {
@@ -758,6 +783,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         }
     }
 
+    [Slow]
     [Fact]
     public async Task A_repository_that_has_no_parley_configuration_is_silent()
     {

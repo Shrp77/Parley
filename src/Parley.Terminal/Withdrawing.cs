@@ -41,10 +41,14 @@ internal static class Withdrawing
     internal const string Keep = "Keep it";
 
     /// <summary>Retiring it, which can be undone.</summary>
-    internal const string Retire = "Retire it (withdrawn from every roster; its record stays)";
+    /// <remarks>
+    /// Both labels say "this project only" because a person reads "remove" as "remove from Parley". Each project is its
+    /// own store, so the same repository in another project is another agent, and neither act reaches it.
+    /// </remarks>
+    internal const string Retire = "Retire it (this project only; its record stays; can be undone)";
 
     /// <summary>Purging it, which cannot.</summary>
-    internal const string Purge = "Purge it (deletes its record and its peers' halves; permanent)";
+    internal const string Purge = "Purge it (this project only; deletes its record and its peers' halves; permanent)";
 
     /// <summary>What is offered, in the order it is offered.</summary>
     internal static readonly IReadOnlyList<string> Choices = [Keep, Retire, Purge];
@@ -53,29 +57,22 @@ internal static class Withdrawing
     internal const string ReinstateTitle = "Reinstate this agent";
 
     /// <summary>What is said when nothing was done.</summary>
-    internal const string Kept = "Kept.";
+    internal const string Kept = AgentWithdrawal.Kept;
 
     /// <summary>What is said when the name typed back was not the agent's.</summary>
-    internal const string WrongName = "That is not this agent's name. Nothing changed.";
+    internal const string WrongName = AgentWithdrawal.WrongName;
 
     /// <summary>What is said when a seat is reached by some route that should not have offered it.</summary>
-    internal const string NotAnAgent =
-        "That is a seat, not an agent. A person leaves a seat; they are not retired.";
+    internal const string NotAnAgent = AgentWithdrawal.NotAnAgent;
 
     /// <summary>What is said after reinstating.</summary>
-    internal const string Reinstated =
-        "No file was recreated: add it again for it to be startable.";
+    internal const string Reinstated = AgentWithdrawal.Reinstated;
 
-    /// <summary>What purging does, in SPEC.md §14's own words rather than a paraphrase.</summary>
-    internal const string Purging =
-        "Purging deletes every conversation it took part in, including the halves belonging to "
-        + "peers who did nothing wrong, and cannot be undone.";
+    /// <summary>What purging does, in SPEC.md §14's words for whose parts go, and that the files go with it.</summary>
+    internal const string Purging = AgentWithdrawal.Purging;
 
     /// <summary>What retiring does.</summary>
-    internal const string Retiring =
-        "Retiring withdraws it from every roster and every route and keeps its record and its "
-        + "history. Work it still holds stays open and is flagged as held by a retired agent, "
-        + "so you can close those conversations or reinstate it.";
+    internal const string Retiring = AgentWithdrawal.Retiring;
 
     /// <summary>The agent, as the first dialog describes it.</summary>
     /// <param name="agent">What the registry says, or null when only the catalogue knows it.</param>
@@ -94,18 +91,15 @@ internal static class Withdrawing
         ArgumentNullException.ThrowIfNull(owed);
 
         // The row's values are already neutralised where they enter it; the adapter is read here
-        // and is the agent's own string, so it is neutralised here.
+        // and is the agent's own string, so it is neutralised here. The ownership line has no bound and can be the
+        // agent's own words, so it is shortened: drawn whole, a long one would push the rest off a dialog that cannot scroll.
         var said = $"{row.Name}{Environment.NewLine}"
             + $"  state      {row.State}{Environment.NewLine}"
             + $"  workspace  {row.Workspace}{Environment.NewLine}"
-            + $"  owns       {row.Owns}{Environment.NewLine}"
+            + $"  owns       {AgentWords.Shortened(row.Owns)}{Environment.NewLine}"
             + $"  adapter    {Safe.Text(agent?.Adapter ?? "not registered")}{Environment.NewLine}";
 
-        return owed.Count == 0
-            ? said + "  owes       nothing right now"
-            : said
-              + $"  owes       {owed.Count} open exchange(s): "
-              + string.Join(", ", owed.Select(edge => $"{Safe.Text(edge.Waiter.Value)} is waiting"));
+        return said + "  owes       " + Safe.Text(AgentWithdrawal.Owing(owed));
     }
 
     /// <summary>Why a typed name would not be accepted, or null when it would.</summary>
@@ -121,7 +115,7 @@ internal static class Withdrawing
     {
         ArgumentNullException.ThrowIfNull(row);
 
-        return string.Equals(typed, row.Name, StringComparison.Ordinal) ? null : WrongName;
+        return AgentWithdrawal.TypedNameProblem(row.Name, typed);
     }
 
     /// <summary>
@@ -164,11 +158,13 @@ internal static class Withdrawing
             return Task.CompletedTask;
         }
 
+        // What each choice does first, then the agent: the dialog cannot scroll and cuts its tail.
         var choosing = Prompting.Choose(
             Title,
-            Describe(agent, row, owed)
-            + Environment.NewLine + Environment.NewLine + Retiring
-            + Environment.NewLine + Purging,
+            Retiring
+            + Environment.NewLine + Purging
+            + Environment.NewLine + AgentWithdrawal.TheFiles + " " + AgentWithdrawal.ThisProjectOnly(project)
+            + Environment.NewLine + Environment.NewLine + Describe(agent, row, owed),
             Choices);
 
         var token = Prompting.Open(app, choosing);
@@ -221,15 +217,8 @@ internal static class Withdrawing
         ArgumentNullException.ThrowIfNull(queue);
 
         Name(app, row, ReinstateTitle, done, () => queue(async t =>
-        {
-            var changed = await client.ReinstateAsync(AgentName.Create(row.Name), t).ConfigureAwait(false);
-
-            await done(
-                (changed
-                    ? $"Reinstated '{row.Name}'. "
-                    : $"'{row.Name}' was not retired. ")
-                + Reinstated).ConfigureAwait(false);
-        }));
+            await done(await AgentWithdrawal.ReinstateAsync(client, AgentName.Create(row.Name), t).ConfigureAwait(false))
+                .ConfigureAwait(false)));
 
         return Task.CompletedTask;
     }
@@ -254,15 +243,10 @@ internal static class Withdrawing
     {
         var accepting = Prompting.Choose(
             Purge,
-            $"{row.Name} owes a Result in {owed.Count} open exchange(s). "
-            + string.Join(
-                " ",
-                owed.Select(edge =>
-                    $"{edge.Waiter.Value} is waiting, and will find the exchange gone rather than "
-                    + "still open."))
+            AgentWithdrawal.OwedConsequence(row.Name, owed)
             + Environment.NewLine + Environment.NewLine + Purging
             + Environment.NewLine + Retiring,
-            [Keep, "I accept that, and want to purge it anyway"]);
+            [Keep, AgentWithdrawal.AcceptOwed]);
 
         var token = Prompting.Open(app, accepting);
 
@@ -288,7 +272,7 @@ internal static class Withdrawing
     {
         var asking = Prompting.Text(
             title,
-            $"Type the agent's name to go ahead:",
+            AgentWithdrawal.TypeTheName, // "Type the agent's name to go ahead:"
             string.Empty,
             typed => TypedNameProblem(row, typed));
 
@@ -312,95 +296,29 @@ internal static class Withdrawing
         };
     }
 
-    /// <summary>Retires, then withdraws the two files.</summary>
+    /// <summary>Retires, then withdraws this project's files, as the web console does: both call the one implementation.</summary>
     private static async Task RetireAsync(
         BrokerClient client,
         AgentRow row,
         string? project,
         string? catalogueFile,
         CancellationToken cancellationToken,
-        Func<string, Task> done)
-    {
-        var changed = await client
-            .RetireAsync(AgentName.Create(row.Name), cancellationToken)
+        Func<string, Task> done) =>
+        await done(await AgentWithdrawal
+                .RetireAsync(client, AgentName.Create(row.Name), row.Workspace, project, catalogueFile, cancellationToken)
+                .ConfigureAwait(false))
             .ConfigureAwait(false);
 
-        var said = new List<string>
-        {
-            changed ? $"Retired '{row.Name}'." : $"'{row.Name}' was not registered.",
-        };
-
-        if (changed)
-        {
-            await WithdrawAsync(row, project, catalogueFile, said, cancellationToken).ConfigureAwait(false);
-        }
-
-        await done(Reports.Sentences(said)).ConfigureAwait(false);
-    }
-
-    /// <summary>Purges, then withdraws the two files.</summary>
+    /// <summary>Purges, then withdraws this project's files, as the web console does: both call the one implementation.</summary>
     private static async Task PurgeAsync(
         BrokerClient client,
         AgentRow row,
         string? project,
         string? catalogueFile,
         CancellationToken cancellationToken,
-        Func<string, Task> done)
-    {
-        var outcome = await client
-            .PurgeAsync(AgentName.Create(row.Name), cancellationToken)
+        Func<string, Task> done) =>
+        await done(await AgentWithdrawal
+                .PurgeAsync(client, AgentName.Create(row.Name), row.Workspace, project, catalogueFile, cancellationToken)
+                .ConfigureAwait(false))
             .ConfigureAwait(false);
-
-        var gone = outcome.Verdict == PurgeVerdict.Gone;
-
-        var said = new List<string>
-        {
-            gone ? $"Purged '{row.Name}'." : $"'{row.Name}' was not registered.",
-        };
-
-        // The broker's own account, per table, rather than a summary of it. An agent that traded
-        // nothing leaves an empty toll, which is a fact and not a failure.
-        said.AddRange(outcome.Destroyed.Select(toll => $"  {toll.Table}: {toll.Rows}"));
-
-        if (gone)
-        {
-            await WithdrawAsync(row, project, catalogueFile, said, cancellationToken).ConfigureAwait(false);
-        }
-
-        await done(Reports.Sentences(said)).ConfigureAwait(false);
-    }
-
-    /// <summary>Takes the launch configuration and the catalogue line away, and lists what went.</summary>
-    private static async Task WithdrawAsync(
-        AgentRow row,
-        string? project,
-        string? catalogueFile,
-        List<string> said,
-        CancellationToken cancellationToken)
-    {
-        if (row.Workspace is not { Length: > 0 } workspace || workspace == "—")
-        {
-            said.Add("No workspace is recorded for it, so there was no launch configuration to remove.");
-
-            return;
-        }
-
-        try
-        {
-            var outcome = await Enrolment
-                .WithdrawAsync(workspace, row.Name, project, catalogueFile, cancellationToken)
-                .ConfigureAwait(false);
-
-            said.AddRange(outcome.Notes);
-        }
-        catch (Exception failure) when (failure is IOException
-                                               or UnauthorizedAccessException
-                                               or InvalidDataException)
-        {
-            // Said rather than thrown, and after the operation rather than instead of it. The
-            // broker has already changed; a surface that reported a failure here would leave
-            // somebody believing the retirement had not happened.
-            said.Add($"The files could not be withdrawn: {failure.Message}");
-        }
-    }
 }

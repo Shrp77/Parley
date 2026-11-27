@@ -19,6 +19,7 @@ namespace Parley.Terminal.Tests;
 /// is what stops "show me the log" turning into "show me any file this process can open".
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class LogReachTests : IDisposable
 {
     private readonly string _root =

@@ -16,6 +16,8 @@ namespace Parley.Terminal.Tests;
 /// Against a real broker with files placed over the wire, driven through the key the status line offers — the route a
 /// person takes, rather than a method only a test could call.
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class FilesDialogTests : IAsyncDisposable
 {
     private const string Billing = FileLocationFixture.Billing;

@@ -32,6 +32,14 @@ public sealed class AgentModel(BrokerDirectory directory) : PageModel
     [BindProperty(SupportsGet = true)]
     public string? Agent { get; set; }
 
+    /// <summary>Which page of its background tasks is shown, counting from one.</summary>
+    /// <remarks>A page past the last shows the last, so a link kept from when there were more tasks still lands.</remarks>
+    [BindProperty(SupportsGet = true, Name = "tasks")]
+    public int TasksPage { get; set; } = 1;
+
+    /// <summary>How many background tasks one page lists: the person's number (feature 043, FR-014).</summary>
+    public const int TasksPerPage = Parley.Client.Rendering.TaskWords.MostListed;
+
     /// <summary>What the registry says about it, or null when it holds no such agent.</summary>
     public AgentRecord? Record { get; private set; }
 

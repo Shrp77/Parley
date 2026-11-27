@@ -14,6 +14,8 @@ namespace Parley.Terminal.Tests;
 /// not give left the conversation read and the draft never made — and the send said the conversation was still being read,
 /// which stopped being true on the first press and never changed. The sentence has to be the true one.
 /// </remarks>
+[Integration]
+[Slow]
 public sealed class SendWithoutASeatTests
 {
     [Fact]

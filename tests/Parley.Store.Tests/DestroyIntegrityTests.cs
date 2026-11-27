@@ -21,6 +21,7 @@ namespace Parley.Store.Tests;
 /// refused, after most of the work is done.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class DestroyIntegrityTests : IDisposable
 {
     private readonly SqliteConnection _connection;
