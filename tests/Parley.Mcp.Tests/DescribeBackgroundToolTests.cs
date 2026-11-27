@@ -82,6 +82,24 @@ public sealed class DescribeBackgroundThroughTheBrokerTests
     }
 
     [Fact]
+    public async Task Only_the_words_that_were_cut_are_said_to_be()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new ServerFixture(T0);
+        var (_, tools) = await fixture.LaunchAsync("orders@test", ct);
+
+        var longName = await tools.DescribeBackgroundAsync("a1", new string('n', 100), "Reads the rules.", string.Empty, ct);
+
+        Assert.Equal(["ok", "kept", "name_cut"], longName.AsObject().Select(p => p.Key));
+        Assert.True(longName["name_cut"]!.GetValue<bool>());
+
+        var longDescription = await tools.DescribeBackgroundAsync("a2", "Checking VAT", new string('d', 400), string.Empty, ct);
+
+        Assert.Equal(["ok", "kept", "description_cut"], longDescription.AsObject().Select(p => p.Key));
+        Assert.True(longDescription["description_cut"]!.GetValue<bool>());
+    }
+
+    [Fact]
     public async Task A_bad_id_or_no_name_is_refused_with_why()
     {
         var ct = TestContext.Current.CancellationToken;

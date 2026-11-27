@@ -361,6 +361,26 @@ public sealed class DescribingBackgroundTasksTests
         Assert.True(reply.DescriptionCut);
     }
 
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task Only_the_words_that_were_cut_are_said_to_be(bool longName, bool longDescription)
+    {
+        // Each flag is said for its own words: an answer that said both, or one for the other, would tell the agent to
+        // shorten words it need not touch.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinAsync(broker);
+        await LaunchAsync(node, "t-1");
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct, launchToken: "t-1");
+
+        var reply = await DescribeAsync(
+            billing, "a1", longName ? new string('n', 100) : "Checking VAT", longDescription ? new string('d', 400) : "Reads the rules.");
+
+        Assert.True(reply.Kept);
+        Assert.Equal(longName, reply.NameCut);
+        Assert.Equal(longDescription, reply.DescriptionCut);
+    }
+
     [Fact]
     public void The_answer_has_these_fields_and_no_other()
     {

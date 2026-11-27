@@ -108,7 +108,9 @@ public sealed partial class MaterialTokensTests
     [Theory]
     [InlineData("/brand/roboto-flex.woff2", "font/woff2")]
     [InlineData("/brand/roboto-flex-license.txt", "text/plain")]
-    public async Task The_typeface_and_its_licence_are_served_from_the_console_itself(string path, string type)
+    [InlineData("/brand/tokens.css", "text/css")]
+    [InlineData("/brand/components.css", "text/css")]
+    public async Task The_typeface_its_licence_and_the_stylesheets_are_served_from_the_console_itself(string path, string type)
     {
         using var console = new TranscriptConsole();
         using var client = console.CreateClient();

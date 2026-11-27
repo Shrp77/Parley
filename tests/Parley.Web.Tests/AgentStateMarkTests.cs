@@ -32,6 +32,22 @@ public sealed class AgentStateMarkTests
         Assert.Equal(said, words);
     }
 
+    [Theory]
+    [InlineData(true, Activities.OutsideMark, "left running by a node that is gone")]
+    [InlineData(false, Activities.RunningMark, "running")]
+    public void An_agent_left_running_or_on_an_older_node_is_badged_by_what_the_list_says(bool left, string kept, string said)
+    {
+        var agent = new Parley.Core.AgentRecord(
+            Parley.Core.AgentName.Create("orders@test"), "mcp", Parley.Core.AgentTier.Full, null, null, null, true,
+            Parley.Core.AgentStatus.Active, null, Parley.Core.AgentPresence.Running, OpenOutside: left, Unsupervised: left);
+
+        var (mark, words) = AgentStateMark.Split(Activities.Now(agent, DateTimeOffset.UnixEpoch));
+
+        Assert.Equal(kept, mark);
+        Assert.NotEqual(Activities.NotRunningMark, mark);
+        Assert.Equal(said, words);
+    }
+
     [Fact]
     public void A_state_that_needs_no_attention_has_a_plain_badge()
     {
