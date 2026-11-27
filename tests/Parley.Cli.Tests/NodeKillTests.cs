@@ -110,7 +110,34 @@ public sealed class NodeKillTests : IDisposable
             started.ArgumentList.Add(loop);
         }
 
-        return Process.Start(started) ?? throw new InvalidOperationException("The stand-in did not start.");
+        var process = Process.Start(started) ?? throw new InvalidOperationException("The stand-in did not start.");
+
+        WaitUntilNamed(process, name);
+
+        return process;
+    }
+
+    /// <summary>Waits until the started process goes by the stand-in's name.</summary>
+    /// <remarks>
+    /// Off Windows a process is forked and then made the program, and until that is done it goes by the name of the thread
+    /// that started it (".NET TP Worker"). A kill asked in between is rightly refused, so the tests wait out the gap rather
+    /// than pass or fail by whether they looked before it had closed.
+    /// </remarks>
+    private static void WaitUntilNamed(Process process, string name)
+    {
+        var until = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+
+        while (DateTime.UtcNow < until)
+        {
+            process.Refresh();
+
+            if (process.HasExited || string.Equals(process.ProcessName, name, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            Thread.Sleep(20);
+        }
     }
 
     private static async Task<string> KillAsync(long process, ConcurrentDictionary<AgentIdentity, ResidentAgent>? residents = null)
