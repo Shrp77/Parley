@@ -190,4 +190,80 @@ public sealed class TheGraphSaysWhatItCouldNotDrawTests
         Assert.Contains(">billing@pc</text>", fragment, StringComparison.Ordinal);
         Assert.Contains("<p class=\"pg-note\" role=\"status\"><strong>alpha</strong> project, could not be read in full. This project", fragment, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task With_nobody_hidden_and_one_project_the_agents_words_count_neither()
+    {
+        using var console = new TranscriptConsole();
+        Owing(console.Broker, 1, _ => "returns");
+
+        var fragment = await GraphAsync(console);
+
+        Assert.Contains(">1 agent working</text>", fragment, StringComparison.Ordinal);
+        Assert.DoesNotContain("0 hidden", fragment, StringComparison.Ordinal);
+        Assert.DoesNotContain("1 projects", fragment, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_box_whose_ask_could_not_be_read_says_so_held_or_queued()
+    {
+        using var console = new TranscriptConsole();
+        var now = DateTimeOffset.UtcNow;
+        Owing(console.Broker, 0, _ => "");
+
+        // One collected and one not, neither with an ask that can be read.
+        console.Broker.Messages.Add(new Wire.Message
+        {
+            Id = 1, ExchangeId = 1, Type = Wire.MessageType.Request, From = "orders@pc", To = "billing@pc",
+            PayloadJson = "not json", ConversationId = "returns",
+            CreatedUtc = Utc(now.AddMinutes(-10)), DeliveredUtc = Utc(now.AddMinutes(-9)),
+        });
+        console.Broker.Messages.Add(new Wire.Message
+        {
+            Id = 2, ExchangeId = 2, Type = Wire.MessageType.Request, From = "orders@pc", To = "billing@pc",
+            PayloadJson = "not json", ConversationId = "returns",
+            CreatedUtc = Utc(now.AddMinutes(-8)),
+        });
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = "orders@pc", WaitedOn = "billing@pc", ExchangeId = 1 });
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = "orders@pc", WaitedOn = "billing@pc", ExchangeId = 2 });
+
+        var fragment = await GraphAsync(console);
+
+        Assert.Matches("""class="pg-node pg-now">(?:(?!</g>).)*class="pg-sub">What was asked could not be read</text>""", fragment.ReplaceLineEndings(" "));
+        Assert.Matches("""class="pg-node pg-queued">(?:(?!</g>).)*class="pg-sub">What was asked could not be read</text>""", fragment.ReplaceLineEndings(" "));
+    }
+
+    [Fact]
+    public async Task One_held_item_is_listed_and_not_also_said_to_be_nothing()
+    {
+        using var console = new TranscriptConsole();
+        var now = DateTimeOffset.UtcNow;
+        Owing(console.Broker, 0, _ => "");
+
+        console.Broker.Messages.Add(new Wire.Message
+        {
+            Id = 1, ExchangeId = 1, Type = Wire.MessageType.Request, From = "orders@pc", To = "billing@pc",
+            PayloadJson = """{"ask":"Price the order"}""", ConversationId = "returns",
+            CreatedUtc = Utc(now.AddMinutes(-10)), DeliveredUtc = Utc(now.AddMinutes(-9)),
+        });
+        console.Broker.Edges.Add(new Wire.WaitingEdge { Waiter = "orders@pc", WaitedOn = "billing@pc", ExchangeId = 1 });
+
+        var fragment = await GraphAsync(console);
+        var list = fragment[fragment.IndexOf("<section class=\"pg-list\"", StringComparison.Ordinal)..];
+
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(list, "<li>Holds: "));
+        Assert.DoesNotContain("Holds nothing it has not answered.", list, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task One_background_task_is_one_task_in_the_list()
+    {
+        using var console = new TranscriptConsole();
+        Owing(console.Broker, 0, _ => "");
+        console.Broker.Registry[0].BackgroundTasks = 1;
+
+        var fragment = await GraphAsync(console);
+
+        Assert.Contains("<li>1 background task running:</li>", fragment, StringComparison.Ordinal);
+    }
 }

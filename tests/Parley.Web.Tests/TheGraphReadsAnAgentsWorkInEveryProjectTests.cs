@@ -73,6 +73,70 @@ public sealed class TheGraphReadsAnAgentsWorkInEveryProjectTests
         Assert.Contains("Count the pallets", fragment, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Every_background_task_opens_the_agents_page_in_the_project_that_named_them()
+    {
+        // The turn runs in shop, so shop is where its name links; warehouse named its tasks, and shop named none.
+        using var console = new TwoProjectConsole();
+        var now = DateTimeOffset.UtcNow;
+        var identity = AgentIdentity.Mint().ToString();
+        var busy = Row("billing@pc", identity, now, running: true);
+        busy.BackgroundTasks = 21;
+        var naming = Row("billing@pc", identity, now, running: false);
+        naming.BackgroundTasks = 21;
+        naming.RunningTasks.AddRange(Enumerable.Range(1, 21).Select(i => new Wire.BackgroundTaskRow
+        {
+            Id = $"t{i}", Kind = Wire.TaskKind.Agent, Name = $"Task {i}", Said = true,
+        }));
+        console.Shop.Registry.Add(busy);
+        console.Warehouse.Registry.Add(naming);
+
+        var fragment = await GraphAsync(console);
+
+        Assert.Contains(">Task 1</text>", fragment, StringComparison.Ordinal);
+        Assert.Contains("<a href=\"/Projects/Agent?project=shop&amp;agent=billing%40pc\"><text", fragment, StringComparison.Ordinal);
+
+        const string There = "href=\"/Projects/Agent?project=warehouse&amp;agent=billing%40pc#background-work\"";
+
+        // The box counting the rest ("see all") and the list's "Every background task" both go there.
+        Assert.Contains(There + "><text", fragment, StringComparison.Ordinal);
+        Assert.Contains(There + ">Every background task, on its page.</a>", fragment, StringComparison.Ordinal);
+        Assert.DoesNotContain("project=shop&amp;agent=billing%40pc#background-work", fragment, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_agent_frozen_in_one_of_its_two_projects_is_drawn_frozen()
+    {
+        using var console = new TwoProjectConsole();
+        var now = DateTimeOffset.UtcNow;
+        var identity = AgentIdentity.Mint().ToString();
+        var frozen = Row("billing@pc", identity, now, running: true);
+        frozen.FrozenUtc = Utc(now.AddMinutes(-5));
+        console.Shop.Registry.Add(frozen);
+        console.Warehouse.Registry.Add(Row("billing@pc", identity, now, running: false));
+
+        var fragment = await GraphAsync(console);
+
+        Assert.Contains("<g class=\"pg-node pg-agent pg-frozen\">", fragment, StringComparison.Ordinal);
+        Assert.Contains(">Unfreeze in shop</a>", fragment, StringComparison.Ordinal);
+        Assert.Contains(">Freeze in warehouse</a>", fragment, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_freeze_link_names_the_agent_by_its_name_in_a_project_where_it_has_another()
+    {
+        using var console = new TwoProjectConsole();
+        var now = DateTimeOffset.UtcNow;
+        var identity = AgentIdentity.Mint().ToString();
+        console.Shop.Registry.Add(Row("billing@pc", identity, now, running: true));
+        console.Warehouse.Registry.Add(Row("checkout@pc", identity, now, running: false));
+
+        var fragment = await GraphAsync(console);
+
+        Assert.Contains("subject=checkout%40pc\">Freeze checkout@pc in warehouse</a>", fragment, StringComparison.Ordinal);
+        Assert.Contains("subject=billing%40pc\">Freeze in shop</a>", fragment, StringComparison.Ordinal);
+    }
+
     private static Wire.RegistryRow Row(string name, string identity, DateTimeOffset now, bool running)
     {
         var row = new Wire.RegistryRow

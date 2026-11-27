@@ -418,4 +418,59 @@ public sealed class WorkNowTests
         Assert.Equal(2, agent.Background);
         Assert.Equal(2, picture.Boxes.Count(b => b.Kind == WorkBoxKind.Task));
     }
+
+    [Fact]
+    public void Where_no_project_heard_the_agent_name_a_task_itself_the_one_whose_runner_named_most_names_them()
+    {
+        // Neither project heard the agent's own words; "aaa", first by name, lists no task at all, so its runner's names
+        // in "zzz" are the ones drawn.
+        var runner = new[] { new BackgroundTask("t1", TaskKind.Agent, "Count to three") };
+        var picture = WorkNow.Build(
+            [
+                new WorkInput("aaa", [Agent("orders@pc", Idle with { BackgroundTasks = 1 })], [], null),
+                new WorkInput("zzz", [Agent("orders@pc", Idle with { BackgroundTasks = 1, Tasks = runner })], [], null),
+            ],
+            Now);
+
+        var agent = Assert.Single(picture.Working);
+
+        Assert.Equal("zzz", agent.TasksProject);
+        Assert.Equal("Count to three", agent.TaskAt(0)!.Name);
+    }
+
+    [Fact]
+    public void With_no_project_in_a_turn_the_agent_is_drawn_as_running_background_work_not_as_idle()
+    {
+        // "aaa", first by name, reads the agent idle; "zzz" heard its background work. Neither is a turn, so the rank decides.
+        var background = Agent("orders@pc", Idle with { BackgroundTasks = 1 });
+        var picture = WorkNow.Build(
+            [
+                new WorkInput("aaa", [Agent("orders@pc", Idle)], [], null),
+                new WorkInput("zzz", [background], [], null),
+            ],
+            Now);
+
+        var agent = Assert.Single(picture.Working);
+        var expected = Activities.Now(background, Now);
+
+        Assert.NotEqual(Activities.Now(Agent("orders@pc", Idle), Now).Words, expected.Words);
+        Assert.Equal(expected.Words, agent.Now.Words);
+        Assert.Equal("zzz", agent.Posts[0].Project);
+    }
+
+    [Fact]
+    public void The_first_post_is_the_busiest_project_so_the_agents_name_opens_its_page_there()
+    {
+        // "shop" sorts first by name and reads idle; the turn runs in "store".
+        var picture = WorkNow.Build(
+            [
+                new WorkInput("shop", [Agent("orders@pc", Idle)], [], null),
+                new WorkInput("store", [Agent("orders@pc", Working)], [], null),
+            ],
+            Now);
+
+        var agent = Assert.Single(picture.Working);
+
+        Assert.Equal(["store", "shop"], agent.Posts.Select(p => p.Project));
+    }
 }

@@ -296,4 +296,16 @@ public sealed class BackgroundWorkOnTheConsoleTests
 
         Assert.DoesNotContain("id=\"background-work\"", page, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task A_description_of_one_character_is_drawn()
+    {
+        using var console = new TranscriptConsole();
+        Script(console.Broker, 1, Task("t1", "Checking VAT", "Z"));
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(new Uri("/Projects/Agent?project=alpha&agent=billing%40pc", UriKind.Relative), Ct);
+
+        Assert.Contains("<p class=\"bg-description\">Z</p>", page, StringComparison.Ordinal);
+    }
 }

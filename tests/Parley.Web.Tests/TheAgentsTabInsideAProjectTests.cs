@@ -107,4 +107,26 @@ public sealed class TheAgentsTabInsideAProjectTests
             Assert.DoesNotContain("beta", grid, StringComparison.Ordinal);
         }
     }
+
+    [Fact]
+    public async Task An_agent_frozen_in_one_of_its_two_projects_is_said_to_be_frozen_by_you()
+    {
+        var (console, client, beta) = Two();
+
+        using (console)
+        using (client)
+        using (beta)
+        {
+            var frozen = Row("orders@test");
+            frozen.FrozenUtc = DateTimeOffset.UtcNow.AddMinutes(-5).ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+            beta.Registry.Add(frozen);
+
+            var grid = await client.GetStringAsync(new Uri("/?tab=agents&handler=AgentTable", UriKind.Relative), Ct);
+            var line = grid[grid.IndexOf("data-agent=\"orders@test\"", StringComparison.Ordinal)..];
+            line = line[..line.IndexOf("</details>", StringComparison.Ordinal)];
+
+            Assert.Contains("<dt>In projects</dt>", line, StringComparison.Ordinal);
+            Assert.Contains(", frozen by you</dd>", line, StringComparison.Ordinal);
+        }
+    }
 }

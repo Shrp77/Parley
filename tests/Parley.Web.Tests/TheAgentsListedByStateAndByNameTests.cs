@@ -77,6 +77,28 @@ public sealed partial class TheAgentsListedByStateAndByNameTests
         Assert.DoesNotContain("data-working", lines, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task A_to_Z_lists_one_role_on_two_machines_by_machine_whichever_is_busier()
+    {
+        using var console = new TranscriptConsole();
+        var now = DateTimeOffset.UtcNow;
+
+        // The one on pc is working, so by state it would come first; A to Z, laptop comes before pc.
+        console.Broker.Registry.Add(Row("orders", Wire.AgentPresence.Running, row =>
+        {
+            row.Name = "orders@pc";
+            row.TurnRunningSinceUtc = Utc(now.AddMinutes(-2));
+        }));
+        console.Broker.Registry.Add(Row("orders", Wire.AgentPresence.Startable, row => row.Name = "orders@laptop"));
+        using var client = console.CreateClient();
+
+        var lines = await client.GetStringAsync(new Uri("/?tab=agents&by=name&handler=AgentTable", UriKind.Relative), Ct);
+
+        Assert.Equal(
+            ["orders@laptop", "orders@pc"],
+            Regex.Matches(lines, "data-agent=\"([^\"]+)\"").Select(m => m.Groups[1].Value));
+    }
+
     [GeneratedRegex("<details class=\"state-group\" open data-state-group=\"([^\"]+)\">")]
     private static partial Regex SectionStart();
 
