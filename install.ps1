@@ -1166,6 +1166,11 @@ if ($Shortcut) {
     New-WebConsoleShortcut $webUi
 }
 
+if ($Shortcut) {
+    Write-Host ''
+    New-WebConsoleShortcut $webUi
+}
+
 if ($webUi) {
     Write-Host ''
     Write-Host "The web UI: $webUi" -ForegroundColor White
