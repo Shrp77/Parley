@@ -122,6 +122,42 @@ public sealed partial class MaterialTokensTests
         Assert.True((await response.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken)).Length > 1000);
     }
 
+    /// <summary>Each brand route serves its own file, byte for byte: a route pointed at another file of the same type and
+    /// size would draw the console with no tokens or the wrong face, and type and length alone cannot tell (lens 3 run 9
+    /// on #115).</summary>
+    [Theory]
+    [InlineData("/brand/icon.png", "icon.png")]
+    [InlineData("/brand/wordmark.png", "wordmark.png")]
+    [InlineData("/brand/material-symbols.woff2", "material-symbols.woff2")]
+    [InlineData("/brand/roboto-flex.woff2", "roboto-flex.woff2")]
+    [InlineData("/brand/roboto-flex-license.txt", "RobotoFlex-OFL.txt")]
+    [InlineData("/brand/tokens.css", "tokens.css")]
+    [InlineData("/brand/components.css", "components.css")]
+    public async Task Each_brand_route_serves_its_own_file(string path, string file)
+    {
+        using var console = new TranscriptConsole();
+        using var client = console.CreateClient();
+
+        var served = await client.GetByteArrayAsync(new Uri(path, UriKind.Relative), TestContext.Current.CancellationToken);
+        var expected = await File.ReadAllBytesAsync(InRepository(Path.Combine("src", "Parley.Web", "Brand", file)), TestContext.Current.CancellationToken);
+
+        Assert.True(expected.AsSpan().SequenceEqual(served), $"{path} did not serve {file}");
+    }
+
+    private static string InRepository(string relative)
+    {
+        var directory = AppContext.BaseDirectory;
+
+        while (directory is { Length: > 0 } && !File.Exists(Path.Combine(directory, "Parley.slnx")))
+        {
+            directory = Path.GetDirectoryName(directory);
+        }
+
+        Assert.NotNull(directory);
+
+        return Path.Combine(directory!, relative);
+    }
+
     [Fact]
     public void Every_control_shows_material_3s_focus_indicator()
     {
