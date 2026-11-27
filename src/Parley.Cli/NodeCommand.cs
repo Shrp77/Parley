@@ -812,15 +812,18 @@ public static class NodeCommand
                 var invocation = InvocationCommand.Parse(command);
                 var workspace = catalogue.WorkspaceFor(identity) ?? Directory.GetCurrentDirectory();
 
-                // Named to the broker first, so the process it starts is known as Parley's (SPEC.md §11.7).
-                var launched = reporter is null ? null : await reporter.LaunchAsync(agent).ConfigureAwait(false);
+                // Named to the broker first, so the process it starts is known as Parley's (SPEC.md §11.7). Numbered before
+                // it starts, and every project is told that number, so a reading the process makes before another project
+                // hears of it is newer than the launch there and is kept (lens 3 run 4 on #115).
+                var launch = BackgroundSnapshot.NextSequence();
+                var launched = reporter is null ? null : await reporter.LaunchAsync(agent, launch).ConfigureAwait(false);
                 var resident = Watched(
                     ResidentAgent.Start(agent, invocation, workspace, TimeProvider.System, launched), identity, residents, output);
                 residents[identity] = resident;
 
                 // Every project joined here that starts this checkout knows it as Parley's too (this one again, with
                 // the same token).
-                await TellJoinedAsync(residents, identity, resident).ConfigureAwait(false);
+                await TellJoinedAsync(residents, identity, resident, launch).ConfigureAwait(false);
 
                 // **A replacement says so, and that is not decoration.** Starting an agent because nothing
                 // was running is an ordinary event; starting one because the process behind an attached
@@ -1822,7 +1825,8 @@ public static class NodeCommand
                 return;
             }
 
-            var launched = reporter is null ? null : await reporter.LaunchAsync(agent).ConfigureAwait(false);
+            var launch = BackgroundSnapshot.NextSequence();
+            var launched = reporter is null ? null : await reporter.LaunchAsync(agent, launch).ConfigureAwait(false);
             var restarted = Watched(
                 ResidentAgent.Start(
                     agent,
@@ -1838,7 +1842,7 @@ public static class NodeCommand
 
             // As at a start, and after it is in the table, as there (lens 1 run 109): every project joined here that starts
             // this checkout learns its new token, and one joining meanwhile finds it in the table.
-            await TellJoinedAsync(residents, identity, restarted).ConfigureAwait(false);
+            await TellJoinedAsync(residents, identity, restarted, launch).ConfigureAwait(false);
 
             await output.WriteLineAsync(
                 $"  {agent.Value}: {(wanted ? "started again, for the start that was asked for while it was stopping." : ending.Restarted)}")
@@ -2007,9 +2011,10 @@ public static class NodeCommand
     /// <param name="residents">The table.</param>
     /// <param name="identity">The checkout.</param>
     /// <param name="resident">Its process.</param>
+    /// <param name="launch">The node's reading number for the launch, taken before the process started.</param>
     /// <returns>A task that completes when each has been told, or could not be.</returns>
     private static async Task TellJoinedAsync(
-        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents, AgentIdentity identity, ResidentAgent resident)
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents, AgentIdentity identity, ResidentAgent resident, long launch)
     {
         if (resident.IssuedToken is not { Length: > 0 } token)
         {
@@ -2019,7 +2024,7 @@ public static class NodeCommand
         foreach (var (reporter, role) in Boards.GetOrCreateValue(residents).Starting(identity))
         {
             await reporter.ReportRunningAsync(
-                    identity, role, token, resident.Workspace, () => TurnReporter.Current(resident, token))
+                    identity, role, token, resident.Workspace, () => TurnReporter.Current(resident, token), launch)
                 .ConfigureAwait(false);
         }
     }

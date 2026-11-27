@@ -35,6 +35,82 @@ public sealed class TheGraphReadsAnAgentsWorkInEveryProjectTests
     [Fact]
     public Task What_waits_in_a_project_where_it_is_at_work_too_is_drawn() => DrawnAsync(busyInWarehouse: true);
 
+    [Fact]
+    public async Task What_waits_in_the_first_project_read_is_drawn_while_it_works_in_a_later_one()
+    {
+        // Every project is read before who is at work is decided: the turn running in warehouse, read second, still
+        // makes shop's owed work part of the picture.
+        using var console = new TwoProjectConsole();
+        var now = DateTimeOffset.UtcNow;
+        var identity = AgentIdentity.Mint().ToString();
+
+        console.Warehouse.Registry.Add(Row("billing@pc", identity, now, running: true));
+        console.Shop.Registry.Add(Row("billing@pc", identity, now, running: false));
+        Owes(console.Shop, "billing@pc", "Price the new range", now);
+
+        var fragment = await GraphAsync(console);
+
+        Assert.Contains("QUEUED 1 · shop", fragment, StringComparison.Ordinal);
+        Assert.Contains("Price the new range", fragment, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task One_checkout_enrolled_under_another_name_in_each_project_is_one_agent_whose_work_is_read_in_both()
+    {
+        // One repository may be enrolled in several projects under different names: it is one agent by its identity and
+        // machine, never by its name.
+        using var console = new TwoProjectConsole();
+        var now = DateTimeOffset.UtcNow;
+        var identity = AgentIdentity.Mint().ToString();
+
+        console.Shop.Registry.Add(Row("billing@pc", identity, now, running: true));
+        console.Warehouse.Registry.Add(Row("ledger@pc", identity, now, running: false));
+        Owes(console.Warehouse, "ledger@pc", "Count the pallets", now);
+
+        var fragment = await GraphAsync(console);
+
+        Assert.Contains("2 projects", fragment, StringComparison.Ordinal);
+        Assert.Contains("Count the pallets", fragment, StringComparison.Ordinal);
+    }
+
+    private static Wire.RegistryRow Row(string name, string identity, DateTimeOffset now, bool running)
+    {
+        var row = new Wire.RegistryRow
+        {
+            Name = name, Adapter = "claude-code", Tier = Wire.AgentTier.Full, Status = Wire.AgentStatus.Active,
+            Presence = Wire.AgentPresence.Running, Connected = true, Identity = identity, TurnsReported = true,
+        };
+
+        if (running)
+        {
+            row.TurnRunningSinceUtc = Utc(now.AddMinutes(-4));
+        }
+        else
+        {
+            row.LastTurnEndedUtc = Utc(now.AddHours(-1));
+        }
+
+        return row;
+    }
+
+    private static void Owes(ScriptedExport project, string agent, string ask, DateTimeOffset now)
+    {
+        project.Messages.Add(new Wire.Message
+        {
+            Id = 1, ExchangeId = 9, Type = Wire.MessageType.Request, From = "orders@pc", To = agent,
+            PayloadJson = $$"""{"ask":"{{ask}}"}""", ConversationId = "stock",
+            CreatedUtc = Utc(now.AddMinutes(-2)),
+        });
+        project.Edges.Add(new Wire.WaitingEdge { Waiter = "orders@pc", WaitedOn = agent, ExchangeId = 9 });
+    }
+
+    private static async Task<string> GraphAsync(TwoProjectConsole console)
+    {
+        using var client = console.CreateClient();
+
+        return await client.GetStringAsync(new Uri("/Graph", UriKind.Relative), Ct);
+    }
+
     private static async Task DrawnAsync(bool busyInWarehouse)
     {
         using var console = new TwoProjectConsole();

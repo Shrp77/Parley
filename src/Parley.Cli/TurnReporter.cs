@@ -188,6 +188,8 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
 
     /// <summary>Tells the broker this node is about to start an agent, and gives back what to start it with.</summary>
     /// <param name="agent">The agent about to be started.</param>
+    /// <param name="sequence">The node's reading number for this launch, taken before the process starts and given to every
+    /// project told of it (<see cref="ReportRunningAsync"/>); 0 to take the next.</param>
     /// <returns>The environment to add to the process: its launch token.</returns>
     /// <remarks>
     /// <b>Reported before the process starts</b>, so the broker knows the token when the adapter presents it; and, like a
@@ -195,9 +197,15 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
     /// Parley, which is honest about what it knows. A fresh token each launch, so a process left from an earlier launch of
     /// the agent cannot pass for the new one.
     /// </remarks>
-    internal async Task<IReadOnlyDictionary<string, string>> LaunchAsync(Parley.Core.AgentName agent)
+    internal async Task<IReadOnlyDictionary<string, string>> LaunchAsync(Parley.Core.AgentName agent, long sequence = 0)
     {
         var token = Guid.NewGuid().ToString("N");
+
+        // Taken once, before the process starts: every reading it makes is numbered after, whichever try lands.
+        if (sequence <= 0)
+        {
+            sequence = Parley.Headless.BackgroundSnapshot.NextSequence();
+        }
 
 #pragma warning disable CA1031 // A report must never stop a launch, whatever went wrong sending it.
         try
@@ -208,7 +216,7 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
                         Machine = machine,
                         Agent = agent.Value,
                         Token = token,
-                        Sequence = Parley.Headless.BackgroundSnapshot.NextSequence(),
+                        Sequence = sequence,
                     },
                     deadline: deadline))
                 .ConfigureAwait(false);

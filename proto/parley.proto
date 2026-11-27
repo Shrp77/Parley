@@ -764,8 +764,10 @@ message LaunchReport {
   string token = 3;     // chosen by the node for this one launch
   string identity = 4;  // the repository's identifier, so a rename since the launch still finds the agent; empty at a fresh launch, filed under the name just asked for
   string workspace = 5; // the checkout's folder when the node knows it, so a name registered from another is not given its token; empty when not
-  // The node's reading number when it launched (BackgroundWork.sequence): the last process's readings are lower, so one that
-  // lands after this launch changes nothing. 0 when the node announces a process it already runs.
+  // The node's reading number for the launch (BackgroundWork.sequence), taken before the process started and the same in
+  // every project told of it and on every try: the last process's readings are lower, so one that lands after this
+  // launch changes nothing, and the new process's are higher, so one that landed first is kept. On a rejoin's
+  // announcement, a number taken then. 0 from a sender that gives none: the broker then keeps whatever it holds.
   int64 sequence = 6;
 }
 
@@ -802,8 +804,9 @@ message BackgroundWork {
   // Each running task the runner listed, in its order, at most 200; `tasks` still counts them all. The broker holds each
   // entry to the same rules again, and drops one that fails them.
   repeated RunningTask running = 2;
-  // When the node read it, higher for every later reading on that node. Nothing orders a node's sends, so the broker
-  // keeps the highest from that node and drops a report older than the one it holds.
+  // When the node read it, higher for every later reading on that node; a rejoin's re-announced reading is sent at no
+  // less than that announcement's number. Nothing orders a node's sends, so the broker keeps the highest from that node
+  // and drops a report older than the one it holds.
   int64 sequence = 3;
 }
 

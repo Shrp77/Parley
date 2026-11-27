@@ -38,7 +38,7 @@ public sealed class ALaunchCarriesTheNodesReadingNumberTests
     {
         // A checkout in two projects: the second hears of the launch from this report, and to it the process is new.
         var before = BackgroundSnapshot.NextSequence();
-        var said = new SaysWhatWasSent();
+        var said = new SaysWhatWasSent { HoldUpFirst = true };
 
         using var channel = GrpcChannel.ForAddress("http://127.0.0.1:1");
         var reporter = new TurnReporter(new Wire.Nodes.NodesClient(channel.Intercept(said)), "m1", TextWriter.Null);
@@ -46,14 +46,48 @@ public sealed class ALaunchCarriesTheNodesReadingNumberTests
         await reporter.ReportRunningAsync(
             Parley.Core.AgentIdentity.Mint(), "billing", "t-1", "/w", () => true);
 
-        var told = Assert.Single(said.Launches);
-        Assert.True(told.Sequence > before, $"the report was numbered {told.Sequence}, not after {before}");
+        // Numbered once, before the first try: the retry carries the same number.
+        Assert.Equal(2, said.Launches.Count);
+        Assert.True(said.Launches[0].Sequence > before, $"the report was numbered {said.Launches[0].Sequence}, not after {before}");
+        Assert.Equal(said.Launches[0].Sequence, said.Launches[1].Sequence);
     }
 
-    /// <summary>Answers each launch report at once, keeping what it said.</summary>
+    [Fact]
+    public async Task Another_project_is_told_the_launchs_own_number_and_every_try_carries_it()
+    {
+        // The process runs and numbers its readings while the other projects are told of it, one after another and each
+        // tried again while its broker is held up: told any later number, a project that heard a reading first would take
+        // the launch as newer and clear the work it shows.
+        var said = new SaysWhatWasSent { HoldUpFirst = true };
+
+        using var channel = GrpcChannel.ForAddress("http://127.0.0.1:1");
+        var reporter = new TurnReporter(new Wire.Nodes.NodesClient(channel.Intercept(said)), "m1", TextWriter.Null);
+
+        await reporter.ReportRunningAsync(Parley.Core.AgentIdentity.Mint(), "billing", "t-1", "/w", () => true, sequence: 7);
+
+        Assert.Equal([7L, 7L], said.Launches.Select(l => l.Sequence));
+    }
+
+    [Fact]
+    public async Task A_launch_tried_again_carries_the_number_taken_before_the_process_started()
+    {
+        var said = new SaysWhatWasSent { HoldUpFirst = true };
+
+        using var channel = GrpcChannel.ForAddress("http://127.0.0.1:1");
+        var reporter = new TurnReporter(new Wire.Nodes.NodesClient(channel.Intercept(said)), "m1", TextWriter.Null);
+
+        _ = await reporter.LaunchAsync(Parley.Core.AgentName.Create("billing@m1"), sequence: 9);
+
+        Assert.Equal([9L, 9L], said.Launches.Select(l => l.Sequence));
+    }
+
+    /// <summary>Answers each launch report at once, keeping what it said; the first held past its deadline when asked.</summary>
     private sealed class SaysWhatWasSent : Interceptor
     {
         public List<Wire.LaunchReport> Launches { get; } = [];
+
+        /// <summary>Whether the first report is answered as held up past its deadline, so the reporter tries again.</summary>
+        public bool HoldUpFirst { get; init; }
 
         public override AsyncUnaryCall<TResponse> AsyncUnaryCall<TRequest, TResponse>(
             TRequest request,
@@ -63,6 +97,18 @@ public sealed class ALaunchCarriesTheNodesReadingNumberTests
             if (request is Wire.LaunchReport launch)
             {
                 Launches.Add(launch);
+
+                if (HoldUpFirst && Launches.Count == 1)
+                {
+                    var held = new RpcException(new Status(StatusCode.DeadlineExceeded, "held"));
+
+                    return new AsyncUnaryCall<TResponse>(
+                        Task.FromException<TResponse>(held),
+                        Task.FromResult(new Metadata()),
+                        () => held.Status,
+                        () => [],
+                        () => { });
+                }
 
                 return new AsyncUnaryCall<TResponse>(
                     Task.FromResult((TResponse)(object)new Wire.Empty()),
