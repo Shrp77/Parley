@@ -149,7 +149,7 @@ public static class BackgroundTaskText
 
         return kept.Length > LongestLink || !kept.All(char.IsAscii) || HistoryText.Unprintable(kept)
             ? null
-            : new TaskLink(TaskLinkKind.Web, kept, address.IdnHost);
+            : new TaskLink(TaskLinkKind.Web, kept, address.IsDefaultPort ? address.IdnHost : $"{address.IdnHost}:{address.Port}");
     }
 
     // Names that reach this machine whatever is written before them (RFC 6761): localhost and everything under it.

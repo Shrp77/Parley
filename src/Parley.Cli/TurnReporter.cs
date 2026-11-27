@@ -144,7 +144,7 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
     {
         ArgumentNullException.ThrowIfNull(work);
 
-        var background = new Wire.BackgroundWork { Tasks = work.Count };
+        var background = new Wire.BackgroundWork { Tasks = work.Count, Sequence = work.Sequence };
 
         background.Running.AddRange(work.Listed.Select(task => new Wire.RunningTask
         {

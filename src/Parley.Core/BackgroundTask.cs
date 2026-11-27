@@ -32,7 +32,9 @@ public enum TaskLinkKind
 /// <summary>A link a task carries, in one of the shapes Parley shows (<see cref="BackgroundTaskText.Link"/>).</summary>
 /// <param name="Kind">Where it goes.</param>
 /// <param name="Target">The exchange number, the conversation's or file's name, or the address.</param>
-/// <param name="Host">For an https address, its host as a person should read it (in punycode); otherwise empty.</param>
+/// <param name="Host">For an https address, its host as a person should read it (in punycode), with
+/// its port when it is not the usual one, so a link drawn as its host never goes somewhere the words did not say; otherwise
+/// empty.</param>
 public sealed record TaskLink(TaskLinkKind Kind, string Target, string Host = "")
 {
     /// <summary>The link written in its one spelling, as it travels: <c>exchange #57</c>, <c>conversation:id</c>,

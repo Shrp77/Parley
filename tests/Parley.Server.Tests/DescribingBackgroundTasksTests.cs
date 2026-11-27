@@ -32,9 +32,13 @@ public sealed class DescribingBackgroundTasksTests
         _ = await node.Nodes.ReportLaunchAsync(
             new Wire.LaunchReport { Machine = Here, Agent = agent, Token = token }, cancellationToken: Ct);
 
-    private static async Task ReportAsync(JoinedNodeClient node, string agent, int tasks, params (string Id, string Label)[] running)
+    private static Task ReportAsync(JoinedNodeClient node, string agent, int tasks, params (string Id, string Label)[] running) =>
+        ReportReadAtAsync(node, agent, 0, tasks, running);
+
+    private static async Task ReportReadAtAsync(
+        JoinedNodeClient node, string agent, long sequence, int tasks, params (string Id, string Label)[] running)
     {
-        var background = new Wire.BackgroundWork { Tasks = tasks };
+        var background = new Wire.BackgroundWork { Tasks = tasks, Sequence = sequence };
         background.Running.AddRange(running.Select(t => new Wire.RunningTask { Id = t.Id, Kind = Wire.TaskKind.Agent, Label = t.Label }));
 
         _ = await node.Nodes.ReportTurnAsync(
@@ -172,6 +176,50 @@ public sealed class DescribingBackgroundTasksTests
         await ReportAsync(node, Billing, 2, ("a1", "Count to three"), ("b2", "Serve the site"));
 
         Assert.Equal(["Count to three", "Serving the site for review"], (await RowAsync(broker)).RunningTasks.Select(t => t.Name));
+    }
+
+    [Fact]
+    public async Task A_reading_the_node_sent_late_changes_nothing_and_takes_no_words()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinAsync(broker);
+        await LaunchAsync(node, "t-1");
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct, launchToken: "t-1");
+
+        // A rejoin's reading of one task (read at 1) lands after the runner's newer notice of two (read at 2).
+        await ReportReadAtAsync(node, Billing, 2, 2, ("a1", "Count to three"), ("b2", "Serve the site"));
+        _ = await DescribeAsync(billing, "b2", "Serving the site for review");
+        await ReportReadAtAsync(node, Billing, 1, 1, ("a1", "Count to three"));
+
+        var row = await RowAsync(broker);
+
+        Assert.Equal(2, row.BackgroundTasks);
+        Assert.Equal(["Count to three", "Serving the site for review"], row.RunningTasks.Select(t => t.Name));
+
+        // And a newer reading still lands.
+        await ReportReadAtAsync(node, Billing, 3, 1, ("b2", "Serve the site"));
+        Assert.Equal(["Serving the site for review"], (await RowAsync(broker)).RunningTasks.Select(t => t.Name));
+    }
+
+    [Fact]
+    public async Task A_reading_sent_before_the_work_ended_does_not_bring_it_back()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinAsync(broker);
+        await LaunchAsync(node, "t-1");
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct, launchToken: "t-1");
+
+        await ReportReadAtAsync(node, Billing, 2, 0);
+        await ReportReadAtAsync(node, Billing, 1, 1, ("a1", "Count to three"));
+        Assert.Equal(0, (await RowAsync(broker)).BackgroundTasks);
+
+        // Nor does one the last process's node sent before a new process was launched under the name.
+        await ReportReadAtAsync(node, Billing, 5, 1, ("a1", "Count to three"));
+        await LaunchAsync(node, "t-2");
+        await using var again = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct, launchToken: "t-2");
+        await ReportReadAtAsync(node, Billing, 4, 1, ("a1", "Count to three"));
+
+        Assert.Equal(0, (await RowAsync(broker)).BackgroundTasks);
     }
 
     [Fact]

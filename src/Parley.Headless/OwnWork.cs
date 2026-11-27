@@ -42,6 +42,20 @@ public sealed record BackgroundSnapshot(int Count, IReadOnlyList<BackgroundTask>
     /// <summary>Nothing running.</summary>
     public static BackgroundSnapshot None { get; } = new(0, []);
 
+    /// <summary>When the runner said it, against every other snapshot this node made: a later one is higher.</summary>
+    /// <remarks>
+    /// <b>Not part of what it says, so not part of equality.</b> A node says what it reads from two places, the runner's
+    /// notices and a rejoin's reading of the last one, and nothing orders their sends; the broker keeps the higher, so a
+    /// reading sent late never replaces a newer one and takes the agent's words for a task still running with it.
+    /// </remarks>
+    public long Sequence { get; init; }
+
+    private static long s_lastSequence;
+
+    /// <summary>The next sequence number, higher than any this process gave before.</summary>
+    /// <returns>The number.</returns>
+    public static long NextSequence() => Interlocked.Increment(ref s_lastSequence);
+
     /// <inheritdoc/>
     public bool Equals(BackgroundSnapshot? other) =>
         other is not null && Count == other.Count && Listed.SequenceEqual(other.Listed);

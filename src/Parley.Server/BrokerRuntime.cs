@@ -1738,6 +1738,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="agent">The agent.</param>
     /// <param name="tasks">How many.</param>
     /// <param name="running">Each task the node named: the runner's id, kind and label (feature 043).</param>
+    /// <param name="sequence">When the node read it, against its other readings: a report older than the one held from the
+    /// same node changes nothing.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>Whether the report was accepted.</returns>
     /// <remarks>
@@ -1752,7 +1754,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </para>
     /// </remarks>
     public async Task<bool> BackgroundReportedAsync(
-        string machine, AgentName agent, int tasks, IEnumerable<BackgroundTask> running, CancellationToken cancellationToken = default)
+        string machine, AgentName agent, int tasks, IEnumerable<BackgroundTask> running, long sequence, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(running);
 
@@ -1770,57 +1772,66 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return false;
         }
 
-        BackgroundWork? written = null;
+        var named = new List<BackgroundTask>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
 
-        if (tasks == 0)
+        foreach (var task in running)
         {
-            // Only the words for the tasks this ends, and only the list this report found: a late report of none must not
-            // take the words of a task begun since.
-            if (_background.TryGetValue(agent, out var ended)
-                && _background.TryRemove(new KeyValuePair<AgentName, BackgroundWork>(agent, ended)))
+            if (named.Count == Math.Min(tasks, BackgroundTaskText.MostTasks))
             {
-                ForgetWords(agent, ended.Named.Select(task => task.Id));
+                break;
+            }
+
+            if (BackgroundTaskText.IsTaskId(task.Id) && seen.Add(task.Id))
+            {
+                named.Add(new BackgroundTask(task.Id, task.Kind, BackgroundTaskText.Name(task.Name).Text));
             }
         }
-        else
-        {
-            var named = new List<BackgroundTask>();
-            var seen = new HashSet<string>(StringComparer.Ordinal);
 
-            foreach (var task in running)
+        // A report of none is held too, as nothing running, so a reading the node sent earlier and that lands later still
+        // finds something newer to lose to.
+        var written = new BackgroundWork(tasks, machine, named, sequence);
+        BackgroundWork? before;
+
+        while (true)
+        {
+            if (_background.TryGetValue(agent, out var held))
             {
-                if (named.Count == Math.Min(tasks, BackgroundTaskText.MostTasks))
+                // **Older than what is held, from the same node: it changes nothing.** The node sends from its runner's
+                // notices and from a rejoin's reading, and nothing orders the two; taking the older last would show work
+                // that has ended, or end work still running and forget the agent's words for it (lens 1 run 1 on #115).
+                if (string.Equals(held.Machine, machine, StringComparison.Ordinal) && held.Sequence > sequence)
                 {
+                    return false;
+                }
+
+                if (_background.TryUpdate(agent, written, held))
+                {
+                    before = held;
                     break;
                 }
-
-                if (BackgroundTaskText.IsTaskId(task.Id) && seen.Add(task.Id))
-                {
-                    named.Add(new BackgroundTask(task.Id, task.Kind, BackgroundTaskText.Name(task.Name).Text));
-                }
             }
-
-            written = new BackgroundWork(tasks, machine, named);
-            var before = _background.TryGetValue(agent, out var was) ? was : null;
-            _background[agent] = written;
-
-            // A task the last report listed and this one does not has ended: its words go now, so words for work that is
-            // over never push out words for work still running when the oldest are dropped past the bound.
-            if (before is not null)
+            else if (_background.TryAdd(agent, written))
             {
-                var listed = named.Select(task => task.Id).ToHashSet(StringComparer.Ordinal);
-                ForgetWords(agent, before.Named.Select(task => task.Id).Where(id => !listed.Contains(id)));
+                before = null;
+                break;
             }
+        }
+
+        // A task the last report listed and this one does not has ended: its words go now, so words for work that is over
+        // never push out words for work still running when the oldest are dropped past the bound. Only the list this
+        // report replaced: a task begun since keeps its words.
+        if (before is not null)
+        {
+            var listed = named.Select(task => task.Id).ToHashSet(StringComparer.Ordinal);
+            ForgetWords(agent, before.Named.Select(task => task.Id).Where(id => !listed.Contains(id)));
         }
 
         // The node may have left while the agent was looked up, and its release swept the table before this landed. Only
         // what this report wrote is taken back: a node that has rejoined since may have said something newer.
         if (!_nodes.TryGetValue(machine, out var still) || !ReferenceEquals(still, reporter))
         {
-            if (written is not null)
-            {
-                _ = _background.TryRemove(new KeyValuePair<AgentName, BackgroundWork>(agent, written));
-            }
+            _ = _background.TryRemove(new KeyValuePair<AgentName, BackgroundWork>(agent, written));
 
             return false;
         }
@@ -1973,7 +1984,12 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     private void ForgetBackground(AgentName agent, string token)
     {
-        _ = _background.TryRemove(agent, out _);
+        // Held as nothing running rather than removed, keeping how far the node's readings had come, so a report the last
+        // process's node sent before the launch and that lands after it does not bring that work back.
+        while (_background.TryGetValue(agent, out var work)
+               && !_background.TryUpdate(agent, work with { Tasks = 0, Named = [] }, work))
+        {
+        }
 
         // Tried again when a word lands between the read and the change, so a describe racing the launch neither survives
         // into the new process nor is lost from the old one's view of it.
@@ -1999,7 +2015,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="Tasks">How many tasks.</param>
     /// <param name="Machine">The node that said so, whose leaving ends the claim.</param>
     /// <param name="Named">Each task it named, held to the rules.</param>
-    private sealed record BackgroundWork(int Tasks, string Machine, IReadOnlyList<BackgroundTask> Named);
+    /// <param name="Sequence">When the node read it; a later reading from the same node is higher.</param>
+    private sealed record BackgroundWork(int Tasks, string Machine, IReadOnlyList<BackgroundTask> Named, long Sequence);
 
     /// <summary>An agent's own words for one task.</summary>
     private sealed record SaidWords(string Id, string Name, string Description, TaskLink? Link);

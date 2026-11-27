@@ -3979,7 +3979,10 @@ answers both. So a node reads its agent's output as it arrives, turn or no turn,
   is the label. A report names at most 200; the count says how many there are. The broker holds every entry to the
   rules again rather than taking the node's word: an id the runner could not have given drops its entry, a label is
   cut to 64 characters and neutralised, an id named twice is named once, and the list is never longer than the
-  count. An agent may say more about a task of its own (`describe_background`, §10.1): its words take the label's
+  count. Each report carries when the node read it, higher for every later reading on that node, because a node
+  says what it read from more than one place (the runner's notices, and its last reading again on rejoining) and
+  nothing orders the sends: the broker keeps the newest, and a report older than the one it holds from that node
+  changes nothing, so a late reading neither brings back work that has ended nor ends work still running. An agent may say more about a task of its own (`describe_background`, §10.1): its words take the label's
   place in what the person is shown, and are kept until the report that ends their task or a new process is
   launched, so a node that leaves and comes back with the same process reports the same tasks with them still there. Every agent's row travels in one
   registry reply, so the broker spends at most a mebibyte on tasks across it, ids first and no row more than an eighth,

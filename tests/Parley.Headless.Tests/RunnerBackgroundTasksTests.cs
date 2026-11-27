@@ -101,4 +101,16 @@ public sealed class RunnerBackgroundTasksTests
         Assert.Null(read.Tasks);
         Assert.Null(read.Listed);
     }
+
+    [Fact]
+    public void A_later_reading_is_numbered_higher_and_the_number_is_not_what_it_says()
+    {
+        var first = BackgroundSnapshot.NextSequence();
+        var second = BackgroundSnapshot.NextSequence();
+
+        Assert.True(second > first);
+        Assert.Equal(
+            new BackgroundSnapshot(1, [new BackgroundTask("a1", TaskKind.Agent, "Count")]) { Sequence = first },
+            new BackgroundSnapshot(1, [new BackgroundTask("a1", TaskKind.Agent, "Count")]) { Sequence = second });
+    }
 }

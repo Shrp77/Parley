@@ -229,4 +229,12 @@ public sealed class BackgroundTaskTextTests
     {
         Assert.Equal("tickets.example.com", BackgroundTaskText.Link("https://tickets.example.com/x")!.Host);
     }
+
+    [Theory]
+    [InlineData("https://tickets.example.com:8443/x", "tickets.example.com:8443")]
+    [InlineData("https://tickets.example.com:443/x", "tickets.example.com")]
+    public void A_web_link_on_another_port_says_the_port(string link, string shown)
+    {
+        Assert.Equal(shown, BackgroundTaskText.Link(link)!.Host);
+    }
 }

@@ -773,6 +773,7 @@ public sealed class ResidentAgent : IAsyncDisposable
             // Told when the count or what names the tasks changes, and not when the runner says the same again.
             if (now != _background)
             {
+                now = now with { Sequence = BackgroundSnapshot.NextSequence() };
                 _background = now;
                 Notify(w => w.BackgroundChanged(now));
             }

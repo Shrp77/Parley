@@ -799,6 +799,9 @@ message BackgroundWork {
   // Each running task the runner listed, in its order, at most 200; `tasks` still counts them all. The broker holds each
   // entry to the same rules again, and drops one that fails them.
   repeated RunningTask running = 2;
+  // When the node read it, higher for every later reading on that node. Nothing orders a node's sends, so the broker
+  // keeps the highest and drops a report older than the one it holds.
+  int64 sequence = 3;
 }
 
 message RunningTask {
