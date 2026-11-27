@@ -155,6 +155,11 @@ internal sealed class Seeder : IAsyncDisposable
                     outcome["blocker"] = step.Blocker;
                 }
 
+                if (step.Sources is { Count: > 0 } sources)
+                {
+                    outcome["sources"] = new JsonArray(sources.Select(s => (JsonNode)_scenario.NameOf(s)!).ToArray());
+                }
+
                 Said(await _agents.ResultAsync(
                     new Wire.ResultRequest
                     {

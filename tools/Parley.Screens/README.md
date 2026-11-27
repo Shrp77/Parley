@@ -77,6 +77,21 @@ device's own screenshots at the device's size.
 With no phone to hand, the Android emulator runs real Chrome for Android. Set its screen to the phone in question
 (`adb shell wm size 1344x2992` and `adb shell wm density 480` for a Pixel 8 Pro) and use it as above.
 
+A fault that only a person's own conversations show can be audited on a copy of their store. Make a consistent copy
+first, never the live file, whose newest writes may still be in its write-ahead log:
+
+```
+sqlite3 "file:<the project's parley.db>?mode=ro" ".backup 'C:\temp\copy\parley.db'"
+dotnet run --project tools/Parley.Screens -- audit <round> --store C:\temp\copy\parley.db
+```
+
+The tool copies it again, with the `parley.db.files` folder beside it if there is one, into its own temporary root, and
+the broker opens that copy, so only the copy is migrated and has mail marked delivered. The round's scenario names the
+store's project and may have no agents and no steps; its shots name the conversation to open. A person's
+conversations are theirs: keep such a round out of the repository, give `capture` an `--out` folder of its own rather
+than `artifacts/screens/`, where the published boards are gathered, and delete any `parley-screens-*` folder a stopped
+run leaves in the temporary folder, since it holds the copy.
+
 The `phone-audit` round holds what a real conversation holds: long unbroken words, inline code, a hash, links, a code
 block, a table, tall and wide images, long names and a busy graph, at 360, 412 and 448 wide and in landscape.
 

@@ -788,6 +788,9 @@ ol.points {
     margin: 0.55rem 0 0;
     padding: 0;
     display: grid;
+    /* One column no wider than the bubble. An automatic column grows to its widest content, such as a table meant to
+       scroll inside the point, and on a phone that widened the page. */
+    grid-template-columns: minmax(0, 1fr);
     gap: 0.4rem;
 }
 
@@ -825,9 +828,14 @@ ol.points .chits {
 }
 
 /* The receiver's own word for the outcome. "blocked" and "done" are different
-   results and only one of them is finished. */
+   results and only one of them is finished.
+   It may shrink and wrap: "relied on" names every source by its whole name, and a chip that kept its one line made
+   the page wider than a phone, pushing the bottom bar's More off the screen. */
 ol.points .verdict {
-    flex: 0 0 auto;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
     font-size: 0.68rem;
     font-weight: 600;
     letter-spacing: 0.04em;

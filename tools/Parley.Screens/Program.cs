@@ -11,6 +11,8 @@ const string Usage = """
       parley-screens hold <round> [--browser ...]
       parley-screens audit <round> [--only <file,...>] [--browser ...] [--stylesheet <file.css>]
                                    [--device http://127.0.0.1:9222]; capture also takes --device
+      capture, hold and audit take --store <copy of a parley.db>: the broker opens a copy of it, made in
+      this run's own folder, before the scenario plays.
 
     <round> is a folder holding scenario.json (the sample data, played into the broker) and shots.json
     (what to capture). check reads both and says what is wrong, starting nothing. capture writes each PNG
@@ -35,7 +37,8 @@ var options = Options(args.Skip(2).ToArray());
 
 // audit writes nothing, so a folder to write to is a mistake rather than something to ignore.
 if (options is null || (string.Equals(command, "audit", StringComparison.Ordinal) && options.ContainsKey("out"))
-    || (string.Equals(command, "hold", StringComparison.Ordinal) && options.ContainsKey("device")))
+    || (string.Equals(command, "hold", StringComparison.Ordinal) && options.ContainsKey("device"))
+    || (string.Equals(command, "check", StringComparison.Ordinal) && options.ContainsKey("store")))
 {
     Console.Error.WriteLine(Usage);
     return 64;
@@ -84,6 +87,15 @@ if (options.TryGetValue("stylesheet", out var sheet))
         return 65;
     }
 }
+
+var seed = options.TryGetValue("store", out var storeOption) ? Path.GetFullPath(storeOption) : null;
+
+if (seed is not null && !File.Exists(seed))
+{
+    Console.Error.WriteLine($"parley-screens: no store at {seed}");
+    return 65;
+}
+
 var output = Path.GetFullPath(options.GetValueOrDefault("out", Path.Combine(RepositoryRoot(), "artifacts", "screens", Path.GetFileName(round))));
 var only = options.TryGetValue("only", out var named)
     ? named.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.OrdinalIgnoreCase)
@@ -113,7 +125,8 @@ try
         ? await Camera.ConnectAsync(browser, new Uri(device)).ConfigureAwait(false)
         : await Camera.StartAsync(browser).ConfigureAwait(false);
     await using var cameraLifetime = camera.ConfigureAwait(false);
-    var deployment = await Deployment.StartAsync(root, scenario.Project, scenario.Description, stop.Token).ConfigureAwait(false);
+    var deployment = await Deployment.StartAsync(
+        root, scenario.Project, scenario.Description, seed, stop.Token).ConfigureAwait(false);
     await using var deploymentLifetime = deployment.ConfigureAwait(false);
     var seeder = new Seeder(scenario, round, deployment.BrokerAddress);
     await using var seederLifetime = seeder.ConfigureAwait(false);
@@ -241,7 +254,7 @@ static Dictionary<string, string>? Options(string[] rest)
 
     for (var i = 0; i < rest.Length; i += 2)
     {
-        if (i + 1 >= rest.Length || rest[i] is not ("--out" or "--only" or "--browser" or "--stylesheet" or "--device"))
+        if (i + 1 >= rest.Length || rest[i] is not ("--out" or "--only" or "--browser" or "--stylesheet" or "--device" or "--store"))
         {
             return null;
         }
