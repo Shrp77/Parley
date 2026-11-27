@@ -877,9 +877,11 @@ public sealed class ResidentAgent : IAsyncDisposable
                     return;
                 }
 
-                // One own turn waits behind a given turn, never more. A second init in that gap would replace the first's
-                // ending, which could then end only by running out of patience, with the agent held for each in turn.
-                if (_givenAnswered && _ownQueue.Count > 0)
+                // A second init while the own turn queued behind a given turn still waits for its result is dropped: it would
+                // replace that turn's ending, which could then end only by running out of patience, with the agent held for
+                // each in turn. Once that turn has its result, the next init is a turn of its own and queues behind it, as
+                // between two own turns; dropped, it was never told, whenever the given turn was slow to let go.
+                if (_givenAnswered && _ownQueue.Count > 0 && _ownTurn is not { Task.IsCompleted: true })
                 {
                     return;
                 }

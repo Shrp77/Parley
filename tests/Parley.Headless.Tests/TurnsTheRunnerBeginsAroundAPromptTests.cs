@@ -65,11 +65,13 @@ public sealed class TurnsTheRunnerBeginsAroundAPromptTests : IDisposable
         // Turn 1 answers; its background work finishes and the runner begins a turn of its own. Prompt 2 was queued behind
         // turn 1 and is written as it ends, before the own turn's init is read, and the runner folds it into that turn: the
         // one result is the own turn's, tagged. Swallowed as the agent's own, turn 2 waited out its whole time, its reply was
-        // counted owed, and every turn after waited the same for a reply that never came and said nothing.
+        // counted owed, and every turn after waited the same for a reply that never came and said nothing. The own turn's
+        // init is written only once prompt 2 has been read, so the fold is what the runner sees however long turn 1 takes to
+        // let go: a pause in its place lost the race whenever the test host was busy.
         var template = StubRunner.Scripted(
             _workspace,
-            [OneTask, Started, StubRunner.Pause(1), NoTasks, Init, StubRunner.Pause(1), Done],
-            [],
+            [OneTask, Started],
+            [NoTasks, Init, StubRunner.Pause(1), Done],
             [Third],
             [Fourth]);
 
