@@ -567,6 +567,30 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Held in the broker's memory and nowhere else, like the count it sits beside (SPEC.md §11.6), so it is not routed
+    /// through the store. The answer says what became of the words and never whether the task is running (§10.1).
+    /// </remarks>
+    public override Task<Wire.DescribeBackgroundTaskReply> DescribeBackgroundTask(
+        Wire.DescribeBackgroundTaskRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var agent = Caller(request.Agent);
+        var said = _runtime.DescribeBackgroundTask(agent, request.TaskId, request.Name, request.Description, request.Link);
+
+        return Task.FromResult(new Wire.DescribeBackgroundTaskReply
+        {
+            Kept = said.Kept,
+            Refused = said.Refused,
+            NameCut = said.NameCut,
+            DescriptionCut = said.DescriptionCut,
+            LinkDropped = said.LinkDropped,
+        });
+    }
+
+    /// <inheritdoc/>
     public override async Task<Wire.Notice> Waiting(Wire.WaitingRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);

@@ -286,7 +286,7 @@ public static class ConsoleHost
             && string.Equals(context.Request.Headers["Sec-Fetch-Dest"], "iframe", StringComparison.Ordinal);
     }
 
-    /// <summary>The brand images and the icon font, and the names they are reached by.</summary>
+    /// <summary>The brand images, the fonts and the stylesheets, and the names they are reached by.</summary>
     /// <remarks>
     /// A fixed table rather than a name composed from the route. The alternative reads a
     /// manifest resource named by whatever a caller asked for, which is the same shape as
@@ -303,7 +303,9 @@ public static class ConsoleHost
         ("wordmark.png", "Parley.Web.Brand.wordmark.png", "image/png"),
         ("material-symbols.woff2", "Parley.Web.Brand.material-symbols.woff2", "font/woff2"),
         ("roboto-flex.woff2", "Parley.Web.Brand.roboto-flex.woff2", "font/woff2"),
-        ("roboto-flex-license.txt", "Parley.Web.Brand.RobotoFlex-OFL.txt", "text/plain; charset=utf-8")
+        ("roboto-flex-license.txt", "Parley.Web.Brand.RobotoFlex-OFL.txt", "text/plain; charset=utf-8"),
+        ("tokens.css", "Parley.Web.Brand.tokens.css", "text/css; charset=utf-8"),
+        ("components.css", "Parley.Web.Brand.components.css", "text/css; charset=utf-8")
     ];
 
     /// <summary>Serves the brand images out of the assembly.</summary>
@@ -321,6 +323,25 @@ public static class ConsoleHost
         }
 
         app.MapGet("/favicon.ico", (HttpContext context) => Image(context, Brand[0].Resource, Brand[0].ContentType));
+
+        // The person's palette as a stylesheet (feature 042): a ready-made one by name, or one built from a base hue,
+        // chroma and harmony. The query comes from the person's browser storage, so only a known name or whole numbers in
+        // range are taken, and nothing from it but computed colours reaches the response.
+        app.MapGet("/brand/palette.css", (HttpContext context) =>
+        {
+            var query = context.Request.Query;
+            var palette = Palettes.Palette.FromQuery(
+                query["name"].FirstOrDefault(), query["hue"].FirstOrDefault(), query["chroma"].FirstOrDefault(), query["harmony"].FirstOrDefault());
+
+            if (palette is null)
+            {
+                return Results.BadRequest();
+            }
+
+            context.Response.Headers.CacheControl = "public, max-age=86400";
+
+            return Results.Text(Palettes.Scheme.Stylesheet(palette), "text/css; charset=utf-8");
+        });
     }
 
     /// <summary>Reads one embedded file, as a response.</summary>

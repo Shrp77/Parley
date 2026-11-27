@@ -7,6 +7,8 @@ namespace Parley.Web.Tests;
 /// <b>The owner, 2026-11-13:</b> collapsed, the expand button sat just under the last item instead of at the bottom where
 /// the collapse button is when expanded, and Parley's Settings sat between the console's items and a project's, which
 /// looked wrong inside a project. Put the button at the bottom always, with Settings just above it.
+/// <b>The owner, 2026-11-25 (feature 042):</b> in a large window the button is drawn on the drawer's edge instead, part way
+/// down. It stays last in the rail's markup, after the foot, so it is still the last thing a keyboard reaches in the rail.
 /// </remarks>
 [Integration]
 public sealed class TheRailsFootTests
@@ -19,9 +21,11 @@ public sealed class TheRailsFootTests
 
         var page = await client.GetStringAsync(new Uri("/?tab=agents&project=alpha", UriKind.Relative), TestContext.Current.CancellationToken);
 
-        var lastProjectItem = page.IndexOf("href=\"/Projects/Settings?project=alpha\"", StringComparison.Ordinal);
         var foot = page.IndexOf("<nav class=\"rail-foot\"", StringComparison.Ordinal);
-        var settings = page.IndexOf("href=\"/Settings\"", StringComparison.Ordinal);
+        // The rail's own item, the last before the foot: the folded project list draws the same link earlier (feature 042).
+        var lastProjectItem = foot < 0 ? -1 : page.LastIndexOf("href=\"/Projects/Settings?project=alpha\"", foot, StringComparison.Ordinal);
+        // The foot's own link: a phone's More, inside the sections above the foot, offers Settings too (feature 042).
+        var settings = foot < 0 ? -1 : page.IndexOf("href=\"/Settings\"", foot, StringComparison.Ordinal);
         var toggle = page.IndexOf("id=\"rail-toggle\"", StringComparison.Ordinal);
 
         Assert.True(lastProjectItem >= 0 && foot >= 0 && settings >= 0 && toggle >= 0, "the rail's items, foot, settings or toggle were not drawn");

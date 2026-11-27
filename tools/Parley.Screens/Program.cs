@@ -7,19 +7,25 @@ const string Usage = """
 
       parley-screens check <round>
       parley-screens capture <round> [--out <dir>] [--only <file,...>] [--browser msedge|chrome|chromium]
+                                     [--stylesheet <file.css>]
       parley-screens hold <round> [--browser ...]
+      parley-screens audit <round> [--only <file,...>] [--browser ...] [--stylesheet <file.css>]
+                                   [--device http://127.0.0.1:9222]; capture also takes --device
+      capture, hold and audit take --store <copy of a parley.db>: the broker opens a copy of it, made in
+      this run's own folder, before the scenario plays.
 
     <round> is a folder holding scenario.json (the sample data, played into the broker) and shots.json
     (what to capture). check reads both and says what is wrong, starting nothing. capture writes each PNG
     and sha256.txt to --out, by default artifacts/screens/<round's folder name> in this repository. hold
-    plays the scenario, prints the console's address and waits for Enter.
+    plays the scenario, prints the console's address and waits for Enter. audit opens each shot's page and
+    lists what is wider than the window and every control that cannot be reached, writing no PNG.
 
     Exit codes: 0 done; 1 a shot failed; 64 usage; 65 a round file is wrong; 69 no browser;
     70 the broker refused a step or a deployment could not start; 130 stopped.
     Nothing here reads or changes the machine's own deployment. See tools/Parley.Screens/README.md.
     """;
 
-if (args.Length < 2 || args[0] is not ("check" or "capture" or "hold"))
+if (args.Length < 2 || args[0] is not ("check" or "capture" or "hold" or "audit"))
 {
     Console.Error.WriteLine(Usage);
     return 64;
@@ -29,7 +35,10 @@ var command = args[0];
 var round = Path.GetFullPath(args[1]);
 var options = Options(args.Skip(2).ToArray());
 
-if (options is null)
+// audit writes nothing, so a folder to write to is a mistake rather than something to ignore.
+if (options is null || (string.Equals(command, "audit", StringComparison.Ordinal) && options.ContainsKey("out"))
+    || (string.Equals(command, "hold", StringComparison.Ordinal) && options.ContainsKey("device"))
+    || (string.Equals(command, "check", StringComparison.Ordinal) && options.ContainsKey("store")))
 {
     Console.Error.WriteLine(Usage);
     return 64;
@@ -61,6 +70,32 @@ if (string.Equals(command, "check", StringComparison.Ordinal))
 }
 
 var browser = options.GetValueOrDefault("browser", "msedge");
+
+// A stylesheet laid over every page, such as a design direction's tokens, so a look can be photographed on the real
+// console without being built into it.
+string? overlay = null;
+
+if (options.TryGetValue("stylesheet", out var sheet))
+{
+    try
+    {
+        overlay = await File.ReadAllTextAsync(Path.GetFullPath(sheet)).ConfigureAwait(false);
+    }
+    catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+    {
+        Console.Error.WriteLine($"parley-screens: the stylesheet could not be read: {unreadable.Message}");
+        return 65;
+    }
+}
+
+var seed = options.TryGetValue("store", out var storeOption) ? Path.GetFullPath(storeOption) : null;
+
+if (seed is not null && !File.Exists(seed))
+{
+    Console.Error.WriteLine($"parley-screens: no store at {seed}");
+    return 65;
+}
+
 var output = Path.GetFullPath(options.GetValueOrDefault("out", Path.Combine(RepositoryRoot(), "artifacts", "screens", Path.GetFileName(round))));
 var only = options.TryGetValue("only", out var named)
     ? named.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.OrdinalIgnoreCase)
@@ -86,14 +121,22 @@ Console.CancelKeyPress += (_, e) =>
 
 try
 {
-    var camera = await Camera.StartAsync(browser).ConfigureAwait(false);
+    var camera = options.TryGetValue("device", out var device)
+        ? await Camera.ConnectAsync(browser, new Uri(device)).ConfigureAwait(false)
+        : await Camera.StartAsync(browser).ConfigureAwait(false);
     await using var cameraLifetime = camera.ConfigureAwait(false);
-    var deployment = await Deployment.StartAsync(root, scenario.Project, scenario.Description, stop.Token).ConfigureAwait(false);
+    var deployment = await Deployment.StartAsync(
+        root, scenario.Project, scenario.Description, seed, stop.Token).ConfigureAwait(false);
     await using var deploymentLifetime = deployment.ConfigureAwait(false);
     var seeder = new Seeder(scenario, round, deployment.BrokerAddress);
     await using var seederLifetime = seeder.ConfigureAwait(false);
 
     var placeholders = await seeder.PlayAsync(camera.RenderAsync, stop.Token).ConfigureAwait(false);
+
+    // The device reaches the console at the same address it has here, through its USB link (adb reverse), so a page's
+    // own links and the console's host check work unchanged. Only this port is passed back, and only for this run.
+    var reversed = await Reverse.StartAsync(device is null ? 0 : new Uri(deployment.ConsoleAddress).Port).ConfigureAwait(false);
+    await using var reversedLifetime = reversed.ConfigureAwait(false);
 
     Console.WriteLine($"Played {scenario.Steps.Count} steps into a broker at {deployment.BrokerAddress}.");
 
@@ -112,6 +155,35 @@ try
         return stop.IsCancellationRequested ? 130 : 0;
     }
 
+    if (string.Equals(command, "audit", StringComparison.Ordinal))
+    {
+        var faults = 0;
+
+        foreach (var shot in shots.Shots.Where(s => only is null || only.Contains(s.File)))
+        {
+            stop.Token.ThrowIfCancellationRequested();
+
+            try
+            {
+                var problems = await camera.AuditAsync(shots, shot, new Uri(deployment.ConsoleAddress + placeholders.Expand(shot.Path)), overlay).ConfigureAwait(false);
+                faults += problems.Count == 0 ? 0 : 1;
+                Console.WriteLine($"  {shot.File,-40} {(problems.Count == 0 ? "fits" : problems.Count.ToString(CultureInfo.InvariantCulture) + " problem(s)")}");
+
+                foreach (var problem in problems)
+                {
+                    Console.WriteLine("      " + problem);
+                }
+            }
+            catch (Exception problem) when (problem is InvalidDataException or Microsoft.Playwright.PlaywrightException or TimeoutException)
+            {
+                faults++;
+                Console.Error.WriteLine($"  {shot.File,-40} FAILED: {problem.Message.Split('\n')[0]}");
+            }
+        }
+
+        return faults == 0 ? 0 : 1;
+    }
+
     Directory.CreateDirectory(output);
 
     // With --only, the other shots' lines are kept, so sha256.txt always describes every PNG the folder holds.
@@ -124,7 +196,7 @@ try
 
         try
         {
-            var png = await camera.TakeAsync(shots, shot, new Uri(deployment.ConsoleAddress + placeholders.Expand(shot.Path))).ConfigureAwait(false);
+            var png = await camera.TakeAsync(shots, shot, new Uri(deployment.ConsoleAddress + placeholders.Expand(shot.Path)), overlay).ConfigureAwait(false);
             var hash = Camera.Sha256(png);
 
             await File.WriteAllBytesAsync(target, png, stop.Token).ConfigureAwait(false);
@@ -182,7 +254,7 @@ static Dictionary<string, string>? Options(string[] rest)
 
     for (var i = 0; i < rest.Length; i += 2)
     {
-        if (i + 1 >= rest.Length || rest[i] is not ("--out" or "--only" or "--browser"))
+        if (i + 1 >= rest.Length || rest[i] is not ("--out" or "--only" or "--browser" or "--stylesheet" or "--device" or "--store"))
         {
             return null;
         }

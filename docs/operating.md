@@ -56,10 +56,11 @@ in the panel beside the transcript.
 
 The timeline beside a conversation follows you: it rings the tick of the message you are reading and scrolls itself to keep that tick in view. It has no scrollbar. Scroll it with the wheel or the touch screen, and while the pointer is on it, it is yours and is not moved.
 
-In a window narrower than 1440 pixels the panel starts closed: a strip of icons beside the conversation. Rest the pointer on
-an icon and just that box comes out over the conversation: the conversation's name and actions, find, the filter, what is
-waiting on you, or who to write to. Click an icon to keep its box out until you click again or press Escape. The arrow at
-the top opens the whole panel, and a wide window and a narrow one each remember whether you left it open.
+The panel starts closed. Its boxes are the conversation's commands, so they sit in the side menu under *This
+conversation*, as an icon each: the conversation's name and actions, find, the filter, what is waiting on you, and who to
+write to. Rest the pointer on an icon and just that box comes out over the conversation. Click an icon to keep its box
+out until you click again or press Escape. You can open the whole panel as a column beside the conversation, and a wide
+window and a narrow one each remember whether you left it open.
 
 **Being at the seat is an open connection and nothing else.** There is no heartbeat. A surface
 nobody has touched for twenty minutes drops its connection, because an open tab is not a person
@@ -73,8 +74,16 @@ an agent's own.
 
 ## The web console
 
-A strip down the left side of every page takes you where you want to go. Its arrow at the bottom
-folds it to icons, and the console remembers that.
+A menu down the left side of every page takes you where you want to go. Under the places, it
+holds the page's own commands, such as *New conversation* on the Conversations page. A small
+handle on the menu's edge folds it to icons and opens it again, and the console remembers that.
+You can drag the handle up or down out of your way, and it stays where you leave it. In a
+window narrower than 1200 pixels, pressing the handle opens the whole menu over the page
+instead, and that is not remembered.
+
+On a phone the menu is a bar along the bottom of the screen, with your main places on it
+(three, or four inside a project) and *More* holding the rest. The page's commands are in a
+strip under the top bar.
 
 - **Projects** is where the console opens: a grid of your projects. Each row says whether its
   broker is answering, how many agents it has and how many are running, and how many
@@ -86,7 +95,7 @@ Open a project and its own pages appear under its name:
 
 - **Conversations**: the project's conversations, each as a transcript that says who did not see
   what. Read, reply, archive or destroy, one at a time or [several at once](#conversations).
-  Start a new one from the button at the top.
+  Start a new one with *New conversation* in the menu.
 - **Agents**: who is in the project, what each owns, and whether it is running. Register an agent
   here. Open an agent for its own page: what it is responsible for, and the buttons to start,
   stop, restart, freeze, retire, reinstate or purge it.
@@ -99,28 +108,52 @@ Open a project and its own pages appear under its name:
   what it owns. Renaming a project is the terminal's, in two steps: remove it and name the new
   one. Its conversations stay behind and its repositories must be enrolled again.
 
-**Settings** at the foot of the strip is Parley's own. It holds the console's theme (light, dark
-or the system's) and density, kept in this browser only. It also holds how many days the Inbox's
+**Settings** at the foot of the menu (under *More* on a phone) is Parley's own. It holds the console's theme (light, dark
+or the system's), its colors (one of the ready-made palettes, or your own from a color you pick)
+and density, kept in this browser only. It also holds how many days the Inbox's
 *Closed* view covers, which the terminal reads too.
 
 **The bell** at the top tells you when something needs you.
 
 ### The graph
 
-A tab at the right edge of every page opens a picture of what is being worked on.
+A tab at the right edge of every page opens a picture of what is being worked on right now. On a
+phone it is under *More*.
 
-- Each project is a band. Its agents are on the left and its conversations on the right.
-- A line joins an agent to each conversation it is in. A dashed line joins a spin-off to the
-  conversation it came from.
-- A dot beside an agent stands for each background task its node says it has running, up to five; past that the dots end in a count.
-- Each agent says in words whether it is working, idle, waiting on background work, or frozen.
-  A frozen agent also has a dashed outline.
-- *Freeze* and *Unfreeze* are on each agent. *Freeze all* and *Unfreeze all* are on each project.
-- The same facts follow the picture as a list.
+- Only agents with work under way are drawn: one with a turn running, or one waiting on its own
+  background work. The others are counted as hidden.
+- Under each agent, **NOW** is work it has collected and not yet answered. A turn does not say
+  which conversation it is for, so this is the closest true reading.
+- **QUEUED** is work sent to it that it has not collected yet, in the order it arrived, with the
+  first line of what was asked. **REPLY WAITS** is work it took earlier where a reply to it, such
+  as an answer to its own question, waits to be collected.
+- Beside it are its background tasks, each by name: what the agent says it is doing, or else the
+  short label it gave when it started it. Point at a task to read the agent's description of it.
+  Where the agent linked it to an exchange, a conversation, a file or a web page, the top line of
+  the box says where (a web page by its site), and pressing it goes there; a web page opens in a
+  new tab. Up to five are drawn; a box under them says how many more and opens the agent's page,
+  where every one is listed.
+- An agent whose repository serves several projects is one agent, with its work from each.
+- Drag to move the picture, or scroll or pinch to zoom. The zoom buttons sit over the picture,
+  in its lower right corner: plus, *Fit* (the four corners, which shows the whole picture) and
+  minus. Drag the dotted handle at their top to move them out of the way, or focus it and use the
+  arrow keys. This browser remembers where you put them. On a phone the picture is drawn in one
+  column so the text stays readable.
+- The arrow on an agent's box hides what is under it, so the other agents come up. The box then
+  says how many items it is hiding. Press the arrow again to show them. This browser remembers
+  which agents you folded.
+- *Filter* narrows it to the projects and agents you tick. Each choice shows as a chip; press a
+  chip to take it off. The choice is kept in this browser.
+- The same facts are also kept as a list after the picture, for a screen reader and the
+  keyboard. It is not shown on screen: press Tab past the picture and it appears while the
+  focus is in it. It has *Freeze* or *Unfreeze* for each working agent in each project it serves.
+  Any agent can be frozen from its own page, and *Freeze all* and *Unfreeze all* for a whole
+  project are on that project's *Agents* page.
 
-*Pin* keeps the graph open as you move between pages. *Hide closed* thins out finished
-conversations. Nothing is read until you open the graph. While it is open, it refreshes every
-fifteen seconds.
+The *Graph* tab on the panel's edge opens and closes it, pinned or not. Where the panel fills
+the screen, as on a phone, it has a *Close* button instead. *Pin* keeps the graph open as you
+move between pages. Nothing is read until you open the graph.
+While it is open, it refreshes every fifteen seconds.
 
 ### The Inbox
 
@@ -232,19 +265,43 @@ You must be seated in the project. It is not a key in the inbox itself.
 | `◆ working 4m` | A turn is running for it right now |
 | `■ stopped 2h48m` | Its last turn ended while it still owes work here. A reason follows, such as `1 permission refused` |
 | `● waiting on orders` | It asked somebody and is waiting for the answer. This is not stopped |
-| `◈ waiting on 2 background tasks` | Its turn ended while sub-agents or commands it started run on. It takes up what they found on its own when they finish, and reads as working while it does |
+| `◈ waiting on 2 background tasks` | Its turn ended while sub-agents or commands it started run on. It takes up what they found on its own when they finish, and reads as working while it does. In the terminal the row names the first task and how many more, and `Alt+b` lists them all |
 | `◇ open outside Parley` | Somebody opened that agent themselves, so Parley cannot give it turns. A message waits until somebody there takes a turn |
 | `◇ left running by a node that is gone` | A node started that agent and is gone, so Parley cannot give it turns or stop it. It can be killed from its row or page |
 
 The web console says the same things on a conversation's page.
+
+### What an agent's background work is doing
+
+An agent that starts sub-agents or long commands in the background names each one for you, in a
+few plain words, such as *Checking VAT on gift cards*. It may add a sentence or two about it and a
+link to where you can read more: the exchange the work is for, a conversation, a file placed in
+Parley, or a ticket or document on the web. Only you see these; other agents do not.
+
+- **On the agent's page** in the web console, *Background work* lists every task: its name, what
+  kind of work it is, the agent's description and its link. Five show before the list scrolls, and
+  it is paged twenty at a time. An exchange opens in place, as a reference in a message does.
+- **In the terminal**, the agent's row names the first task and how many more. `Alt+b` on the row
+  lists them all; a web address is written out in full so you can copy it.
+- **A task the agent has not named** shows the label it gave when it started it, or, when it gave
+  none, *Background sub-agent*, *Background command*, or *Background task* when Parley cannot tell
+  which. A named task shows its kind beside its name: *(sub-agent)*, *(command)* or *(task)*.
+
+The names go when the work does: when a task ends, when the agent is started again, and when the
+broker restarts. Parley keeps them in memory only. A link is shown only when it is one of those
+four kinds; a web address must be `https` and name a real site, and it is shown by that site in
+plain letters, so a look-alike name shows as what it is.
 
 **To see who is working,** look at the agents list.
 
 - **In the terminal** it groups agents under *working* (with how long), *stopped on a refused
   permission*, *idle* and the rest, and updates every few seconds.
 - **In the web console**, *All Agents* covers every project and a project's *Agents* page covers
-  that project. Working agents come first, under a *Working now* line, and an agent waiting on its
-  own background work sorts with them. In *All Agents* each agent has one line, naming every
+  that project. Agents are grouped by what they are doing, one section per state, each with its
+  badge, a name and a count: working first, then stopped, then the rest. An agent waiting on its
+  own background work sorts with the working ones. *What the badges mean*, beside the list, says
+  what each badge stands for. *A–Z* lists them by name instead, with a *Working now* line at the
+  top naming who is working, and *By state* goes back. In *All Agents* each agent has one line, naming every
   project that lists it, because one repository can be in several projects. Open the line to see
   how it stands in each.
   The page refreshes itself every 10 seconds without reloading, and a line you opened stays open.
@@ -314,7 +371,8 @@ Freeze an agent when you want it to stay stopped: for example, while you work in
 yourself. To keep it stopped through a logon or a reboot, see the last point in the list below.
 
 - **Where:** Enter on its row in the terminal, the *Freeze* button on its page in the web console,
-  or *Freeze* on it in the graph. *Freeze all* in the graph freezes a whole project.
+  or *Freeze* on it in the graph's list. *Freeze all* on a project's *Agents* page freezes a whole
+  project.
 - **What happens:** the agent stops once its current turn ends. Then nothing starts it: not new
   work, not a Start, not a Restart. What it owes stays open and waits. Anybody who sends it a
   message is told it is frozen. It reads as frozen in the agents lists.
@@ -509,7 +567,7 @@ You place a file of your own from the terminal or the console, into a conversati
 does; `parley files place` does the same from the command line. There and in the terminal, a file that is itself
 a link, or a path on another machine, is refused before it is read: copy the file here and place the copy. The
 console uploads whatever your browser reads from the file you pick. In any box in the console where you write a message to an agent (a Request, a reply, a
-Result or a follow-up) you can also paste or drop a file; a box for naming something takes none. In a conversation
+Result or a follow-up) you can also paste or drop a file, or press **Add files** to choose one, which is the way on a phone; a box for naming something takes none. In a conversation
 that has already started, it is placed as yours when you send, before the message
 goes, and the message ends with a list of what was attached, each with its hash, for the agent to fetch. A conversation
 that has not started yet has nowhere to hold a file, so your words go first and a second message follows with the files

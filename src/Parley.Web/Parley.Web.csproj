@@ -75,6 +75,8 @@
     <EmbeddedResource Include="Brand\material-symbols.woff2" />
     <EmbeddedResource Include="Brand\roboto-flex.woff2" />
     <EmbeddedResource Include="Brand\RobotoFlex-OFL.txt" />
+    <EmbeddedResource Include="Brand\tokens.css" />
+    <EmbeddedResource Include="Brand\components.css" />
   </ItemGroup>
 
 

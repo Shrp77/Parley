@@ -83,6 +83,44 @@ internal static class Conversions
         _ => throw new ArgumentOutOfRangeException(nameof(presence), presence, "Not a defined presence.")
     };
 
+    /// <summary>Converts a background task's kind for the wire.</summary>
+    /// <param name="kind">The kind.</param>
+    /// <returns>The wire value; any kind this broker does not know travels as other.</returns>
+    public static Wire.TaskKind Out(TaskKind kind) => kind switch
+    {
+        TaskKind.Agent => Wire.TaskKind.Agent,
+        TaskKind.Command => Wire.TaskKind.Command,
+        _ => Wire.TaskKind.Other,
+    };
+
+    /// <summary>Reads a background task's kind off the wire.</summary>
+    /// <param name="kind">The wire value.</param>
+    /// <returns>The kind; a value this broker does not know reads as other, since a node names what its runner said.</returns>
+    public static TaskKind In(Wire.TaskKind kind) => kind switch
+    {
+        Wire.TaskKind.Agent => TaskKind.Agent,
+        Wire.TaskKind.Command => TaskKind.Command,
+        _ => TaskKind.Other,
+    };
+
+    /// <summary>Converts a running background task for the registry row.</summary>
+    /// <param name="task">The task, its words already held to their bounds.</param>
+    /// <returns>The wire row; its link in its one spelling.</returns>
+    public static Wire.BackgroundTaskRow Out(BackgroundTask task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+
+        return new Wire.BackgroundTaskRow
+        {
+            Id = task.Id,
+            Kind = Out(task.Kind),
+            Name = task.Name,
+            Description = task.Description,
+            Link = task.Link?.Written ?? string.Empty,
+            Said = task.Said,
+        };
+    }
+
     /// <summary>Converts a message type for the wire.</summary>
     /// <param name="type">The type.</param>
     /// <returns>The wire value.</returns>
@@ -545,6 +583,7 @@ internal static class Conversions
             LastTurnClean = record.Turns?.LastClean ?? false,
             LastTurnPermissionDenials = record.Turns?.LastPermissionDenials ?? 0,
             BackgroundTasks = record.Turns?.BackgroundTasks ?? 0,
+            RunningTasks = { (record.Turns?.Named ?? []).Select(Out) },
             OpenOutside = record.OpenOutside,
             Unsupervised = record.Unsupervised,
             FrozenUtc = record.FrozenUtc is { } frozenUtc ? Stamp(frozenUtc) : string.Empty,

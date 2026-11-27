@@ -7,7 +7,6 @@
 
 <h1>@(Model.Roadmap is { } named ? $"#{named.Number} {named.Title}" : "Roadmap")</h1>
 
-<nav class="page-links" aria-label="This project"><a href="/Roadmaps?project=@Model.Project">Back to the roadmaps in @Model.Project</a></nav>
 
 @if (Model.Problem is { Length: > 0 } problem)
 {

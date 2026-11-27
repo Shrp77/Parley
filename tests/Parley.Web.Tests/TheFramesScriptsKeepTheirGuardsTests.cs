@@ -35,10 +35,13 @@ public sealed class TheFramesScriptsKeepTheirGuardsTests
         var selectors = waits.Groups["selector"].Value.Split(',', StringSplitOptions.TrimEntries);
 
         Assert.Contains("dialog[open]", selectors);
-        Assert.Contains("details.view-create[open]", selectors);
+        Assert.Contains("details.rail-act[open]", selectors);
+        Assert.Contains("details.filters-fold[open]", selectors);
 
-        // And the card it waits on is the one the pages draw.
-        Assert.Contains("<details class=\"view-card view-create\"", Page("src/Parley.Web/Pages/Index.cshtml"), StringComparison.Ordinal);
+        // And the panel it waits on is the one the pages draw: since feature 042 a page's create panel opens from the rail.
+        var index = Page("src/Parley.Web/Pages/Index.cshtml");
+        Assert.Contains("<details class=\"rail-act rail-act-main\"", index, StringComparison.Ordinal);
+        Assert.Contains("<details class=\"filters-fold\"", index, StringComparison.Ordinal);
     }
 
     [Fact]

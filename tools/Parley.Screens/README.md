@@ -24,6 +24,9 @@ round, so a round that stops reading fails the push run. `capture` writes the PN
 
 - `--out <dir>` writes somewhere else.
 - `--only a.png,b.png` takes just those shots. The other lines in `sha256.txt` are kept.
+- `--stylesheet look.css` lays a stylesheet over every page before it is captured, so a design direction can be
+  photographed on the real console without being built into it. Run the same round once per stylesheet, each with
+  its own `--out`.
 - `--browser msedge` (the default), `chrome`, or `chromium`. The first two use the browser already installed.
   `chromium` needs Playwright's own build, fetched once with
   `pwsh tools/Parley.Screens/bin/Debug/net10.0/playwright.ps1 install chromium`.
@@ -35,6 +38,62 @@ dotnet run --project tools/Parley.Screens -- hold tools/Parley.Screens/rounds/0.
 ```
 
 It prints the console's address and every shot's page, then waits for Enter.
+
+## Checking a phone layout
+
+```
+dotnet run --project tools/Parley.Screens -- audit tools/Parley.Screens/rounds/phone-audit
+```
+
+`audit` opens each shot's page and writes no PNG. A shot narrower or shorter than 600 pixels opens as a phone's browser
+opens it, with touch, honouring the viewport tag. The audit lists:
+
+- anything wider than the window, and anything a box cuts off at its side;
+- every box that scrolls sideways (a code block or a wide table is meant to; a page's column is not);
+- every control that, scrolled to the middle of the window, is out of reach, cut off, or covered by something that
+  stays put, such as a bar or a pinned strip. When a fixed sheet drawn at the window's centre fills four fifths of
+  the window or more, only the sheet's own controls are checked.
+
+A screenshot does not show these faults: a desktop browser clips what a page hides sideways, while a phone's browser
+may let the person scroll to it. `--stylesheet` works here too. A file holding `html { font-size: 130% !important; }`
+stands in for a phone set to larger text, which is where most of these faults show. The exit code is 1 when any shot
+has a problem. Read each line yourself: a menu that is open on purpose covers what is under it.
+
+An emulator lays a page out as the desktop engine does, and a real phone's browser does not always agree. To audit
+in a device's own Chrome, plug it in by USB with USB debugging on, open Chrome on it, and then run:
+
+```
+adb forward tcp:9222 localabstract:chrome_devtools_remote
+dotnet run --project tools/Parley.Screens -- audit tools/Parley.Screens/rounds/phone-audit --device http://127.0.0.1:9222
+adb forward --remove tcp:9222
+```
+
+Each page opens in a new tab of the device's Chrome, at the device's own size, so a shot's width and height are not
+used. The tool passes the console's port back to the device for the run (`adb reverse`) and removes it at the end.
+With more than one device plugged in, `ANDROID_SERIAL` names the one to use. The tabs share Chrome's profile, so the
+tool clears the console's storage on the device before each page. `capture` takes `--device` too, and saves the
+device's own screenshots at the device's size.
+
+With no phone to hand, the Android emulator runs real Chrome for Android. Set its screen to the phone in question
+(`adb shell wm size 1344x2992` and `adb shell wm density 480` for a Pixel 8 Pro) and use it as above.
+
+A fault that only a person's own conversations show can be audited on a copy of their store. Make a consistent copy
+first, never the live file, whose newest writes may still be in its write-ahead log:
+
+```
+sqlite3 "file:<the project's parley.db>?mode=ro" ".backup 'C:\temp\copy\parley.db'"
+dotnet run --project tools/Parley.Screens -- audit <round> --store C:\temp\copy\parley.db
+```
+
+The tool copies it again, with the `parley.db.files` folder beside it if there is one, into its own temporary root, and
+the broker opens that copy, so only the copy is migrated and has mail marked delivered. The round's scenario names the
+store's project and may have no agents and no steps; its shots name the conversation to open. A person's
+conversations are theirs: keep such a round out of the repository, give `capture` an `--out` folder of its own rather
+than `artifacts/screens/`, where the published boards are gathered, and delete any `parley-screens-*` folder a stopped
+run leaves in the temporary folder, since it holds the copy.
+
+The `phone-audit` round holds what a real conversation holds: long unbroken words, inline code, a hash, links, a code
+block, a table, tall and wide images, long names and a busy graph, at 360, 412 and 448 wide and in landscape.
 
 The exit code says how it ended: 0 done, 1 a shot failed, 64 the command line was wrong, 65 a round file is
 wrong, 69 the browser could not be used, 70 the broker refused a step, 130 stopped with Ctrl+C. A second
@@ -56,7 +115,8 @@ then lists steps in order. Each step is one act a broker understands:
 | `propose` | A roadmap proposal | `by`, `title`, `items`, `label`; `conversation` optional |
 | `confirm` | The person confirms a proposal | `proposal` (its label) |
 | `freeze` | The person freezes an agent | `agent`; `keep` to outlast a broker restart |
-| `turn` | The node reports a turn | `agent`, `phase` (`working`, `ended` or `background`); `tasks` for background |
+| `turn` | The node reports a turn | `agent`, `phase` (`working`, `ended` or `background`); `tasks` for background, and `labels`, the runner's label for each task, which get the ids `t1`, `t2` and on |
+| `describe` | An agent says what one of its background tasks is doing | `agent`, `task` (its id), `name`; `text` (a description) and `link` optional |
 | `leave` | An agent's connection closes | `agent` |
 
 An agent's `started` is `node` (its node started it, so it can be stopped and given turns), `outside` (opened
@@ -76,6 +136,7 @@ names only a conversation its sender is already part of, or a new one.
 shot has a `file` name, an exact `width` and `height`, a `path` on the console, and what it `shows` in words.
 It can also have:
 
+- `theme` to take this shot in `light` or `dark` when it differs from the list's, so one list can hold both.
 - `graph: true` to pin the graph panel open.
 - `storage` for other choices a person's browser keeps. `{ "parley.nav": "collapsed" }` folds the navigation
   rail and `{ "parley-convo-composer": "closed" }` folds a conversation's message box. Prefer this to clicking a

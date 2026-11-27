@@ -50,8 +50,12 @@ public sealed class PlacingOnThePageTests : IDisposable
 
         var body = await client.GetStringAsync(new Uri(Page + "&conversation=rates", UriKind.Relative), Ct);
 
-        Assert.Contains("<option value=\"rates\">rates</option>", body, StringComparison.Ordinal);
-        Assert.DoesNotContain("<option value=\"pricing\">", body, StringComparison.Ordinal);
+        // The place box's own suggestions (feature 042: typed, not picked); the filter's list offers every conversation.
+        var placeable = body[body.IndexOf("<datalist id=\"placeable\">", StringComparison.Ordinal)..];
+        placeable = placeable[..placeable.IndexOf("</datalist>", StringComparison.Ordinal)];
+
+        Assert.Contains("<option value=\"rates\">rates</option>", placeable, StringComparison.Ordinal);
+        Assert.DoesNotContain("<option value=\"pricing\">", placeable, StringComparison.Ordinal);
     }
 
     [Fact]

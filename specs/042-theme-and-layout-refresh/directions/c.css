@@ -1,0 +1,138 @@
+/* Direction C: Warm studio. Feature 042, a preview laid over the console by tools/Parley.Screens.
+   Draws on: c410… (warm grey surface, pill tabs, cards joined like a diagram, one bright accent) and bf0e… (airy).
+   Written by generate.py; edit the direction there, not here. Every text pair passes WCAG 2.2 AA in both themes. */
+
+:root {
+    --md-sys-color-primary: #353028;
+    --md-sys-color-on-primary: #fff9ef;
+    --md-sys-color-primary-container: #e8e2d7;
+    --md-sys-color-on-primary-container: #1f1b13;
+    --md-sys-color-secondary: #665d52;
+    --md-sys-color-on-secondary: #ffffff;
+    --md-sys-color-secondary-container: #ece1d3;
+    --md-sys-color-on-secondary-container: #211a10;
+    --md-sys-color-tertiary: #586401;
+    --md-sys-color-on-tertiary: #fffffe;
+    --md-sys-color-tertiary-container: #e2f262;
+    --md-sys-color-on-tertiary-container: #252800;
+    --md-sys-color-error: #b12938;
+    --md-sys-color-on-error: #ffffff;
+    --md-sys-color-error-container: #fedad8;
+    --md-sys-color-on-error-container: #400004;
+    --md-sys-color-surface: #fdf9f2;
+    --md-sys-color-on-surface: #1e1b16;
+    --md-sys-color-surface-variant: #e9e1d5;
+    --md-sys-color-on-surface-variant: #4c463c;
+    --md-sys-color-surface-dim: #ded9d2;
+    --md-sys-color-surface-bright: #fdf9f2;
+    --md-sys-color-surface-container-lowest: #ffffff;
+    --md-sys-color-surface-container-low: #f8f3ec;
+    --md-sys-color-surface-container: #f2ede6;
+    --md-sys-color-surface-container-high: #ece8e0;
+    --md-sys-color-surface-container-highest: #e6e2db;
+    --md-sys-color-outline: #7d766b;
+    --md-sys-color-outline-variant: #cdc5b9;
+    --md-sys-color-inverse-surface: #33302b;
+    --md-sys-color-inverse-on-surface: #f5f0e9;
+    --md-sys-color-inverse-primary: #ccc6bb;
+    --md-ext-color-card: var(--md-sys-color-surface-container-lowest);
+    --radius: 22px;
+    --gap: 1.75rem;
+    --rule: transparent;
+    --md-sys-shape-corner-medium: 16px;
+    --md-sys-shape-corner-large: 22px;
+    --md-sys-shape-corner-extra-large: 32px;
+    --md-sys-elevation-1: 0 1px 2px rgb(40 35 25 / 0.06), 0 2px 6px rgb(40 35 25 / 0.06);
+    --md-sys-elevation-2: 0 2px 4px rgb(40 35 25 / 0.08), 0 8px 20px rgb(40 35 25 / 0.10);
+    --md-sys-elevation-3: 0 4px 8px rgb(40 35 25 / 0.10), 0 14px 36px rgb(40 35 25 / 0.14);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --md-sys-color-primary: #ccc6bb;
+    --md-sys-color-on-primary: #353028;
+    --md-sys-color-primary-container: #4b463d;
+    --md-sys-color-on-primary-container: #e8e2d7;
+    --md-sys-color-secondary: #cfc5b8;
+    --md-sys-color-on-secondary: #372f25;
+    --md-sys-color-secondary-container: #4e463b;
+    --md-sys-color-on-secondary-container: #ece1d3;
+    --md-sys-color-tertiary: #bfd041;
+    --md-sys-color-on-tertiary: #2e3401;
+    --md-sys-color-tertiary-container: #cede4f;
+    --md-sys-color-on-tertiary-container: #252800;
+    --md-sys-color-error: #ffb3b0;
+    --md-sys-color-on-error: #670116;
+    --md-sys-color-error-container: #920123;
+    --md-sys-color-on-error-container: #fedad8;
+    --md-sys-color-surface: #17130c;
+    --md-sys-color-on-surface: #e6e2db;
+    --md-sys-color-surface-variant: #4c463c;
+    --md-sys-color-on-surface-variant: #cdc5b9;
+    --md-sys-color-surface-dim: #17130c;
+    --md-sys-color-surface-bright: #3c3933;
+    --md-sys-color-surface-container-lowest: #120e05;
+    --md-sys-color-surface-container-low: #1e1b16;
+    --md-sys-color-surface-container: #221f1a;
+    --md-sys-color-surface-container-high: #2d2a24;
+    --md-sys-color-surface-container-highest: #38342f;
+    --md-sys-color-outline: #979084;
+    --md-sys-color-outline-variant: #4c463c;
+    --md-sys-color-inverse-surface: #e6e2db;
+    --md-sys-color-inverse-on-surface: #33302b;
+    --md-sys-color-inverse-primary: #635e55;
+    --md-ext-color-card: var(--md-sys-color-surface-container);
+    --radius: 22px;
+    --gap: 1.75rem;
+    --rule: transparent;
+  }
+}
+
+:root[data-theme="dark"] {
+    --md-sys-color-primary: #ccc6bb;
+    --md-sys-color-on-primary: #353028;
+    --md-sys-color-primary-container: #4b463d;
+    --md-sys-color-on-primary-container: #e8e2d7;
+    --md-sys-color-secondary: #cfc5b8;
+    --md-sys-color-on-secondary: #372f25;
+    --md-sys-color-secondary-container: #4e463b;
+    --md-sys-color-on-secondary-container: #ece1d3;
+    --md-sys-color-tertiary: #bfd041;
+    --md-sys-color-on-tertiary: #2e3401;
+    --md-sys-color-tertiary-container: #cede4f;
+    --md-sys-color-on-tertiary-container: #252800;
+    --md-sys-color-error: #ffb3b0;
+    --md-sys-color-on-error: #670116;
+    --md-sys-color-error-container: #920123;
+    --md-sys-color-on-error-container: #fedad8;
+    --md-sys-color-surface: #17130c;
+    --md-sys-color-on-surface: #e6e2db;
+    --md-sys-color-surface-variant: #4c463c;
+    --md-sys-color-on-surface-variant: #cdc5b9;
+    --md-sys-color-surface-dim: #17130c;
+    --md-sys-color-surface-bright: #3c3933;
+    --md-sys-color-surface-container-lowest: #120e05;
+    --md-sys-color-surface-container-low: #1e1b16;
+    --md-sys-color-surface-container: #221f1a;
+    --md-sys-color-surface-container-high: #2d2a24;
+    --md-sys-color-surface-container-highest: #38342f;
+    --md-sys-color-outline: #979084;
+    --md-sys-color-outline-variant: #4c463c;
+    --md-sys-color-inverse-surface: #e6e2db;
+    --md-sys-color-inverse-on-surface: #33302b;
+    --md-sys-color-inverse-primary: #635e55;
+    --md-ext-color-card: var(--md-sys-color-surface-container);
+    --radius: 22px;
+    --gap: 1.75rem;
+    --rule: transparent;
+}
+
+/* Preview only, below this line: the page behind the cards, and the few component rules that show this direction's
+   character (cards without borders, raised controls). The build passes turn these into proper tokens and styles. */
+.bubble, .letter, .card-section, .view-card, .grid, .convo-head, .act-cards li, .settings-section fieldset { border-color: transparent; border-radius: var(--md-sys-shape-corner-large); box-shadow: var(--md-sys-elevation-1); }
+.bubble { border-left-width: 3px; border-left-color: var(--agent); }
+.inbox-views a[aria-current], .rail nav a[aria-current] { background: var(--md-sys-color-tertiary-container); color: var(--md-sys-color-on-tertiary-container); }
+.chip, main nav.page-links a, .inbox-views a { border-color: transparent; background: var(--md-sys-color-surface-container-lowest); box-shadow: var(--md-sys-elevation-1); }
+body { background: var(--md-sys-color-surface-container); background-attachment: fixed; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) body { background: var(--md-sys-color-surface); background-attachment: fixed; } }
+:root[data-theme="dark"] body { background: var(--md-sys-color-surface); background-attachment: fixed; }

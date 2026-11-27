@@ -134,20 +134,39 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
     internal Task EndedOnItsOwnAsync(Parley.Core.AgentName agent, DateTimeOffset began, TurnOutcome outcome) =>
         ReportEndAsync(agent, began, outcome);
 
-    /// <summary>Reports how many background tasks an agent has running now (SPEC.md §11.6).</summary>
+    /// <summary>Reports what an agent has running in the background now: how many tasks, and each by the runner's id,
+    /// kind and label (SPEC.md §11.6).</summary>
     /// <param name="agent">The agent, as this project names it.</param>
-    /// <param name="tasks">How many.</param>
-    /// <param name="stillTrue">Whether the count is still the one to say, asked before a retry; null to always retry.</param>
+    /// <param name="work">What it has running.</param>
+    /// <param name="stillTrue">Whether this is still the one to say, asked before a retry; null to always retry.</param>
     /// <returns>A task that completes when it has been reported, or could not be.</returns>
-    internal Task BackgroundAsync(Parley.Core.AgentName agent, int tasks, Func<bool>? stillTrue = null) =>
-        SendAsync(
+    internal Task BackgroundAsync(Parley.Core.AgentName agent, Parley.Headless.BackgroundSnapshot work, Func<bool>? stillTrue = null)
+    {
+        ArgumentNullException.ThrowIfNull(work);
+
+        var background = new Wire.BackgroundWork { Tasks = work.Count, Sequence = work.Sequence };
+
+        background.Running.AddRange(work.Listed.Select(task => new Wire.RunningTask
+        {
+            Id = task.Id,
+            Kind = task.Kind switch
+            {
+                Parley.Core.TaskKind.Agent => Wire.TaskKind.Agent,
+                Parley.Core.TaskKind.Command => Wire.TaskKind.Command,
+                _ => Wire.TaskKind.Other,
+            },
+            Label = task.Name,
+        }));
+
+        return SendAsync(
             new Wire.TurnReport
             {
                 Machine = machine,
                 Agent = agent.Value,
-                Background = new Wire.BackgroundWork { Tasks = tasks },
+                Background = background,
             },
             stillTrue);
+    }
 
     private Task ReportEndAsync(Parley.Core.AgentName agent, DateTimeOffset started, TurnOutcome? outcome) =>
         SendAsync(new Wire.TurnReport
@@ -169,6 +188,8 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
 
     /// <summary>Tells the broker this node is about to start an agent, and gives back what to start it with.</summary>
     /// <param name="agent">The agent about to be started.</param>
+    /// <param name="sequence">The node's reading number for this launch, taken before the process starts and given to every
+    /// project told of it (<see cref="ReportRunningAsync"/>); 0 to take the next.</param>
     /// <returns>The environment to add to the process: its launch token.</returns>
     /// <remarks>
     /// <b>Reported before the process starts</b>, so the broker knows the token when the adapter presents it; and, like a
@@ -176,15 +197,27 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
     /// Parley, which is honest about what it knows. A fresh token each launch, so a process left from an earlier launch of
     /// the agent cannot pass for the new one.
     /// </remarks>
-    internal async Task<IReadOnlyDictionary<string, string>> LaunchAsync(Parley.Core.AgentName agent)
+    internal async Task<IReadOnlyDictionary<string, string>> LaunchAsync(Parley.Core.AgentName agent, long sequence = 0)
     {
         var token = Guid.NewGuid().ToString("N");
+
+        // Taken once, before the process starts: every reading it makes is numbered after, whichever try lands.
+        if (sequence <= 0)
+        {
+            sequence = Parley.Headless.BackgroundSnapshot.NextSequence();
+        }
 
 #pragma warning disable CA1031 // A report must never stop a launch, whatever went wrong sending it.
         try
         {
             _ = await PatientlyAsync(async deadline => await nodes.ReportLaunchAsync(
-                    new Wire.LaunchReport { Machine = machine, Agent = agent.Value, Token = token },
+                    new Wire.LaunchReport
+                    {
+                        Machine = machine,
+                        Agent = agent.Value,
+                        Token = token,
+                        Sequence = sequence,
+                    },
                     deadline: deadline))
                 .ConfigureAwait(false);
         }
@@ -219,16 +252,25 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
                 && resident.IssuedToken is { Length: > 0 } token
                 && string.Equals(resident.Name.Machine, machine, StringComparison.Ordinal))
             {
-                await ReportRunningAsync(identity, role, token, resident.Workspace, () => Current(resident, token))
+                // Numbered before the reading below is taken, so that reading is sent at no less than the launch's number.
+                var sequence = Parley.Headless.BackgroundSnapshot.NextSequence();
+
+                await ReportRunningAsync(identity, role, token, resident.Workspace, () => Current(resident, token), sequence)
                     .ConfigureAwait(false);
 
                 // A rejoin clears the broker's count of background work; work still running would read as idle until it
                 // ended, which has no bound (review, lens 1 run 2 on ae1d0e0f).
-                if (resident.BackgroundTasks is var tasks and > 0 && Parley.Core.AgentName.TryJoin(role, machine, out var named))
+                if (resident.Background is { Count: > 0 } work && Parley.Core.AgentName.TryJoin(role, machine, out var named))
                 {
-                    // Not retried once the count has moved: a retry landing behind the pump's newer report would show work
-                    // that has ended (review, lens 1 run B on d99806d9).
-                    await BackgroundAsync(named, tasks, () => resident.BackgroundTasks == tasks).ConfigureAwait(false);
+                    // **Sent at the launch's number when it was read before it.** The broker that lost the node takes the
+                    // announcement as a new launch and holds nothing running at that number, and a reading numbered earlier
+                    // lost to it: the agent read as idle while its work ran. Read after the number was taken, so a reading the
+                    // runner makes after this one is numbered higher still and wins wherever it lands.
+                    var sent = work.Sequence >= sequence ? work : work with { Sequence = sequence };
+
+                    // Not retried once it has moved: a retry landing behind the pump's newer report would show work that has
+                    // ended (review, lens 1 run B on d99806d9). The same snapshot, not an equal one, is what was read.
+                    await BackgroundAsync(named, sent, () => ReferenceEquals(resident.Background, work)).ConfigureAwait(false);
                 }
             }
         }
@@ -240,11 +282,16 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
     /// <param name="token">The token the process was started with.</param>
     /// <param name="workspace">The checkout's folder, which the broker holds the name to (lens 2 run 111).</param>
     /// <param name="stillRunning">Whether the process started with <paramref name="token"/> is still the one running.</param>
+    /// <param name="sequence">The node's reading number to announce it at; 0 to take the next.</param>
     /// <returns>A task that completes when it has been reported, or could not be.</returns>
     /// <remarks>
     /// <para>
     /// One checkout is one process in every project that enrols it, and the project that started it is not the only one
     /// that must know it is Parley's (lens 1 run 107). Like a launch report, a failed one stops nothing.
+    /// </para>
+    /// <para>
+    /// <b>One number for every try.</b> The process is running and its runner's readings are numbered meanwhile, so a retry
+    /// taking a new number could rank above a reading made after the first try and clear the work it shows.
     /// </para>
     /// <para>
     /// <b>Not tried again once the process it names has been replaced</b> (lens 2 run 119): a report held up by a rewrite
@@ -253,11 +300,16 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
     /// </para>
     /// </remarks>
     internal async Task ReportRunningAsync(
-        Parley.Core.AgentIdentity identity, string role, string token, string workspace, Func<bool> stillRunning)
+        Parley.Core.AgentIdentity identity, string role, string token, string workspace, Func<bool> stillRunning, long sequence = 0)
     {
         if (!Parley.Core.AgentName.TryJoin(role, machine, out var named))
         {
             return;
+        }
+
+        if (sequence <= 0)
+        {
+            sequence = Parley.Headless.BackgroundSnapshot.NextSequence();
         }
 
 #pragma warning disable CA1031 // A report must never stop the node, whatever went wrong sending it.
@@ -271,6 +323,10 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
                         Token = token,
                         Identity = identity.ToString(),
                         Workspace = workspace,
+                        // Numbered like a launch: to a project that had not heard of this process it is one, and the last
+                        // process's late reading must lose to it there too (lens 1 run 3 on #115). For a process the
+                        // broker already knows it changes nothing.
+                        Sequence = sequence,
                     },
                     deadline: deadline),
                     stillRunning)

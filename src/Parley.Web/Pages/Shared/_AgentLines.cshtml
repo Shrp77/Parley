@@ -10,46 +10,84 @@
         <a href="/Projects/Settings?project=@unread.Project">Open its settings</a></p>
 }
 
-@if (Model.Lines.Where(line => line.Rows.Any(r => r.Now.Working)).Select(line => line.Name.Role).ToList() is { Count: > 0 } working)
+@* Grouped by state, the first section already says who is working; A to Z, it is said here. *@
+@if (Model.ByName && Model.Lines.Where(line => line.Rows.Any(r => r.Now.Working)).Select(line => line.Name.Role).ToList() is { Count: > 0 } working)
 {
     <p class="dgrid-empty" data-working role="status"><strong>Working now:</strong> @string.Join(", ", working)</p>
 }
 
-@foreach (var line in Model.Lines)
-{
-    var who = line.Name;
-    var best = line.Best;
+@{
+    // One agent's line, drawn A to Z or within its state's section.
+    void Line(AgentLine line)
+    {
+        var who = line.Name;
+        var best = line.Best;
+        var (mark, words) = AgentStateMark.Split(best.Now);
 
-    <details class="dgrid-row slot-@Palette.SlotFor(who)" role="row" data-agent="@who.Value">
-    <summary class="dgrid-line">
-        <span role="cell">
-            <span class="who" aria-hidden="true" style="display:inline-grid;vertical-align:middle;margin-right:0.5rem;width:1.6rem;height:1.6rem;font-size:0.58rem;">@Palette.BadgeFor(who)</span>
-            <a class="name" title="@who.Value" href="/Projects/Agent?project=@best.Project&amp;agent=@who.Value">@who.Role</a>
-        </span>
-        <span role="cell">@@@who.Machine</span>
-        <span role="cell">
-            @foreach (var row in line.Rows)
+        <details class="dgrid-row slot-@Palette.SlotFor(who)" role="row" data-agent="@who.Value">
+        <summary class="dgrid-line">
+            <span role="cell">
+                <span class="who" aria-hidden="true" style="display:inline-grid;vertical-align:middle;margin-right:0.5rem;width:1.6rem;height:1.6rem;font-size:0.58rem;">@Palette.BadgeFor(who)</span>
+                <a class="name" title="@who.Value" href="/Projects/Agent?project=@best.Project&amp;agent=@who.Value">@who.Role</a>
+            </span>
+            <span role="cell">@@@who.Machine</span>
+            <span role="cell">
+                @foreach (var row in line.Rows)
+                {
+                    <a class="project-chip" href="/Projects/Agent?project=@row.Project&amp;agent=@who.Value">@row.Project@if (row.Agent.Frozen)
+                        {<span class="chip-mark" title="Frozen by you: nothing starts it" aria-hidden="true">❄</span><span class="visually-hidden">, frozen</span>}
+                        else if (row.Agent.Status == Parley.Core.AgentStatus.Retired)
+                        {<span class="visually-hidden">, retired</span><span aria-hidden="true"> (retired)</span>}</a>
+                }
+            </span>
+            @* The state as a mark in a badge, its words the tooltip and what a screen reader says. Tapped on a touch screen, the
+               row opens, and its detail says the state in words. *@
+            <span role="cell" class="state-cell"><span class="state-mark @AgentStateMark.Tint(mark)" title="@words" aria-hidden="true">@mark</span><span class="state-words">@words</span></span>
+        </summary>
+        <div class="dgrid-detail">
+            <dl class="facts">
+                <dt>State</dt>
+                <dd>@words@(line.Rows.Any(r => r.Agent.Frozen) ? ", frozen by you" : "")</dd>
+                <dt>Owns</dt>
+                <dd>@(line.Owns is { Length: > 0 } owns ? owns : "None stated.")</dd>
+                @if (line.Rows.Count > 1)
+                {
+                    <dt>In projects</dt>
+                    <dd>
+                        @foreach (var row in line.Rows)
+                        {
+                            <div><a href="/Projects/Agent?project=@row.Project&amp;agent=@who.Value">@row.Project</a>: @row.Now.Words@(row.Agent.Frozen ? ", frozen" : "")</div>
+                        }
+                    </dd>
+                }
+            </dl>
+        </div>
+        </details>
+    }
+
+    // What each state's section is called: what the console's legend says its mark means.
+    var named = AgentStateMark.Legend.ToDictionary(entry => entry.Mark, entry => entry.Means, StringComparer.Ordinal);
+}
+@if (Model.ByName)
+{
+    foreach (var line in Model.Lines.OrderBy(line => line.Name.Role, StringComparer.Ordinal).ThenBy(line => line.Name.Machine, StringComparer.Ordinal))
+    {
+        Line(line);
+    }
+}
+else
+{
+    @* Grouped by what each is doing, each state a section that opens, in the order the list ranks them: working first, then
+       stopped, then the rest (the person's feedback on feature 042). *@
+    foreach (var group in Model.Lines.GroupBy(line => line.Best.Now.Mark, StringComparer.Ordinal).OrderBy(group => group.Min(line => line.Best.Now.Rank)).ThenBy(group => AgentStateMark.Order(group.Key)))
+    {
+        var heading = named.GetValueOrDefault(group.Key, "other");
+        <details class="state-group" open data-state-group="@group.Key">
+            <summary class="state-group-head"><span class="state-mark @AgentStateMark.Tint(group.Key)" aria-hidden="true">@group.Key</span><span class="state-group-name">@(char.ToUpperInvariant(heading[0]) + heading[1..])</span><span class="count">@group.Count()<span class="visually-hidden"> @(group.Count() == 1 ? "agent" : "agents")</span></span></summary>
+            @foreach (var line in group)
             {
-                <a class="project-chip" href="/Projects/Agent?project=@row.Project&amp;agent=@who.Value">@row.Project</a>@(row.Agent.Frozen ? " (frozen)" : row.Agent.Status == Parley.Core.AgentStatus.Retired ? " (retired)" : "")@(row == line.Rows[^1] ? "" : ", ")
+                Line(line);
             }
-        </span>
-        <span role="cell">@best.Now.Words</span>
-    </summary>
-    <div class="dgrid-detail">
-        <dl class="facts">
-            <dt>Owns</dt>
-            <dd>@(line.Owns is { Length: > 0 } owns ? owns : "None stated.")</dd>
-            @if (line.Rows.Count > 1)
-            {
-                <dt>In projects</dt>
-                <dd>
-                    @foreach (var row in line.Rows)
-                    {
-                        <div><a href="/Projects/Agent?project=@row.Project&amp;agent=@who.Value">@row.Project</a>: @row.Now.Words@(row.Agent.Frozen ? ", frozen" : "")</div>
-                    }
-                </dd>
-            }
-        </dl>
-    </div>
-    </details>
+        </details>
+    }
 }

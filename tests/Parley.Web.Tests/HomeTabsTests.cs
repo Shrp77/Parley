@@ -43,22 +43,38 @@ public sealed class HomeTabsTests
     }
 
     [Fact]
-    public async Task Each_view_is_a_grid_with_create_then_filters_then_the_rows()
+    public async Task Each_view_is_a_grid_with_its_create_in_the_rail_and_its_filters_before_the_rows()
     {
         using var console = new TranscriptConsole();
         console.Broker.Registry.Add(
             new Wire.RegistryRow { Name = "orders@beta", Adapter = "claude-code", Tier = Wire.AgentTier.Full, Status = Wire.AgentStatus.Active });
         using var client = console.CreateClient();
 
-        foreach (var path in new[] { "/", "/?tab=agents", "/Inbox" })
+        // All Agents has nothing to create: registering an agent is done inside a project, so its create panel is drawn only
+        // there.
+        foreach (var (path, creates) in new[] { ("/", true), ("/?tab=agents", false), ("/Inbox", true) })
         {
             var page = await client.GetStringAsync(new Uri(path, UriKind.Relative), TestContext.Current.CancellationToken);
 
-            var create = page.IndexOf("view-create", StringComparison.Ordinal);
-            var filters = page.IndexOf("view-filters", StringComparison.Ordinal);
-            var head = page.IndexOf("dgrid-head", StringComparison.Ordinal);
+            // In the page's markup, by their class attributes. This once passed on the names in the inline stylesheet,
+            // which came first in the page; feature 042 moved the styles out, and the markup is what was meant.
+            var actions = page.IndexOf("class=\"rail-actions\"", StringComparison.Ordinal);
+            var create = page.IndexOf("class=\"rail-act rail-act-main\"", StringComparison.Ordinal);
+            var main = page.IndexOf("<main", StringComparison.Ordinal);
+            var filters = page.IndexOf("view-filters\"", StringComparison.Ordinal);
+            var head = page.IndexOf("class=\"dgrid-head\"", StringComparison.Ordinal);
 
-            Assert.True(create >= 0 && create < filters && filters < head, $"{path}: create, filters and the grid header must appear in that order");
+            Assert.True(filters > main && filters < head, $"{path}: the filters must come in the page, before the grid header");
+
+            // Feature 042: a page's create opens from the rail's page commands, never as a card in the page.
+            if (creates)
+            {
+                Assert.True(actions >= 0 && actions < create && create < main, $"{path}: the create panel must be in the rail's page actions");
+            }
+            else
+            {
+                Assert.Equal(-1, create);
+            }
         }
     }
 

@@ -7,14 +7,23 @@
 
 <h1>Files in @Model.Project</h1>
 
-<nav class="page-links" aria-label="This project">
-    <a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a>
-    <a href="/Projects/FileProblems?project=@Uri.EscapeDataString(Model.Project ?? string.Empty)">File problems</a>
-    @if (!string.IsNullOrWhiteSpace(Model.Conversation))
+@* The conversations a file can be named by, offered as the person types rather than as one long list: a project's
+   agents start conversations of their own, and a drop-down of all of them grew past use (the person's feedback on
+   feature 042). Typed, a name is still checked against the project's conversations when the form is sent. *@
+<datalist id="conversations">
+    @foreach (var id in Model.Conversations)
     {
-        <a href="/Projects/Files?project=@Model.Project">Every conversation's files</a>
+        <option value="@id">@(Model.ParentOf(id) is { } parent ? Parley.Client.Rendering.ConversationWording.Listed(id, parent) : id)</option>
     }
-</nav>
+</datalist>
+@* Where a file can be placed: every conversation, or only the one in view on a page narrowed to it. Its own list, so the
+   box never suggests a conversation it would refuse. *@
+<datalist id="placeable">
+    @foreach (var id in Model.Placeable)
+    {
+        <option value="@id">@(Model.ParentOf(id) is { } parent ? Parley.Client.Rendering.ConversationWording.Listed(id, parent) : id)</option>
+    }
+</datalist>
 
 @if (Model.Outcome is { Length: > 0 } outcome)
 {
@@ -77,46 +86,36 @@ else if (Model.ConfirmingPrune && Model.Listing is { } pruning)
 }
 else if (Model.Listing is { } listing)
 {
-    <form method="get" action="/Projects/Files">
-        <input type="hidden" name="project" value="@Model.Project" />
-        <label for="conversation">Only the files of conversation</label>
-        <input id="conversation" name="conversation" value="@Model.Conversation" autocomplete="off" />
-        <button type="submit" class="quiet">Show</button>
-    </form>
+    @* Filtered to one conversation's files, said as a chip beside the folded filter, as on every list (feature 042). *@
+    <div class="filter-bar">
+        <details class="filters-fold">
+            <summary class="button tonal"><span class="icon" aria-hidden="true">tune</span> Filter</summary>
+            <form method="get" action="/Projects/Files" class="view-card view-filters">
+                <input type="hidden" name="project" value="@Model.Project" />
+                <div class="field wide">
+                    <label for="conversation">Conversation</label>
+                    <input id="conversation" name="conversation" value="@Model.Conversation" list="conversations" autocomplete="off" placeholder="Every conversation" />
+                </div>
+                <button type="submit">Filter</button>
+            </form>
+        </details>
+        @if (Model.Conversation is { Length: > 0 } onlyThis)
+        {
+            @* Built from the page's own project, not from its address: after a form posts back here the address carries the
+               handler and not the project, and a link made from it would lead nowhere. *@
+            <ul class="filter-chips" aria-label="Filtered on">
+                <li><a class="chip" href="/Projects/Files?project=@Uri.EscapeDataString(Model.Project ?? string.Empty)" title="Take this filter off">Conversation: @onlyThis<span class="visually-hidden">, remove this filter</span> <span class="icon" aria-hidden="true">close</span></a></li>
+            </ul>
+        }
+        @if (listing.Page.TotalFiles > 0)
+        {
+            <span class="tally">@listing.Page.TotalFiles file(s), @FilesModel.Size(listing.Page.TotalBytes) in all.</span>
+        }
+    </div>
 
-    @* The only way the person's file gets in: one copied into a folder by hand is never listed, and the next sweep
-       deletes it. A placed file is never changed, so a new version goes under a new name. *@
-    <h2>Place a file</h2>
     @if (Model.Placeable.Count == 0)
     {
-        <p>This project has no conversation to place a file in yet. A file goes in a conversation that exists.</p>
-    }
-    else
-    {
-        <form method="post" asp-page-handler="Place" enctype="multipart/form-data" class="place">
-            <input type="hidden" name="project" value="@Model.Project" />
-            <input type="hidden" name="conversation" value="@Model.Conversation" />
-
-            <label for="upload">A @Parley.Core.SharedFileName.AllowedExtensionsInWords file</label>
-            <input id="upload" name="upload" type="file" accept="@string.Join(',', Parley.Core.SharedFileName.AllowedExtensions)" required />
-
-            <label for="placeIn">In conversation</label>
-            <select id="placeIn" name="placeIn">
-                @foreach (var id in Model.Placeable)
-                {
-                    <option value="@id">@(Model.ParentOf(id) is { } parent ? Parley.Client.Rendering.ConversationWording.Listed(id, parent) : id)</option>
-                }
-            </select>
-
-            <label for="placeAs">Under the name (empty: the file's own)</label>
-            <input id="placeAs" name="placeAs" autocomplete="off" />
-
-            <button type="submit">Place it</button>
-        </form>
-        <p class="notice">
-            It is placed as yours, and any agent in the project can fetch it. A name that already holds other content is
-            refused: a placed file is never changed, so a new version goes under a new name.
-        </p>
+        <p class="notice">This project has no conversation to place a file in yet. A file goes in a conversation that exists.</p>
     }
 
     @if (listing.Page.TotalFiles == 0)
@@ -125,16 +124,24 @@ else if (Model.Listing is { } listing)
     }
     else
     {
-        <form method="post" asp-page-handler="Remove">
+        <form method="post" asp-page-handler="Remove" class="files-form">
             <input type="hidden" name="project" value="@Model.Project" />
             <input type="hidden" name="conversation" value="@Model.Conversation" />
+
+            @* Choosing: all or none at once, and Remove offered only once something is chosen. Drawn by the script below;
+               with no script every box and Remove are there as they always were. *@
+            <div class="files-tools" id="files-tools" hidden>
+                <button type="button" class="quiet" id="files-all">Select all</button>
+                <button type="button" class="quiet" id="files-none">Select none</button>
+                <span class="count" id="files-count" role="status">None chosen</span>
+            </div>
 
             <table class="files">
                 <thead>
                     <tr>
                         <th scope="col"><span class="visually-hidden">Choose</span></th>
-                        <th scope="col">Conversation</th>
                         <th scope="col">Name</th>
+                        <th scope="col">Conversation</th>
                         <th scope="col">Size</th>
                         <th scope="col">sha256</th>
                         <th scope="col">Placed by</th>
@@ -146,14 +153,15 @@ else if (Model.Listing is { } listing)
                     @foreach (var file in listing.Page.Files)
                     {
                         <tr>
-                            <td><input type="checkbox" name="selected" value="@($"{file.ConversationId}/{file.Name.Value}")" aria-label="Choose @file.Name.Value" /></td>
-                            <td><a href="/Projects/Files?project=@Model.Project&amp;conversation=@file.ConversationId">@file.ConversationId</a></td>
-                            <td>@file.Name.Value</td>
-                            <td>@FilesModel.Size(file.SizeBytes)</td>
-                            <td title="@file.Sha256.Value"><code>@file.Sha256.Short</code></td>
-                            <td>@(file.PlacedBy?.Value ?? "the person")</td>
-                            <td>@Parley.Client.Rendering.LocalTime.Write(file.PlacedUtc)</td>
-                            <td>
+                            <td class="pick"><input type="checkbox" name="selected" value="@($"{file.ConversationId}/{file.Name.Value}")" aria-label="Choose @file.Name.Value" /></td>
+                            <td class="name" title="@file.Name.Value, sha256 @file.Sha256.Value">@file.Name.Value</td>
+                            @* A filter, not Open: it shows only this conversation's files, so it is drawn as a chip. *@
+                            <td class="in"><a class="in-chip" href="/Projects/Files?project=@Uri.EscapeDataString(Model.Project ?? string.Empty)&amp;conversation=@Uri.EscapeDataString(file.ConversationId)" title="Show only this conversation's files"><span class="icon" aria-hidden="true">tune</span>@file.ConversationId</a></td>
+                            <td class="size">@FilesModel.Size(file.SizeBytes)</td>
+                            <td class="hash" title="@file.Sha256.Value"><code>@file.Sha256.Short</code></td>
+                            <td class="by">@(file.PlacedBy?.Value ?? "the person")</td>
+                            <td class="when">@Parley.Client.Rendering.LocalTime.Write(file.PlacedUtc)</td>
+                            <td class="open">
                                 <button type="submit" class="tonal" asp-page-handler="Open"
                                         asp-route-project="@Model.Project"
                                         asp-route-file="@file.Name.Value"
@@ -164,20 +172,34 @@ else if (Model.Listing is { } listing)
                 </tbody>
             </table>
 
-            <button type="submit" class="danger">Remove the chosen files…</button>
+            <button type="submit" class="danger" id="files-remove">Remove the chosen files…</button>
         </form>
+        <script>
+            (function () {
+                var tools = document.getElementById("files-tools");
+                var remove = document.getElementById("files-remove");
+                var boxes = Array.prototype.slice.call(document.querySelectorAll("table.files input[name=selected]"));
 
-        <p>@listing.Page.TotalFiles file(s), @FilesModel.Size(listing.Page.TotalBytes) in all. @Parley.Client.Rendering.LocalTime.Note()</p>
+                if (!tools || !remove || boxes.length === 0) { return; }
 
-        @if (listing.Page.Totals.Count > 1 || string.IsNullOrWhiteSpace(Model.Conversation))
-        {
-            <ul class="totals">
-                @foreach (var total in listing.Page.Totals)
-                {
-                    <li>@total.ConversationId: @total.Files file(s), @FilesModel.Size(total.Bytes)</li>
+                var count = document.getElementById("files-count");
+
+                function sync() {
+                    var n = boxes.filter(function (box) { return box.checked; }).length;
+                    remove.hidden = n === 0;
+                    count.textContent = n === 0 ? "None chosen" : n + " chosen";
                 }
-            </ul>
-        }
+                function every(on) { boxes.forEach(function (box) { box.checked = on; }); sync(); }
+
+                tools.hidden = false;
+                document.getElementById("files-all").addEventListener("click", function () { every(true); });
+                document.getElementById("files-none").addEventListener("click", function () { every(false); });
+                boxes.forEach(function (box) { box.addEventListener("change", sync); });
+                sync();
+            })();
+        </script>
+
+        <p class="files-note">@Parley.Client.Rendering.LocalTime.Note()</p>
 
         @if (listing.Page.NextPageToken is { Length: > 0 } next)
         {
@@ -190,25 +212,65 @@ else if (Model.Listing is { } listing)
         <p class="notice">@notListed</p>
     }
 
+    @* Not in the table above: how many placements each agent has made and their bytes, removed files included (SPEC.md
+       §10.2, list_shared_files). Folded, as it is read when somebody wonders who has been placing a lot. *@
     @if (listing.Placements.Count > 0)
     {
-        <h2>Placements</h2>
-        <ul class="placements">
-            @foreach (var count in listing.Placements)
-            {
-                <li>@count.Agent: @count.Placements placement(s), @FilesModel.Size(count.Bytes)</li>
-            }
-        </ul>
+        <details class="placements-fold">
+            <summary>Placed by each agent, removed files included</summary>
+            <ul class="placements">
+                @foreach (var count in listing.Placements)
+                {
+                    <li>@count.Agent: @count.Placements placement(s), @FilesModel.Size(count.Bytes)</li>
+                }
+            </ul>
+        </details>
     }
+}
 
-    <form method="post" asp-page-handler="Folder">
-        <input type="hidden" name="project" value="@Model.Project" />
-        <input type="hidden" name="conversation" value="@Model.Conversation" />
-        <button type="submit" class="quiet">Open the folder</button>
-    </form>
-
-    <form method="post" asp-page-handler="Prune">
-        <input type="hidden" name="project" value="@Model.Project" />
-        <button type="submit" class="danger">Remove every file…</button>
-    </form>
+@section Actions {
+    @if (Model.ConfirmingRemoval.Count == 0 && !Model.ConfirmingPrune && Model.Listing is not null)
+    {
+        @if (Model.Placeable.Count > 0)
+        {
+            <details class="rail-act rail-act-main">
+                <summary title="Place a file"><span class="icon" aria-hidden="true">add</span><span class="rail-label">Place a file</span></summary>
+                <div class="act-panel">
+                    @* The only way the person's file gets in: one copied into a folder by hand is never listed, and the next
+                       sweep deletes it. A placed file is never changed, so a new version goes under a new name. *@
+                    <form method="post" asp-page-handler="Place" enctype="multipart/form-data" class="place">
+                        <input type="hidden" name="project" value="@Model.Project" />
+                        <input type="hidden" name="conversation" value="@Model.Conversation" />
+                        <div class="field wide">
+                            <label for="upload">A @Parley.Core.SharedFileName.AllowedExtensionsInWords file</label>
+                            <input id="upload" name="upload" type="file" accept="@string.Join(',', Parley.Core.SharedFileName.AllowedExtensions)" required />
+                        </div>
+                        <div class="field wide">
+                            <label for="placeIn">In conversation</label>
+                            <input id="placeIn" name="placeIn" list="placeable" required autocomplete="off" value="@(Model.Placeable.Contains(Model.Conversation ?? string.Empty, StringComparer.Ordinal) ? Model.Conversation : null)" placeholder="Type to find one" />
+                        </div>
+                        <div class="field wide">
+                            <label for="placeAs">Under the name (empty: the file's own)</label>
+                            <input id="placeAs" name="placeAs" autocomplete="off" />
+                        </div>
+                        <button type="submit">Place it</button>
+                        <p class="composer-note">
+                            It is placed as yours, and any agent in the project can fetch it. A name that already holds other
+                            content is refused: a placed file is never changed, so a new version goes under a new name.
+                        </p>
+                    </form>
+                </div>
+            </details>
+        }
+        <a class="rail-link" href="/Projects/FileProblems?project=@Uri.EscapeDataString(Model.Project ?? string.Empty)" title="File problems"><span class="icon" aria-hidden="true">warning</span><span class="rail-label">File problems</span></a>
+        <form method="post" asp-page-handler="Folder" class="rail-form">
+            <input type="hidden" name="project" value="@Model.Project" />
+            <input type="hidden" name="conversation" value="@Model.Conversation" />
+            <button type="submit" class="rail-link" title="Open the folder"><span class="icon" aria-hidden="true">description</span><span class="rail-label">Open the folder</span></button>
+        </form>
+        <form method="post" asp-page-handler="Prune" class="rail-form">
+            <input type="hidden" name="project" value="@Model.Project" />
+            <button type="submit" class="rail-link danger-link" title="Remove every file…"><span class="icon" aria-hidden="true">close</span><span class="rail-label">Remove every file…</span></button>
+        </form>
+    }
 }

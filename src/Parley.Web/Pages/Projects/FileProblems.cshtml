@@ -7,18 +7,6 @@
 
 <h1>File problems in @Model.Project</h1>
 
-<nav class="page-links" aria-label="This project">
-    <a href="/Projects/Agents?project=@Uri.EscapeDataString(Model.Project ?? string.Empty)">Back to @Model.Project</a>
-    <a href="/Projects/Files?project=@Uri.EscapeDataString(Model.Project ?? string.Empty)">Files</a>
-    @if (Model.All)
-    {
-        <a href="/Projects/FileProblems?project=@Uri.EscapeDataString(Model.Project ?? string.Empty)">Only the waiting ones</a>
-    }
-    else
-    {
-        <a href="/Projects/FileProblems?project=@Uri.EscapeDataString(Model.Project ?? string.Empty)&amp;all=true">Show the dismissed ones too</a>
-    }
-</nav>
 
 @if (Model.Outcome is { Length: > 0 } outcome)
 {
@@ -103,5 +91,17 @@
         </table>
 
         <p>@Parley.Client.Rendering.LocalTime.Note()</p>
+    }
+}
+
+@section Actions {
+    @* This page's commands, in the rail like every page's; the places the menu already leads to are not repeated (feature 042). *@
+    @if (Model.All)
+    {
+        <a class="rail-link" href="/Projects/FileProblems?project=@Uri.EscapeDataString(Model.Project ?? string.Empty)" title="Only the waiting ones"><span class="icon" aria-hidden="true">tune</span><span class="rail-label">Only waiting</span></a>
+    }
+    else
+    {
+        <a class="rail-link" href="/Projects/FileProblems?project=@Uri.EscapeDataString(Model.Project ?? string.Empty)&amp;all=true" title="Show the dismissed ones too"><span class="icon" aria-hidden="true">tune</span><span class="rail-label">Show dismissed</span></a>
     }
 }

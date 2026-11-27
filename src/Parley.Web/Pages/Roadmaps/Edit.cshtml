@@ -6,7 +6,6 @@
 
 <h1>@(Model.Roadmap is { } named ? $"Edit #{named.Number} {named.Title}" : "Edit roadmap")</h1>
 
-<nav class="page-links" aria-label="This project"><a href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@Model.Id">Back to the roadmap</a></nav>
 
 @if (Model.Problem is { Length: > 0 } problem)
 {
@@ -59,4 +58,9 @@ else if (Model.Roadmap is { } roadmap)
         }
         <a class="button quiet" href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@Model.Id">Leave it as it is</a>
     </form>
+}
+
+@section Actions {
+    @* This page's commands, in the rail like every page's; the places the menu already leads to are not repeated (feature 042). *@
+    <a class="rail-link" href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@Model.Id" title="Back to the roadmap"><span class="icon" aria-hidden="true">chevron_left</span><span class="rail-label">The roadmap</span></a>
 }

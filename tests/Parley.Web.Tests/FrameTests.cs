@@ -25,7 +25,7 @@ namespace Parley.Web.Tests;
 public sealed class FrameTests
 {
     private static string Layout =>
-        File.ReadAllText(RepositoryPath("src/Parley.Web/Pages/Shared/_Layout.cshtml"));
+        ScriptSource.Page("src/Parley.Web/Pages/Shared/_Layout.cshtml");
 
     [Fact]
     public void The_frame_is_pinned_to_the_top()

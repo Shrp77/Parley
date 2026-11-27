@@ -99,6 +99,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
     // What each agent's node last said it has running in the background (SPEC.md §11.6), in memory like a running turn.
     private readonly ConcurrentDictionary<AgentName, BackgroundWork> _background = new();
 
+    // What each agent has said about its own background tasks (feature 043), in memory, keyed by the caller.
+    private readonly ConcurrentDictionary<AgentName, DescribedTasks> _described = new();
+
     // When the last few turns each agent was heard to end began. A start report slower than its own end (the node's call
     // gave up after its deadline and the broker handled it anyway) carries that same time, and must not leave the agent
     // reading as working until its next report. The same time, never an earlier one: a node's clock may step back, or
@@ -1636,12 +1639,14 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="machine">The reporting node's machine.</param>
     /// <param name="agent">The agent it is starting.</param>
     /// <param name="token">The token it chose for this launch.</param>
+    /// <param name="sequence">The node's reading number when it launched, so the last process's readings, lower, change
+    /// nothing once this lands; 0 when it gave none.</param>
     /// <returns>Whether the report was accepted.</returns>
     /// <remarks>
     /// Only from the node joined for the agent's machine, and never for the person or Parley, whom no node starts — the
     /// same checks a turn report meets. A newer launch's token replaces an older one's, which is what a restart is.
     /// </remarks>
-    public bool LaunchReported(string machine, AgentName agent, string token)
+    public bool LaunchReported(string machine, AgentName agent, string token, long sequence = 0)
     {
         if (PersonSeat.Is(agent)
             || Facilitation.Is(agent)
@@ -1655,14 +1660,17 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         // A new process has no background work yet: what the last one had running went with it. The same token again is a
         // node telling a broker about a process it already runs, whose count stands.
-        if (!_launches.TryGetValue(agent, out var was) || !string.Equals(was.Token, token, StringComparison.Ordinal))
-        {
-            _ = _background.TryRemove(agent, out _);
-        }
+        var fresh = !_launches.TryGetValue(agent, out var was) || !string.Equals(was.Token, token, StringComparison.Ordinal);
 
         // Held with the connection that holds the machine now, so that connection's release takes the token with it
-        // (ReleaseNodeAsync), and a node that rejoins and announces the process again puts it back.
+        // (ReleaseNodeAsync), and a node that rejoins and announces the process again puts it back. Recorded before the
+        // old words are forgotten, so a describe landing in between is said under this launch, not the last.
         _launches[agent] = (token, reporter);
+
+        if (fresh)
+        {
+            ForgetBackground(machine, agent, token, sequence);
+        }
 
         // A freeze made while its node was away asked nobody, and the node's return announces the process again: it is asked
         // to stop now, as the freeze would have (SPEC.md §14). Otherwise it ran on, frozen and given no turns, read on every
@@ -1727,19 +1735,31 @@ public sealed class BrokerRuntime : IAsyncDisposable
         }
     }
 
-    /// <summary>Records how many background tasks a node says an agent has running (SPEC.md §11.6).</summary>
+    /// <summary>Records what a node says an agent has running in the background (SPEC.md §11.6).</summary>
     /// <param name="machine">The reporting node's machine.</param>
     /// <param name="agent">The agent.</param>
     /// <param name="tasks">How many.</param>
+    /// <param name="running">Each task the node named: the runner's id, kind and label (feature 043).</param>
+    /// <param name="sequence">When the node read it, against its other readings: a report older than the one held from the
+    /// same node changes nothing.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>Whether the report was accepted.</returns>
     /// <remarks>
+    /// <para>
     /// The same checks a turn report meets. Held in memory with the node that said it, as a running turn is, so a node that
     /// leaves takes its word with it.
+    /// </para>
+    /// <para>
+    /// <b>Every entry is held to the rules again here</b>, not taken on the node's word: an id the runner could not have
+    /// given drops its entry, a label is cut and neutralised, the list is bounded, and an id named twice is named once. The
+    /// count stands whatever the list holds.
+    /// </para>
     /// </remarks>
     public async Task<bool> BackgroundReportedAsync(
-        string machine, AgentName agent, int tasks, CancellationToken cancellationToken = default)
+        string machine, AgentName agent, int tasks, IEnumerable<BackgroundTask> running, long sequence, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(running);
+
         if (tasks is < 0 or > MostBackgroundTasks
             || !_nodes.TryGetValue(machine, out var reporter)
             || await AcceptedTurnAsync(machine, agent, cancellationToken).ConfigureAwait(false) is null)
@@ -1747,19 +1767,76 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return false;
         }
 
-        if (tasks == 0)
+        // Looking the agent up waits on the store, and the node may have left and another joined meanwhile: a report from the
+        // connection that left changes nothing, so it never overwrites or clears what the one that joined since has said.
+        if (!_nodes.TryGetValue(machine, out var current) || !ReferenceEquals(current, reporter))
         {
-            _ = _background.TryRemove(agent, out _);
-        }
-        else
-        {
-            _background[agent] = new BackgroundWork(tasks, machine);
+            return false;
         }
 
-        // The node may have left while the agent was looked up, and its release swept the table before this landed.
+        var named = new List<BackgroundTask>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var task in running)
+        {
+            if (named.Count == Math.Min(tasks, BackgroundTaskText.MostTasks))
+            {
+                break;
+            }
+
+            if (BackgroundTaskText.IsTaskId(task.Id) && seen.Add(task.Id))
+            {
+                named.Add(new BackgroundTask(task.Id, task.Kind, BackgroundTaskText.Name(task.Name).Text));
+            }
+        }
+
+        // A report of none is held too, as nothing running, so a reading the node sent earlier and that lands later still
+        // finds something newer to lose to.
+        var written = new BackgroundWork(tasks, machine, named, sequence);
+        BackgroundWork? before;
+
+        while (true)
+        {
+            if (_background.TryGetValue(agent, out var held))
+            {
+                // **Older than what is held: it changes nothing.** The node sends from its runner's notices and from a
+                // rejoin's reading, and nothing orders the two; taking the older last would show work that has ended, or end
+                // work still running and forget the agent's words for it (lens 1 run 1 on #115). Only one node is heard for
+                // an agent, the one joined for the machine its name carries, and its leaving clears what it said, so every
+                // number held was that node's.
+                if (held.Sequence > sequence)
+                {
+                    return false;
+                }
+
+                if (_background.TryUpdate(agent, written, held))
+                {
+                    before = held;
+                    break;
+                }
+            }
+            else if (_background.TryAdd(agent, written))
+            {
+                before = null;
+                break;
+            }
+        }
+
+        // A task the last report listed and this one does not has ended: its words go now, so words for work that is over
+        // never push out words for work still running when the oldest are dropped past the bound. Only the list this
+        // report replaced: a task begun since keeps its words.
+        if (before is not null)
+        {
+            var listed = named.Select(task => task.Id).ToHashSet(StringComparer.Ordinal);
+            ForgetWords(agent, before.Named.Select(task => task.Id).Where(id => !listed.Contains(id)));
+        }
+
+        // The node may have left while the agent was looked up, and its release swept the table before this landed. Only
+        // what this report wrote is taken back: a node that has rejoined since may have said something newer.
         if (!_nodes.TryGetValue(machine, out var still) || !ReferenceEquals(still, reporter))
         {
-            _ = _background.TryRemove(agent, out _);
+            _ = _background.TryRemove(new KeyValuePair<AgentName, BackgroundWork>(agent, written));
+
             return false;
         }
 
@@ -1777,18 +1854,215 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// Only while its turns are reported and it runs: a process that ended, or one opened outside Parley, has none that
     /// Parley knows of.
     /// </remarks>
-    public int BackgroundTasks(AgentName agent) =>
+    public int BackgroundTasks(AgentName agent) => Running(agent)?.Tasks ?? 0;
+
+    /// <summary>Each background task an agent has running, by name, as far as its node named them (feature 043).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>The tasks in the runner's order, each named by the agent's own words where it gave them, else by the
+    /// runner's; empty whenever <see cref="BackgroundTasks"/> is zero.</returns>
+    /// <remarks>
+    /// The person's view only: an agent operation never reads this (SPEC.md §10.1). What the agent said about a task shows
+    /// only while the node lists that task, so words about a task that has ended, or one never started, are never shown.
+    /// </remarks>
+    public IReadOnlyList<BackgroundTask> RunningTasks(AgentName agent)
+    {
+        if (Running(agent) is not { } work)
+        {
+            return [];
+        }
+
+        var said = _described.TryGetValue(agent, out var described) ? described : DescribedTasks.None;
+
+        return [.. work.Named.Select(task => said.Find(task.Id) is { } words
+            ? task with { Name = words.Name, Description = words.Description, Link = words.Link, Said = true }
+            : task)];
+    }
+
+    /// <summary>Records an agent's own words for one of its background tasks (SPEC.md §10.1).</summary>
+    /// <param name="agent">The agent, as attached: the caller, never a name it gave.</param>
+    /// <param name="taskId">The runner's id for the task.</param>
+    /// <param name="name">What it is doing.</param>
+    /// <param name="description">One or two sentences about it, or empty.</param>
+    /// <param name="link">Where the person can read more, or empty.</param>
+    /// <returns>What was kept.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Kept whether or not the task is running yet</b>: the agent's call and its node's report race, and either can land
+    /// first. It is shown once the node lists the id (<see cref="RunningTasks"/>), and goes when the agent's background work
+    /// ends or a new process is launched under its name. So the answer says nothing about the task, which is turn
+    /// information an agent does not read.
+    /// </para>
+    /// <para>
+    /// At most <see cref="BackgroundTaskText.MostTasks"/> per agent, the oldest dropped first, so an agent describing ids
+    /// without end holds a bounded amount. Describing an id again replaces what was said.
+    /// </para>
+    /// <para>
+    /// Refused for the person seat and Parley, which run no background work, and for a caller that is not attached, so no
+    /// words are held for an agent before it runs. Kept with the launch the words were said under, so a new process clears
+    /// them and the same process announced again keeps them.
+    /// </para>
+    /// </remarks>
+    public TaskDescribed DescribeBackgroundTask(AgentName agent, string? taskId, string? name, string? description, string? link)
+    {
+        if (PersonSeat.Is(agent) || Facilitation.Is(agent))
+        {
+            return TaskDescribed.Refusal("Only an agent describes background work; the person and Parley run none.");
+        }
+
+        if (!_attached.TryGetValue(agent.Value, out var sessions) || sessions.IsEmpty)
+        {
+            return TaskDescribed.Refusal("Only an attached agent describes its background work.");
+        }
+
+        if (!BackgroundTaskText.IsTaskId(taskId))
+        {
+            return TaskDescribed.Refusal("The task id is not one the runner gives: 1 to 64 letters, digits, hyphens and underscores, as the tool's result says it.");
+        }
+
+        var named = BackgroundTaskText.Name(name);
+
+        if (named.Text.Length == 0)
+        {
+            return TaskDescribed.Refusal("A name is needed: what the task is doing, in a few words.");
+        }
+
+        var told = BackgroundTaskText.Description(description);
+        var linked = string.IsNullOrWhiteSpace(link) ? null : BackgroundTaskText.Link(link);
+        var dropped = !string.IsNullOrWhiteSpace(link) && linked is null
+            ? "Only exchange #N, conversation:<id>, file:<name> for a file placed in Parley, or an https address of a named host (not an address in numbers, not localhost) of at most 500 characters is kept."
+            : string.Empty;
+
+        var words = new SaidWords(taskId!, named.Text, told.Text, linked);
+        var launch = _launches.TryGetValue(agent, out var launched) ? launched.Token : null;
+
+        _ = _described.AddOrUpdate(
+            agent,
+            _ => DescribedTasks.None.With(words, launch),
+            (_, held) => held.With(words, launch));
+
+        return new TaskDescribed(true, string.Empty, named.Cut, told.Cut, dropped);
+    }
+
+    /// <summary>What the node said is running, while it says so and the agent runs; null otherwise.</summary>
+    /// <remarks>
+    /// Only while its turns are reported and it runs: a process that ended, or one opened outside Parley, has none that
+    /// Parley knows of.
+    /// </remarks>
+    private BackgroundWork? Running(AgentName agent) =>
         _background.TryGetValue(agent, out var work)
         && TurnsReported(agent)
         && _attached.TryGetValue(agent.Value, out var sessions)
         && !sessions.IsEmpty
-            ? work.Tasks
-            : 0;
+            ? work
+            : null;
+
+    /// <summary>Forgets an agent's words for tasks that have ended.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="ids">The tasks that ended.</param>
+    private void ForgetWords(AgentName agent, IEnumerable<string> ids)
+    {
+        var ended = ids.ToHashSet(StringComparer.Ordinal);
+
+        while (_described.TryGetValue(agent, out var held))
+        {
+            var left = held.Without(ended);
+
+            if (left.Words.IsEmpty
+                ? _described.TryRemove(new KeyValuePair<AgentName, DescribedTasks>(agent, held))
+                : _described.TryUpdate(agent, left, held))
+            {
+                return;
+            }
+        }
+    }
+
+    /// <summary>Forgets what an agent had running in the background, and its words about it when they were said under
+    /// another launch.</summary>
+    /// <param name="machine">The node that launched it.</param>
+    /// <param name="agent">The agent.</param>
+    /// <param name="token">The launch now running under the name.</param>
+    /// <param name="sequence">The node's reading number at the launch.</param>
+    /// <remarks>
+    /// A new process has started nothing yet, and what the agent said was about work of the last one. The same launch
+    /// announced again (a node that left and came back) keeps the words: its next report names the same tasks, and the
+    /// agent will not describe them again. Words said while no launch was known take this one; were it a new process's,
+    /// they show only for an id its node lists, which a runner's random ids do not repeat.
+    /// </remarks>
+    private void ForgetBackground(string machine, AgentName agent, string token, long sequence)
+    {
+        // Held as nothing running at the launch's number rather than removed, so a reading the last process's node made
+        // before the launch, and that lands after it, is older and does not bring that work back (lens 3 run 2 on #115).
+        var none = new BackgroundWork(0, machine, [], sequence);
+
+        while (true)
+        {
+            if (_background.TryGetValue(agent, out var work)
+                ? (sequence > 0 && work.Sequence > sequence)
+
+                    // Read after the launch, so the new process's own: a launch report handled late leaves it.
+                    || _background.TryUpdate(agent, none with { Sequence = Math.Max(work.Sequence, sequence) }, work)
+                : _background.TryAdd(agent, none))
+            {
+                break;
+            }
+        }
+
+        // Tried again when a word lands between the read and the change, so a describe racing the launch neither survives
+        // into the new process nor is lost from the old one's view of it.
+        while (_described.TryGetValue(agent, out var held))
+        {
+            var done = held.Token switch
+            {
+                // Said while no launch was known (a broker that restarted before its node rejoined): it takes this launch,
+                // which is almost always the same process announcing itself again.
+                null => _described.TryUpdate(agent, held with { Token = token }, held),
+                var said when string.Equals(said, token, StringComparison.Ordinal) => true,
+                _ => _described.TryRemove(new KeyValuePair<AgentName, DescribedTasks>(agent, held)),
+            };
+
+            if (done)
+            {
+                return;
+            }
+        }
+    }
 
     /// <summary>What a node said an agent has running in the background.</summary>
     /// <param name="Tasks">How many tasks.</param>
     /// <param name="Machine">The node that said so, whose leaving ends the claim.</param>
-    private sealed record BackgroundWork(int Tasks, string Machine);
+    /// <param name="Named">Each task it named, held to the rules.</param>
+    /// <param name="Sequence">When the node read it; a later reading from the same node is higher.</param>
+    private sealed record BackgroundWork(int Tasks, string Machine, IReadOnlyList<BackgroundTask> Named, long Sequence);
+
+    /// <summary>An agent's own words for one task.</summary>
+    private sealed record SaidWords(string Id, string Name, string Description, TaskLink? Link);
+
+    /// <summary>The words an agent has said about its tasks, oldest first, replaced whole on each change.</summary>
+    /// <param name="Token">The launch they were said under, or null when none was known.</param>
+    /// <param name="Words">The words, at most <see cref="BackgroundTaskText.MostTasks"/>.</param>
+    private sealed record DescribedTasks(string? Token, System.Collections.Immutable.ImmutableList<SaidWords> Words)
+    {
+        public static DescribedTasks None { get; } = new(null, System.Collections.Immutable.ImmutableList<SaidWords>.Empty);
+
+        /// <summary>The words said for a task, or null.</summary>
+        public SaidWords? Find(string id) => Words.FirstOrDefault(w => string.Equals(w.Id, id, StringComparison.Ordinal));
+
+        /// <summary>These words with one task's replaced or added, the oldest dropped past the bound.</summary>
+        /// <remarks>Words said under another launch are of a process that has gone, and go with it.</remarks>
+        public DescribedTasks With(SaidWords words, string? token)
+        {
+            var start = Token is { } was && token is { } now && !string.Equals(was, now, StringComparison.Ordinal)
+                ? None.Words
+                : Words;
+            var kept = start.RemoveAll(w => string.Equals(w.Id, words.Id, StringComparison.Ordinal)).Add(words);
+            var most = BackgroundTaskText.MostTasks;
+
+            return new(token ?? Token, kept.Count > most ? kept.RemoveRange(0, kept.Count - most) : kept);
+        }
+
+        /// <summary>These words without those for some tasks.</summary>
+        public DescribedTasks Without(HashSet<string> ids) => this with { Words = Words.RemoveAll(w => ids.Contains(w.Id)) };
+    }
 
     /// <summary>
     /// The name a repository is registered as on a machine now; or, when none is, <paramref name="fallback"/>, unless

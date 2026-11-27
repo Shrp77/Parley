@@ -80,6 +80,13 @@ public sealed class FilesModel(BrokerDirectory directory) : PageModel
     /// <summary>The conversations a file can be placed in: the one in view, or every one the project lists.</summary>
     public IReadOnlyList<string> Placeable { get; private set; } = [];
 
+    /// <summary>Every conversation the project lists, which the filter offers as the person types.</summary>
+    /// <remarks>
+    /// Apart from <see cref="Placeable"/>: on a page narrowed to one conversation, a file is placed there, but the filter must
+    /// still offer the others, or there is no typing one's way to another.
+    /// </remarks>
+    public IReadOnlyList<string> Conversations { get; private set; } = [];
+
     private IReadOnlyDictionary<string, string> _parents = new Dictionary<string, string>(StringComparer.Ordinal);
 
     /// <summary>A placeable conversation's parent, for the list to say (SPEC.md §5.0).</summary>
@@ -374,16 +381,11 @@ public sealed class FilesModel(BrokerDirectory directory) : PageModel
         Listing = read.Value;
         Problem ??= read.Problem;
 
-        if (scope is not null)
-        {
-            Placeable = [scope];
-            return;
-        }
-
         var conversations = await BrokerDirectory.ReadAsync(
             () => EveryConversationAsync(broker, token)).ConfigureAwait(false);
 
-        Placeable = [.. (conversations.Value ?? []).Select(c => c.Id)];
+        Conversations = [.. (conversations.Value ?? []).Select(c => c.Id)];
+        Placeable = scope is not null ? [scope] : Conversations;
         _parents = (conversations.Value ?? []).Where(c => c.Parent is not null).ToDictionary(c => c.Id, c => c.Parent!, StringComparer.Ordinal);
         Problem ??= conversations.Problem;
     }

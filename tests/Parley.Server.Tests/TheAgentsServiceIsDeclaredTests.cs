@@ -45,6 +45,10 @@ public sealed class TheAgentsServiceIsDeclaredTests
 
         // §10.1 and §5.7: the one roadmap operation an agent has, which stores a proposal and nothing else.
         "ProposeRoadmap",
+
+        // §10.1 and §11.6: the agent's own words for a background task it started, shown to the person only. Its answer
+        // says only what was kept, never whether the task runs, which is turn information.
+        "DescribeBackgroundTask",
     };
 
     [Fact]

@@ -44,6 +44,10 @@ public sealed class BrokerAwayTests
                 to: "billing@test",
                 ask: "Is the tax rate gross or net?",
                 cancellationToken: ct)),
+            ("parley_describe_background", () => tools.DescribeBackgroundAsync(
+                task_id: "a1",
+                name: "Checking VAT on gift cards",
+                cancellationToken: ct)),
         })
         {
             var reply = await call();

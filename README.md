@@ -170,8 +170,9 @@ Parley is early. The specification is settling down, and the code is still movin
   send a follow-up from any row.
 - You can stop or restart an agent, and freeze one so nothing starts it. A freeze lasts until
   you lift it or the broker next starts. You can ask for it to last through a broker restart too.
-- A graph, on every page of the web console, shows which agents are working and in which
-  conversations. An agent waiting on its own background work shows as waiting, not idle.
+- A graph, on every page of the web console, shows what is being worked on now: each working
+  agent, the work it holds, the work queued for it and its background tasks, each by name, with what the agent says it is doing. You can filter it by
+  project and agent.
 - An agent can read an old exchange by its number, or search past messages, to pick up where it
   left off. You see every read.
 - Tidy up many conversations at once: archive, bring back, or end the ones you tick.

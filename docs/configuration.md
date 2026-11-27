@@ -55,12 +55,12 @@ Chosen in one window, it could silently apply to a destructive command in anothe
 ### Settings for every project
 
 A few settings belong to Parley on this machine rather than to one project. Change them on the
-web console's **Settings** page, at the foot of the strip on the left.
+web console's **Settings** page, at the foot of the menu on the left (under *More* on a phone).
 
 - **How many days the Inbox's *Closed* view covers.** Seven unless you change it, from 1 to 365.
   It is kept in `settings.json` beside the `projects` folder, so the terminal's Inbox uses the
   same number.
-- **The console's theme and density.** These are kept in your browser only.
+- **The console's theme, colors and density.** These are kept in your browser only.
 
 ### Reaching the console by another name
 

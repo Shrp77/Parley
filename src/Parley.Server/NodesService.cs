@@ -70,7 +70,7 @@ public sealed class NodesService : Wire.Nodes.NodesBase
 
             if (named is { } filed)
             {
-                _ = _runtime.LaunchReported(machine, filed, request.Token);
+                _ = _runtime.LaunchReported(machine, filed, request.Token, request.Sequence);
             }
         }
 
@@ -143,7 +143,12 @@ public sealed class NodesService : Wire.Nodes.NodesBase
 
             case Wire.TurnReport.PhaseOneofCase.Background:
                 _ = await _runtime.BackgroundReportedAsync(
-                    machine, agent, request.Background.Tasks, context.CancellationToken).ConfigureAwait(false);
+                    machine,
+                    agent,
+                    request.Background.Tasks,
+                    request.Background.Running.Select(task => new BackgroundTask(task.Id, Conversions.In(task.Kind), task.Label)),
+                    request.Background.Sequence,
+                    context.CancellationToken).ConfigureAwait(false);
                 break;
         }
 

@@ -109,6 +109,7 @@ public sealed class AReannouncedCountThatMovedIsNotSentAgainTests : IAsyncDispos
 
         Assert.True(turn.Succeeded, turn.Describe());
         Assert.Equal(1, resident.BackgroundTasks);
+        var read = resident.Background.Sequence;
 
         // The broker holds the background report past its deadline until the work has ended, as a rewrite would hold it.
         var held = new HoldsTheFirstBackgroundReport(() => resident.BackgroundTasks == 0);
@@ -118,6 +119,10 @@ public sealed class AReannouncedCountThatMovedIsNotSentAgainTests : IAsyncDispos
 
         Assert.Equal(0, resident.BackgroundTasks);
         Assert.True(held.Held, "the background report was never sent, so nothing was held");
+        Assert.True(read > 0, "the runner's reading was never numbered");
+        // At the runner's number, or at the launch's when that is later: the announcement before it holds nothing running
+        // at the launch's number, and a reading numbered earlier would lose to it.
+        Assert.True(held.Sequence >= read, $"the reading was sent at {held.Sequence}, older than the {read} it was read at");
 
         var row = (await new BrokerClient(_broker.Operators).RegistryAsync(Ct)).Single(agent => agent.Name == Billing);
 
@@ -145,16 +150,22 @@ public sealed class AReannouncedCountThatMovedIsNotSentAgainTests : IAsyncDispos
     {
         private int _held;
 
+        private long _sequence;
+
         public bool Held => Volatile.Read(ref _held) > 0;
+
+        /// <summary>When the node read what the held report says.</summary>
+        public long Sequence => Interlocked.Read(ref _sequence);
 
         public override AsyncUnaryCall<TResponse> AsyncUnaryCall<TRequest, TResponse>(
             TRequest request,
             ClientInterceptorContext<TRequest, TResponse> context,
             AsyncUnaryCallContinuation<TRequest, TResponse> continuation)
         {
-            if (request is Wire.TurnReport { PhaseCase: Wire.TurnReport.PhaseOneofCase.Background }
+            if (request is Wire.TurnReport { PhaseCase: Wire.TurnReport.PhaseOneofCase.Background } report
                 && Interlocked.Increment(ref _held) == 1)
             {
+                _ = Interlocked.Exchange(ref _sequence, report.Background.Sequence);
                 return new AsyncUnaryCall<TResponse>(
                     TimedOutAsync<TResponse>(),
                     Task.FromResult(new Metadata()),

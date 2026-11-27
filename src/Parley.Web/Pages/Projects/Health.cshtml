@@ -9,11 +9,6 @@
 
 <h1>Health of @Model.Project</h1>
 
-<nav class="page-links" aria-label="This project">
-    <a href="/?tab=agents&amp;project=@Model.Project">Agents</a>
-    <a href="/Projects/Agents?project=@Model.Project">Conversations</a>
-    <a href="/Projects/Act?project=@Model.Project&amp;action=prune&amp;subject=@Model.Project">Apply the retention policy now</a>
-</nav>
 
 @if (Model.Problem is { Length: > 0 } problem)
 {
@@ -271,4 +266,9 @@ else
             <p>No results have been sent yet.</p>
         }
     </section>
+}
+
+@section Actions {
+    @* This page's commands, in the rail like every page's; the places the menu already leads to are not repeated (feature 042). *@
+    <a class="rail-link" href="/Projects/Act?project=@Model.Project&amp;action=prune&amp;subject=@Model.Project" title="Apply the retention policy now"><span class="icon" aria-hidden="true">remove</span><span class="rail-label">Apply retention now</span></a>
 }

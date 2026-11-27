@@ -33,7 +33,7 @@ public sealed partial class TheComposerStaysInReachTests
 
         console.Broker.Request(1, "orders@test", "human-user@" + TranscriptConsole.Project, "Gross or net?");
 
-        return await client.GetStringAsync(PageUri, Ct);
+        return await ScriptSource.WithStylesAsync(client, await client.GetStringAsync(PageUri, Ct));
     }
 
     [Fact]

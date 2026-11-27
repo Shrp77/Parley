@@ -98,6 +98,10 @@ public sealed class ParleySettingsTests
             "if (theme === \"light\" || theme === \"dark\") { document.documentElement.setAttribute(\"data-theme\", theme); }",
             ScriptSource.Code(page, "var theme = localStorage.getItem(\"parley.theme\")"),
             StringComparison.Ordinal);
-        Assert.True(applied < page.IndexOf("<style", StringComparison.Ordinal));
+        // Before the first stylesheet the page links, so the page is never drawn in the other theme first.
+        var stylesheet = page.IndexOf("<link rel=\"stylesheet\"", StringComparison.Ordinal);
+
+        Assert.True(stylesheet > 0, "the page links no stylesheet");
+        Assert.True(applied < stylesheet);
     }
 }

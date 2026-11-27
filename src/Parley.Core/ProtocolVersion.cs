@@ -27,7 +27,8 @@ namespace Parley.Core;
 /// node does once the agent's turn is over. A node reports how many background tasks an agent has running,
 /// and a turn the agent begins on its own when one finishes. A person may end a process a node that is gone left
 /// running, which no node now holds; the adapter says which process hosts it, and a node ends it after checking it is the
-/// agent's own kind.
+/// agent's own kind. A node lists each background task by its runner's id and label, and an agent may give a task of its
+/// own a name, a description and a link, which only the person sees.
 /// </para>
 /// <para>
 /// Kept here rather than read from the document at run time, so an implementation that ships without
@@ -37,5 +38,5 @@ namespace Parley.Core;
 public static class ProtocolVersion
 {
     /// <summary>The protocol version, as SPEC.md declares it.</summary>
-    public const string Current = "0.20";
+    public const string Current = "0.21";
 }

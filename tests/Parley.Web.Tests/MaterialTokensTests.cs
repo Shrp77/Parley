@@ -25,7 +25,7 @@ public sealed partial class MaterialTokensTests
     [GeneratedRegex(@"#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(")]
     private static partial Regex AColour();
 
-    private static string Layout => File.ReadAllText(RepositoryPath("src/Parley.Web/Pages/Shared/_Layout.cshtml"));
+    private static string Layout => ScriptSource.Page("src/Parley.Web/Pages/Shared/_Layout.cshtml");
 
     private static string Light => Layout[..Layout.IndexOf("@@media (prefers-color-scheme: dark)", StringComparison.Ordinal)];
 
@@ -65,9 +65,12 @@ public sealed partial class MaterialTokensTests
     }
 
     [Fact]
-    public void The_seed_is_the_primary_container_so_the_console_keeps_its_blue()
+    public void The_colours_are_frost_as_the_person_chose()
     {
-        Assert.Contains("--md-sys-color-primary-container: #2b5cd9;", Light, StringComparison.Ordinal);
+        // The person chose Direction B, Frost, on 2026-11-24 (specs/042-theme-and-layout-refresh/decision.md), in place of
+        // the scheme seeded from #2b5cd9. Its colours come from directions/generate.py; this pins that they landed.
+        Assert.Contains("--md-sys-color-primary-container: #cfe5fe;", Light, StringComparison.Ordinal);
+        Assert.DoesNotContain("#2b5cd9", Light, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -77,7 +80,7 @@ public sealed partial class MaterialTokensTests
     [InlineData("src/Parley.Web/Pages/Projects/Enrol.cshtml")]
     public void No_rule_outside_the_tokens_names_a_colour_of_its_own(string page)
     {
-        var text = File.ReadAllText(RepositoryPath(page));
+        var text = ScriptSource.Page(page);
         var rules = page.EndsWith("_Layout.cshtml", StringComparison.Ordinal) ? text[text.IndexOf(OlderNames, StringComparison.Ordinal)..] : text;
 
         // The one exception: a <select>'s chevron, drawn as an image for browsers that cannot restyle the control, where
@@ -105,7 +108,9 @@ public sealed partial class MaterialTokensTests
     [Theory]
     [InlineData("/brand/roboto-flex.woff2", "font/woff2")]
     [InlineData("/brand/roboto-flex-license.txt", "text/plain")]
-    public async Task The_typeface_and_its_licence_are_served_from_the_console_itself(string path, string type)
+    [InlineData("/brand/tokens.css", "text/css")]
+    [InlineData("/brand/components.css", "text/css")]
+    public async Task The_typeface_its_licence_and_the_stylesheets_are_served_from_the_console_itself(string path, string type)
     {
         using var console = new TranscriptConsole();
         using var client = console.CreateClient();
@@ -115,6 +120,65 @@ public sealed partial class MaterialTokensTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.StartsWith(type, response.Content.Headers.ContentType!.ToString(), StringComparison.Ordinal);
         Assert.True((await response.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken)).Length > 1000);
+    }
+
+    /// <summary>Each brand route serves its own file, byte for byte: a route pointed at another file of the same type and
+    /// size would draw the console with no tokens or the wrong face, and type and length alone cannot tell (lens 3 run 9
+    /// on #115).</summary>
+    [Theory]
+    [InlineData("/brand/icon.png", "icon.png")]
+    [InlineData("/brand/wordmark.png", "wordmark.png")]
+    [InlineData("/brand/material-symbols.woff2", "material-symbols.woff2")]
+    [InlineData("/brand/roboto-flex.woff2", "roboto-flex.woff2")]
+    [InlineData("/brand/roboto-flex-license.txt", "RobotoFlex-OFL.txt")]
+    [InlineData("/brand/tokens.css", "tokens.css")]
+    [InlineData("/brand/components.css", "components.css")]
+    public async Task Each_brand_route_serves_its_own_file(string path, string file)
+    {
+        using var console = new TranscriptConsole();
+        using var client = console.CreateClient();
+
+        var served = await client.GetByteArrayAsync(new Uri(path, UriKind.Relative), TestContext.Current.CancellationToken);
+        var expected = await File.ReadAllBytesAsync(InRepository(Path.Combine("src", "Parley.Web", "Brand", file)), TestContext.Current.CancellationToken);
+
+        Assert.True(expected.AsSpan().SequenceEqual(served), $"{path} did not serve {file}");
+    }
+
+    private static string InRepository(string relative)
+    {
+        var directory = AppContext.BaseDirectory;
+
+        while (directory is { Length: > 0 } && !File.Exists(Path.Combine(directory, "Parley.slnx")))
+        {
+            directory = Path.GetDirectoryName(directory);
+        }
+
+        Assert.NotNull(directory);
+
+        return Path.Combine(directory!, relative);
+    }
+
+    /// <summary>A table too narrow for its columns becomes cards, measured on the table rather than the screen, so an
+    /// upright tablet never scrolls one sideways (the person's Tab S4 on the Inbox, PR #115).</summary>
+    /// <remarks>Every table's columns must fit the width the cards take over below: one wider would scroll sideways
+    /// between its own width and that bound.</remarks>
+    [Fact]
+    public void A_table_that_does_not_fit_its_card_is_drawn_as_cards()
+    {
+        Assert.Contains(".dgrid { container: dgrid / inline-size; }", Layout, StringComparison.Ordinal);
+        Assert.Matches(@"@@container dgrid \(max-width: 46rem\) \{\s*\.dgrid-inner \{ min-width: 0; \}", Layout);
+
+        var pages = Directory.EnumerateFiles(InRepository(Path.Combine("src", "Parley.Web", "Pages")), "*.cshtml", SearchOption.AllDirectories);
+
+        foreach (var page in pages)
+        {
+            foreach (System.Text.RegularExpressions.Match min in System.Text.RegularExpressions.Regex.Matches(File.ReadAllText(page), @"--min: ([0-9.]+)rem"))
+            {
+                Assert.True(
+                    double.Parse(min.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) <= 46,
+                    $"{Path.GetFileName(page)} draws a table {min.Groups[1].Value}rem wide, past the 46rem the cards take over below");
+            }
+        }
     }
 
     [Fact]

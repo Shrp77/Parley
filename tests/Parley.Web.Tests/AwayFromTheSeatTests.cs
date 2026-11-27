@@ -129,10 +129,11 @@ public sealed class AwayFromTheSeatTests
         using var client = Seated(console);
         var page = await client.GetStringAsync(new Uri("/Projects/Agents?project=alpha", UriKind.Relative), TestContext.Current.CancellationToken);
 
-        var chip = page[page.IndexOf("<a class=\"seat-who\"", StringComparison.Ordinal)..];
+        var chip = InboxItem(page);
 
-        Assert.Contains("3", chip[..300], StringComparison.Ordinal);
-        Assert.Contains("seat-waiting", chip[..300], StringComparison.Ordinal);
+        Assert.Contains("3", chip, StringComparison.Ordinal);
+        Assert.Contains("seat-waiting", chip, StringComparison.Ordinal);
+        Assert.DoesNotContain("seat-waiting", SeatChip(page), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -149,7 +150,7 @@ public sealed class AwayFromTheSeatTests
         var page = await client.GetStringAsync(new Uri("/Projects/Agents?project=alpha", UriKind.Relative), TestContext.Current.CancellationToken);
         var said = await client.GetStringAsync(new Uri("/?handler=Presence", UriKind.Relative), TestContext.Current.CancellationToken);
 
-        var chip = page[page.IndexOf("<a class=\"seat-who\"", StringComparison.Ordinal)..][..300];
+        var chip = InboxItem(page);
 
         Assert.Contains("<span class=\"seat-waiting\">10<", chip, StringComparison.Ordinal);
         Assert.Contains("\"waiting\":10", said, StringComparison.Ordinal);
@@ -168,7 +169,7 @@ public sealed class AwayFromTheSeatTests
         var page = await client.GetStringAsync(new Uri("/Projects/Agents?project=alpha", UriKind.Relative), TestContext.Current.CancellationToken);
         var said = await client.GetStringAsync(new Uri("/?handler=Presence", UriKind.Relative), TestContext.Current.CancellationToken);
 
-        var chip = page[page.IndexOf("<a class=\"seat-who\"", StringComparison.Ordinal)..][..300];
+        var chip = InboxItem(page);
 
         Assert.True(console.Broker.AskedOwed > 0, "the wait-for graph was never asked");
         Assert.DoesNotContain("seat-waiting", chip, StringComparison.Ordinal);
@@ -191,5 +192,25 @@ public sealed class AwayFromTheSeatTests
         // page, so searching the whole document finds the rule and proves nothing.
         Assert.DoesNotContain("<span class=\"seat-dot\"", page, StringComparison.Ordinal);
         Assert.True(console.Broker.Asked > 0, "the console never asked how much was waiting");
+    }
+
+    /// <summary>The navigation's Inbox item, which carries the count on every page.</summary>
+    /// <remarks>
+    /// The person's choice on feature 042: one count, in one place. It was drawn beside the seat as well, the same number
+    /// twice, and the seat's copy went.
+    /// </remarks>
+    private static string InboxItem(string page)
+    {
+        var at = page.IndexOf("href=\"/Inbox\" title=\"Inbox\"", StringComparison.Ordinal);
+
+        Assert.True(at >= 0, "the navigation has no Inbox item");
+        return page[at..page.IndexOf("</a>", at, StringComparison.Ordinal)];
+    }
+
+    private static string SeatChip(string page)
+    {
+        var at = page.IndexOf("<a class=\"seat-who\"", StringComparison.Ordinal);
+
+        return page[at..page.IndexOf("</a>", at, StringComparison.Ordinal)];
     }
 }

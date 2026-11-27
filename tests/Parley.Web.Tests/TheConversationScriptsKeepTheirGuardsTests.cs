@@ -221,6 +221,18 @@ public sealed class TheConversationScriptsKeepTheirGuardsTests
     }
 
     [Fact]
+    public void Files_chosen_with_Add_files_pass_the_same_checks_and_reach_the_send()
+    {
+        // A phone can neither drop nor, often, paste a picture (the person's report, 2026-11-26). What the picker gives goes
+        // through addAll, so its kind and name are checked and every waiting file is put back in the input for the send.
+        ScriptSource.Once(
+            Attach,
+            "input.addEventListener(\"change\", function () { addAll(fresh([].slice.call(input.files || []))); });",
+            "files chosen with Add files no longer go through the checks and back into the send");
+        ScriptSource.Once(Attach, "input.addEventListener(\"cancel\", sync);", "a picker closed with nothing chosen no longer puts back what waits");
+    }
+
+    [Fact]
     public void A_long_paste_becomes_a_file_over_the_servers_threshold()
     {
         // Without the guard a paste of any length went into the box as words, past what the page says becomes a file

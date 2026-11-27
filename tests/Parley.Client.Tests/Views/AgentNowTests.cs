@@ -58,6 +58,27 @@ public sealed class AgentNowTests
     }
 
     [Fact]
+    public void An_agent_left_running_by_a_node_that_is_gone_is_marked_as_outside_never_as_not_running()
+    {
+        var now = Activities.Now(Agent(Turns(running: Now.AddMinutes(-1)), outside: true) with { Unsupervised = true }, Now);
+
+        Assert.Equal("left running by a node that is gone", now.Words);
+        Assert.Equal(Activities.OutsideMark, now.Mark);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_running_agent_whose_turns_nobody_reports_is_marked_as_running_never_as_not_running(bool unreported)
+    {
+        // An older node reports no turns; on a phone the mark is all that shows, so the not-running mark would read stopped.
+        var now = Activities.Now(Agent(unreported ? TurnStanding.Unreported : null), Now);
+
+        Assert.Equal("running", now.Words);
+        Assert.Equal(Activities.RunningMark, now.Mark);
+    }
+
+    [Fact]
     public void Open_outside_Parley_and_retired_outrank_whatever_a_turn_says()
     {
         var turn = Turns(running: Now.AddMinutes(-1));

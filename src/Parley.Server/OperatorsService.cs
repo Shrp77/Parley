@@ -674,6 +674,10 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         return reply;
     }
 
+    /// <summary>The most bytes of background tasks' words one registry reply carries (<see cref="TaskWordBudget"/>).</summary>
+    /// <remarks>A quarter of gRPC's default limit, so the rest of every row always fits beside it.</remarks>
+    internal const int MostTaskWordBytes = 1024 * 1024;
+
     /// <inheritdoc/>
     public override async Task<Wire.RegistryReply> DescribeRegistry(Wire.Empty request, ServerCallContext context)
     {
@@ -690,6 +694,8 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             .ToDictionary(turn => turn.Agent);
 
         var reply = new Wire.RegistryReply();
+        var words = new TaskWordBudget(MostTaskWordBytes);
+
         reply.Rows.AddRange(rows.Select(row => Conversions.Out(row with
         {
             Turns = new TurnStanding(
@@ -698,7 +704,8 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
                 latest.TryGetValue(row.Name, out var last) ? last.EndedUtc : null,
                 last?.Clean ?? false,
                 last?.PermissionDenials ?? 0,
-                _runtime.BackgroundTasks(row.Name)),
+                _runtime.BackgroundTasks(row.Name),
+                words.Spend(_runtime.RunningTasks(row.Name))),
             OpenOutside = _runtime.OpenOutside(row.Name),
             Unsupervised = _runtime.Unsupervised(row.Name),
 

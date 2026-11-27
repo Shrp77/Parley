@@ -55,7 +55,8 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
                 Read(row.LastTurnEndedUtc),
                 row.LastTurnClean,
                 row.LastTurnPermissionDenials,
-                Math.Max(0, row.BackgroundTasks)),
+                Math.Clamp(row.BackgroundTasks, 0, MostBackgroundTasks),
+                [.. row.RunningTasks.Select(Task)]),
             row.OpenOutside,
             AgentIdentity.TryRead(row.Identity, out var identity) ? identity : default,
             row.Unsupervised,
@@ -870,7 +871,24 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             $"The broker refused a file operation for a reason this build does not know ({rejection}). It speaks a different protocol.")
     };
 
+    // The broker's own bound on a count; held here too, so a broker that is not this one cannot make a surface list any number.
+    private const int MostBackgroundTasks = 10_000;
+
     private static string? Blank(string? value) => string.IsNullOrEmpty(value) ? null : value;
+
+    // Held to the same rules the broker held it to: a surface draws only what they let through, whichever broker sent it.
+    private static BackgroundTask Task(Wire.BackgroundTaskRow row) => new(
+        BackgroundTaskText.IsTaskId(row.Id) ? row.Id : string.Empty,
+        row.Kind switch
+        {
+            Wire.TaskKind.Agent => TaskKind.Agent,
+            Wire.TaskKind.Command => TaskKind.Command,
+            _ => TaskKind.Other,
+        },
+        BackgroundTaskText.Name(row.Name).Text,
+        BackgroundTaskText.Description(row.Description).Text,
+        BackgroundTaskText.Link(row.Link),
+        row.Said);
 
     private static string Render(DateTimeOffset? instant) =>
         instant?.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture) ?? string.Empty;

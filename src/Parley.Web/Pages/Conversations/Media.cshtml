@@ -7,10 +7,6 @@
 
 <h1>Media in @Model.Id</h1>
 
-<nav class="page-links" aria-label="This conversation">
-    <a href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = Model.Id })">Back to the conversation</a>
-    <a href="@Url.Page("/Projects/Files", new { project = Model.Project, conversation = Model.Id })">Files, to place or remove</a>
-</nav>
 
 @if (Model.Problem is { Length: > 0 } problem)
 {
@@ -53,3 +49,9 @@ else
 }
 
 <partial name="_Viewer" />
+
+@section Actions {
+    @* This page's commands, in the rail like every page's; the places the menu already leads to are not repeated (feature 042). *@
+    <a class="rail-link" href="@Url.Page("/Conversations/Detail", new { project = Model.Project, id = Model.Id })" title="Back to the conversation"><span class="icon" aria-hidden="true">chevron_left</span><span class="rail-label">The conversation</span></a>
+    <a class="rail-link" href="@Url.Page("/Projects/Files", new { project = Model.Project, conversation = Model.Id })" title="Files, to place or remove"><span class="icon" aria-hidden="true">description</span><span class="rail-label">Its files</span></a>
+}

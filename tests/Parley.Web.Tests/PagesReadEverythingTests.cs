@@ -11,39 +11,37 @@ public sealed class PagesReadEverythingTests
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task The_graph_reads_every_page_of_conversations_and_the_archived_ones()
+    public async Task The_graph_says_a_project_is_unreachable_when_its_registry_cannot_be_read()
     {
         using var console = new RoadmapConsole();
 
-        console.Broker.ConversationPageSize = 1;
-        console.Broker.OmitsArchived = true;
-        console.Broker.Conversations.Add(new Wire.ConversationSummary { ConversationId = "first-talk", Participants = { "orders@test" } });
-        console.Broker.Conversations.Add(new Wire.ConversationSummary { ConversationId = "second-talk", Participants = { "orders@test" } });
-        console.Broker.Conversations.Add(new Wire.ConversationSummary { ConversationId = "put-away", Archived = true, Participants = { "orders@test" } });
-
-        using var client = console.CreateClient();
-        var graph = await client.GetStringAsync(new Uri("/Graph", UriKind.Relative), Ct);
-
-        Assert.Contains("first-talk", graph, StringComparison.Ordinal);
-        Assert.Contains("second-talk", graph, StringComparison.Ordinal);
-        Assert.Contains("put-away", graph, StringComparison.Ordinal);
-    }
-
-    [Theory]
-    [InlineData("/parley.v1.Operators/DescribeRegistry")]
-    [InlineData("/parley.v1.Operators/ListConversations")]
-    public async Task The_graph_says_a_project_is_unreachable_when_either_of_its_reads_fails(string failing)
-    {
-        using var console = new RoadmapConsole();
-
-        console.Broker.Conversations.Add(new Wire.ConversationSummary { ConversationId = "first-talk", Participants = { "orders@test" } });
         console.Broker.Registry.Add(new Wire.RegistryRow { Name = "orders@test", Adapter = "mcp", Tier = Wire.AgentTier.Full, Status = Wire.AgentStatus.Active });
-        console.Broker.FailsOn = failing;
+        console.Broker.FailsOn = "/parley.v1.Operators/DescribeRegistry";
 
         using var client = console.CreateClient();
         var graph = await client.GetStringAsync(new Uri("/Graph", UriKind.Relative), Ct);
 
         Assert.Contains("project, unreachable", graph, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_graph_says_a_project_was_read_in_part_when_what_its_working_agents_owe_cannot_be_read()
+    {
+        using var console = new RoadmapConsole();
+
+        console.Broker.Registry.Add(new Wire.RegistryRow
+        {
+            Name = "orders@test", Adapter = "mcp", Tier = Wire.AgentTier.Full, Status = Wire.AgentStatus.Active,
+            Presence = Wire.AgentPresence.Running, TurnsReported = true,
+            TurnRunningSinceUtc = DateTimeOffset.UtcNow.AddMinutes(-1).UtcDateTime.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+        });
+        console.Broker.FailsOn = "/parley.v1.Operators/DescribeWaiting";
+
+        using var client = console.CreateClient();
+        var graph = await client.GetStringAsync(new Uri("/Graph", UriKind.Relative), Ct);
+
+        Assert.Contains("project, could not be read in full", graph, StringComparison.Ordinal);
+        Assert.Contains(">orders@test</text>", graph, StringComparison.Ordinal);
     }
 
     [Fact]

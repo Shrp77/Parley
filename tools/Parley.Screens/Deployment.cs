@@ -90,9 +90,15 @@ internal sealed class Deployment : IAsyncDisposable
     /// <param name="root">The root <see cref="CreateRoot"/> made; deleted with the deployment, or here if it fails to start.</param>
     /// <param name="project">The project's name, already judged by the scenario's load.</param>
     /// <param name="description">Its description, or null.</param>
+    /// <param name="seed">A store to copy in before the broker opens it, with the files folder beside it, or null for a new store.</param>
     /// <param name="cancellationToken">Cancels startup.</param>
     /// <returns>The running deployment.</returns>
-    public static async Task<Deployment> StartAsync(string root, string project, string? description, CancellationToken cancellationToken)
+    /// <remarks>
+    /// A seed is copied, never opened where it lies: the broker migrates what it opens and the console's reads mark mail
+    /// delivered, so only the copy in this run's root changes. Hand it a consistent copy (a SQLite backup), not a live
+    /// store's main file, whose newest writes may still sit in its write-ahead log.
+    /// </remarks>
+    public static async Task<Deployment> StartAsync(string root, string project, string? description, string? seed, CancellationToken cancellationToken)
     {
         BrokerRuntime? runtime = null;
         ParleyServer? broker = null;
@@ -102,6 +108,12 @@ internal sealed class Deployment : IAsyncDisposable
         {
             var name = ProjectName.Create(project);
             var store = Path.Combine(ProjectFolder.ProjectsIn(root), project, "parley.db");
+
+            if (seed is not null)
+            {
+                Seed(seed, store);
+            }
+
             runtime = BrokerRuntime.Open(name, store, BrokerOptions.Default, TimeProvider.System);
             broker = await ParleyServer.StartAsync(runtime, "http://127.0.0.1:0", cancellationToken).ConfigureAwait(false);
             runtime = null;
@@ -138,6 +150,24 @@ internal sealed class Deployment : IAsyncDisposable
 
             Remove(root);
             throw;
+        }
+    }
+
+    private static void Seed(string seed, string store)
+    {
+        _ = Directory.CreateDirectory(Path.GetDirectoryName(store)!);
+        File.Copy(seed, store);
+
+        var files = seed + ".files";
+
+        if (Directory.Exists(files))
+        {
+            foreach (var file in Directory.EnumerateFiles(files, "*", SearchOption.AllDirectories))
+            {
+                var target = Path.Combine(store + ".files", Path.GetRelativePath(files, file));
+                _ = Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(file, target);
+            }
         }
     }
 

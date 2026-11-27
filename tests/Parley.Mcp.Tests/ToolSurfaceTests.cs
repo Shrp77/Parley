@@ -28,6 +28,7 @@ public sealed class ToolSurfaceTests
         "parley_agents",
         "parley_clarify",
         "parley_conclude",
+        "parley_describe_background",
         "parley_file_fetch",
         "parley_file_list",
         "parley_file_place",

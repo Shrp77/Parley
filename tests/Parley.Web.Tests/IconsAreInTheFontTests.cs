@@ -45,7 +45,10 @@ public sealed class IconsAreInTheFontTests
     [Fact]
     public void Every_icon_a_page_names_is_in_the_font()
     {
-        var pages = Directory.GetFiles(RepositoryPath("src/Parley.Web"), "*.cshtml", SearchOption.AllDirectories);
+        // The pages, and the stylesheets they link, which name icons in `content:` (feature 042 moved them out of the layout).
+        var pages = Directory.GetFiles(RepositoryPath("src/Parley.Web"), "*.cshtml", SearchOption.AllDirectories)
+            .Concat(Directory.GetFiles(RepositoryPath("src/Parley.Web/Brand"), "*.css"))
+            .ToArray();
         var used = pages
             .SelectMany(page => Named.SelectMany(pattern => pattern.Matches(File.ReadAllText(page)))
                 .Select(match => (Page: Path.GetFileName(page), Name: match.Groups[1].Value)))

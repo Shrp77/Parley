@@ -1,0 +1,138 @@
+/* Direction B: Frost. Feature 042, a preview laid over the console by tools/Parley.Screens.
+   Draws on: bf0e… (controls raised off a misty background, very airy) and 957e… (soft shades).
+   Written by generate.py; edit the direction there, not here. Every text pair passes WCAG 2.2 AA in both themes. */
+
+:root {
+    --md-sys-color-primary: #066496;
+    --md-sys-color-on-primary: #ffffff;
+    --md-sys-color-primary-container: #cfe5fe;
+    --md-sys-color-on-primary-container: #011d31;
+    --md-sys-color-secondary: #476273;
+    --md-sys-color-on-secondary: #ffffff;
+    --md-sys-color-secondary-container: #cae6fb;
+    --md-sys-color-on-secondary-container: #011e2c;
+    --md-sys-color-tertiary: #3d6473;
+    --md-sys-color-on-tertiary: #ffffff;
+    --md-sys-color-tertiary-container: #c0e9fb;
+    --md-sys-color-on-tertiary-container: #011f28;
+    --md-sys-color-error: #b12938;
+    --md-sys-color-on-error: #ffffff;
+    --md-sys-color-error-container: #fedad8;
+    --md-sys-color-on-error-container: #400004;
+    --md-sys-color-surface: #f4faff;
+    --md-sys-color-on-surface: #171c20;
+    --md-sys-color-surface-variant: #d5e5f0;
+    --md-sys-color-on-surface-variant: #3b4852;
+    --md-sys-color-surface-dim: #d4dbe1;
+    --md-sys-color-surface-bright: #f4faff;
+    --md-sys-color-surface-container-lowest: #ffffff;
+    --md-sys-color-surface-container-low: #edf5fb;
+    --md-sys-color-surface-container: #e7eff5;
+    --md-sys-color-surface-container-high: #e2e9ef;
+    --md-sys-color-surface-container-highest: #dce3e9;
+    --md-sys-color-outline: #6b7983;
+    --md-sys-color-outline-variant: #bac8d4;
+    --md-sys-color-inverse-surface: #2b3136;
+    --md-sys-color-inverse-on-surface: #eaf2f8;
+    --md-sys-color-inverse-primary: #97cbff;
+    --md-ext-color-card: color-mix(in srgb, var(--md-sys-color-surface-container-lowest) 82%, transparent);
+    --radius: 18px;
+    --gap: 2rem;
+    --rule: color-mix(in srgb, var(--md-sys-color-outline-variant) 45%, transparent);
+    --md-sys-shape-corner-medium: 14px;
+    --md-sys-shape-corner-large: 18px;
+    --md-sys-shape-corner-extra-large: 28px;
+    --md-sys-elevation-1: 0 1px 2px rgb(30 40 70 / 0.06), 0 4px 14px rgb(30 40 70 / 0.08);
+    --md-sys-elevation-2: 0 2px 4px rgb(30 40 70 / 0.08), 0 10px 28px rgb(30 40 70 / 0.12);
+    --md-sys-elevation-3: 0 4px 10px rgb(30 40 70 / 0.10), 0 18px 44px rgb(30 40 70 / 0.16);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --md-sys-color-primary: #97cbff;
+    --md-sys-color-on-primary: #033350;
+    --md-sys-color-primary-container: #024b72;
+    --md-sys-color-on-primary-container: #cfe5fe;
+    --md-sys-color-secondary: #afcade;
+    --md-sys-color-on-secondary: #183343;
+    --md-sys-color-secondary-container: #2f4a5b;
+    --md-sys-color-on-secondary-container: #cae6fb;
+    --md-sys-color-tertiary: #a5cdde;
+    --md-sys-color-on-tertiary: #063543;
+    --md-sys-color-tertiary-container: #234c5b;
+    --md-sys-color-on-tertiary-container: #c0e9fb;
+    --md-sys-color-error: #ffb3b0;
+    --md-sys-color-on-error: #670116;
+    --md-sys-color-error-container: #920123;
+    --md-sys-color-on-error-container: #fedad8;
+    --md-sys-color-surface: #0e1418;
+    --md-sys-color-on-surface: #dce3e9;
+    --md-sys-color-surface-variant: #3b4852;
+    --md-sys-color-on-surface-variant: #bac8d4;
+    --md-sys-color-surface-dim: #0e1418;
+    --md-sys-color-surface-bright: #343a3f;
+    --md-sys-color-surface-container-lowest: #070f14;
+    --md-sys-color-surface-container-low: #171c20;
+    --md-sys-color-surface-container: #1b2025;
+    --md-sys-color-surface-container-high: #252b2f;
+    --md-sys-color-surface-container-highest: #2f363a;
+    --md-sys-color-outline: #84939e;
+    --md-sys-color-outline-variant: #3b4852;
+    --md-sys-color-inverse-surface: #dce3e9;
+    --md-sys-color-inverse-on-surface: #2b3136;
+    --md-sys-color-inverse-primary: #066496;
+    --md-ext-color-card: color-mix(in srgb, var(--md-sys-color-surface-container-high) 78%, transparent);
+    --radius: 18px;
+    --gap: 2rem;
+    --rule: color-mix(in srgb, var(--md-sys-color-outline-variant) 45%, transparent);
+  }
+}
+
+:root[data-theme="dark"] {
+    --md-sys-color-primary: #97cbff;
+    --md-sys-color-on-primary: #033350;
+    --md-sys-color-primary-container: #024b72;
+    --md-sys-color-on-primary-container: #cfe5fe;
+    --md-sys-color-secondary: #afcade;
+    --md-sys-color-on-secondary: #183343;
+    --md-sys-color-secondary-container: #2f4a5b;
+    --md-sys-color-on-secondary-container: #cae6fb;
+    --md-sys-color-tertiary: #a5cdde;
+    --md-sys-color-on-tertiary: #063543;
+    --md-sys-color-tertiary-container: #234c5b;
+    --md-sys-color-on-tertiary-container: #c0e9fb;
+    --md-sys-color-error: #ffb3b0;
+    --md-sys-color-on-error: #670116;
+    --md-sys-color-error-container: #920123;
+    --md-sys-color-on-error-container: #fedad8;
+    --md-sys-color-surface: #0e1418;
+    --md-sys-color-on-surface: #dce3e9;
+    --md-sys-color-surface-variant: #3b4852;
+    --md-sys-color-on-surface-variant: #bac8d4;
+    --md-sys-color-surface-dim: #0e1418;
+    --md-sys-color-surface-bright: #343a3f;
+    --md-sys-color-surface-container-lowest: #070f14;
+    --md-sys-color-surface-container-low: #171c20;
+    --md-sys-color-surface-container: #1b2025;
+    --md-sys-color-surface-container-high: #252b2f;
+    --md-sys-color-surface-container-highest: #2f363a;
+    --md-sys-color-outline: #84939e;
+    --md-sys-color-outline-variant: #3b4852;
+    --md-sys-color-inverse-surface: #dce3e9;
+    --md-sys-color-inverse-on-surface: #2b3136;
+    --md-sys-color-inverse-primary: #066496;
+    --md-ext-color-card: color-mix(in srgb, var(--md-sys-color-surface-container-high) 78%, transparent);
+    --radius: 18px;
+    --gap: 2rem;
+    --rule: color-mix(in srgb, var(--md-sys-color-outline-variant) 45%, transparent);
+}
+
+/* Preview only, below this line: the page behind the cards, and the few component rules that show this direction's
+   character (cards without borders, raised controls). The build passes turn these into proper tokens and styles. */
+.bubble, .letter, .card-section, .view-card, .grid, .convo-head, .act-cards li, .settings-section fieldset { border-color: color-mix(in srgb, var(--md-sys-color-surface-container-lowest) 70%, transparent); border-radius: var(--md-sys-shape-corner-large); box-shadow: var(--md-sys-elevation-2); backdrop-filter: blur(14px) saturate(1.2); }
+.bubble { border-left-width: 3px; border-left-color: var(--agent); }
+.rail { background: color-mix(in srgb, var(--md-sys-color-surface-container-lowest) 70%, transparent); backdrop-filter: blur(14px); box-shadow: var(--md-sys-elevation-1); }
+button, .button, .chip, main nav.page-links a, .inbox-views a { box-shadow: var(--md-sys-elevation-1); }
+body { background: linear-gradient(180deg, color-mix(in srgb, var(--md-sys-color-tertiary-container) 55%, var(--md-sys-color-surface)) 0%, var(--md-sys-color-surface) 60%); background-attachment: fixed; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) body { background: linear-gradient(180deg, color-mix(in srgb, var(--md-sys-color-secondary-container) 45%, var(--md-sys-color-surface)) 0%, var(--md-sys-color-surface) 60%); background-attachment: fixed; } }
+:root[data-theme="dark"] body { background: linear-gradient(180deg, color-mix(in srgb, var(--md-sys-color-secondary-container) 45%, var(--md-sys-color-surface)) 0%, var(--md-sys-color-surface) 60%); background-attachment: fixed; }

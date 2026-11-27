@@ -5,6 +5,30 @@
     ViewData["Title"] = $"Conversation {Model.Id}";
     ViewData["AsOf"] = Model.AsOf.ToString("HH:mm:ss");
     ViewData["Project"] = Model.Project;
+    ViewData["Conversation"] = Model.Id;
+    // The rail heads its commands with this; the conversation's name is in the top bar.
+    ViewData["CommandsTitle"] = "This conversation";
+    // Framed, the page has no rail, so it draws its own commands; otherwise the rail does. The strip carries fixed ids, so
+    // it is drawn in exactly one of the two places.
+    var framed = Parley.Web.ConsoleHost.Embedded(ViewContext.HttpContext);
+}
+
+@{
+    // The conversation's commands, drawn once: in the side menu, or in the page when it is framed (feature 042). Each says
+    // its name beside its icon, which the side menu shows when it is unfolded.
+    Func<object?, Microsoft.AspNetCore.Html.IHtmlContent> strip = @<div class="panel-strip">
+        <button type="button" id="panel-open" class="strip-button" title="Open the panel" aria-label="Open the panel"><span class="icon" aria-hidden="true">chevron_right</span><span class="rail-label" aria-hidden="true">Open the panel</span></button>
+        <button type="button" class="strip-button" data-pop="about" aria-controls="panel-body" aria-expanded="false" title="This conversation: its name, files, export, spin off and move" aria-label="This conversation"><span class="icon" aria-hidden="true">info</span><span class="rail-label" aria-hidden="true">This conversation</span></button>
+        <button type="button" class="strip-button" data-pop="find" aria-controls="panel-body" aria-expanded="false" title="Find in this conversation" aria-label="Find in this conversation" hidden>@* Drawn, because the console's cut-down icon font has no magnifier. *@<svg class="strip-glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14.5 14.5 20 20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="rail-label" aria-hidden="true">Find</span></button>
+        <button type="button" class="strip-button" data-pop="filter" aria-controls="panel-body" aria-expanded="false" title="Show only some of the conversation" aria-label="Show only some of the conversation" hidden><span class="icon" aria-hidden="true">tune</span><span class="rail-label" aria-hidden="true">Show only some</span></button>
+        <button type="button" class="strip-button" id="strip-waiting" data-pop="waiting" data-waiting-step="1" aria-controls="panel-body" aria-expanded="false" title="Go to the next message waiting on you" aria-label="Go to the next message waiting on you" hidden>
+            <span class="icon" aria-hidden="true">inbox</span>
+            <span class="strip-count" id="strip-count"></span>
+            <span class="rail-label" aria-hidden="true">Waiting on you</span>
+        </button>
+        <button type="button" class="strip-button" data-pop="to" aria-controls="panel-body" aria-expanded="false" title="Who to write to" aria-label="Who to write to" hidden><span class="icon" aria-hidden="true">group</span><span class="rail-label" aria-hidden="true">Who to write to</span></button>
+        <span class="strip-note" id="strip-filtered" hidden>Filtered</span>
+    </div>;
 }
 
 @* The page is two columns: a panel that stays on screen, and the conversation. The panel holds what a reader reaches for
@@ -13,15 +37,16 @@
 <div class="convo-page" id="convo-page">
 <aside class="convo-panel" id="convo-panel" aria-label="This conversation">
     @* Closed or open is remembered in this browser, once for a wide window and once for a narrow one, and set before the
-       panel is drawn so a closed panel does not flash open. A narrow window starts with it closed, because there the
-       panel's boxes take the room the conversation needs. The width is the page script's `narrow` too. *@
+       panel is drawn so a closed panel does not flash open. Every window starts with it closed: its boxes are this page's
+       commands, reached from the side menu like every page's (feature 042), and the panel is a column a person chooses to
+       keep open. The width is the page script's `narrow` too. *@
     <script>
         try {
             (function () {
                 var narrow = window.matchMedia("(max-width: 90rem)").matches;
                 var chosen = window.localStorage.getItem(narrow ? "parley-convo-panel-narrow" : "parley-convo-panel");
 
-                if (narrow ? chosen !== "open" : chosen === "closed") {
+                if (chosen !== "open") {
                     document.getElementById("convo-page").classList.add("panel-closed");
                 }
             })();
@@ -29,20 +54,13 @@
     </script>
 
     @* What a closed panel leaves: the way to open it, an icon for each of its boxes, which brings out just that box while
-       the pointer is on it (or until a click puts it away again), the way through what is waiting, and the name. *@
-    <div class="panel-strip">
-        <button type="button" id="panel-open" class="strip-button" title="Open this panel" aria-label="Open this panel"><span class="icon" aria-hidden="true">chevron_right</span></button>
-        <button type="button" class="strip-button" data-pop="about" aria-controls="panel-body" aria-expanded="false" title="This conversation: its name, files, export, spin off and move" aria-label="This conversation"><span class="icon" aria-hidden="true">info</span></button>
-        <button type="button" class="strip-button" data-pop="find" aria-controls="panel-body" aria-expanded="false" title="Find in this conversation" aria-label="Find in this conversation" hidden>@* Drawn, because the console's cut-down icon font has no magnifier. *@<svg class="strip-glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14.5 14.5 20 20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
-        <button type="button" class="strip-button" data-pop="filter" aria-controls="panel-body" aria-expanded="false" title="Show only some of the conversation" aria-label="Show only some of the conversation" hidden><span class="icon" aria-hidden="true">tune</span></button>
-        <button type="button" class="strip-button" id="strip-waiting" data-pop="waiting" data-waiting-step="1" aria-controls="panel-body" aria-expanded="false" title="Go to the next message waiting on you" aria-label="Go to the next message waiting on you" hidden>
-            <span class="icon" aria-hidden="true">inbox</span>
-            <span class="strip-count" id="strip-count"></span>
-        </button>
-        <button type="button" class="strip-button" data-pop="to" aria-controls="panel-body" aria-expanded="false" title="Who to write to" aria-label="Who to write to" hidden><span class="icon" aria-hidden="true">group</span></button>
-        <span class="strip-note" id="strip-filtered" hidden>Filtered</span>
-        <span class="strip-name">@Model.Id</span>
-    </div>
+       the pointer is on it (or until a click puts it away again), and the way through what is waiting. They are this page's
+       commands, so they are drawn where every page's commands are, in the side menu under its navigation (feature 042),
+       and in the page only when it is framed, where there is no side menu. *@
+    @if (framed)
+    {
+        @strip(null)
+    }
 
     @* Laid out as if it were not there while the panel is open. With the panel closed it is the box an icon brings out,
        holding only that icon's part of the panel. *@
@@ -107,7 +125,7 @@
                 @* With a script this picks entries in place. Without one, the page it leads to lists them. *@
                 <a class="file-button" id="move-start" target="_top" href="@Url.Page("/Conversations/Move", new { project = Model.Project, id = Model.Id })" title="Move entries to another conversation">Move entries</a>
                 @* Only with a script, which is what can close it and remember that. *@
-                <button type="button" id="panel-close" class="file-button" title="Close this panel" aria-label="Close this panel" hidden><span class="icon" aria-hidden="true">chevron_left</span></button>
+                <button type="button" id="panel-close" class="file-button" title="Close the panel" aria-label="Close the panel" hidden><span class="icon" aria-hidden="true">chevron_left</span></button>
             </div>
         </div>
 
@@ -206,6 +224,9 @@ else
     }
     <div class="composer-bar">
         <p class="composer-to" id="to-summary" aria-live="polite"></p>
+        @* Choosing who it goes to from the box itself (the person's feedback on feature 042): it opens the conversation's
+           own list of who to write to, the one the rail's command opens, so there is one list and one way to tick it. *@
+        <button type="button" class="quiet choose-to" id="choose-to" hidden><span class="icon" aria-hidden="true">group</span> Choose recipients</button>
         @* A send that went as asked needs no reading, so what became of it waits behind the icon. *@
         @if (Model.SentAsAsked)
         {
@@ -216,9 +237,12 @@ else
                 @outcomes(null)
             </details>
         }
+        @* The box's handle: a narrow bar on its top edge that shows and hides it, as the menu's handle folds the menu (the
+           person's feedback on feature 042). What it would do is its title and its name; it takes the accent while the box
+           is hidden with a draft kept. *@
         <button type="button" id="composer-toggle" class="composer-toggle quiet" aria-controls="composer" aria-expanded="true" hidden>
             <span class="icon" aria-hidden="true">expand_more</span>
-            <span id="composer-toggle-words">Hide</span>
+            <span id="composer-toggle-words" class="visually-hidden">Hide</span>
         </button>
     </div>
 
@@ -720,6 +744,7 @@ else
         (function () {
             var queued = false;
             var railTop = 0;
+            var railLeft = 0;
 
             function rail() { return document.querySelector(".timeline"); }
 
@@ -769,15 +794,29 @@ else
                     tick.setAttribute("aria-current", "true");
                 }
 
-                // Only a rail that scrolls, and not one the reader is using.
-                if (bar.scrollHeight <= bar.clientHeight + 1 || bar.matches(":hover") || bar.contains(document.activeElement)) { return; }
+                // Only a rail that scrolls, and not one the reader is using. The narrow layout's rail is one line that
+                // scrolls sideways; the wide layout's is a column that scrolls down. "Using" is a pointer that can hover
+                // resting on it, or focus a keyboard put there: a tap on a touch screen leaves both hover and focus on the
+                // tick it jumped from, and the rail would never follow the reader again.
+                var hovering = window.matchMedia("(hover: hover)").matches && bar.matches(":hover");
+
+                if (hovering || bar.querySelector(":focus-visible")) { return; }
 
                 var at = tick.getBoundingClientRect();
                 var box = bar.getBoundingClientRect();
-                var margin = box.height * 0.2;
 
-                if (at.top < box.top + margin || at.bottom > box.bottom - margin) {
-                    bar.scrollTop += (at.top + at.height / 2) - (box.top + box.height / 2);
+                if (bar.scrollWidth > bar.clientWidth + 1) {
+                    var side = box.width * 0.2;
+
+                    if (at.left < box.left + side || at.right > box.right - side) {
+                        bar.scrollLeft += (at.left + at.width / 2) - (box.left + box.width / 2);
+                    }
+                } else if (bar.scrollHeight > bar.clientHeight + 1) {
+                    var margin = box.height * 0.2;
+
+                    if (at.top < box.top + margin || at.bottom > box.bottom - margin) {
+                        bar.scrollTop += (at.top + at.height / 2) - (box.top + box.height / 2);
+                    }
                 }
             }
 
@@ -792,7 +831,7 @@ else
             document.addEventListener("scroll", function (e) {
                 var bar = rail();
 
-                if (bar && e.target === bar) { railTop = bar.scrollTop; }
+                if (bar && e.target === bar) { railTop = bar.scrollTop; railLeft = bar.scrollLeft; }
             }, true);
 
             window.addEventListener("scroll", soon, { passive: true });
@@ -801,9 +840,11 @@ else
             document.addEventListener("parley:followed", function () {
                 var bar = rail();
 
-                if (bar) { bar.scrollTop = railTop; }
+                if (bar) { bar.scrollTop = railTop; bar.scrollLeft = railLeft; }
 
-                track();
+                // A frame later, not now: the filter hides its ticks on this same event, in a listener added after this
+                // one, and a rail measured before that is wider than the one the reader sees.
+                soon();
             });
             window.addEventListener("load", soon);
 
@@ -1194,6 +1235,42 @@ else
             });
         })();
 
+        // Choosing recipients from the box: the conversation's own list of who to write to, wherever it is drawn. Offered
+        // only while there is such a list. With the panel kept open the list is in it, so the button goes to it; closed, it
+        // opens the list as the rail's command does.
+        (function () {
+            var choose = document.getElementById("choose-to");
+            var page = document.getElementById("convo-page");
+            var body = document.getElementById("panel-body");
+
+            if (!choose || !page) { return; }
+
+            function list() { return body ? body.querySelector(".recipients") : null; }
+            function offer() { choose.hidden = !list(); }
+
+            offer();
+            if (body && window.MutationObserver) { new MutationObserver(offer).observe(body, { childList: true, subtree: true }); }
+
+            choose.addEventListener("click", function (e) {
+                var here = list();
+                var to = document.querySelector('.panel-strip [data-pop="to"]');
+
+                if (!here) { return; }
+
+                // The strip's click-outside closer would put the list away as soon as it came out.
+                e.stopPropagation();
+
+                if (!page.classList.contains("panel-closed")) {
+                    here.scrollIntoView({ block: "nearest" });
+                    var first = here.querySelector("input");
+                    if (first) { first.focus({ preventScroll: true }); }
+                    return;
+                }
+
+                if (to && !to.hidden) { to.click(); }
+            });
+        })();
+
         // Hiding the composer to read. Only its contents go, so words already typed and a reply already chosen are still
         // there when it comes back, and the button says so.
         (function () {
@@ -1217,6 +1294,8 @@ else
                 icon.textContent = "expand_more";
                 icon.style.transform = closed() ? "rotate(180deg)" : "";
                 words.textContent = closed() ? (kept ? "Write (draft kept)" : "Write") : "Hide";
+                toggle.title = closed() ? (kept ? "Show the message box: your draft is kept" : "Show the message box") : "Hide the message box";
+                toggle.classList.toggle("kept", closed() && kept);
             }
 
             function set(hide) {
@@ -1267,8 +1346,8 @@ else
 
             closer.hidden = false;
 
-            // A wide window and a narrow one each remember their own choice: a person who closes the panel on a small
-            // window has not asked for it closed on a large one. Narrow starts closed. The width is the inline script's.
+            // A wide window and a narrow one each remember their own choice: a person who opens the panel on a small
+            // window has not asked for it open on a large one. Both start closed. The width is the inline script's.
             var narrow = window.matchMedia("(max-width: 90rem)");
 
             function remembered() { return narrow.matches ? "parley-convo-panel-narrow" : "parley-convo-panel"; }
@@ -1278,7 +1357,7 @@ else
 
                 try { chosen = window.localStorage.getItem(remembered()); } catch (e) { }
 
-                var closed = narrow.matches ? chosen !== "open" : chosen === "closed";
+                var closed = chosen !== "open";
 
                 page.classList.toggle("panel-closed", closed);
                 if (!closed) { putAway(); }
@@ -1290,11 +1369,14 @@ else
                 } catch (e) { }
 
                 page.classList.toggle("panel-closed", closed);
-                if (!closed) { putAway(); }
+                // Either way nothing is left brought out: opened, the panel holds it; closed, a box opened before would
+                // reappear unasked.
+                putAway();
             }
 
-            closer.addEventListener("click", function () { setClosed(true); });
-            opener.addEventListener("click", function () { setClosed(false); });
+            // The button pressed goes away with what it opened or closed, so focus moves to the one that undoes it.
+            closer.addEventListener("click", function () { setClosed(true); opener.focus({ preventScroll: true }); });
+            opener.addEventListener("click", function () { setClosed(false); closer.focus({ preventScroll: true }); });
             if (narrow.addEventListener) { narrow.addEventListener("change", apply); }
 
             // A closed panel's icons each bring out one part of it. The pointer on an icon brings its part out, and moving
@@ -1364,7 +1446,7 @@ else
             });
 
             document.addEventListener("click", function (e) {
-                if (popped() && !e.target.closest(".convo-panel")) { putAway(); }
+                if (popped() && !e.target.closest(".convo-panel, .panel-strip")) { putAway(); }
             });
 
             // An icon is offered only for a part the panel has now. Find and the tree come with the page, the filter once
@@ -1598,4 +1680,11 @@ else
             read();
         })();
     </script>
+}
+
+@section Actions {
+    @if (!framed)
+    {
+        @strip(null)
+    }
 }

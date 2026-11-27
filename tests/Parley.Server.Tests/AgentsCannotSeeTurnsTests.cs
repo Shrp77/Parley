@@ -26,7 +26,9 @@ public sealed class AgentsCannotSeeTurnsTests
     // "background" since 039 put an agent's background work in the turn standing (RegistryRow.background_tasks); "working"
     // and "busy" because that is how a surface says a turn is running. Enum values are read too: a presence of WORKING is
     // turn information however its field is named.
-    private static readonly string[] Forbidden = ["turn", "permission_denial", "permission_refus", "background", "working", "busy"];
+    // "running_task" and "task_kind" since 043 named each background task on the registry row (RegistryRow.running_tasks).
+    private static readonly string[] Forbidden =
+        ["turn", "permission_denial", "permission_refus", "background", "working", "busy", "running_task", "task_kind"];
 
     [Fact]
     public void No_reply_the_Agents_service_gives_mentions_a_turn()

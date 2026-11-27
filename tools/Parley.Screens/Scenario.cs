@@ -137,7 +137,7 @@ internal sealed record Scenario(
                 yield return $"{at}: {missing}";
             }
 
-            foreach (var who in new[] { step.From, step.To, step.By, step.Agent }.OfType<string>())
+            foreach (var who in new[] { step.From, step.To, step.By, step.Agent }.OfType<string>().Concat(step.Sources ?? []))
             {
                 if (!Knows(who))
                 {
@@ -154,6 +154,11 @@ internal sealed record Scenario(
             if (step.Exchange is { } reference && !exchanges.Contains(reference) && !long.TryParse(reference, out _))
             {
                 yield return $"{at}: exchange '{reference}' is no earlier request's label";
+            }
+
+            if (step.Sources is { Count: > 0 } && step.Do != StepKind.Result)
+            {
+                yield return $"{at}: only a result names sources";
             }
 
             if (step.Proposal is { } proposal && !proposals.Contains(proposal))
@@ -242,6 +247,9 @@ internal static class StepKind
 
     /// <summary>An agent's connection closing.</summary>
     public const string Leave = "leave";
+
+    /// <summary>An agent describing one of its background tasks (parley_describe_background).</summary>
+    public const string Describe = "describe";
 }
 
 /// <summary>One participant besides the person.</summary>
@@ -273,6 +281,11 @@ internal sealed record ScenarioAgent(string Role, string Owns, string Started, s
 /// <param name="Keep">Whether a freeze outlasts the broker's next start.</param>
 /// <param name="Phase">A turn's phase: <c>working</c>, <c>ended</c> or <c>background</c>.</param>
 /// <param name="Tasks">How many background tasks, for the background phase.</param>
+/// <param name="Labels">The runner's label for each background task, for the background phase; the tasks are given the ids
+/// <c>t1</c>, <c>t2</c> and on, which a describe step names.</param>
+/// <param name="Task">The background task a describe step names, by its id.</param>
+/// <param name="Link">The link a describe step gives its task.</param>
+/// <param name="Sources">The agents a result relied on, by role.</param>
 /// <param name="Label">A name later steps and shots use for what a request or a proposal made.</param>
 /// <param name="Expect">
 /// The exchange number a request must get. Set it only where a shot or the site's words name the number: the run stops
@@ -301,7 +314,11 @@ internal sealed record ScenarioStep(
     string? Phase = null,
     int Tasks = 0,
     string? Label = null,
-    long? Expect = null)
+    long? Expect = null,
+    IReadOnlyList<string>? Labels = null,
+    string? Task = null,
+    string? Link = null,
+    IReadOnlyList<string>? Sources = null)
 {
     /// <summary>Says which members this kind of step needs and does not have.</summary>
     /// <returns>One line per missing member.</returns>
@@ -319,7 +336,9 @@ internal sealed record ScenarioStep(
             StepKind.Propose => [Need(By, "by"), Need(Title, "title"), Items is { Count: > 0 } ? null : "needs items", Need(Label, "label")],
             StepKind.Confirm => [Need(Proposal, "proposal")],
             StepKind.Freeze or StepKind.Leave => [Need(Agent, "agent")],
-            StepKind.Turn => [Need(Agent, "agent"), Phase is "working" or "ended" or "background" ? null : "phase must be working, ended or background"],
+            StepKind.Turn => [Need(Agent, "agent"), Phase is "working" or "ended" or "background" ? null : "phase must be working, ended or background",
+                              Labels is { Count: > 0 } && Labels.Count > Tasks ? "labels cannot outnumber tasks" : null],
+            StepKind.Describe => [Need(Agent, "agent"), Need(Task, "task"), Need(Name, "name")],
             _ => [$"'{Do}' is not a step this tool knows"],
         };
 

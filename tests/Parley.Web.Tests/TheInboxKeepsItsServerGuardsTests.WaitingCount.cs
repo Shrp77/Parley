@@ -22,15 +22,15 @@ public sealed partial class TheInboxKeepsItsServerGuardsTests
         var searched = await client.GetStringAsync(new Uri("/Inbox?q=invoice", UriKind.Relative), Ct);
         var scoped = await client.GetStringAsync(new Uri("/Inbox?scope=beta", UriKind.Relative), Ct);
 
-        Assert.Contains("Waiting on you <span class=\"count\">2</span>", every, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"short-label\">Waiting</span> <span class=\"count\">2</span>", every, StringComparison.Ordinal);
 
         Assert.Contains("Which invoice schema?", searched, StringComparison.Ordinal);
         Assert.DoesNotContain("Which currency?", searched, StringComparison.Ordinal);
-        Assert.Contains("Waiting on you <span class=\"count\">1</span>", searched, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"short-label\">Waiting</span> <span class=\"count\">1</span>", searched, StringComparison.Ordinal);
 
         Assert.Contains("Which currency?", scoped, StringComparison.Ordinal);
         Assert.DoesNotContain("Which invoice schema?", scoped, StringComparison.Ordinal);
-        Assert.Contains("Waiting on you <span class=\"count\">1</span>", scoped, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"short-label\">Waiting</span> <span class=\"count\">1</span>", scoped, StringComparison.Ordinal);
     }
 
     [Fact]

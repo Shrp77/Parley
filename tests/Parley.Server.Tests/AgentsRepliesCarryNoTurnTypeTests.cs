@@ -17,7 +17,9 @@ namespace Parley.Server.Tests;
 [Unit]
 public sealed class AgentsRepliesCarryNoTurnTypeTests
 {
-    private static readonly string[] Forbidden = ["turn", "permission_denial", "permission_refus", "background", "working", "busy"];
+    // RunningTask, TaskKind and BackgroundTaskRow since 043 named each background task (SPEC.md §11.6).
+    private static readonly string[] Forbidden =
+        ["turn", "permission_denial", "permission_refus", "background", "working", "busy", "runningtask", "taskkind"];
 
     [Fact]
     public void No_reply_the_Agents_service_gives_holds_a_turn_type()

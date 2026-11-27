@@ -1,0 +1,123 @@
+// Feature 042: the live graph of what is being worked on now, with its filter.
+{
+  "theme": "light",
+  "scale": 1,
+  "maximumBytes": 0,
+  "shots": [
+    {
+      "file": "graph-phone-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "What is being worked on now, on a phone.",
+      "graph": false,
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "click": ".rail-more > summary"
+        },
+        {
+          "click": "[data-pg-open]"
+        },
+        {
+          "pause": 1200
+        }
+      ]
+    },
+    {
+      "file": "graph-phone-filter-light.png",
+      "width": 390,
+      "height": 844,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "The graph's filter opened on a phone.",
+      "graph": false,
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "click": ".rail-more > summary"
+        },
+        {
+          "click": "[data-pg-open]"
+        },
+        {
+          "pause": 1200
+        },
+        {
+          "click": ".pg-filter > summary"
+        },
+        {
+          "pause": 400
+        }
+      ]
+    },
+    {
+      "file": "graph-tablet-light.png",
+      "width": 820,
+      "height": 1180,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "What is being worked on now, on a tablet.",
+      "graph": false,
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "click": "#pg-tab"
+        },
+        {
+          "pause": 1200
+        }
+      ]
+    },
+    {
+      "file": "graph-desktop-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "What is being worked on now, pinned beside a page.",
+      "graph": true,
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "pause": 1200
+        }
+      ]
+    },
+    {
+      "file": "graph-desktop-list-light.png",
+      "width": 1440,
+      "height": 1000,
+      "theme": "light",
+      "path": "/Conversations/Detail?project={project}&id=tax-inclusive-pricing",
+      "shows": "The same facts as a list.",
+      "graph": true,
+      "storage": {
+        "parley-convo-composer": "closed"
+      },
+      "actions": [
+        {
+          "pause": 1200
+        },
+        {
+          "click": "text=The same, as a list"
+        },
+        {
+          "scroll": ".pg-list"
+        },
+        {
+          "pause": 300
+        }
+      ]
+    }
+  ]
+}

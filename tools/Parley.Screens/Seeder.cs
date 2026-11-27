@@ -155,6 +155,11 @@ internal sealed class Seeder : IAsyncDisposable
                     outcome["blocker"] = step.Blocker;
                 }
 
+                if (step.Sources is { Count: > 0 } sources)
+                {
+                    outcome["sources"] = new JsonArray(sources.Select(s => (JsonNode)_scenario.NameOf(s)!).ToArray());
+                }
+
                 Said(await _agents.ResultAsync(
                     new Wire.ResultRequest
                     {
@@ -199,6 +204,26 @@ internal sealed class Seeder : IAsyncDisposable
 
             case StepKind.Leave:
                 await LeaveAsync(step.Agent!, cancellationToken).ConfigureAwait(false);
+                break;
+
+            case StepKind.Describe:
+                var described = await _agents.DescribeBackgroundTaskAsync(
+                    new Wire.DescribeBackgroundTaskRequest
+                    {
+                        Agent = _scenario.NameOf(step.Agent!),
+                        TaskId = step.Task!,
+                        Name = step.Name!,
+                        Description = step.Text ?? string.Empty,
+                        Link = step.Link ?? string.Empty,
+                    },
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+
+                // A shot that shows a task's words must not quietly show the runner's instead.
+                if (!described.Kept || described.LinkDropped.Length > 0)
+                {
+                    throw new InvalidOperationException($"the broker did not keep {step.Task}'s words: {described.Refused}{described.LinkDropped}");
+                }
+
                 break;
 
             default:
@@ -320,6 +345,12 @@ internal sealed class Seeder : IAsyncDisposable
 
             default:
                 report.Background = new Wire.BackgroundWork { Tasks = step.Tasks };
+                report.Background.Running.AddRange((step.Labels ?? []).Select((label, i) => new Wire.RunningTask
+                {
+                    Id = "t" + (i + 1).ToString(CultureInfo.InvariantCulture),
+                    Kind = Wire.TaskKind.Agent,
+                    Label = label,
+                }));
                 break;
         }
 

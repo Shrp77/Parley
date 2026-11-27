@@ -791,6 +791,97 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         }
     }
 
+    /// <summary>Says, in the agent's own words, what a background task it started is doing (SPEC.md §10.1, §11.6).</summary>
+    /// <param name="task_id">The runner's id for the task, from the tool's result.</param>
+    /// <param name="name">What it is doing, verb first, at most 64 characters.</param>
+    /// <param name="description">One or two plain sentences, at most 300 characters.</param>
+    /// <param name="link">Where the person can read more.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>What was kept.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The description carries the guidance</b>, as the roadmap tool's does: a model reads a description on every call.
+    /// The person asked that a task's words be short, to the point and in their terms, with a link to more, and Parley can
+    /// bound the words but not judge them, so the description says how to write them.
+    /// </para>
+    /// <para>
+    /// The answer says only what became of the words. Whether the task is running is turn information an agent does not
+    /// read, and the broker's answer carries none.
+    /// </para>
+    /// </remarks>
+    [McpServerTool(Name = "parley_describe_background")]
+    [Description(
+        """
+        Tell the person, in plain words, what a background task you started is doing. Call it right after you
+        start a background sub-agent or a background command, with the task's id from the tool's result.
+
+          name: what is being done, verb first, in the person's terms, at most 64 characters.
+                "Checking VAT on gift cards", not "Investigating the tax module's handling of stored-value
+                instruments".
+          description: optional. One or two short sentences on what it is for, at most 300 characters. No
+                background, no narrative.
+          link: optional. Where the person can read more: exchange #N for the work it is for,
+                conversation:<id>, file:<name> for a file placed in Parley, or an https address of a ticket or
+                document.
+
+        Only the person sees what you write here; no other agent does. It is kept until that task ends.
+        It is a label, not a message: nobody answers it, and it holds no secrets, credentials or other agents' words.
+        """)]
+    public async Task<JsonNode> DescribeBackgroundAsync(
+        [Description("The task's id, as the tool that started it reported it.")] string task_id,
+        [Description("What it is doing, verb first, at most 64 characters.")] string name,
+        [Description("Optional. One or two plain sentences, at most 300 characters.")] string? description = null,
+        [Description("Optional. exchange #N, conversation:<id>, file:<name>, or an https address.")] string? link = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var reply = await _link.Agents.DescribeBackgroundTaskAsync(
+                new Wire.DescribeBackgroundTaskRequest
+                {
+                    Agent = _options.Agent.Value,
+                    TaskId = task_id ?? string.Empty,
+                    Name = name ?? string.Empty,
+                    Description = description ?? string.Empty,
+                    Link = link ?? string.Empty,
+                },
+                cancellationToken: cancellationToken);
+
+            if (!reply.Kept)
+            {
+                return new JsonObject
+                {
+                    ["ok"] = false,
+                    ["refused"] = "notkept",
+                    ["why"] = $"Nothing was kept. {reply.Refused}"
+                };
+            }
+
+            var answer = new JsonObject { ["ok"] = true, ["kept"] = true };
+
+            if (reply.NameCut)
+            {
+                answer["name_cut"] = true;
+            }
+
+            if (reply.DescriptionCut)
+            {
+                answer["description_cut"] = true;
+            }
+
+            if (reply.LinkDropped.Length > 0)
+            {
+                answer["link_dropped"] = reply.LinkDropped;
+            }
+
+            return answer;
+        }
+        catch (RpcException failure)
+        {
+            return Unreachable(failure);
+        }
+    }
+
     /// <summary>Lists the participants this agent may send requests to.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>Every routable participant except the caller.</returns>

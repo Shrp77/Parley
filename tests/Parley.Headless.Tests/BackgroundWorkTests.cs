@@ -78,9 +78,9 @@ public sealed class BackgroundWorkTests : IDisposable
                 ownEnded.TrySetResult(outcome);
                 return Task.CompletedTask;
             },
-            tasks =>
+            work =>
             {
-                told.Enqueue($"background {tasks}");
+                told.Enqueue($"background {work.Count}");
                 return Task.CompletedTask;
             }));
 
@@ -271,9 +271,9 @@ public sealed class BackgroundWorkTests : IDisposable
                     firstEnded.TrySetResult(outcome);
                     return Task.CompletedTask;
                 },
-                tasks =>
+                work =>
                 {
-                    if (tasks == 0)
+                    if (work.Count == 0)
                     {
                         bothInitsRead.Set();
                     }
@@ -303,6 +303,87 @@ public sealed class BackgroundWorkTests : IDisposable
 
             // One own turn was told, once.
             Assert.Single(ended);
+        }
+        finally
+        {
+            try
+            {
+                await agent.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+            }
+            catch (TimeoutException)
+            {
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Two_own_turns_that_both_end_before_the_given_turn_lets_go_are_each_told()
+    {
+        // The same held gap, with two whole own turns read in it: an init and its result, then the next. The first queues
+        // behind the given turn and has its result before the second's init, so the second takes nobody's ending and queues
+        // behind the first. It was dropped as if it were a second init of one turn, and never told, whenever the given turn
+        // was slow to let go, as a loaded machine makes it: the agent read as idle while it worked on its own.
+        using var allRead = new ManualResetEventSlim();
+        using var clock = new HoldingClock(TimeSpan.FromSeconds(3), allRead);
+        var template = StubRunner.Scripted(
+            _workspace,
+            [OneTask, Started, Finished, Init, Done, Init, DoneAgain, NoTasks],
+            [Second]);
+
+        var told = new ConcurrentQueue<string>();
+        var bothEnded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var agent = ResidentAgent.Start(
+            AgentName.Create("billing@test"), InvocationCommand.Parse(template), _workspace, clock);
+
+        try
+        {
+            agent.Watch(new OwnWork(
+                _ =>
+                {
+                    told.Enqueue("began");
+                    return Task.CompletedTask;
+                },
+                (_, outcome) =>
+                {
+                    told.Enqueue($"ended {outcome.Reply}");
+
+                    if (told.Count(t => t.StartsWith("ended", StringComparison.Ordinal)) == 2)
+                    {
+                        bothEnded.TrySetResult();
+                    }
+
+                    return Task.CompletedTask;
+                },
+                work =>
+                {
+                    if (work.Count == 0)
+                    {
+                        allRead.Set();
+                    }
+
+                    return Task.CompletedTask;
+                }));
+
+            var first = await clock.HoldingItsEnd(() => agent.TakeTurnAsync("1", Patience, Ct));
+
+            Assert.Equal("STARTED", first.Reply);
+            Assert.True(clock.Released, "the given turn let go before both own turns were read: the gap was not held");
+
+            try
+            {
+                await bothEnded.Task.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+            }
+            catch (TimeoutException)
+            {
+            }
+
+            Assert.Equal(["began", "ended DONE", "began", "ended AGAIN"], told.ToArray());
+
+            // And nothing holds the agent after them.
+            var second = await agent.TakeTurnAsync("2", TimeSpan.FromSeconds(10), Ct);
+
+            Assert.Equal("SECOND", second.Reply);
         }
         finally
         {

@@ -545,9 +545,27 @@ internal sealed class AgentsRegion : FrameView
         return turns switch
         {
             { Reported: true, RunningSince: { } running } => "  — " + Activities.For(running, DateTimeOffset.UtcNow),
+
+            // Waiting on its background work: the first task by name and how many more, so the row says what, not only
+            // how many. Alt+B lists them all. Before a refused stop, as the heading decides it (AgentStanding): the agent
+            // waiting on work it started is the one under that heading.
+            { Reported: true, BackgroundTasks: > 0 } waiting => "  — " + Safe.Text(FirstOf(waiting)),
             { Reported: true, LastPermissionDenials: > 0, LastEnded: { } ended } => "  — " + Activities.For(ended, DateTimeOffset.UtcNow),
             _ => string.Empty,
         };
+    }
+
+    /// <summary>An agent's first background task by name, and how many more.</summary>
+    /// <param name="turns">What its node last said.</param>
+    /// <returns><c>Checking VAT on gift cards, +2 more</c>, or the stand-in for an unnamed task.</returns>
+    private static string FirstOf(TurnStanding turns)
+    {
+        ArgumentNullException.ThrowIfNull(turns);
+
+        var first = TaskWords.Name(turns.Named.Count > 0 ? turns.Named[0] : null);
+        var more = turns.BackgroundTasks - 1;
+
+        return more > 0 ? $"{first}, +{more} more" : first;
     }
 
     /// <summary>What colour a row earns from where its agent stands.</summary>
