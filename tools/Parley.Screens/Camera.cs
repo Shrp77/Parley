@@ -154,7 +154,8 @@ internal sealed class Camera : IAsyncDisposable
 
         var (width, height) = Png.SizeOf(png);
 
-        if (width != shot.Width * list.Scale || height != shot.Height * list.Scale)
+        // A device draws at its own size, so only a shot taken here is held to the list's.
+        if (!_device && (width != shot.Width * list.Scale || height != shot.Height * list.Scale))
         {
             throw new InvalidDataException($"{shot.File}: captured {width}x{height}, listed {shot.Width}x{shot.Height} at scale {list.Scale}");
         }

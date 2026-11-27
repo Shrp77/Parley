@@ -71,10 +71,14 @@ adb forward --remove tcp:9222
 Each page opens in a new tab of the device's Chrome, at the device's own size, so a shot's width and height are not
 used. The tool passes the console's port back to the device for the run (`adb reverse`) and removes it at the end.
 With more than one device plugged in, `ANDROID_SERIAL` names the one to use. The tabs share Chrome's profile, so the
-tool clears the console's storage on the device before each page.
+tool clears the console's storage on the device before each page. `capture` takes `--device` too, and saves the
+device's own screenshots at the device's size.
+
+With no phone to hand, the Android emulator runs real Chrome for Android. Set its screen to the phone in question
+(`adb shell wm size 1344x2992` and `adb shell wm density 480` for a Pixel 8 Pro) and use it as above.
 
 The `phone-audit` round holds what a real conversation holds: long unbroken words, inline code, a hash, links, a code
-block, a table, tall and wide images, long names and a busy graph, at 360 and 412 wide and in landscape.
+block, a table, tall and wide images, long names and a busy graph, at 360, 412 and 448 wide and in landscape.
 
 The exit code says how it ended: 0 done, 1 a shot failed, 64 the command line was wrong, 65 a round file is
 wrong, 69 the browser could not be used, 70 the broker refused a step, 130 stopped with Ctrl+C. A second

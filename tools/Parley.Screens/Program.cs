@@ -10,7 +10,7 @@ const string Usage = """
                                      [--stylesheet <file.css>]
       parley-screens hold <round> [--browser ...]
       parley-screens audit <round> [--only <file,...>] [--browser ...] [--stylesheet <file.css>]
-                                   [--device http://127.0.0.1:9222]
+                                   [--device http://127.0.0.1:9222]; capture also takes --device
 
     <round> is a folder holding scenario.json (the sample data, played into the broker) and shots.json
     (what to capture). check reads both and says what is wrong, starting nothing. capture writes each PNG
@@ -35,7 +35,7 @@ var options = Options(args.Skip(2).ToArray());
 
 // audit writes nothing, so a folder to write to is a mistake rather than something to ignore.
 if (options is null || (string.Equals(command, "audit", StringComparison.Ordinal) && options.ContainsKey("out"))
-    || (!string.Equals(command, "audit", StringComparison.Ordinal) && options.ContainsKey("device")))
+    || (string.Equals(command, "hold", StringComparison.Ordinal) && options.ContainsKey("device")))
 {
     Console.Error.WriteLine(Usage);
     return 64;
