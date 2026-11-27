@@ -51,6 +51,19 @@ public sealed class TaskWordBudgetTests
     }
 
     [Fact]
+    public void Words_that_spend_the_budget_to_exactly_nothing_are_kept()
+    {
+        // Eight rows, each one task of a hundred bytes of words and its id: the last row's words are exactly what is left.
+        var share = 100;
+        var budget = new TaskWordBudget(TaskWordBudget.Shares * (share + 1 + TaskWordBudget.Framing));
+
+        var rows = Enumerable.Range(0, TaskWordBudget.Shares).Select(i => budget.Spend([Task(i.ToString(System.Globalization.CultureInfo.InvariantCulture), share)])).ToList();
+
+        Assert.All(rows, row => Assert.Equal(share, Assert.Single(row).Name.Length));
+        Assert.Equal(string.Empty, Assert.Single(budget.Spend([Task("z", 1)])).Name);
+    }
+
+    [Fact]
     public void No_row_takes_more_than_its_share_however_much_is_left()
     {
         var budget = new TaskWordBudget(8000);

@@ -168,6 +168,21 @@ public sealed class BackgroundWorkOnTheConsoleTests
         Assert.Contains("Every background task, on its page.", fragment, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(20, false)]
+    [InlineData(21, true)]
+    public async Task The_graphs_list_in_words_sends_the_person_on_only_when_it_could_not_name_every_task(int count, bool sent)
+    {
+        using var console = new TranscriptConsole();
+        Script(console.Broker, count, [.. Enumerable.Range(1, count).Select(i => Task($"t{i}", $"Task {i}"))]);
+        using var client = console.CreateClient();
+
+        var fragment = await client.GetStringAsync(new Uri("/Graph", UriKind.Relative), Ct);
+
+        Assert.Equal(20, System.Text.RegularExpressions.Regex.Count(fragment, @"Background: Task \d+\b"));
+        Assert.Equal(sent, fragment.Contains("Every background task, on its page.", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task A_task_the_node_did_not_name_is_listed_as_what_kind_of_work_it_is()
     {
@@ -216,6 +231,8 @@ public sealed class BackgroundWorkOnTheConsoleTests
     [InlineData("https://evil.example.com/", "good.example.com")]
     // Not in the one spelling a kept link has, so not one Parley made.
     [InlineData("https://EXAMPLE.com", "EXAMPLE.com")]
+    // Labelled with the host the kept spelling has, and still not in that spelling.
+    [InlineData("https://EXAMPLE.com", "example.com")]
     public void A_web_link_that_is_not_one_Parley_shows_is_not_followed_however_it_was_built(string target, string host)
     {
         var forged = new Parley.Core.TaskLink(Parley.Core.TaskLinkKind.Web, target, host);

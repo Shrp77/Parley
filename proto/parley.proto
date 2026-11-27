@@ -767,7 +767,7 @@ message LaunchReport {
   // The node's reading number for the launch (BackgroundWork.sequence), taken before the process started and the same in
   // every project told of it and on every try: the last process's readings are lower, so one that lands after this
   // launch changes nothing, and the new process's are higher, so one that landed first is kept. On a rejoin's
-  // announcement, a number taken then. 0 from a sender that gives none: the broker then keeps whatever it holds.
+  // announcement, a number taken then. 0 from a sender that gives none: the broker then holds nothing running at the number it held.
   int64 sequence = 6;
 }
 

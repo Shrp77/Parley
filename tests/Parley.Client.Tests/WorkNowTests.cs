@@ -230,6 +230,49 @@ public sealed class WorkNowTests
     }
 
     [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, true)]
+    public void Only_what_is_past_the_bound_is_counted_in_a_more_box(int past, bool counted)
+    {
+        var owed = Enumerable.Range(1, WorkNow.MostHeld + past).Select(n => Owed(n, "billing@pc", $"h{n}", collected: true, n)).ToList();
+        owed.AddRange(Enumerable.Range(100, WorkNow.MostQueued + past).Select(n => Owed(n, "billing@pc", $"q{n}", collected: false, n)));
+        var picture = WorkNow.Build(
+            [new WorkInput("shop", [Agent("billing@pc", Working with { BackgroundTasks = WorkNow.MostTasks + past })], owed, null)],
+            Now);
+
+        var agent = Assert.Single(picture.Working);
+        Assert.Equal(WorkNow.MostHeld + past, agent.Current.Count);
+        Assert.Equal(WorkNow.MostQueued + past, agent.Queued.Count);
+        Assert.Equal(WorkNow.MostHeld, picture.Boxes.Count(b => b.Kind == WorkBoxKind.Now));
+        Assert.Equal(WorkNow.MostQueued, picture.Boxes.Count(b => b.Kind == WorkBoxKind.Queued));
+        Assert.Equal(WorkNow.MostTasks, picture.Boxes.Count(b => b.Kind == WorkBoxKind.Task));
+
+        foreach (var more in new[] { WorkBoxKind.MoreHeld, WorkBoxKind.MoreQueued, WorkBoxKind.MoreTasks })
+        {
+            var boxes = picture.Boxes.Where(b => b.Kind == more).ToList();
+
+            if (counted)
+            {
+                Assert.Equal(past, Assert.Single(boxes).Index);
+            }
+            else
+            {
+                Assert.Empty(boxes);
+            }
+        }
+    }
+
+    [Fact]
+    public void An_agent_in_a_turn_that_holds_nothing_still_has_its_now_box()
+    {
+        var picture = WorkNow.Build([new WorkInput("shop", [Agent("billing@pc", Working)], [], null)], Now);
+
+        var agent = Assert.Single(picture.Working);
+        Assert.Empty(agent.Current);
+        Assert.Equal(0, Assert.Single(picture.Boxes, b => b.Kind == WorkBoxKind.Now).Index);
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public void A_folded_agent_has_nothing_drawn_under_it_and_keeps_what_it_has(bool narrow)
