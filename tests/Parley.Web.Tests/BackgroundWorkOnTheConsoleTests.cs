@@ -185,6 +185,30 @@ public sealed class BackgroundWorkOnTheConsoleTests
         Assert.Contains("class=\"bg-kind\">sub-agent<", page, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task On_the_graph_a_task_linked_to_an_exchange_opens_the_task_on_the_agents_page()
+    {
+        using var console = new TranscriptConsole();
+        Script(console.Broker, 1, Task("a1", "Checking VAT", link: "exchange #57"));
+        using var client = console.CreateClient();
+
+        var fragment = await client.GetStringAsync(new Uri("/Graph", UriKind.Relative), Ct);
+
+        // The box's tag and the list's line both follow it, to the task's row on the agent's page, where the exchange is shown.
+        Assert.Matches(
+            """<a href="/Projects/Agent\?project=alpha&amp;agent=billing%40pc&amp;tasks=1#task-a1"><text [^>]*class="pg-tag">BACKGROUND (·|&#xB7;) """,
+            fragment);
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Count(fragment, "href=\"/Projects/Agent\\?project=alpha&amp;agent=billing%40pc&amp;tasks=1#task-a1\""));
+    }
+
+    [Fact]
+    public void Every_kind_of_link_Parley_shows_is_followed_in_the_console()
+    {
+        Assert.Equal(("/Projects/Agent#task-a1", false), TaskLinks.Href(new Parley.Core.TaskLink(Parley.Core.TaskLinkKind.Exchange, "57"), "alpha", "/Projects/Agent#task-a1"));
+        Assert.Equal(("/Conversations/Detail?project=alpha&id=returns", false), TaskLinks.Href(new Parley.Core.TaskLink(Parley.Core.TaskLinkKind.Conversation, "returns"), "alpha", "/at"));
+        Assert.Equal(("/Projects/Files?project=alpha", false), TaskLinks.Href(new Parley.Core.TaskLink(Parley.Core.TaskLinkKind.File, "deck.md"), "alpha", "/at"));
+    }
+
     [Theory]
     [InlineData("javascript:alert(1)")]
     [InlineData("http://example.com/")]

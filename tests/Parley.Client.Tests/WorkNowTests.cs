@@ -296,4 +296,70 @@ public sealed class WorkNowTests
             }
         }
     }
+
+    [Fact]
+    public void In_the_wide_picture_an_agent_whose_background_runs_longer_than_its_work_does_not_reach_the_next_agent()
+    {
+        // Nothing owed, so its left column is one box, and five tasks down the right reach well below it.
+        var picture = WorkNow.Build(
+            [new WorkInput("shop",
+                [Agent("billing@pc", Working with { BackgroundTasks = WorkNow.MostTasks }), Agent("orders@pc", Working)],
+                [],
+                null)],
+            Now);
+
+        var billing = picture.Working.ToList().FindIndex(a => a.Name == "billing@pc");
+        var lowest = picture.Boxes.Where(b => b.Agent == billing).Max(b => b.Y + b.Height);
+        var next = Assert.Single(picture.Boxes, b => b.Kind == WorkBoxKind.Agent && b.Agent != billing);
+
+        Assert.Equal(WorkNow.MostTasks, picture.Boxes.Count(b => b.Agent == billing && b.Kind == WorkBoxKind.Task));
+        Assert.True(next.Y >= lowest, $"the next agent starts at {next.Y}, above the first agent's last task, which ends at {lowest}");
+    }
+
+    [Fact]
+    public void One_identity_on_two_machines_is_two_agents()
+    {
+        var one = AgentIdentity.Mint();
+        var picture = WorkNow.Build(
+            [
+                new WorkInput("shop", [Agent("orders@pc", Working) with { Identity = one }], [Owed(1, "orders@pc", "a", false, 2)], null),
+                new WorkInput("warehouse", [Agent("orders@laptop", Working) with { Identity = one }], [Owed(2, "orders@laptop", "b", false, 1)], null),
+            ],
+            Now);
+
+        Assert.Equal(["orders@laptop", "orders@pc"], picture.Working.Select(a => a.Name));
+        Assert.All(picture.Working, a => Assert.Single(a.Queued));
+    }
+
+    [Fact]
+    public void Agents_in_a_turn_are_drawn_before_agents_with_only_background_work_and_each_lot_by_name()
+    {
+        var background = Idle with { BackgroundTasks = 1 };
+        var picture = WorkNow.Build(
+            [new WorkInput("shop",
+                [Agent("bravo@pc", background), Agent("zulu@pc", Working), Agent("alpha@pc", background), Agent("mike@pc", Working)],
+                [],
+                null)],
+            Now);
+
+        Assert.Equal(["mike@pc", "zulu@pc", "alpha@pc", "bravo@pc"], picture.Working.Select(a => a.Name));
+    }
+
+    [Fact]
+    public void The_background_count_is_the_most_any_project_heard_not_only_the_busiest_projects()
+    {
+        // Working on a turn in one project, which heard no background work; the other heard two tasks running.
+        var picture = WorkNow.Build(
+            [
+                new WorkInput("shop", [Agent("orders@pc", Working)], [], null),
+                new WorkInput("store", [Agent("orders@pc", Idle with { BackgroundTasks = 2 })], [], null),
+            ],
+            Now);
+
+        var agent = Assert.Single(picture.Working);
+
+        Assert.True(agent.Now.Working);
+        Assert.Equal(2, agent.Background);
+        Assert.Equal(2, picture.Boxes.Count(b => b.Kind == WorkBoxKind.Task));
+    }
 }

@@ -569,6 +569,38 @@ public sealed class DescribingBackgroundTasksTests
         }
     }
 
+    [Fact]
+    public async Task A_launch_with_nothing_held_still_holds_its_number_against_an_older_reading()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinAsync(broker);
+
+        // Nothing was ever read for the agent: the launch at 7 is the first the broker hears, and a reading the last
+        // process's node made at 6 lands after it.
+        await LaunchAsync(node, "t-2", sequence: 7);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct, launchToken: "t-2");
+        await ReportReadAtAsync(node, Billing, 6, 1, ("a1", "Count to three"));
+
+        Assert.Equal(0, (await RowAsync(broker)).BackgroundTasks);
+    }
+
+    [Fact]
+    public async Task A_launchs_number_goes_with_its_node_so_a_new_node_counting_from_one_is_heard()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        var node = await JoinAsync(broker);
+        await LaunchAsync(node, "t-1", sequence: 7);
+
+        // The node leaves; the one that joins next counts its readings from the start again.
+        await node.DisposeAsync();
+        await using var next = await JoinAsync(broker);
+        await LaunchAsync(next, "t-2", sequence: 1);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct, launchToken: "t-2");
+        await ReportReadAtAsync(next, Billing, 2, 1, ("a1", "Count to three"));
+
+        Assert.Equal(1, (await RowAsync(broker)).BackgroundTasks);
+    }
+
     private static long WordBytes(Wire.RegistryRow row) => row.RunningTasks.Sum(t =>
         (long)System.Text.Encoding.UTF8.GetByteCount(t.Name)
         + System.Text.Encoding.UTF8.GetByteCount(t.Description)

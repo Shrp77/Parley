@@ -3983,8 +3983,10 @@ answers both. So a node reads its agent's output as it arrives, turn or no turn,
   says what it read from more than one place (the runner's notices, and its last reading again on rejoining) and
   nothing orders the sends: the broker keeps the newest, and a report older than the one it holds from that node
   changes nothing, so a late reading neither brings back work that has ended nor ends work still running. A launch
-  carries the node's number too, and is held as nothing running at it, so a reading of the last process that lands
-  after the launch is older and changes nothing. An agent may say more about a task of its own (`describe_background`, §10.1): its words take the label's
+  carries the node's number too, including when the node tells another project about a process it started, and is
+  held as nothing running at that number, or at the higher one the broker holds, so a reading of the last process
+  that lands after the launch is older and changes nothing. A reading numbered after the launch, which reached the
+  broker first, is the new process's and is left as it is. An agent may say more about a task of its own (`describe_background`, §10.1): its words take the label's
   place in what the person is shown, and are kept until the report that ends their task or a new process is
   launched, so a node that leaves and comes back with the same process reports the same tasks with them still there. Every agent's row travels in one
   registry reply, so the broker spends at most a mebibyte on tasks across it, ids first and no row more than an eighth,

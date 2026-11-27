@@ -139,6 +139,77 @@ public sealed class PaletteTests
         Assert.Contains("name=\"palette\" value=\"custom\"", list, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void The_contrast_the_palettes_are_measured_with_is_wcags()
+    {
+        // Pinned to known values, so the measure the palette tests use cannot drift with the code it measures.
+        Assert.Equal(21.0, Colour.Contrast("#000000", "#ffffff"), 2);
+        Assert.Equal(21.0, Colour.Contrast("#ffffff", "#000000"), 2);
+        Assert.Equal(4.54, Colour.Contrast("#767676", "#ffffff"), 2);
+        Assert.Equal(1.0, Colour.Contrast("#ffffff", "#ffffff"), 2);
+        Assert.Equal(1.0, Colour.Contrast("#2b5cd9", "#2b5cd9"), 2);
+    }
+
+    [Fact]
+    public void The_text_pairs_held_here_cover_every_on_role_the_stylesheet_serves()
+    {
+        // Read from the stylesheet the console serves, not from the scheme's own list, so a pair dropped there is still held.
+        var served = Scheme.Stylesheet(Palette.Ready[0]);
+        var roles = System.Text.RegularExpressions.Regex.Matches(served, "--md-sys-color-([a-z-]+):")
+            .Select(m => m.Groups[1].Value)
+            .ToHashSet(StringComparer.Ordinal);
+        var held = TextPairs(Scheme.For(Palette.Ready[0], dark: false).Colours).ToHashSet();
+
+        Assert.Contains("on-primary", roles);
+
+        foreach (var role in roles.Where(r => r.StartsWith("on-", StringComparison.Ordinal) && roles.Contains(r[3..])))
+        {
+            Assert.Contains((role, role[3..]), held);
+        }
+    }
+
+    // The text pairs that must be 4.5:1, kept here rather than read from Scheme.Pairs, so the claim does not move with the
+    // code it checks: every on-X role on its X, as the stylesheet serves them, and the pairs ContrastTests holds the
+    // console's own tokens to.
+    private static IEnumerable<(string Text, string On)> TextPairs(IReadOnlyDictionary<string, string> colours)
+    {
+        var surfaces = new[]
+        {
+            "surface", "surface-dim", "surface-bright", "surface-container-lowest", "surface-container-low", "surface-container",
+            "surface-container-high", "surface-container-highest",
+        };
+        var pairs = new HashSet<(string, string)>();
+
+        foreach (var role in colours.Keys.Where(r => r.StartsWith("on-", StringComparison.Ordinal) && colours.ContainsKey(r[3..])))
+        {
+            _ = pairs.Add((role, role[3..]));
+        }
+
+        foreach (var role in new[] { "primary", "secondary", "tertiary", "error" })
+        {
+            _ = pairs.Add(($"on-{role}", role));
+            _ = pairs.Add(($"on-{role}-container", $"{role}-container"));
+        }
+
+        pairs.UnionWith(surfaces.Select(s => ("on-surface", s)));
+        pairs.UnionWith(surfaces.Where(s => s.StartsWith("surface-container", StringComparison.Ordinal) || s == "surface").Select(s => ("on-surface-variant", s)));
+        _ = pairs.Add(("inverse-on-surface", "inverse-surface"));
+        _ = pairs.Add(("primary", "surface"));
+        _ = pairs.Add(("primary", "surface-container-lowest"));
+        _ = pairs.Add(("error", "surface"));
+        pairs.UnionWith(Enumerable.Range(0, 8).Select(i => ("on-slot", $"slot-{i}")));
+
+        return pairs;
+    }
+
+    // The marks that must be 3:1, as ContrastTests holds them, kept here for the same reason.
+    private static readonly (string Mark, string On)[] MarkPairs =
+    [
+        .. new[] { "surface", "surface-container-lowest", "surface-container-high" }.Select(s => ("outline", s)),
+        .. new[] { "surface", "surface-container-lowest" }.Select(s => ("present", s)),
+        .. Enumerable.Range(0, 8).Select(i => ($"slot-{i}", "surface")),
+    ];
+
     private static List<string> Failures(Palette palette)
     {
         var failures = new List<string>();
@@ -148,10 +219,10 @@ public sealed class PaletteTests
             var c = Scheme.For(palette, dark).Colours;
             var theme = dark ? "dark" : "light";
 
-            failures.AddRange(Scheme.Pairs
+            failures.AddRange(TextPairs(c)
                 .Where(p => Colour.Contrast(c[p.Text], c[p.On]) < 4.5)
                 .Select(p => $"{palette.Name} ({palette.BaseHue}/{palette.BaseChroma}/{palette.Harmony}) {theme}: {p.Text} on {p.On}"));
-            failures.AddRange(Scheme.Marks
+            failures.AddRange(MarkPairs
                 .Where(p => Colour.Contrast(c[p.Mark], c[p.On]) < 3.0)
                 .Select(p => $"{palette.Name} ({palette.BaseHue}/{palette.BaseChroma}/{palette.Harmony}) {theme}: {p.Mark} on {p.On}"));
         }

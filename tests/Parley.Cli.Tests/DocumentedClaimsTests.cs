@@ -49,6 +49,28 @@ public sealed class DocumentedClaimsTests : IDisposable
 
     private string Instructions => Path.Combine(Workspace, "CLAUDE.md");
 
+    /// <summary>Reads the instructions file once enrolment has let it go.</summary>
+    /// <remarks>
+    /// Enrolment holds the file with no sharing while it decides, and closes it before it returns. On Linux that hold is an
+    /// advisory lock on the open file, and a child another test is starting at that moment keeps a copy of it until the
+    /// child becomes its program, so a read straight after can be refused for a moment (CI smoke on #115). Tried again
+    /// briefly rather than failing on another test's timing.
+    /// </remarks>
+    private async Task<string> ReadInstructionsAsync()
+    {
+        for (var tries = 0; ; tries++)
+        {
+            try
+            {
+                return await File.ReadAllTextAsync(Instructions, TestContext.Current.CancellationToken);
+            }
+            catch (IOException) when (!OperatingSystem.IsWindows() && tries < 50)
+            {
+                await Task.Delay(20, TestContext.Current.CancellationToken);
+            }
+        }
+    }
+
     private Task<Enrolment.Outcome> EnrolAsync(string? project) =>
         Enrolment.AddAsync(
             new EnrollmentEntry(Workspace, "orders", "Carts and totals.", Unattended: false)
@@ -110,7 +132,7 @@ public sealed class DocumentedClaimsTests : IDisposable
 
         Assert.Equal(
             before,
-            await File.ReadAllTextAsync(Instructions, TestContext.Current.CancellationToken));
+            await ReadInstructionsAsync());
 
         Assert.Contains(
             outcome.Notes,
@@ -158,6 +180,6 @@ public sealed class DocumentedClaimsTests : IDisposable
 
         Assert.Equal(
             mine,
-            await File.ReadAllTextAsync(Instructions, TestContext.Current.CancellationToken));
+            await ReadInstructionsAsync());
     }
 }
